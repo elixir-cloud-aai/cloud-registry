@@ -19,6 +19,7 @@ from cloud_registry.ga4gh.registry.server import (
     getServiceInfo,
     getServices,
     getServiceTypes,
+    postService,
     postServiceInfo,
 )
 
@@ -94,6 +95,25 @@ def test_getServiceInfo():
     with app.app_context():
         res = getServiceInfo.__wrapped__()
         assert res == SERVICE_INFO_CONFIG
+
+
+# POST /service
+def test_postService():
+    """Test for registering a service; identifier assigned by implementation.
+    """
+    app = Flask(__name__)
+    app.config['FOCA'] = Config(
+        db=MongoConfig(**MONGO_CONFIG),
+        endpoints=ENDPOINT_CONFIG,
+    )
+    app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+        .client = mongomock.MongoClient().db.collection
+
+    data = deepcopy(MOCK_SERVICE)
+    data['id'] = MOCK_ID
+    with app.test_request_context(json=data):
+        res = postService.__wrapped__()
+        assert isinstance(res, str)
 
 
 # POST /service-info
