@@ -7,6 +7,17 @@ from foca.models.config import (Config, MongoConfig)
 import mongomock
 import pytest
 
+from cloud_registry.exceptions import NotFound
+from cloud_registry.ga4gh.registry.server import (
+    deleteService,
+    getServiceById,
+    getServiceInfo,
+    getServices,
+    getServiceTypes,
+    postService,
+    postServiceInfo,
+    putService,
+)
 from tests.mock_data import (
     DB,
     ENDPOINT_CONFIG,
@@ -15,14 +26,6 @@ from tests.mock_data import (
     SERVICE_INFO_CONFIG,
     MOCK_SERVICE,
 )
-from cloud_registry.ga4gh.registry.server import (
-    getServiceById,
-    getServiceInfo,
-    getServices,
-    getServiceTypes,
-    postServiceInfo,
-)
-from cloud_registry.exceptions import NotFound
 
 
 # GET /services
@@ -35,7 +38,7 @@ def test_getServices():
 
     data = []
 
-    # Write a couple of services into DB
+    # write a couple of services into DB
     app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
         .client = mongomock.MongoClient().db.collection
 
@@ -45,11 +48,11 @@ def test_getServices():
         app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
             .client.insert_one(mock_resp)
 
-        # Simultaneously save the service entries in a list
+        # simultaneously save the service entries in a list
         del mock_resp['_id']
         data.append(mock_resp)
 
-    # Check whether getServices returns the same list
+    # check whether getServices returns the same list
     with app.app_context():
         res = getServices.__wrapped__()
         assert res == data
@@ -63,7 +66,7 @@ def test_getServiceById():
         db=MongoConfig(**MONGO_CONFIG)
     )
 
-    # Write a couple of services into DB
+    # write a couple of services into DB
     app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
         .client = mongomock.MongoClient().db.collection
 
@@ -73,14 +76,14 @@ def test_getServiceById():
         app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
             .client.insert_one(mock_resp)
 
-    # Check whether one service can be retrieved by id
+    # check whether one service can be retrieved by id
     mock_service = deepcopy(MOCK_SERVICE)
     mock_service['id'] = MOCK_ID
     with app.app_context():
         res = getServiceById.__wrapped__(MOCK_ID)
         assert res == mock_service
 
-    # Check whether error is raised if ID does not exist
+    # check whether error is raised if ID does not exist
     with pytest.raises(NotFound):
         with app.app_context():
             res = getServiceById.__wrapped__("serv4")
@@ -115,6 +118,82 @@ def test_getServiceInfo():
     with app.app_context():
         res = getServiceInfo.__wrapped__()
         assert res == SERVICE_INFO_CONFIG
+
+
+# POST /service
+def test_postService():
+    """Test for registering a service; identifier assigned by implementation.
+    """
+    app = Flask(__name__)
+    app.config['FOCA'] = Config(
+        db=MongoConfig(**MONGO_CONFIG),
+        endpoints=ENDPOINT_CONFIG,
+    )
+    app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+        .client = mongomock.MongoClient().db.collection
+
+    data = deepcopy(MOCK_SERVICE)
+    data['id'] = MOCK_ID
+    with app.test_request_context(json=data):
+        res = postService.__wrapped__()
+        assert isinstance(res, str)
+
+
+# DELETE /service/{serviceId}
+def test_deleteService():
+    """Test for deleting a service."""
+    app = Flask(__name__)
+    app.config['FOCA'] = Config(
+        db=MongoConfig(**MONGO_CONFIG),
+        endpoints=ENDPOINT_CONFIG,
+    )
+    mock_resp = deepcopy(MOCK_SERVICE)
+    mock_resp['id'] = MOCK_ID
+    app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+        .client = mongomock.MongoClient().db.collection
+    app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+        .client.insert_one(mock_resp)
+
+    with app.app_context():
+        res = deleteService.__wrapped__(serviceId=MOCK_ID)
+        assert res == MOCK_ID
+
+
+def test_deleteService_NotFound():
+    """Test for deleting a service if a service with the specified identifier
+    is not available.
+    """
+    app = Flask(__name__)
+    app.config['FOCA'] = Config(
+        db=MongoConfig(**MONGO_CONFIG),
+        endpoints=ENDPOINT_CONFIG,
+    )
+    mock_resp = deepcopy(MOCK_SERVICE)
+    app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+        .client = mongomock.MongoClient().db.collection
+    app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+        .client.insert_one(mock_resp)
+
+    with app.app_context():
+        with pytest.raises(NotFound):
+            deleteService.__wrapped__(serviceId=MOCK_ID)
+
+
+# PUT /service/{serviceId}
+def test_putService_():
+    """Test for registering a service; identifier provided by client."""
+    app = Flask(__name__)
+    app.config['FOCA'] = Config(
+        db=MongoConfig(**MONGO_CONFIG),
+        endpoints=ENDPOINT_CONFIG,
+    )
+    app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+        .client = mongomock.MongoClient().db.collection
+
+    data = deepcopy(MOCK_SERVICE)
+    with app.test_request_context(json=data):
+        res = putService.__wrapped__(serviceId=MOCK_ID)
+        assert res == MOCK_ID
 
 
 # POST /service-info

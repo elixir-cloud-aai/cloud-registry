@@ -29,6 +29,112 @@ paths:
           $ref: '#/components/responses/InternalServerError'
         default:
           $ref: '#/components/responses/Error'
+  /services:
+    post:
+      summary: Register service.
+      description: Create a service resource.
+      operationId: postService
+      tags:
+        - cloud-registry
+      requestBody:
+        description: Service metadata.
+        required: true
+        content:
+          application/json:
+            schema:
+              x-body-name: external_service
+              $ref: '#/components/schemas/ExternalServiceRegister'
+      responses:
+        '200':
+          description: The service was successfully registered.
+          content:
+            application/json:
+              schema:
+                description: Service identifier.
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+  "/services/{serviceId}":
+    delete:
+      summary: Delete service.
+      description: Delete a service resource.
+      operationId: deleteService
+      tags:
+        - cloud-registry
+      parameters:
+        - name: serviceId
+          in: path
+          description: Identifier of service to delete.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The service was successfully deleted.
+          content:
+            application/json:
+              schema:
+                type: string
+                description: Identifier of deleted service.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      summary: Register or update service.
+      description: Create or update a service resource.
+      operationId: putService
+      tags:
+        - cloud-registry
+      parameters:
+        - name: serviceId
+          in: path
+          description: Identifier of service to register/update.
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: Service metadata.
+        required: true
+        content:
+          application/json:
+            schema:
+              x-body-name: external_service
+              $ref: '#/components/schemas/ExternalServiceRegister'
+      responses:
+        '200':
+          description: The service was successfully registered.
+          content:
+            application/json:
+              schema:
+                description: Service identifier.
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
 components:
   responses:
     BadRequest:
@@ -38,11 +144,83 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    ExternalServiceRegister:
+      description: 'GA4GH service with a URL'
+      type: object
+      required:
+        - name
+        - type
+        - organization
+        - version
+        - url
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          description: 'Name of this service. Should be human readable.'
+          example: 'My project'
+        type:
+          $ref: '#/components/schemas/ServiceTypeRegister'
+        description:
+          type: string
+          description: 'Description of the service. Should be human readable and provide information about the service.'
+          example: 'This service provides...'
+        organization:
+          type: object
+          description: 'Organization providing the service'
+          required:
+            - name
+            - url
+          properties:
+            name:
+              type: string
+              description: 'Name of the organization responsible for the service'
+              example: 'My organization'
+            url:
+              type: string
+              format: uri
+              description: 'URL of the website of the organization (RFC 3986 format)'
+              example: 'https://example.com'
+        contactUrl:
+          type: string
+          format: uri
+          description: 'URL of the contact for the provider of this service, e.g. a link to a contact form (RFC 3986 format), or an email (RFC 2368 format).'
+          example: 'mailto:support@example.com'
+        documentationUrl:
+          type: string
+          format: uri
+          description: 'URL of the documentation of this service (RFC 3986 format). This should help someone learn how to use your service, including any specifics required to access data, e.g. authentication.'
+          example: 'https://docs.myservice.example.com'
+        createdAt:
+          type: string
+          format: date-time
+          description: 'Timestamp describing when the service was first deployed and available (RFC 3339 format)'
+          example: '2019-06-04T12:58:19Z'
+        updatedAt:
+          type: string
+          format: date-time
+          description: 'Timestamp describing when the service was last updated (RFC 3339 format)'
+          example: '2019-06-04T12:58:19Z'
+        environment:
+          type: string
+          description: 'Environment the service is running in. Use this to distinguish between production, development and testing/staging deployments. Suggested values are prod, test, dev, staging. However this is advised and not enforced.'
+          example: 'test'
+        version:
+          type: string
+          description: 'Version of the service being described. Semantic versioning is recommended, but other identifiers, such as dates or commit hashes, are also allowed. The version should be changed whenever the service is updated.'
+          example: '1.0.0'
+        url:
+          type: string
+          format: uri
+          description: |
+            Base URL of the service ([RFC 3986](https://tools.ietf.org/html/rfc3986) format).
+
+            For REST API services, this is the URL to which all endpoints should be relative. In particular, services implementing GA4GH specifications defined in OAS format (as per the `type` field) should respond to requests constructed by appending relative paths from the specification to this base URL (e.g. `{url}/service-info`). See [API Server and Base URL](https://swagger.io/docs/specification/api-host-and-base-path/) for more information on specifying base URLs in OAS 3.
+          example: 'https://api.example.com/v1'
     ServiceRegister:
       description: 'GA4GH service'
       type: object
       required:
-        - id
         - name
         - type
         - organization
