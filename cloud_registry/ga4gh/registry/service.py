@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class RegisterService:
-    """Class to register services with the registry."""
+    """Class for registering services with the registry."""
 
     def __init__(
         self,

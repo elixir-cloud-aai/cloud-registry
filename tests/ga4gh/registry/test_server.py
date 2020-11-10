@@ -5,16 +5,11 @@ from copy import deepcopy
 from flask import Flask
 from foca.models.config import (Config, MongoConfig)
 import mongomock
+import pytest
 
-from tests.mock_data import (
-    DB,
-    ENDPOINT_CONFIG,
-    MOCK_ID,
-    MONGO_CONFIG,
-    SERVICE_INFO_CONFIG,
-    MOCK_SERVICE,
-)
+from cloud_registry.exceptions import NotFound
 from cloud_registry.ga4gh.registry.server import (
+    deleteService,
     getServiceById,
     getServiceInfo,
     getServices,
@@ -22,6 +17,14 @@ from cloud_registry.ga4gh.registry.server import (
     postService,
     postServiceInfo,
     putService,
+)
+from tests.mock_data import (
+    DB,
+    ENDPOINT_CONFIG,
+    MOCK_ID,
+    MONGO_CONFIG,
+    SERVICE_INFO_CONFIG,
+    MOCK_SERVICE,
 )
 
 
@@ -115,6 +118,46 @@ def test_postService():
     with app.test_request_context(json=data):
         res = postService.__wrapped__()
         assert isinstance(res, str)
+
+
+# DELETE /service/{serviceId}
+def test_deleteService():
+    """Test for deleting a service."""
+    app = Flask(__name__)
+    app.config['FOCA'] = Config(
+        db=MongoConfig(**MONGO_CONFIG),
+        endpoints=ENDPOINT_CONFIG,
+    )
+    mock_resp = deepcopy(MOCK_SERVICE)
+    mock_resp['id'] = MOCK_ID
+    app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+        .client = mongomock.MongoClient().db.collection
+    app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+        .client.insert_one(mock_resp)
+
+    with app.app_context():
+        res = deleteService.__wrapped__(serviceId=MOCK_ID)
+        assert res == MOCK_ID
+
+
+def test_deleteService_NotFound():
+    """Test for deleting a service if a service with the specified identifier
+    is not available.
+    """
+    app = Flask(__name__)
+    app.config['FOCA'] = Config(
+        db=MongoConfig(**MONGO_CONFIG),
+        endpoints=ENDPOINT_CONFIG,
+    )
+    mock_resp = deepcopy(MOCK_SERVICE)
+    app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+        .client = mongomock.MongoClient().db.collection
+    app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+        .client.insert_one(mock_resp)
+
+    with app.app_context():
+        with pytest.raises(NotFound):
+            deleteService.__wrapped__(serviceId=MOCK_ID)
 
 
 # PUT /service/{serviceId}

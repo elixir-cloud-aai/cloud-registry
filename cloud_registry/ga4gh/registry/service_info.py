@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class RegisterServiceInfo:
-    """Tool class for registering service info.
+    """Class for registering the service info.
 
     Creates service info upon first request, if it does not exist.
     """
@@ -23,16 +23,13 @@ class RegisterServiceInfo:
         """Initialize class requirements.
 
         Attributes:
-            url_prefix: URL scheme of application. For constructing tool and
-                version `url` properties.
-            host_name: Name of application host. For constructing tool and
-                version `url` properties.
-            external_port: Port at which application is served. For
-                constructing tool and version `url` properties.
-            api_path: Base path at which API endpoints can be reached. For
-                constructing tool and version `url` properties.
-            db_coll_info: Database collection storing service info objects.
-            conf_info: Service info details as per enpoints config.
+            url_prefix: URL scheme of application instance.
+            host_name: Host name of application instance.
+            external_port: Port at which application instance is served.
+            api_path: Base path at which API endpoints can be reached for this
+                application instance.
+            conf_info: Service info details as per endpoints config.
+            collection: Database collection storing service info objects.
         """
         conf = current_app.config['FOCA'].endpoints
         self.url_prefix = conf['service']['url_prefix']
@@ -40,7 +37,7 @@ class RegisterServiceInfo:
         self.external_port = conf['service']['external_port']
         self.api_path = conf['service']['api_path']
         self.conf_info = conf['service_info']
-        self.db_coll_info = (
+        self.collection = (
             current_app.config['FOCA'].db.dbs['serviceStore']
             .collections['service_info'].client
         )
@@ -52,7 +49,7 @@ class RegisterServiceInfo:
             Latest service info details.
         """
         try:
-            return self.db_coll_info.find(
+            return self.collection.find(
                 {},
                 {'_id': False}
             ).sort([('_id', -1)]).limit(1).next()
@@ -114,7 +111,7 @@ class RegisterServiceInfo:
         data: Dict,
     ) -> None:
         """Insert or updated service info document."""
-        self.db_coll_info.replace_one(
+        self.collection.replace_one(
             filter={'id': data['id']},
             replacement=data,
             upsert=True,
