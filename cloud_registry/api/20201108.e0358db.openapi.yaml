@@ -1,0 +1,200 @@
+openapi: 3.0.2
+info:
+  title: 'GA4GH Service Registry API Specification'
+  version: 1.0.0
+  description: |
+    Service registry is a GA4GH service providing information about other GA4GH services, primarily for the purpose of organizing services into networks or groups and service discovery across organizational boundaries. Information about the individual services in the registry is described in a complementary [service-info](https://github.com/ga4gh-discovery/ga4gh-service-info) specification.
+    More information on [GitHub](https://github.com/ga4gh-discovery/ga4gh-service-registry/).
+  license:
+    name: 'Apache 2.0'
+    url: 'https://raw.githubusercontent.com/ga4gh-discovery/ga4gh-service-registry/develop/LICENSE'
+  contact:
+    name: 'GA4GH Discovery Networks Team'
+    email: 'ga4gh-discovery-networks@ga4gh.org'
+#security:
+#  - bearerAuth: []
+paths:
+  /services:
+    get:
+      summary: 'List services in the registry'
+      operationId: getServices
+      tags:
+        - services
+      responses:
+        '200':
+          description: 'List of services'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ExternalService'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+  /services/{serviceId}:
+    get:
+      summary: 'Find service in the registry by ID'
+      operationId: getServiceById
+      tags:
+        - services
+      parameters:
+        - name: serviceId
+          in: path
+          description: 'ID of the service to find'
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 'Information about a service with the given ID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalService'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+  /services/types:
+    get:
+      summary: 'List types of services exposed by the registry'
+      description: 'List all distinct values of the `type` field of exposed services (see `Service`).'
+      operationId: getServiceTypes
+      tags:
+        - services
+      responses:
+        '200':
+          description: 'List of service types'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ServiceType'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+  /service-info:
+    get:
+      summary: 'Show information about the registry'
+      operationId: getServiceInfo
+      tags:
+        - service-info
+      responses:
+        '200':
+          description: |
+            Display service information about this service registry.
+
+            Use `"type": {"group": "org.ga4gh", "artifact": "service-registry", "version": "1.0.0"}` when implementing this specification directly.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+components:
+#  securitySchemes:
+#    bearerAuth:
+#      type: http
+#      scheme: bearer
+#      bearerFormat: JWT
+  responses:
+    Unauthorized:
+      description: 'Unauthorized ([RFC 7235](https://tools.ietf.org/html/rfc7235))'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: 'Forbidden ([RFC 7231](https://tools.ietf.org/html/rfc7231))'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: 'Not found ([RFC 7231](https://tools.ietf.org/html/rfc7231))'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalServerError:
+      description: 'Internal server error ([RFC 7231](https://tools.ietf.org/html/rfc7231))'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error:
+      description: 'Unexpected error ([RFC 7231](https://tools.ietf.org/html/rfc7231))'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Service:
+      $ref: 'https://raw.githubusercontent.com/ga4gh-discovery/ga4gh-service-info/v1.0.0/service-info.yaml#/components/schemas/Service'
+    ExternalService:
+      description: 'GA4GH service with a URL'
+      allOf:
+        - $ref: '#/components/schemas/Service'
+        - type: object
+          properties:
+            url:
+              type: string
+              format: uri
+              description: |
+                Base URL of the service ([RFC 3986](https://tools.ietf.org/html/rfc3986) format).
+
+                For REST API services, this is the URL to which all endpoints should be relative. In particular, services implementing GA4GH specifications defined in OAS format (as per the `type` field) should respond to requests constructed by appending relative paths from the specification to this base URL (e.g. `{url}/service-info`). See [API Server and Base URL](https://swagger.io/docs/specification/api-host-and-base-path/) for more information on specifying base URLs in OAS 3.
+              example: 'https://api.example.com/v1'
+          required:
+            - url
+    ServiceType:
+      $ref: 'https://raw.githubusercontent.com/ga4gh-discovery/ga4gh-service-info/v1.0.0/service-info.yaml#/components/schemas/ServiceType'
+    Error:
+      type: object
+      properties:
+        status:
+          type: integer
+          format: int32
+          description: |
+            HTTP status code (as per [RFC 7231](https://tools.ietf.org/html/rfc7231)) generated by the server for this occurrence of the problem.
+
+            This must match the status code in the actual HTTP response. Used for convenience of clients (e.g. to determine what the original status code was in cases where it has been changed by an intermediary or cache or when message bodies persist without HTTP information).
+          example: '500'
+        title:
+          type: string
+          description: |
+            A short, human-readable description of the error.
+
+            The value should not change from occurrence to occurrence of an error, except for purposes of localization.
+          example: 'Internal server error'
+        detail:
+          type: string
+          description: 'A human-readable explanation specific to this occurrence of the error.'
+          example: 'Internal server error'
+      required:
+        - status
+        - title

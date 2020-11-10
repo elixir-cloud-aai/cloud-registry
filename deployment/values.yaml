@@ -1,0 +1,17 @@
+# Default values for cloud-registry.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+clusterType: openshift
+
+host_name: cloud-registry.rahtiapp.fi
+
+cloud_registry:
+  image: elixircloud/cloud-registry:0.1.0
+  appName: cloud-registry
+
+apiServer: kubernetes.default.svc:443 # address of k8s API server
+
+mongodb:
+  image: mongo:3.6
+  volumeSize: 1Gi
