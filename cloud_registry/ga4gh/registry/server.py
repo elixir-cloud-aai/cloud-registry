@@ -6,9 +6,8 @@ from typing import (Dict, List, Tuple)
 from flask import (current_app, request)
 from foca.utils.logging import log_traffic
 
-from cloud_registry.ga4gh.registry.service_info import (
-    RegisterServiceInfo,
-)
+from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
+from cloud_registry.ga4gh.registry.service import RegisterService
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +51,18 @@ def getServiceInfo() -> Dict:
     """
     service_info = RegisterServiceInfo()
     return service_info.get_service_info()
+
+
+@log_traffic
+def postService() -> Dict:
+    """Add service with an auto-generated identifier.
+
+    Returns:
+        Identifier of registered service.
+    """
+    service = RegisterService(data=request.json)
+    service.register_metadata()
+    return service.data['id']
 
 
 @log_traffic
