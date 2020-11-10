@@ -35,8 +35,23 @@ def getServices() -> List:
 # GET /services/{serviceId}
 @log_traffic
 def getServiceById(serviceId: str) -> Dict:
-    """"""
-    return {}
+    """Retrieve service by its identifier.
+
+    Args:
+        serviceId: Identifier of service to be retrieved.
+
+    Returns:
+        Service object.
+    """
+    db_collection_service = (
+        current_app.config['FOCA'].db.dbs['serviceStore']
+        .collections['services'].client
+    )
+    obj = db_collection_service.find_one({"id": serviceId})
+    if not obj:
+        raise NotFound
+    del obj["_id"]
+    return obj
 
 
 # GET /services/types
@@ -52,7 +67,7 @@ def getServiceInfo() -> Dict:
     """Show information about this service.
 
     Returns:
-        An empty 201 response with headers.
+        Service info object.
     """
     service_info = RegisterServiceInfo()
     return service_info.get_service_info()
@@ -118,7 +133,7 @@ def putService(
 # POST /service-info
 @log_traffic
 def postServiceInfo() -> Tuple[None, str, Dict]:
-    """Show information about this service.
+    """Set information about this service.
 
     Returns:
         An empty 201 response with headers.

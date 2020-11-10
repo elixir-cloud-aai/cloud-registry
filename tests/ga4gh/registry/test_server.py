@@ -38,7 +38,7 @@ def test_getServices():
 
     data = []
 
-    # Write a couple of services into DB
+    # write a couple of services into DB
     app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
         .client = mongomock.MongoClient().db.collection
 
@@ -48,14 +48,45 @@ def test_getServices():
         app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
             .client.insert_one(mock_resp)
 
-        # Simultaneously save the service entries in a list
+        # simultaneously save the service entries in a list
         del mock_resp['_id']
         data.append(mock_resp)
 
-    # Check whether getServices returns the same list
+    # check whether getServices returns the same list
     with app.app_context():
         res = getServices.__wrapped__()
         assert res == data
+
+
+# GET /services/{serviceId}
+def test_getServiceById():
+    """Test for getting a service associated with a given identifier."""
+    app = Flask(__name__)
+    app.config['FOCA'] = Config(
+        db=MongoConfig(**MONGO_CONFIG)
+    )
+
+    # write a couple of services into DB
+    app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+        .client = mongomock.MongoClient().db.collection
+
+    for i in [MOCK_ID, "serv2", "serv3"]:
+        mock_resp = deepcopy(MOCK_SERVICE)
+        mock_resp['id'] = i
+        app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+            .client.insert_one(mock_resp)
+
+    # check whether one service can be retrieved by id
+    mock_service = deepcopy(MOCK_SERVICE)
+    mock_service['id'] = MOCK_ID
+    with app.app_context():
+        res = getServiceById.__wrapped__(MOCK_ID)
+        assert res == mock_service
+
+    # check whether error is raised if ID does not exist
+    with pytest.raises(NotFound):
+        with app.app_context():
+            res = getServiceById.__wrapped__("serv4")
 
 
 # GET /services/types
@@ -68,18 +99,6 @@ def test_getServiceTypes():
     with app.app_context():
         res = getServiceTypes.__wrapped__()
         assert res == []
-
-
-# GET /services/{serviceId}
-def test_getServiceById():
-    """Test for getting a service associated with a given identifier."""
-    app = Flask(__name__)
-    app.config['FOCA'] = Config(
-        db=MongoConfig(**MONGO_CONFIG)
-    )
-    with app.app_context():
-        res = getServiceById.__wrapped__(MOCK_ID)
-        assert res == {}
 
 
 # GET /service-info
