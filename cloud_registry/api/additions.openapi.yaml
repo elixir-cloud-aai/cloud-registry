@@ -32,10 +32,50 @@ paths:
   /services:
     post:
       summary: Register service.
-      description: Create a service.
+      description: Create a service resource.
       operationId: postService
       tags:
         - cloud-registry
+      requestBody:
+        description: Service metadata.
+        required: true
+        content:
+          application/json:
+            schema:
+              x-body-name: external_service
+              $ref: '#/components/schemas/ExternalServiceRegister'
+      responses:
+        '200':
+          description: The service was successfully registered.
+          content:
+            application/json:
+              schema:
+                description: Service identifier.
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+  "/services/{serviceId}":
+    put:
+      summary: Register or update service.
+      description: Create or update a service resource.
+      operationId: putService
+      tags:
+        - cloud-registry
+      parameters:
+        - name: serviceId
+          in: path
+          description: Identifier of service to register/update.
+          required: true
+          schema:
+            type: string
       requestBody:
         description: Service metadata.
         required: true
@@ -154,6 +194,10 @@ components:
         - version
       additionalProperties: false
       properties:
+        id:
+          type: string
+          description: 'Unique ID of this service. Reverse domain name notation is recommended, though not required. The identifier should attempt to be globally unique so it can be used in downstream aggregator services e.g. Service Registry.'
+          example: 'org.ga4gh.myservice'
         name:
           type: string
           description: 'Name of this service. Should be human readable.'

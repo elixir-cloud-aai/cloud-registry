@@ -12,6 +12,7 @@ from cloud_registry.ga4gh.registry.service import RegisterService
 logger = logging.getLogger(__name__)
 
 
+# GET /services
 @log_traffic
 def getServices() -> List:
     """List all services.
@@ -30,18 +31,21 @@ def getServices() -> List:
     return list(records)
 
 
+# GET /services/{serviceId}
 @log_traffic
 def getServiceById(serviceId: str) -> Dict:
     """"""
     return {}
 
 
+# GET /services/types
 @log_traffic
 def getServiceTypes() -> List:
     """"""
     return []
 
 
+# GET /service-info
 @log_traffic
 def getServiceInfo() -> Dict:
     """Show information about this service.
@@ -53,8 +57,9 @@ def getServiceInfo() -> Dict:
     return service_info.get_service_info()
 
 
+# POST /services
 @log_traffic
-def postService() -> Dict:
+def postService() -> str:
     """Add service with an auto-generated identifier.
 
     Returns:
@@ -65,6 +70,28 @@ def postService() -> Dict:
     return service.data['id']
 
 
+# PUT /services/{serviceId}
+@log_traffic
+def putService(
+    serviceId: str,
+) -> str:
+    """Add/replace service with a user-supplied ID.
+
+    Args:
+        id: Identifier of service to be registered/updated.
+
+    Returns:
+        Identifier of registered/updated tool.
+    """
+    service = RegisterService(
+        data=request.json,
+        id=serviceId,
+    )
+    service.register_metadata()
+    return service.data['id']
+
+
+# POST /service-info
 @log_traffic
 def postServiceInfo() -> Tuple[None, str, Dict]:
     """Show information about this service.
