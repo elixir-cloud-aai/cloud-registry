@@ -3,7 +3,7 @@
 import logging
 from typing import (Dict, List, Tuple)
 
-from flask import request
+from flask import (request, current_app)
 from foca.utils.logging import log_traffic
 
 from cloud_registry.ga4gh.registry.service_info import (
@@ -15,8 +15,20 @@ logger = logging.getLogger(__name__)
 
 @log_traffic
 def getServices() -> List:
-    """"""
-    return []
+    """List all services
+
+    Returns:
+        List of services.
+    """
+    db_collection_service = (
+        current_app.config['FOCA'].db.dbs['serviceStore']
+        .collections['services'].client
+    )
+    records = db_collection_service.find(
+        filter={},
+        projection={"_id": False},
+    )
+    return list(records)
 
 
 @log_traffic

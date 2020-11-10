@@ -12,6 +12,7 @@ from tests.mock_data import (
     MOCK_ID,
     MONGO_CONFIG,
     SERVICE_INFO_CONFIG,
+    MOCK_SERVICE,
 )
 from cloud_registry.ga4gh.registry.server import (
     getServiceById,
@@ -29,9 +30,18 @@ def test_getServices():
     app.config['FOCA'] = Config(
         db=MongoConfig(**MONGO_CONFIG)
     )
+    mock_resp = deepcopy(MOCK_SERVICE)
+    mock_resp['id'] = MOCK_ID
+    app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+        .client = mongomock.MongoClient().db.collection
+    app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+        .client.insert_one(mock_resp)
+
+    data = deepcopy(MOCK_SERVICE)
+    data['id'] = MOCK_ID
     with app.app_context():
         res = getServices.__wrapped__()
-        assert res == []
+        assert res == [data]
 
 
 # GET /services/types

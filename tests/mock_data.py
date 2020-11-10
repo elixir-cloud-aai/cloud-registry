@@ -72,3 +72,9 @@ HEADERS_SERVICE_INFO = {
         "service-info"
     )
 }
+MOCK_SERVICE = {
+    "name": "name",
+    "type": "type",
+    "organization": "organization",
+    "version": "version",
+}
