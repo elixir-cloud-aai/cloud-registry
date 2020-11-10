@@ -6,6 +6,7 @@ from typing import (Dict, List, Tuple)
 from flask import (current_app, request)
 from foca.utils.logging import log_traffic
 
+from cloud_registry.exceptions import NotFound
 from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
 from cloud_registry.ga4gh.registry.service import RegisterService
 
@@ -70,6 +71,29 @@ def postService() -> str:
     return service.data['id']
 
 
+# DELETE /services/{serviceId}
+@log_traffic
+def deleteService(
+    serviceId: str,
+) -> str:
+    """Delete service.
+
+    Args:
+        id: Identifier of service to be deleted.
+
+    Returns:
+        Identifier of deleted service.
+    """
+    db_collection_service = (
+        current_app.config['FOCA'].db.dbs['serviceStore']
+        .collections['services'].client
+    )
+    res = db_collection_service.delete_one({'id': serviceId})
+    if not res.deleted_count:
+        raise NotFound
+    return serviceId
+
+
 # PUT /services/{serviceId}
 @log_traffic
 def putService(
@@ -81,7 +105,7 @@ def putService(
         id: Identifier of service to be registered/updated.
 
     Returns:
-        Identifier of registered/updated tool.
+        Identifier of registered/updated service.
     """
     service = RegisterService(
         data=request.json,
