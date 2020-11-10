@@ -1,9 +1,9 @@
-"""Controllers for DRS endpoints."""
+"""Controllers for service endpoints."""
 
 import logging
 from typing import (Dict, List, Tuple)
 
-from flask import (request, current_app)
+from flask import (current_app, request)
 from foca.utils.logging import log_traffic
 
 from cloud_registry.ga4gh.registry.service_info import (
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 @log_traffic
 def getServices() -> List:
-    """List all services
+    """List all services.
 
     Returns:
         List of services.

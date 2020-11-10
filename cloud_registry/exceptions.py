@@ -50,7 +50,7 @@ exceptions = {
         "status": 404,
     },
     InternalServerError: {
-        "title": "Internal server errro",
+        "title": "Internal server error",
         "detail": "An unexpected error occurred.",
         "status": 500,
     }

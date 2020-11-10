@@ -29,19 +29,28 @@ def test_getServices():
     app = Flask(__name__)
     app.config['FOCA'] = Config(
         db=MongoConfig(**MONGO_CONFIG)
-    )
-    mock_resp = deepcopy(MOCK_SERVICE)
-    mock_resp['id'] = MOCK_ID
+        )
+
+    data = []
+
+    # Write a couple of services into DB
     app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
         .client = mongomock.MongoClient().db.collection
-    app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
-        .client.insert_one(mock_resp)
 
-    data = deepcopy(MOCK_SERVICE)
-    data['id'] = MOCK_ID
+    for i in ["serv1", "serv2", "serv3"]:
+        mock_resp = deepcopy(MOCK_SERVICE)
+        mock_resp['id'] = i
+        app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+            .client.insert_one(mock_resp)
+
+        # Simultaneously save the service entries in a list
+        del mock_resp['_id']
+        data.append(mock_resp)
+
+    # Check whether getServices returns the same list
     with app.app_context():
         res = getServices.__wrapped__()
-        assert res == [data]
+        assert res == data
 
 
 # GET /services/types
