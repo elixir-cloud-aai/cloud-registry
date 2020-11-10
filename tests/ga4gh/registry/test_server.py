@@ -5,6 +5,7 @@ from copy import deepcopy
 from flask import Flask
 from foca.models.config import (Config, MongoConfig)
 import mongomock
+import pytest
 
 from tests.mock_data import (
     DB,
@@ -21,6 +22,7 @@ from cloud_registry.ga4gh.registry.server import (
     getServiceTypes,
     postServiceInfo,
 )
+from cloud_registry.exceptions import NotFound
 
 
 # GET /services
@@ -53,6 +55,37 @@ def test_getServices():
         assert res == data
 
 
+# GET /services/{serviceId}
+def test_getServiceById():
+    """Test for getting a service associated with a given identifier."""
+    app = Flask(__name__)
+    app.config['FOCA'] = Config(
+        db=MongoConfig(**MONGO_CONFIG)
+    )
+
+    # Write a couple of services into DB
+    app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+        .client = mongomock.MongoClient().db.collection
+
+    for i in [MOCK_ID, "serv2", "serv3"]:
+        mock_resp = deepcopy(MOCK_SERVICE)
+        mock_resp['id'] = i
+        app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+            .client.insert_one(mock_resp)
+
+    # Check whether one service can be retrieved by id
+    mock_service = deepcopy(MOCK_SERVICE)
+    mock_service['id'] = MOCK_ID
+    with app.app_context():
+        res = getServiceById.__wrapped__(MOCK_ID)
+        assert res == mock_service
+
+    # Check whether error is raised if ID does not exist
+    with pytest.raises(NotFound):
+        with app.app_context():
+            res = getServiceById.__wrapped__("serv4")
+
+
 # GET /services/types
 def test_getServiceTypes():
     """Test for getting a list of all available service types."""
@@ -63,18 +96,6 @@ def test_getServiceTypes():
     with app.app_context():
         res = getServiceTypes.__wrapped__()
         assert res == []
-
-
-# GET /services/{serviceId}
-def test_getServiceById():
-    """Test for getting a service associated with a given identifier."""
-    app = Flask(__name__)
-    app.config['FOCA'] = Config(
-        db=MongoConfig(**MONGO_CONFIG)
-    )
-    with app.app_context():
-        res = getServiceById.__wrapped__(MOCK_ID)
-        assert res == {}
 
 
 # GET /service-info

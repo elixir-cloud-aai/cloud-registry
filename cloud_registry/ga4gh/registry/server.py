@@ -9,6 +9,9 @@ from foca.utils.logging import log_traffic
 from cloud_registry.ga4gh.registry.service_info import (
     RegisterServiceInfo,
 )
+from cloud_registry.exceptions import (
+    NotFound
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +36,23 @@ def getServices() -> List:
 
 @log_traffic
 def getServiceById(serviceId: str) -> Dict:
-    """"""
-    return {}
+    """Get service by ID.
+
+    Args:
+        serviceId: Identifier of service to be retrieved.
+
+    Returns:
+        Service object as dictionary.
+    """
+    db_collection_service = (
+        current_app.config['FOCA'].db.dbs['serviceStore']
+        .collections['services'].client
+    )
+    obj = db_collection_service.find_one({"id": serviceId})
+    if not obj:
+        raise NotFound
+    del obj["_id"]
+    return obj
 
 
 @log_traffic
