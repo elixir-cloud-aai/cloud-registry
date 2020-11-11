@@ -93,7 +93,7 @@ def test_getServiceById():
 # GET /services/types
 def test_getServiceTypes_duplicates():
     """Test for getting a list of all available service types when only
-    services with the same service type are registered.
+    services of the same service type are registered.
     """
     app = Flask(__name__)
     app.config['FOCA'] = Config(
@@ -119,7 +119,7 @@ def test_getServiceTypes_duplicates():
 # GET /services/types
 def test_getServiceTypes_distinct():
     """Test for getting a list of all available service types when all
-    registered services are of the same service types.
+    registered services are of distinct service types.
     """
     app = Flask(__name__)
     app.config['FOCA'] = Config(
