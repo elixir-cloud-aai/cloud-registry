@@ -57,8 +57,16 @@ def getServiceById(serviceId: str) -> Dict:
 # GET /services/types
 @log_traffic
 def getServiceTypes() -> List:
-    """"""
-    return []
+    """List types of services.
+
+    Returns:
+        List of distinct service types.
+    """
+    services = getServices.__wrapped__()
+    types = [s['type'] for s in services]
+    uniq_types = [dict(t) for t in {tuple(sorted(d.items())) for d in types}]
+
+    return uniq_types
 
 
 # GET /service-info

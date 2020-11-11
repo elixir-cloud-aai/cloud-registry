@@ -22,6 +22,7 @@ from tests.mock_data import (
     DB,
     ENDPOINT_CONFIG,
     MOCK_ID,
+    MOCK_TYPE,
     MONGO_CONFIG,
     SERVICE_INFO_CONFIG,
     MOCK_SERVICE,
@@ -96,9 +97,21 @@ def test_getServiceTypes():
     app.config['FOCA'] = Config(
         db=MongoConfig(**MONGO_CONFIG)
     )
+
+    # write a couple of services into DB
+    app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+        .client = mongomock.MongoClient().db.collection
+
+    for i in ["serv1", "serv2", "serv3"]:
+        mock_resp = deepcopy(MOCK_SERVICE)
+        mock_resp['id'] = i
+        app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+            .client.insert_one(mock_resp)
+
     with app.app_context():
         res = getServiceTypes.__wrapped__()
-        assert res == []
+        # All written services have same type, we expect list of length 1
+        assert res == [MOCK_TYPE]
 
 
 # GET /service-info
