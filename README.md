@@ -9,8 +9,72 @@
 GA4GH Service Registry API implementation for the ELIXIR Cloud.
 
 ## Description
+Service entries have to comply with the [GA4GH schema](https://raw.githubusercontent.com/ga4gh-discovery/ga4gh-service-info/v1.0.0/service-info.yaml#/components/schemas/Service)
 
 ## Usage
+
+Once deployed and started ([see below](#Deployment)), the service is available at:  
+<http://localhost:8080/ga4gh/registry/v1/>
+
+You can explore the service via the Swagger UI:
+
+```bash
+firefox http://localhost:8080/ga4gh/registry/v1/ui/
+```
+
+> Note that host and port can be set manually in the [config] file. In that
+> case, the values in the URLs above need to be replaced as well.
+
+Endpoints can be probed with `curl`, for example:   
+```bash
+curl -X GET "http://localhost:8080/ga4gh/registry/v1/services" -H  "accept: application/json"
+``` 
+
+## Deployment
+
+`cloud-registry` can be deployed via containers.    
+The repository first needs to be cloned with:
+
+```bash
+git clone git@github.com:elixir-cloud-aai/cloud-registry.git
+```
+
+Afterwards traverse to the repository's root directory:
+
+```bash
+cd cloud-registry
+```
+
+### Containerized Deployment
+
+> "Production-like" containerized deployment without HTTP server/load balancer
+> etc.
+
+#### Requirements (containerized deployment)
+
+- [Git] (tested with version 2.17.1)
+- [Docker] (tested with version 18.09.6)
+- [docker-compose] (tested with version 1.24.0)
+
+#### Building & starting the service
+
+```bash
+# Build application image
+# [NOTE] Image re-building is not always necessary. Inspect the `Dockerfile`
+#        to check which changes will need re-building.
+docker-compose build
+# Start service
+docker-compose up -d
+```
+
+#### Other useful commands
+
+```bash
+# Check logs
+docker-compose logs
+# Shut down service
+docker-compose down
+```
 
 ## Contributing
 
