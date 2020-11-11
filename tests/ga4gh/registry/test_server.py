@@ -22,6 +22,7 @@ from tests.mock_data import (
     DB,
     ENDPOINT_CONFIG,
     MOCK_ID,
+    MOCK_TYPE,
     MONGO_CONFIG,
     SERVICE_INFO_CONFIG,
     MOCK_SERVICE,
@@ -90,15 +91,61 @@ def test_getServiceById():
 
 
 # GET /services/types
-def test_getServiceTypes():
-    """Test for getting a list of all available service types."""
+def test_getServiceTypes_duplicates():
+    """Test for getting a list of all available service types when only
+    services of the same service type are registered.
+    """
     app = Flask(__name__)
     app.config['FOCA'] = Config(
         db=MongoConfig(**MONGO_CONFIG)
     )
+
+    # write a couple of services into DB
+    app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+        .client = mongomock.MongoClient().db.collection
+
+    for i in ["serv1", "serv2", "serv3"]:
+        mock_resp = deepcopy(MOCK_SERVICE)
+        mock_resp['id'] = i
+        app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+            .client.insert_one(mock_resp)
+
     with app.app_context():
         res = getServiceTypes.__wrapped__()
-        assert res == []
+        # All written services have same type, we expect list of length 1
+        assert res == [MOCK_TYPE]
+
+
+# GET /services/types
+def test_getServiceTypes_distinct():
+    """Test for getting a list of all available service types when all
+    registered services are of distinct service types.
+    """
+    app = Flask(__name__)
+    app.config['FOCA'] = Config(
+        db=MongoConfig(**MONGO_CONFIG)
+    )
+
+    # write a couple of services into DB
+    app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+        .client = mongomock.MongoClient().db.collection
+
+    services = ["serv1", "serv2", "serv3"]
+    for i in services:
+        mock_resp = deepcopy(MOCK_SERVICE)
+        mock_resp['id'] = i
+        mock_resp['type']['artifact'] = i
+        app.config['FOCA'].db.dbs['serviceStore'].collections['services'] \
+            .client.insert_one(mock_resp)
+
+    with app.app_context():
+        res = getServiceTypes.__wrapped__()
+        # All written services have distinct types, we expect a list of the
+        # same length as there are entries in the database collection
+        assert len(res) == len(services)
+        # Asserting that artifacts for all services match the ones registered
+        # (and are thus distinct)
+        assert set([s['artifact'] for s in res]) == set(services)
 
 
 # GET /service-info

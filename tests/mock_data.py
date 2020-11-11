@@ -72,9 +72,14 @@ HEADERS_SERVICE_INFO = {
         "service-info"
     )
 }
+MOCK_TYPE = {
+    'group': 'org.ga4gh',
+    'artifact': 'beacon',
+    'version': '1.0.0'
+}
 MOCK_SERVICE = {
     "name": "name",
-    "type": "type",
+    "type": MOCK_TYPE,
     "organization": "organization",
     "version": "version",
 }
