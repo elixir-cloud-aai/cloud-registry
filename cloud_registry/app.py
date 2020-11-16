@@ -1,6 +1,7 @@
 import os
 
 from foca.foca import foca
+from foca.security.auth import validate_token  # noqa: F401
 
 from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
 

@@ -1,3 +1,10 @@
+# FOCA configuration
+# Available in app context as attributes of `current_app.config['FOCA']`
+# Automatically validated via FOCA
+# Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html
+
+# Server configuration
+# Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.ServerConfig
 server:
     host: '0.0.0.0'
     port: 8080
@@ -6,6 +13,22 @@ server:
     testing: False
     use_reloader: False
 
+# Security configuration
+# Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.SecurityConfig
+security:
+    auth:
+        add_key_to_claims: True
+        algorithms:
+          - RS256
+        allow_expired: False
+        audience: null
+        validation_methods:
+          - userinfo
+          - public_key
+        validation_checks: any
+
+# Database configuration
+# Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.DBConfig
 db:
     host: mongodb
     port: 27017
@@ -25,15 +48,19 @@ db:
                           options:
                             'unique': True
 
+# API configuration
+# Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.APIConfig
 api:
     specs:
         - path:
             - api/20201108.11d2c12.service-info.yaml
             - api/20201108.e0358db.openapi.yaml
             - api/additions.openapi.yaml
-          append: null
           add_operation_fields:
               x-openapi-router-controller: ga4gh.registry.server
+          add_security_fields:
+              x-bearerInfoFunc: app.validate_token
+          disable_auth: False
           connexion:
               strict_validation: True
               validate_responses: True
@@ -41,6 +68,8 @@ api:
                   swagger_ui: True
                   serve_spec: True
 
+# Logging configuration
+# Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.LogConfig
 log:
     version: 1
     disable_existing_loggers: False
@@ -64,6 +93,9 @@ exceptions:
     status_member: ['status']
     exceptions: cloud_registry.exceptions.exceptions
 
+# Custom configuration
+# Available in app context as attributes of `current_app.config['FOCA']`
+# Not validated via FOCA; if desired, validate parameters in app
 endpoints:
     service:
         url_prefix: https
