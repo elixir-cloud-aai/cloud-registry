@@ -5,7 +5,6 @@ from typing import (Dict, List, Tuple)
 
 from flask import (current_app, request)
 from foca.utils.logging import log_traffic
-
 from cloud_registry.exceptions import NotFound
 from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
 from cloud_registry.ga4gh.registry.service import RegisterService
@@ -15,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # GET /services
 @log_traffic
-def getServices() -> List:
+def getServices(**kwargs) -> List:
     """List all services.
 
     Returns:
@@ -34,7 +33,7 @@ def getServices() -> List:
 
 # GET /services/{serviceId}
 @log_traffic
-def getServiceById(serviceId: str) -> Dict:
+def getServiceById(serviceId: str, **kwargs) -> Dict:
     """Retrieve service by its identifier.
 
     Args:
@@ -56,7 +55,7 @@ def getServiceById(serviceId: str) -> Dict:
 
 # GET /services/types
 @log_traffic
-def getServiceTypes() -> List:
+def getServiceTypes(**kwargs) -> List:
     """List types of services.
 
     Returns:
@@ -71,7 +70,7 @@ def getServiceTypes() -> List:
 
 # GET /service-info
 @log_traffic
-def getServiceInfo() -> Dict:
+def getServiceInfo(**kwargs) -> Dict:
     """Show information about this service.
 
     Returns:
@@ -83,7 +82,7 @@ def getServiceInfo() -> Dict:
 
 # POST /services
 @log_traffic
-def postService() -> str:
+def postService(**kwargs) -> str:
     """Add service with an auto-generated identifier.
 
     Returns:
@@ -96,9 +95,7 @@ def postService() -> str:
 
 # DELETE /services/{serviceId}
 @log_traffic
-def deleteService(
-    serviceId: str,
-) -> str:
+def deleteService(serviceId: str, **kwargs) -> str:
     """Delete service.
 
     Args:
@@ -119,9 +116,7 @@ def deleteService(
 
 # PUT /services/{serviceId}
 @log_traffic
-def putService(
-    serviceId: str,
-) -> str:
+def putService(serviceId: str, **kwargs) -> str:
     """Add/replace service with a user-supplied ID.
 
     Args:
@@ -140,7 +135,7 @@ def putService(
 
 # POST /service-info
 @log_traffic
-def postServiceInfo() -> Tuple[None, str, Dict]:
+def postServiceInfo(**kwargs) -> Tuple[None, str, Dict]:
     """Set information about this service.
 
     Returns:
