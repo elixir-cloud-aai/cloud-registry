@@ -74,7 +74,9 @@ Then simply start up the service with:
 docker-compose up --build -d
 ```
 
-_**That't it!**_ You should now be able to use/explore the API as described in
+_**That't it!**_
+
+You should now be able to use/explore the API as described in
 the [usage section](#Usage).
 
 #### Other useful commands
@@ -95,7 +97,7 @@ docker-compose logs
 
 This project is a community effort and lives off your contributions, be it in
 the form of bug reports, feature requests, discussions, or fixes and other code
-changes. Please refer to our organization's [contributing
+changes. Please refer to our organization's [contribution
 guidelines][contributing] if you are interested to contribute. Please mind the
 [code of conduct][coc] for all interactions with the community.
 
@@ -134,7 +136,7 @@ etc.
 [deployment-instructions]: deployment/README.md
 [docker]: <https://docs.docker.com/get-docker/>
 [docker-compose]: <https://docs.docker.com/compose/install/>
-[docs-api]: <>
+[docs-api]: <https://cloud-registry.readthedocs.io/en/latest/>
 [git]: <https://git-scm.com/book/en/v2/Getting-Started-Installing-Git>
 [helm]: <https://helm.sh/>
 [license]: LICENSE
