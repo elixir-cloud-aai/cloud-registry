@@ -8,7 +8,7 @@ from flask import (current_app)
 from pymongo.errors import DuplicateKeyError
 
 from cloud_registry.exceptions import InternalServerError
-from cloud_registry.utils import generate_id
+from foca.utils.misc import generate_id
 
 logger = logging.getLogger(__name__)
 
@@ -52,14 +52,6 @@ class RegisterService:
             .collections['services'].client
         )
 
-    def process_metadata(self) -> None:
-        """Process service metadata."""
-        # evaluate character set expression or interpret literal string as set
-        try:
-            self.id_charset = eval(self.id_charset)
-        except Exception:
-            self.id_charset = ''.join(sorted(set(self.id_charset)))
-
     def register_metadata(self, retries: int = 9) -> None:
         """Register service.
 
@@ -69,8 +61,6 @@ class RegisterService:
                 encountering `DuplicateKeyError`s if a service identifier was
                 not provided.
         """
-        self.process_metadata()
-
         # keep trying to generate unique ID
         for i in range(retries + 1):
 
