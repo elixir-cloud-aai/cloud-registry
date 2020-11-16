@@ -5,6 +5,7 @@ from connexion.exceptions import (
     ExtraParameterProblem,
     Forbidden,
     Unauthorized,
+    OAuthProblem,
 )
 from werkzeug.exceptions import (
     BadRequest,
@@ -35,6 +36,11 @@ exceptions = {
         "status": 400,
     },
     Unauthorized: {
+        "title": "Unauthorized",
+        "detail": "The request is unauthorized.",
+        "status": 401,
+    },
+    OAuthProblem: {
         "title": "Unauthorized",
         "detail": "The request is unauthorized.",
         "status": 401,

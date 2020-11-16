@@ -46,20 +46,6 @@ class TestRegisterService:
             assert obj.data['name'] == MOCK_SERVICE['name']
             assert obj.data['id'] is None
 
-    def test_process_metadata(self):
-        """Test for processing metadata."""
-        app = Flask(__name__)
-        app.config['FOCA'] = Config(
-            db=MongoConfig(**MONGO_CONFIG),
-            endpoints=ENDPOINT_CONFIG,
-        )
-
-        data = deepcopy(MOCK_SERVICE)
-        with app.app_context():
-            obj = RegisterService(data=data)
-            obj.process_metadata()
-            assert isinstance(obj.id_charset, str)
-
     def test_register_metadata(self):
         """Test for registering a service with a randomly assigned identifier.
         """

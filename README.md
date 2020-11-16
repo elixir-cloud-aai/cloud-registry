@@ -1,17 +1,23 @@
-# ELIXIR Cloud Service Registry
+# ELIXIR Cloud service registry
 
 [![License][badge-license]][badge-url-license]
+[![Docs][badge-docs]][badge-url-docs]
 [![Build_status][badge-build-status]][badge-url-build-status]
 [![Coverage][badge-coverage]][badge-url-coverage]
 
 ## Synopsis
 
-GA4GH Service Registry API implementation for the ELIXIR Cloud.
+GA4GH Service Registry API implementation for the ELIXIR Cloud. The registry is
+currently deployed at [https://cloud-registry.rahtiapp.fi][deploy_url], but
+will likely move soon.
 
 ## Description
 
 Service entries comply with the [`ExternalService` schema][schema-service]
 defined in the [GA4GH Service Registry API][ga4gh-registry].
+
+For developers, an API documentation (of the code, not the exposed API) is
+available [here][docs-api].
 
 ## Usage
 
@@ -50,8 +56,8 @@ The following software needs to be available on your system:
 - [`docker 18.09.6`][docker]
 - [`docker-compose 1.23.1`][docker-compose]
 
-> Versions used to test deployment are indicated. Other versions, especially
-> newer ones, will likely work as well.
+> Versions used to test deployment are indicated. Other versions with the same
+> major version numbers will likely work as well, especially newer ones.
 
 ### Deployment
 
@@ -62,7 +68,7 @@ git clone git@github.com:elixir-cloud-aai/cloud-registry.git
 cd cloud-registry
 ```
 
-The simply start up the service with:
+Then simply start up the service with:
 
 ```bash
 docker-compose up --build -d
@@ -113,18 +119,22 @@ etc.
 
 [badge-build-status]:<https://travis-ci.com/elixir-cloud-aai/cloud-registry.svg?branch=dev>
 [badge-coverage]:<https://img.shields.io/coveralls/github/elixir-cloud-aai/cloud-registry>
+[badge-docs]: <https://readthedocs.org/projects/cloud-registry/badge/?version=latest>
 [badge-github-tag]:<https://img.shields.io/github/v/tag/elixir-cloud-aai/cloud-registry?color=C39BD3>
 [badge-license]:<https://img.shields.io/badge/license-Apache%202.0-blue.svg>
 [badge-url-build-status]:<https://travis-ci.com/elixir-cloud-aai/cloud-registry>
 [badge-url-coverage]:<https://coveralls.io/github/elixir-cloud-aai/cloud-registry>
+[badge-url-docs]: <https://cloud-registry.readthedocs.io/en/latest/?badge=latest>
 [badge-url-github-tag]:<https://github.com/elixir-cloud-aai/cloud-registry/releases>
 [badge-url-license]:<http://www.apache.org/licenses/LICENSE-2.0>
 [ga4gh-registry]: <https://github.com/ga4gh-discovery/ga4gh-service-registry>
 [config]: docker-compose.yaml
+[deploy_url]: <https://cloud-registry.rahtiapp.fi/ga4gh/registry/v1/ui>
 [deployment]: deployment/
 [deployment-instructions]: deployment/README.md
 [docker]: <https://docs.docker.com/get-docker/>
 [docker-compose]: <https://docs.docker.com/compose/install/>
+[docs-api]: <>
 [git]: <https://git-scm.com/book/en/v2/Getting-Started-Installing-Git>
 [helm]: <https://helm.sh/>
 [license]: LICENSE
