@@ -1,3 +1,18 @@
+openapi: 3.0.2
+info:
+  title: 'ELIXIR Cloud service registry'
+  description: |
+    Service registry providing information about all deployed service instances
+    in the ELIXIR Cloud network for administration, maintenance and service
+    discovery purposes. More information on
+    [GitHub](https://github.com/elixir-cloud-aai/cloud-registry).
+  version: 1.0.0
+  license:
+    name: 'Apache 2.0'
+    url: 'http://www.apache.org/licenses/LICENSE-2.0'
+  contact:
+    name: 'ELIXIR Cloud & AAI'
+    email: 'alexander.kanitz@alumni.ethz.ch'
 servers:
   - url: /ga4gh/registry/v1
 paths:
