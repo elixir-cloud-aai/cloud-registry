@@ -25,122 +25,172 @@ class ServiceConfig(FOCABaseConfig):
             data type.
 
     Example:
-        >>> ServiceConfig()
+        >>> ServiceConfig(
+        ...     url_prefix='https',
+        ...     external_host='0.0.0.0',
+        ...     external_port=8080,
+        ...     api_path=''
+        ... )
         ServiceConfig(url_prefix='https', external_host='0.0.0.0', external_po\
 rt=8080, api_path='')
     """
-    url_prefix: str = 'https'
-    external_host: str = '0.0.0.0'
-    external_port: int = 8080
-    api_path: str = ''
+    url_prefix: str
+    external_host: str
+    external_port: int
+    api_path: str
 
 
 class TypeConfig(FOCABaseConfig):
-    """Model for service type definitions.
+    """Model for deifining the type of GA4GH Service.
 
     Args:
-        group: Service group.
-        artifact: Service group artifact.
-        version: Service group version.
+        group: Namespace in reverse domain name format.
+        artifact: Name of the API or GA4GH specification implemented.
+        version: Version of the API or specification.
 
     Attributes:
-        group: Service group.
-        artifact: Service group artifact.
-        version: Service group version.
+        group: Namespace in reverse domain name format.
+        artifact: Name of the API or GA4GH specification implemented.
+        version: Version of the API or specification.
 
     Raises:
         pydantic.ValidationError: The class was instantianted with an illegal
             data type.
 
     Example:
-        >>> TypeConfig()
-        TypeConfig(group='org.ga4gh', artifact='service-registry', version='1.\
-0.0')
+        >>> TypeConfig(
+        ...     group='service.group',
+        ...     artifact='service_artifact',
+        ...     version='1.0.0'
+        ... )
+        TypeConfig(group='service.group', artifact='service_artifact', version\
+='1.0.0')
     """
-    group: str = "org.ga4gh"
-    artifact: str = "service-registry"
-    version: str = "1.0.0"
+    group: str
+    artifact: str
+    version: str
 
 
 class OrganizationConfig(FOCABaseConfig):
-    """Model for storing service organization information.
+    """Model for organization providing the service.
 
     Args:
-        name: Organization name.
-        url: Organization url.
+        name: Name of the organization responsible for the service.
+        url: URL of the website of the organization (RFC 3986 format).
 
     Attributes:
-        name: Organization name.
-        url: Organization url.
+        name: Name of the organization responsible for the service.
+        url: URL of the website of the organization (RFC 3986 format).
 
     Raises:
         pydantic.ValidationError: The class was instantianted with an illegal
             data type.
 
     Example:
-        >>> OrganizationConfig()
-        OrganizationConfig(name='ELIXIR Cloud & AAI', url='https://github.com/\
-elixir-cloud-aai/elixir-cloud-aai')
+        >>> OrganizationConfig(
+        ...     name='organization_name',
+        ...     url='organization_url'
+        ... )
+        OrganizationConfig(name='organization_name', url='organization_url')
     """
-    name: str = "ELIXIR Cloud & AAI"
-    url: str = "https://github.com/elixir-cloud-aai/elixir-cloud-aai"
+    name: str
+    url: str
 
 
 class ServiceInfoConfig(FOCABaseConfig):
-    """Model for service specific parameters.
+    """Model for service information parameters.
 
     Args:
-        id: Service identifier.
+        id: Unique identifier of this service.
         name: Service name.
-        type: Service type parameters.
+        type: Type of GA4GH service.
         description: Service description.
-        organization: Service organization parameters.
-        contactUrl: Service contact URL.
-        documentationUrl: Service documentation URL.
-        createdAt: Service creation timestamp.
-        updatedAt: Service updation timestamp.
-        environment: Service environment.
-        version: Service version.
+        organization: Organization providing the service.
+        contactUrl: URL of the contact for the provider of the service, e.g. a
+            link to a contact form (RFC 3986 format), or an email (RFC 2368
+            format).
+        documentationUrl: URL of the documentation of the service (RFC 3986
+            format). This should help someone learn how to use your service,
+            including any specifics required to access data, e.g. authentication.
+        createdAt: Timestamp describing when the service was first deployed and
+            available (RFC 3339 format).
+        updatedAt: Timestamp describing when the service was last updated (RFC
+            3339 format).
+        environment: Environment the service is running in. Use this to
+            distinguish between production, development and testing/staging
+            deployments. Suggested values are prod, test, dev, staging.
+        version: Version of the service being described. Semantic versioning
+            is recommended, but other identifiers, such as dates or commit
+            hashes, are also allowed. The version should be changed whenever
+            the service is updated.
 
     Attributes:
-        id: Service identifier.
+        id: Unique identifier of this service.
         name: Service name.
-        type: Service type parameters.
+        type: Type of GA4GH service.
         description: Service description.
-        organization: Service organization parameters.
-        contactUrl: Service contact URL.
-        documentationUrl: Service documentation URL.
-        createdAt: Service creation timestamp.
-        updatedAt: Service updation timestamp.
-        environment: Service environment.
-        version: Service version.
+        organization: Organization providing the service.
+        contactUrl: URL of the contact for the provider of the service, e.g. a
+            link to a contact form (RFC 3986 format), or an email (RFC 2368
+            format).
+        documentationUrl: URL of the documentation of the service (RFC 3986
+            format). This should help someone learn how to use your service,
+            including any specifics required to access data, e.g. authentication.
+        createdAt: Timestamp describing when the service was first deployed and
+            available (RFC 3339 format).
+        updatedAt: Timestamp describing when the service was last updated (RFC
+            3339 format).
+        environment: Environment the service is running in. Use this to
+            distinguish between production, development and testing/staging
+            deployments. Suggested values are prod, test, dev, staging.
+        version: Version of the service being described. Semantic versioning
+            is recommended, but other identifiers, such as dates or commit
+            hashes, are also allowed. The version should be changed whenever
+            the service is updated.
 
     Raises:
         pydantic.ValidationError: The class was instantianted with an illegal
             data type.
 
     Example:
-        >>> ServiceInfoConfig()
-        ServiceInfoConfig(id='ELIXIR_CLOUD_SERVICE_REGISTRY_1', name='ELIXIR_C\
-LOUD', type=TypeConfig(group='org.ga4gh', artifact='service-registry', version\
-='1.0.0'), description='Service registry for the ELIXIR Cloud network.', organ\
-ization=OrganizationConfig(name='ELIXIR Cloud & AAI', url='https://github.com/\
-elixir-cloud-aai/elixir-cloud-aai'), contactUrl='https://github.com/elixir-clo\
-ud-aai/elixir-cloud-aai', documentationUrl='https://github.com/elixir-cloud-aa\
-i/elixir-cloud-aai', createdAt='2020-11-04T12:58:19Z', updatedAt='2020-11-04T1\
-2:58:19Z', environment='dev', version='1.0.0-dev-201109')
+        >>> ServiceInfoConfig(
+        ...     id='service_id',
+        ...     name='service_name',
+        ...     type=TypeConfig(
+        ...         group='service.group',
+        ...         artifact='service_artifact',
+        ...         version='1.0.0'
+        ...     ),
+        ...     description='Service description.',
+        ...     organization=OrganizationConfig(
+        ...         name='organization_name',
+        ...         url='organization_url'
+        ...     ),
+        ...     contactUrl='service_contact_url',
+        ...     documentationUrl='service_document_url',
+        ...     createdAt='2020-11-04T12:58:19Z',
+        ...     updatedAt='2020-11-04T12:58:19Z',
+        ...     environment='dev',
+        ...     version='1.0.0-dev-XXXXXX'
+        ... )
+        ServiceInfoConfig(id='service_id', name='service_name', type=TypeConfi\
+g(group='service.group', artifact='service_artifact', version='1.0.0'), descri\
+ption='Service description.', organization=OrganizationConfig(name='organizati\
+on_name', url='organization_url'), contactUrl='service_contact_url', documenta\
+tionUrl='service_document_url', createdAt='2020-11-04T12:58:19Z', updatedAt='2\
+020-11-04T12:58:19Z', environment='dev', version='1.0.0-dev-XXXXXX')
     """
     id: str
-    name: str = "ELIXIR_CLOUD"
-    type: TypeConfig = TypeConfig()
-    description: str = "Service registry for the ELIXIR Cloud network."
-    organization: OrganizationConfig = OrganizationConfig()
-    contactUrl: str = "https://github.com/elixir-cloud-aai"
-    documentationUrl: str = "https://github.com/elixir-cloud-aai"
-    createdAt: str = '2020-11-04T12:58:19Z'
-    updatedAt: str = '2020-11-04T12:58:19Z'
-    environment: str = "dev"
-    version: str = "1.0.0-dev-201109"
+    name: str
+    type: TypeConfig
+    description: str
+    organization: OrganizationConfig
+    contactUrl: str
+    documentationUrl: str
+    createdAt: str
+    updatedAt: str
+    environment: str
+    version: str
 
 
 class IdConfig(FOCABaseConfig):
@@ -161,11 +211,14 @@ class IdConfig(FOCABaseConfig):
             data type.
 
     Example:
-        >>> IdConfig()
+        >>> IdConfig(
+        ...     charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+        ...     length=6
+        ... )
         IdConfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', length=6)
     """
-    charset: str = string.ascii_uppercase + string.digits
-    length: int = 6
+    charset: str
+    length: int
 
 
 class MetaVersionConfig(FOCABaseConfig):
@@ -185,11 +238,14 @@ class MetaVersionConfig(FOCABaseConfig):
             data type.
 
     Example:
-        >>> MetaVersionConfig()
+        >>> MetaVersionConfig(
+        ...     init=1,
+        ...     increment=1
+        ... )
         MetaVersionConfig(init=1, increment=1)
     """
-    init: int = 1
-    increment: int = 1
+    init: int
+    increment: int
 
 
 class ServicesConfig(FOCABaseConfig):
@@ -210,7 +266,16 @@ class ServicesConfig(FOCABaseConfig):
             data type.
 
     Example:
-        >>> ServicesConfig()
+        >>> ServicesConfig(
+        ...     id=IdConfig(
+        ...         charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+        ...         length=6
+        ...     ),
+        ...     meta_version=MetaVersionConfig(
+        ...         init=1,
+        ...         increment=1
+        ...     )
+        ... )
         ServicesConfig(id=IdConfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ01234567\
 89', length=6), meta_version=MetaVersionConfig(init=1, increment=1))
     """
@@ -236,19 +301,54 @@ class EndpointsConfig(FOCABaseConfig):
             data type.
 
     Example:
-        >>> EndpointsConfig()
-        EndpointsConfig(service=ServiceConfig(url_prefix='https', external_hos\
-t='0.0.0.0', external_port=8080, api_path=''), service_info=ServiceInfoConfig(\
-id='ELIXIR_CLOUD_SERVICE_REGISTRY_1', name='ELIXIR_CLOUD', type=TypeConfig(gro\
-up='org.ga4gh', artifact='service-registry', version='1.0.0'), description='Se\
-rvice registry for the ELIXIR Cloud network.', organization=OrganizationConfig\
-(name='ELIXIR Cloud & AAI', url='https://github.com/elixir-cloud-aai/elixir-cl\
-oud-aai'), contactUrl='https://github.com/elixir-cloud-aai/elixir-cloud-aai', \
-documentationUrl='https://github.com/elixir-cloud-aai/elixir-cloud-aai', creat\
-edAt='2020-11-04T12:58:19Z', updatedAt='2020-11-04T12:58:19Z', environment='de\
-v', version='1.0.0-dev-201109'), services=ServicesConfig(id=IdConfig(charset='\
-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', length=6), meta_version=MetaVersionConf\
-ig(init=1, increment=1)))
+        >>> EndpointsConfig(
+        ...     service=ServiceConfig(
+        ...         url_prefix='https',
+        ...         external_host='0.0.0.0',
+        ...         external_port=8080,
+        ...         api_path=''
+        ...     ),
+        ...     service_info=ServiceInfoConfig(
+        ...         id='',
+        ...         name='service_name',
+        ...         type=TypeConfig(
+        ...             group='service.group',
+        ...             artifact='service_artifact',
+        ...             version='1.0.0'
+        ...         ),
+        ...         description='Service description.',
+        ...         organization=OrganizationConfig(
+        ...             name='organization_name',
+        ...             url='organization_url'
+        ...         ),
+        ...         contactUrl='service_contact_url',
+        ...         documentationUrl='service_document_url',
+        ...         createdAt='2020-11-04T12:58:19Z',
+        ...         updatedAt='2020-11-04T12:58:19Z',
+        ...         environment='dev',
+        ...         version='1.0.0-dev-XXXXXX'
+        ...     ),
+        ...     services=ServicesConfig(
+        ...         id=IdConfig(
+        ...             charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+        ...             length=6
+        ...         ),
+        ...         meta_version=MetaVersionConfig(
+        ...             init=1,
+        ...             increment=1
+        ...         )
+        ...     ) 
+        ... )
+        EndpointsConfig(service=ServiceConfig(url_prefix='https',external_host\
+='0.0.0.0',external_port=8080,api_path=''),service_info=ServiceInfoConfig(id='\
+',name='service_name',type=TypeConfig(group='service.group',artifact='service_\
+artifact',version='1.0.0'),description='Service description.',organization=Org\
+anizationConfig(name='organization_name',url='organization_url'),contactUrl='s\
+ervice_contact_url',documentationUrl='service_document_url',createdAt='2020-11\
+-04T12:58:19Z',updatedAt='2020-11-04T12:58:19Z',environment='dev',version='1.0\
+.0-dev-XXXXXX'),services=ServicesConfig(id=IdConfig(charset='ABCDEFGHIJKLMNOPQ\
+RSTUVWXYZ0123456789',length=6),meta_version=MetaVersionConfig(init=1,increment\
+=1)))
     """
     service: ServiceConfig
     service_info: ServiceInfoConfig
@@ -269,18 +369,55 @@ class CustomConfig(FOCABaseConfig):
             data type.
 
     Example:
-        >>> CustomConfig()
+        >>> CustomConfig(
+        ...     endpoints=EndpointsConfig(
+        ...         service=ServiceConfig(
+        ...             url_prefix='https',
+        ...             external_host='0.0.0.0',
+        ...             external_port=8080,
+        ...             api_path=''
+        ...         ),
+        ...         service_info=ServiceInfoConfig(
+        ...             id='',
+        ...             name='service_name',
+        ...             type=TypeConfig(
+        ...                 group='service.group',
+        ...                 artifact='service_artifact',
+        ...                 version='1.0.0'
+        ...             ),
+        ...             description='Service description.',
+        ...             organization=OrganizationConfig(
+        ...                 name='organization_name',
+        ...                 url='organization_url'
+        ...             ),
+        ...             contactUrl='service_contact_url',
+        ...             documentationUrl='service_document_url',
+        ...             createdAt='2020-11-04T12:58:19Z',
+        ...             updatedAt='2020-11-04T12:58:19Z',
+        ...             environment='dev',
+        ...             version='1.0.0-dev-XXXXXX'
+        ...         ),
+        ...         services=ServicesConfig(
+        ...             id=IdConfig(
+        ...                 charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+        ...                 length=6
+        ...             ),
+        ...             meta_version=MetaVersionConfig(
+        ...                 init=1,
+        ...                 increment=1
+        ...             )
+        ...         ) 
+        ...     )
+        ... )
         CustomConfig(endpoints=EndpointsConfig(service=ServiceConfig(url_prefi\
-x='https', external_host='0.0.0.0', external_port=8080, api_path=''), service_\
-info=ServiceInfoConfig(id='ELIXIR_CLOUD_SERVICE_REGISTRY_1', name='ELIXIR_CLOU\
-D', type=TypeConfig(group='org.ga4gh', artifact='service-registry', version='1\
-.0.0'), description='Service registry for the ELIXIR Cloud network.', organiza\
-tion=OrganizationConfig(name='ELIXIR Cloud & AAI', url='https://github.com/eli\
-xir-cloud-aai/elixir-cloud-aai'), contactUrl='https://github.com/elixir-cloud-\
-aai/elixir-cloud-aai', documentationUrl='https://github.com/elixir-cloud-aai/e\
-lixir-cloud-aai', createdAt='2020-11-04T12:58:19Z', updatedAt='2020-11-04T12:5\
-8:19Z', environment='dev', version='1.0.0-dev-201109'), services=ServicesConfi\
-g(id=IdConfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', length=6), meta_\
-version=MetaVersionConfig(init=1, increment=1))))
+x='https',external_host='0.0.0.0',external_port=8080,api_path=''),service_info\
+=ServiceInfoConfig(id='',name='service_name',type=TypeConfig(group='service.gr\
+oup',artifact='service_artifact',version='1.0.0'),description='Service descrip\
+tion.',organization=OrganizationConfig(name='organization_name',url='organizat\
+ion_url'),contactUrl='service_contact_url',documentationUrl='service_document_\
+url',createdAt='2020-11-04T12:58:19Z',updatedAt='2020-11-04T12:58:19Z',environ\
+ment='dev',version='1.0.0-dev-XXXXXX'),services=ServicesConfig(id=IdConfig(cha\
+rset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',length=6),meta_version=MetaVersion\
+Config(init=1,increment=1))))
     """
     endpoints: EndpointsConfig
