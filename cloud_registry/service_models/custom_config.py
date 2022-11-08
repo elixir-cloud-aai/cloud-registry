@@ -1,7 +1,5 @@
 """Cloud Registry custom config models."""
 
-import string
-
 from foca.models.config import FOCABaseConfig
 
 
@@ -111,7 +109,8 @@ class ServiceInfoConfig(FOCABaseConfig):
             format).
         documentationUrl: URL of the documentation of the service (RFC 3986
             format). This should help someone learn how to use your service,
-            including any specifics required to access data, e.g. authentication.
+            including any specifics required to access data, e.g.
+            authentication.
         createdAt: Timestamp describing when the service was first deployed and
             available (RFC 3339 format).
         updatedAt: Timestamp describing when the service was last updated (RFC
@@ -135,7 +134,8 @@ class ServiceInfoConfig(FOCABaseConfig):
             format).
         documentationUrl: URL of the documentation of the service (RFC 3986
             format). This should help someone learn how to use your service,
-            including any specifics required to access data, e.g. authentication.
+            including any specifics required to access data, e.g.
+            authentication.
         createdAt: Timestamp describing when the service was first deployed and
             available (RFC 3339 format).
         updatedAt: Timestamp describing when the service was last updated (RFC
@@ -337,7 +337,7 @@ class EndpointsConfig(FOCABaseConfig):
         ...             init=1,
         ...             increment=1
         ...         )
-        ...     ) 
+        ...     )
         ... )
         EndpointsConfig(service=ServiceConfig(url_prefix='https',external_host\
 ='0.0.0.0',external_port=8080,api_path=''),service_info=ServiceInfoConfig(id='\
@@ -406,7 +406,7 @@ class CustomConfig(FOCABaseConfig):
         ...                 init=1,
         ...                 increment=1
         ...             )
-        ...         ) 
+        ...         )
         ...     )
         ... )
         CustomConfig(endpoints=EndpointsConfig(service=ServiceConfig(url_prefi\
