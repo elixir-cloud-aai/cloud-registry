@@ -84,7 +84,7 @@ jobs:
         uses: philips-software/docker-ci-scripts@v4.5.0
         with:
           dockerfile: .
-          image-name: "protes"
+          image-name: "cloud-registry"
           tags: "latest ${{ env.TAG }}"
           push-branches: "${{ github.event.repository.default_branch }}"
         env:
