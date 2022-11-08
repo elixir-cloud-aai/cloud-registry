@@ -1,5 +1,5 @@
 ##### BASE IMAGE #####
-FROM elixircloud/foca:20221108-py3.10
+FROM elixircloud/foca:20221107-py3.10
 
 ##### METADATA ##### 
 LABEL software="Cloud Registry"
