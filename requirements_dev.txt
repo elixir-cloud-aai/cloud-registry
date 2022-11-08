@@ -1,0 +1,5 @@
+coverage==6.3.2
+flake8==4.0.1
+mongomock==4.0.0
+mypy==0.971
+pytest==7.1.1

@@ -5,7 +5,7 @@ from typing import (Dict, List, Tuple)
 
 from flask import (current_app, request)
 from foca.utils.logging import log_traffic
-from cloud_registry.exceptions import NotFound
+from cloud_registry.exceptions import NotFound, BadRequest
 from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
 from cloud_registry.ga4gh.registry.service import RegisterService
 
@@ -20,8 +20,9 @@ def getServices(**kwargs) -> List:
     Returns:
         List of services.
     """
+    foca_conf = current_app.config.foca  # type: ignore[attr-defined]
     db_collection_service = (
-        current_app.config['FOCA'].db.dbs['serviceStore']
+        foca_conf.db.dbs['serviceStore']
         .collections['services'].client
     )
     records = db_collection_service.find(
@@ -42,8 +43,9 @@ def getServiceById(serviceId: str, **kwargs) -> Dict:
     Returns:
         Service object.
     """
+    foca_conf = current_app.config.foca  # type: ignore[attr-defined]
     db_collection_service = (
-        current_app.config['FOCA'].db.dbs['serviceStore']
+        foca_conf.db.dbs['serviceStore']
         .collections['services'].client
     )
     obj = db_collection_service.find_one({"id": serviceId})
@@ -88,9 +90,14 @@ def postService(**kwargs) -> str:
     Returns:
         Identifier of registered service.
     """
-    service = RegisterService(data=request.json)
-    service.register_metadata()
-    return service.data['id']
+    request_json = request.json
+    if isinstance(request_json, dict):
+        service = RegisterService(data=request_json)
+        service.register_metadata()
+        return service.data['id']
+    else:
+        logger.error("Invalid request payload.")
+        raise BadRequest
 
 
 # DELETE /services/{serviceId}
@@ -104,8 +111,9 @@ def deleteService(serviceId: str, **kwargs) -> str:
     Returns:
         Identifier of deleted service.
     """
+    foca_conf = current_app.config.foca  # type: ignore[attr-defined]
     db_collection_service = (
-        current_app.config['FOCA'].db.dbs['serviceStore']
+        foca_conf.db.dbs['serviceStore']
         .collections['services'].client
     )
     res = db_collection_service.delete_one({'id': serviceId})
@@ -125,12 +133,17 @@ def putService(serviceId: str, **kwargs) -> str:
     Returns:
         Identifier of registered/updated service.
     """
-    service = RegisterService(
-        data=request.json,
-        id=serviceId,
-    )
-    service.register_metadata()
-    return service.data['id']
+    request_json = request.json
+    if isinstance(request_json, dict):
+        service = RegisterService(
+            data=request_json,
+            id=serviceId,
+        )
+        service.register_metadata()
+        return service.data['id']
+    else:
+        logger.error("Invalid request payload.")
+        raise BadRequest
 
 
 # POST /service-info
@@ -141,6 +154,13 @@ def postServiceInfo(**kwargs) -> Tuple[None, str, Dict]:
     Returns:
         An empty 201 response with headers.
     """
-    service_info = RegisterServiceInfo()
-    headers = service_info.set_service_info_from_app_context(data=request.json)
-    return None, '201', headers
+    request_json = request.json
+    if isinstance(request_json, dict):
+        service_info = RegisterServiceInfo()
+        headers = service_info.set_service_info_from_app_context(
+            data=request_json
+        )
+        return None, '201', headers
+    else:
+        logger.error("Invalid request payload.")
+        raise BadRequest

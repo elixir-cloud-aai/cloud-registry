@@ -5,10 +5,7 @@ from typing import Dict
 
 from flask import current_app
 
-from cloud_registry.exceptions import (
-    NotFound,
-    ValidationError,
-)
+from cloud_registry.exceptions import NotFound
 
 logger = logging.getLogger(__name__)
 
@@ -31,14 +28,15 @@ class RegisterServiceInfo:
             conf_info: Service info details as per endpoints config.
             collection: Database collection storing service info objects.
         """
-        conf = current_app.config['FOCA'].endpoints
-        self.url_prefix = conf['service']['url_prefix']
-        self.host_name = conf['service']['external_host']
-        self.external_port = conf['service']['external_port']
-        self.api_path = conf['service']['api_path']
-        self.conf_info = conf['service_info']
+        foca_conf = current_app.config.foca  # type: ignore[attr-defined]
+        endpoint_conf = foca_conf.custom.endpoints
+        self.url_prefix = endpoint_conf.service.url_prefix
+        self.host_name = endpoint_conf.service.external_host
+        self.external_port = endpoint_conf.service.external_port
+        self.api_path = endpoint_conf.service.api_path
+        self.conf_info = endpoint_conf.service_info.dict()
         self.collection = (
-            current_app.config['FOCA'].db.dbs['serviceStore']
+            foca_conf.db.dbs['serviceStore']
             .collections['service_info'].client
         )
 
@@ -75,14 +73,7 @@ class RegisterServiceInfo:
             db_info = {}
         add = False if db_info == self.conf_info else True
         if add:
-            try:
-                self._upsert_service_info(data=self.conf_info)
-            except KeyError:
-                logger.exception(
-                    "The service info configuration does not conform to the "
-                    "API specification."
-                )
-                raise ValidationError
+            self._upsert_service_info(data=self.conf_info)
             logger.info(
                 "Service info registered."
             )

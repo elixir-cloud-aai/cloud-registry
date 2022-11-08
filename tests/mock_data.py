@@ -64,6 +64,9 @@ ENDPOINT_CONFIG = {
     "service_info": SERVICE_INFO_CONFIG,
     "services": SERVICES_CONFIG,
 }
+CUSTOM_CONFIG = {
+    "endpoints": ENDPOINT_CONFIG
+}
 HEADERS_SERVICE_INFO = {
     'Content-type': 'application/json',
     'Location': (
