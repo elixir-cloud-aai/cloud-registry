@@ -1,0 +1,99 @@
+# This workflow will build the project, lint, run tests, and build and push
+# Docker images. For more information see:
+# https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+
+name: build app
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+
+jobs:
+  analyze_code:
+    name: Static code analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+      - name: Install requirements
+        run: pip install -r requirements_dev.txt
+      - name: Lint with flake8
+        run: flake8
+      - name: Static type checking with mypy
+        run: mypy cloud_registry
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+    env:
+      PROBE_ENDPOINT: http://localhost:8080/ga4gh/registry/v1/ui/
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+      - name: Install requirements
+        run: pip install -r requirements_dev.txt
+      - name: Calculate unit test coverage
+        run: |
+          coverage run --source cloud_registry -m pytest -W ignore::DeprecationWarning
+          coverage xml
+      - name: Submit Report to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          fail_ci_if_error: true
+          verbose: true
+      - name: Start app
+        run: docker-compose up -d --build
+      - name: Wait until app is up
+        run: sleep 30
+      - name: Run health check
+        run: |
+          echo "${PROBE_ENDPOINT}"
+          test $( \
+            curl \
+             -sL \
+             -v \
+             -o /dev/null \
+             -w '%{http_code}' \
+             -X GET \
+             --header 'Accept: application/json' \
+             "${PROBE_ENDPOINT}" \
+            ) == '200' || exit 1
+  publish:
+    name: Build and publish app image
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' }}
+    needs: [lint, test]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+      - name: Generate tag
+        run: |
+          echo "TAG=$(date '+%Y%m%d')" >> $GITHUB_ENV
+      - name: Build and publish image
+        id: docker
+        uses: philips-software/docker-ci-scripts@v4.5.0
+        with:
+          dockerfile: .
+          image-name: "protes"
+          tags: "latest ${{ env.TAG }}"
+          push-branches: "${{ github.event.repository.default_branch }}"
+        env:
+          REGISTRY_USERNAME: ${{ secrets.DOCKERHUB_LOGIN }}
+          REGISTRY_TOKEN: "${{ secrets.DOCKERHUB_TOKEN }}"
+          DOCKER_ORGANIZATION: ${{ secrets.DOCKERHUB_ORG }}
+          GITHUB_ORGANIZATION: ${{ github.repository_owner }}
+      - name: Verify that image was pushed
+        run: |
+          echo "Push indicator: ${{ steps.docker.outputs.push-indicator }}"
+          echo "# Set to 'true' if image was pushed, empty string otherwise"
+          test "${{ steps.docker.outputs.push-indicator }}" == "true"
