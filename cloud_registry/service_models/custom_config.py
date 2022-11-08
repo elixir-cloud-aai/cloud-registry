@@ -130,7 +130,7 @@ ud-aai/elixir-cloud-aai', documentationUrl='https://github.com/elixir-cloud-aa\
 i/elixir-cloud-aai', createdAt='2020-11-04T12:58:19Z', updatedAt='2020-11-04T1\
 2:58:19Z', environment='dev', version='1.0.0-dev-201109')
     """
-    id: str = "ELIXIR_CLOUD_SERVICE_REGISTRY_1"
+    id: str
     name: str = "ELIXIR_CLOUD"
     type: TypeConfig = TypeConfig()
     description: str = "Service registry for the ELIXIR Cloud network."
@@ -214,8 +214,8 @@ class ServicesConfig(FOCABaseConfig):
         ServicesConfig(id=IdConfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ01234567\
 89', length=6), meta_version=MetaVersionConfig(init=1, increment=1))
     """
-    id: IdConfig = IdConfig()
-    meta_version: MetaVersionConfig = MetaVersionConfig()
+    id: IdConfig
+    meta_version: MetaVersionConfig
 
 
 class EndpointsConfig(FOCABaseConfig):
@@ -250,9 +250,9 @@ v', version='1.0.0-dev-201109'), services=ServicesConfig(id=IdConfig(charset='\
 ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', length=6), meta_version=MetaVersionConf\
 ig(init=1, increment=1)))
     """
-    service: ServiceConfig = ServiceConfig()
-    service_info: ServiceInfoConfig = ServiceInfoConfig()
-    services: ServicesConfig = ServicesConfig()
+    service: ServiceConfig
+    service_info: ServiceInfoConfig
+    services: ServicesConfig
 
 
 class CustomConfig(FOCABaseConfig):
@@ -283,4 +283,4 @@ lixir-cloud-aai', createdAt='2020-11-04T12:58:19Z', updatedAt='2020-11-04T12:5\
 g(id=IdConfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', length=6), meta_\
 version=MetaVersionConfig(init=1, increment=1))))
     """
-    endpoints: EndpointsConfig = EndpointsConfig()
+    endpoints: EndpointsConfig

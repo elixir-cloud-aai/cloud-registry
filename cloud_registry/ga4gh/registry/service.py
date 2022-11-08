@@ -41,7 +41,7 @@ class RegisterService:
             db_coll: Database collection for storing service objects.
         """
         foca_conf = current_app.config.foca  # type: ignore[attr-defined]
-        endpoint_conf = foca_conf.endpoints
+        endpoint_conf = foca_conf.custom.endpoints
         self.data = data
         self.data['id'] = None if id is None else id
         self.replace = True

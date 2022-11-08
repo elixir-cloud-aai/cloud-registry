@@ -5,10 +5,7 @@ from typing import Dict
 
 from flask import current_app
 
-from cloud_registry.exceptions import (
-    NotFound,
-    ValidationError,
-)
+from cloud_registry.exceptions import NotFound
 
 logger = logging.getLogger(__name__)
 
@@ -76,14 +73,7 @@ class RegisterServiceInfo:
             db_info = {}
         add = False if db_info == self.conf_info else True
         if add:
-            try:
-                self._upsert_service_info(data=self.conf_info.dict())
-            except KeyError:
-                logger.exception(
-                    "The service info configuration does not conform to the "
-                    "API specification."
-                )
-                raise ValidationError
+            self._upsert_service_info(data=self.conf_info.dict())
             logger.info(
                 "Service info registered."
             )
