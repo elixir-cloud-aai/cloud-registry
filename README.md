@@ -119,12 +119,12 @@ AAI][elixir-cloud]. Follow the link to get in touch with us via chat or email.
 Please mention the name of this service for any inquiry, proposal, question
 etc.
 
-[badge-build-status]:<https://travis-ci.com/elixir-cloud-aai/cloud-registry.svg?branch=dev>
+[badge-build-status]:<https://github.com/elixir-cloud-aai/cloud-registry/actions/workflows/checks.yaml/badge.svg>
 [badge-coverage]:<https://img.shields.io/coveralls/github/elixir-cloud-aai/cloud-registry>
 [badge-docs]: <https://readthedocs.org/projects/cloud-registry/badge/?version=latest>
 [badge-github-tag]:<https://img.shields.io/github/v/tag/elixir-cloud-aai/cloud-registry?color=C39BD3>
 [badge-license]:<https://img.shields.io/badge/license-Apache%202.0-blue.svg>
-[badge-url-build-status]:<https://travis-ci.com/elixir-cloud-aai/cloud-registry>
+[badge-url-build-status]:<https://github.com/elixir-cloud-aai/cloud-registry/actions/workflows/checks.yaml>
 [badge-url-coverage]:<https://coveralls.io/github/elixir-cloud-aai/cloud-registry>
 [badge-url-docs]: <https://cloud-registry.readthedocs.io/en/latest/?badge=latest>
 [badge-url-github-tag]:<https://github.com/elixir-cloud-aai/cloud-registry/releases>
