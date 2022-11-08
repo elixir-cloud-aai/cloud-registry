@@ -1,6 +1,4 @@
-import os
-
-from foca.foca import foca
+from foca import Foca
 from foca.security.auth import validate_token  # noqa: F401
 
 from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
@@ -8,12 +6,11 @@ from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
 
 def main():
     # create app object
-    app = foca(
-        os.path.join(
-            os.path.dirname(__file__),
-            "config.yaml",
-        )
+    foca = Foca(
+        config_file='config.yaml',
+        custom_config_model='service_models.custom_config.CustomConfig'
     )
+    app = foca.create_app()
 
     # register service info
     with app.app.app_context():

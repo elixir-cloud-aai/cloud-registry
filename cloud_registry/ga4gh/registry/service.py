@@ -40,7 +40,7 @@ class RegisterService:
             id_length: Length of generated service identifiers.
             db_coll: Database collection for storing service objects.
         """
-        conf = current_app.config['FOCA'].endpoints
+        conf = current_app.config.foca.endpoints
         self.data = data
         self.data['id'] = None if id is None else id
         self.replace = True
@@ -48,7 +48,7 @@ class RegisterService:
         self.id_charset: str = conf['services']['id']['charset']
         self.id_length = int(conf['services']['id']['length'])
         self.db_coll = (
-            current_app.config['FOCA'].db.dbs['serviceStore']
+            current_app.config.foca.db.dbs['serviceStore']
             .collections['services'].client
         )
 

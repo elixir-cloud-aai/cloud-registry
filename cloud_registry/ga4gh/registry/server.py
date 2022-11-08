@@ -21,7 +21,7 @@ def getServices(**kwargs) -> List:
         List of services.
     """
     db_collection_service = (
-        current_app.config['FOCA'].db.dbs['serviceStore']
+        current_app.config.foca.db.dbs['serviceStore']
         .collections['services'].client
     )
     records = db_collection_service.find(
@@ -43,7 +43,7 @@ def getServiceById(serviceId: str, **kwargs) -> Dict:
         Service object.
     """
     db_collection_service = (
-        current_app.config['FOCA'].db.dbs['serviceStore']
+        current_app.config.foca.db.dbs['serviceStore']
         .collections['services'].client
     )
     obj = db_collection_service.find_one({"id": serviceId})
@@ -105,7 +105,7 @@ def deleteService(serviceId: str, **kwargs) -> str:
         Identifier of deleted service.
     """
     db_collection_service = (
-        current_app.config['FOCA'].db.dbs['serviceStore']
+        current_app.config.foca.db.dbs['serviceStore']
         .collections['services'].client
     )
     res = db_collection_service.delete_one({'id': serviceId})

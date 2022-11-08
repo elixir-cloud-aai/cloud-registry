@@ -24,7 +24,7 @@ available [here][docs-api].
 Once [deployed](#Installation), the API will be served here:
 
 ```text
-http://localhost:8080/ga4gh/registry/v1/
+http://localhost:8080/ga4gh/registry/v1/ui/
 ```
 
 You can explore the service via the [Swagger UI][url-swagger].

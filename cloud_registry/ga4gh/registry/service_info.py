@@ -31,14 +31,14 @@ class RegisterServiceInfo:
             conf_info: Service info details as per endpoints config.
             collection: Database collection storing service info objects.
         """
-        conf = current_app.config['FOCA'].endpoints
-        self.url_prefix = conf['service']['url_prefix']
-        self.host_name = conf['service']['external_host']
-        self.external_port = conf['service']['external_port']
-        self.api_path = conf['service']['api_path']
-        self.conf_info = conf['service_info']
+        conf = current_app.config.foca.custom.endpoints
+        self.url_prefix = conf.service.url_prefix
+        self.host_name = conf.service.external_host
+        self.external_port = conf.service.external_port
+        self.api_path = conf.service.api_path
+        self.conf_info = conf.service_info
         self.collection = (
-            current_app.config['FOCA'].db.dbs['serviceStore']
+            current_app.config.foca.db.dbs['serviceStore']
             .collections['service_info'].client
         )
 
@@ -76,7 +76,7 @@ class RegisterServiceInfo:
         add = False if db_info == self.conf_info else True
         if add:
             try:
-                self._upsert_service_info(data=self.conf_info)
+                self._upsert_service_info(data=self.conf_info.dict())
             except KeyError:
                 logger.exception(
                     "The service info configuration does not conform to the "
