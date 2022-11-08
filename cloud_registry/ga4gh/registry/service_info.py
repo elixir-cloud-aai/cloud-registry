@@ -34,7 +34,7 @@ class RegisterServiceInfo:
         self.host_name = endpoint_conf.service.external_host
         self.external_port = endpoint_conf.service.external_port
         self.api_path = endpoint_conf.service.api_path
-        self.conf_info = endpoint_conf.service_info
+        self.conf_info = endpoint_conf.service_info.dict()
         self.collection = (
             foca_conf.db.dbs['serviceStore']
             .collections['service_info'].client
@@ -73,7 +73,7 @@ class RegisterServiceInfo:
             db_info = {}
         add = False if db_info == self.conf_info else True
         if add:
-            self._upsert_service_info(data=self.conf_info.dict())
+            self._upsert_service_info(data=self.conf_info)
             logger.info(
                 "Service info registered."
             )
