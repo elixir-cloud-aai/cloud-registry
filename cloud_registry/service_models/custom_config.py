@@ -54,14 +54,14 @@ class TypeConfig(FOCABaseConfig):
 
     Example:
         >>> TypeConfig()
-        TypeConfig(group='org.ga4gh', artifact='service-registry', version='1.0.0')
-
+        TypeConfig(group='org.ga4gh', artifact='service-registry', version='1.\
+0.0')
     """
     group: str = "org.ga4gh"
     artifact: str = "service-registry"
     version: str = "1.0.0"
 
-    
+
 class OrganizationConfig(FOCABaseConfig):
     """Model for storing service organization information.
 
@@ -135,8 +135,8 @@ i/elixir-cloud-aai', createdAt='2020-11-04T12:58:19Z', updatedAt='2020-11-04T1\
     type: TypeConfig = TypeConfig()
     description: str = "Service registry for the ELIXIR Cloud network."
     organization: OrganizationConfig = OrganizationConfig()
-    contactUrl: str = "https://github.com/elixir-cloud-aai/elixir-cloud-aai"
-    documentationUrl: str = "https://github.com/elixir-cloud-aai/elixir-cloud-aai"
+    contactUrl: str = "https://github.com/elixir-cloud-aai"
+    documentationUrl: str = "https://github.com/elixir-cloud-aai"
     createdAt: str = '2020-11-04T12:58:19Z'
     updatedAt: str = '2020-11-04T12:58:19Z'
     environment: str = "dev"
@@ -191,6 +191,7 @@ class MetaVersionConfig(FOCABaseConfig):
     init: int = 1
     increment: int = 1
 
+
 class ServicesConfig(FOCABaseConfig):
     """Model for defining the service database store for cloud registry. This
     defines the configurations for service identifiers stored on cloud
@@ -218,7 +219,7 @@ class ServicesConfig(FOCABaseConfig):
 
 
 class EndpointsConfig(FOCABaseConfig):
-    """Model for defining endpoint configuration parameters. 
+    """Model for defining endpoint configuration parameters.
 
     Args:
         service: Service run parameters.
