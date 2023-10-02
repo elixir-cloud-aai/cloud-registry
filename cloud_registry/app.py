@@ -21,5 +21,5 @@ def main():
     app.run(port=app.port)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
