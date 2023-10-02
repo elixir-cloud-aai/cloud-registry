@@ -1,0 +1,5 @@
+# This file is used to list commits which will be ignored by github to calculate git blame
+# These are commits which modify multiple parts of the codebase, e.g formatting changes
+
+# Format code using black
+971abded5e842b1d637035c219da1cdce91da8b1
