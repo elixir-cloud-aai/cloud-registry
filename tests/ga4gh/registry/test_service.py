@@ -5,7 +5,7 @@ import string  # noqa: F401
 from unittest.mock import MagicMock
 
 from flask import Flask
-from foca.models.config import (Config, MongoConfig)
+from foca.models.config import Config, MongoConfig
 import mongomock
 from pymongo.errors import DuplicateKeyError
 import pytest
@@ -44,25 +44,25 @@ class TestRegisterService:
         data = deepcopy(MOCK_SERVICE)
         with app.app_context():
             obj = RegisterService(data=data)
-            assert obj.data['name'] == MOCK_SERVICE['name']
-            assert obj.data['id'] is None
+            assert obj.data["name"] == MOCK_SERVICE["name"]
+            assert obj.data["id"] is None
 
     def test_register_metadata(self):
-        """Test for registering a service with a randomly assigned identifier.
-        """
+        """Test for registering a service with a randomly assigned identifier."""
         app = Flask(__name__)
         app.config.foca = Config(
             db=MongoConfig(**MONGO_CONFIG),
             custom=CustomConfig(**CUSTOM_CONFIG),
         )
-        app.config.foca.db.dbs['serviceStore'].collections['services'] \
-            .client = MagicMock()
+        app.config.foca.db.dbs["serviceStore"].collections[
+            "services"
+        ].client = MagicMock()
 
         data = deepcopy(MOCK_SERVICE)
         with app.app_context():
             obj = RegisterService(data=data)
             obj.register_metadata()
-            assert isinstance(obj.data['id'], str)
+            assert isinstance(obj.data["id"], str)
 
     def test_register_metadata_literal_id_charset(self):
         """Test for registering a service with a randomly assigned identifier
@@ -70,22 +70,21 @@ class TestRegisterService:
         """
         app = Flask(__name__)
         custom_config = deepcopy(CUSTOM_CONFIG)
-        custom_config['endpoints']['services']['id']['charset'] = (
-            MOCK_ID_ONE_CHAR
-        )
-        custom_config['endpoints']['services']['id']['length'] = 1
+        custom_config["endpoints"]["services"]["id"]["charset"] = MOCK_ID_ONE_CHAR
+        custom_config["endpoints"]["services"]["id"]["length"] = 1
         app.config.foca = Config(
             db=MongoConfig(**MONGO_CONFIG),
             custom=CustomConfig(**custom_config),
         )
-        app.config.foca.db.dbs['serviceStore'].collections['services'] \
-            .client = MagicMock()
+        app.config.foca.db.dbs["serviceStore"].collections[
+            "services"
+        ].client = MagicMock()
 
         data = deepcopy(MOCK_SERVICE)
         with app.app_context():
             obj = RegisterService(data=data)
             obj.register_metadata()
-            assert isinstance(obj.data['id'], str)
+            assert isinstance(obj.data["id"], str)
 
     def test_register_metadata_with_id(self):
         """Test for registering a service with a user-supplied identifier."""
@@ -94,14 +93,15 @@ class TestRegisterService:
             db=MongoConfig(**MONGO_CONFIG),
             custom=CustomConfig(**CUSTOM_CONFIG),
         )
-        app.config.foca.db.dbs['serviceStore'].collections['services'] \
-            .client = MagicMock()
+        app.config.foca.db.dbs["serviceStore"].collections[
+            "services"
+        ].client = MagicMock()
 
         data = deepcopy(MOCK_SERVICE)
         with app.app_context():
             obj = RegisterService(data=data, id=MOCK_ID)
             obj.register_metadata()
-            assert obj.data['id'] == MOCK_ID
+            assert obj.data["id"] == MOCK_ID
 
     def test_register_metadata_with_id_replace(self):
         """Test for updating an existing obj."""
@@ -112,16 +112,18 @@ class TestRegisterService:
         )
         mock_resp = deepcopy(MOCK_SERVICE)
         mock_resp["id"] = MOCK_ID
-        app.config.foca.db.dbs['serviceStore'].collections['services'] \
-            .client = MagicMock()
-        app.config.foca.db.dbs['serviceStore'].collections['services'] \
-            .client.insert_one(mock_resp)
+        app.config.foca.db.dbs["serviceStore"].collections[
+            "services"
+        ].client = MagicMock()
+        app.config.foca.db.dbs["serviceStore"].collections[
+            "services"
+        ].client.insert_one(mock_resp)
 
         data = deepcopy(MOCK_SERVICE)
         with app.app_context():
             obj = RegisterService(data=data, id=MOCK_ID)
             obj.register_metadata()
-            assert obj.data['id'] == MOCK_ID
+            assert obj.data["id"] == MOCK_ID
 
     def test_register_metadata_duplicate_key(self):
         """Test for registering a service; duplicate key error occurs."""
@@ -130,36 +132,37 @@ class TestRegisterService:
             db=MongoConfig(**MONGO_CONFIG),
             custom=CustomConfig(**CUSTOM_CONFIG),
         )
-        mock_resp = MagicMock(side_effect=[DuplicateKeyError(''), None])
-        app.config.foca.db.dbs['serviceStore'].collections['services'] \
-            .client = MagicMock()
-        app.config.foca.db.dbs['serviceStore'].collections['services'] \
-            .client.insert_one = mock_resp
+        mock_resp = MagicMock(side_effect=[DuplicateKeyError(""), None])
+        app.config.foca.db.dbs["serviceStore"].collections[
+            "services"
+        ].client = MagicMock()
+        app.config.foca.db.dbs["serviceStore"].collections[
+            "services"
+        ].client.insert_one = mock_resp
 
         data = deepcopy(MOCK_SERVICE)
         with app.app_context():
             obj = RegisterService(data=data)
             obj.register_metadata()
-            assert isinstance(obj.data['id'], str)
+            assert isinstance(obj.data["id"], str)
 
     def test_register_metadata_duplicate_keys_repeated(self):
-        """Test for registering a service; running out of unique identifiers.
-        """
+        """Test for registering a service; running out of unique identifiers."""
         custom_config = deepcopy(CUSTOM_CONFIG)
-        custom_config['endpoints']['services']['id']['length'] = (
-            MOCK_ID_ONE_CHAR
-        )
-        custom_config['endpoints']['services']['id']['length'] = 1
+        custom_config["endpoints"]["services"]["id"]["length"] = MOCK_ID_ONE_CHAR
+        custom_config["endpoints"]["services"]["id"]["length"] = 1
         app = Flask(__name__)
         app.config.foca = Config(
             db=MongoConfig(**MONGO_CONFIG),
             custom=CustomConfig(**CUSTOM_CONFIG),
         )
         mock_resp = deepcopy(MOCK_SERVICE)
-        app.config.foca.db.dbs['serviceStore'].collections['services'] \
-            .client = mongomock.MongoClient().db.collection
-        app.config.foca.db.dbs['serviceStore'].collections['services'] \
-            .client.insert_one(mock_resp)
+        app.config.foca.db.dbs["serviceStore"].collections[
+            "services"
+        ].client = mongomock.MongoClient().db.collection
+        app.config.foca.db.dbs["serviceStore"].collections[
+            "services"
+        ].client.insert_one(mock_resp)
 
         data = deepcopy(MOCK_SERVICE)
         with app.app_context():
@@ -168,4 +171,4 @@ class TestRegisterService:
                 obj.register_metadata()
                 obj = RegisterService(data=data)
                 obj.register_metadata()
-                print(obj.data['id'])
+                print(obj.data["id"])

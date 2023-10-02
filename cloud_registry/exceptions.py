@@ -59,7 +59,7 @@ exceptions = {
         "title": "Internal server error",
         "detail": "An unexpected error occurred.",
         "status": 500,
-    }
+    },
 }
 
 

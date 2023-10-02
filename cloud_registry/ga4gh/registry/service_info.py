@@ -36,8 +36,7 @@ class RegisterServiceInfo:
         self.api_path = endpoint_conf.service.api_path
         self.conf_info = endpoint_conf.service_info.dict()
         self.collection = (
-            foca_conf.db.dbs['serviceStore']
-            .collections['service_info'].client
+            foca_conf.db.dbs["serviceStore"].collections["service_info"].client
         )
 
     def get_service_info(self) -> Dict:
@@ -47,10 +46,12 @@ class RegisterServiceInfo:
             Latest service info details.
         """
         try:
-            return self.collection.find(
-                {},
-                {'_id': False}
-            ).sort([('_id', -1)]).limit(1).next()
+            return (
+                self.collection.find({}, {"_id": False})
+                .sort([("_id", -1)])
+                .limit(1)
+                .next()
+            )
         except StopIteration:
             raise NotFound
 
@@ -74,13 +75,9 @@ class RegisterServiceInfo:
         add = False if db_info == self.conf_info else True
         if add:
             self._upsert_service_info(data=self.conf_info)
-            logger.info(
-                "Service info registered."
-            )
+            logger.info("Service info registered.")
         else:
-            logger.info(
-                "Using available service info."
-            )
+            logger.info("Using available service info.")
 
     def set_service_info_from_app_context(
         self,
@@ -103,7 +100,7 @@ class RegisterServiceInfo:
     ) -> None:
         """Insert or updated service info document."""
         self.collection.replace_one(
-            filter={'id': data['id']},
+            filter={"id": data["id"]},
             replacement=data,
             upsert=True,
         )
@@ -115,9 +112,9 @@ class RegisterServiceInfo:
             Response headers.
         """
         headers: Dict = {
-            'Content-type': 'application/json',
+            "Content-type": "application/json",
         }
-        headers['Location'] = (
+        headers["Location"] = (
             f"{self.url_prefix}://{self.host_name}:{self.external_port}/"
             f"{self.api_path}/service-info"
         )

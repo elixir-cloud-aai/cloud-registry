@@ -32,6 +32,7 @@ class ServiceConfig(FOCABaseConfig):
         ServiceConfig(url_prefix='https', external_host='0.0.0.0', external_po\
 rt=8080, api_path='')
     """
+
     url_prefix: str
     external_host: str
     external_port: int
@@ -64,6 +65,7 @@ class TypeConfig(FOCABaseConfig):
         TypeConfig(group='service.group', artifact='service_artifact', version\
 ='1.0.0')
     """
+
     group: str
     artifact: str
     version: str
@@ -91,6 +93,7 @@ class OrganizationConfig(FOCABaseConfig):
         ... )
         OrganizationConfig(name='organization_name', url='organization_url')
     """
+
     name: str
     url: str
 
@@ -180,6 +183,7 @@ on_name', url='organization_url'), contactUrl='service_contact_url', documenta\
 tionUrl='service_document_url', createdAt='2020-11-04T12:58:19Z', updatedAt='2\
 020-11-04T12:58:19Z', environment='dev', version='1.0.0-dev-XXXXXX')
     """
+
     id: str
     name: str
     type: TypeConfig
@@ -217,6 +221,7 @@ class IdConfig(FOCABaseConfig):
         ... )
         IdConfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', length=6)
     """
+
     charset: str
     length: int
 
@@ -244,6 +249,7 @@ class MetaVersionConfig(FOCABaseConfig):
         ... )
         MetaVersionConfig(init=1, increment=1)
     """
+
     init: int
     increment: int
 
@@ -279,6 +285,7 @@ class ServicesConfig(FOCABaseConfig):
         ServicesConfig(id=IdConfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ01234567\
 89', length=6), meta_version=MetaVersionConfig(init=1, increment=1))
     """
+
     id: IdConfig
     meta_version: MetaVersionConfig
 
@@ -350,6 +357,7 @@ ervice_contact_url',documentationUrl='service_document_url',createdAt='2020-11\
 RSTUVWXYZ0123456789',length=6),meta_version=MetaVersionConfig(init=1,increment\
 =1)))
     """
+
     service: ServiceConfig
     service_info: ServiceInfoConfig
     services: ServicesConfig
@@ -420,4 +428,5 @@ ment='dev',version='1.0.0-dev-XXXXXX'),services=ServicesConfig(id=IdConfig(cha\
 rset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',length=6),meta_version=MetaVersion\
 Config(init=1,increment=1))))
     """
+
     endpoints: EndpointsConfig
