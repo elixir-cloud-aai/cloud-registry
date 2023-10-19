@@ -26,6 +26,8 @@ jobs:
         run: flake8
       - name: Static type checking with mypy
         run: mypy cloud_registry
+      - name: Code formatting check with black
+        run: black --check .
   test:
     name: Run tests
     runs-on: ubuntu-latest

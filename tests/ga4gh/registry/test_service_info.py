@@ -5,7 +5,7 @@ import string  # noqa: F401
 import pytest
 
 from flask import Flask
-from foca.models.config import (Config, MongoConfig)
+from foca.models.config import Config, MongoConfig
 import mongomock
 
 from tests.mock_data import (
@@ -38,7 +38,7 @@ class TestRegisterServiceInfo:
 
         with app.app_context():
             service_info = RegisterServiceInfo()
-            assert service_info.url_prefix == SERVICE_CONFIG['url_prefix']
+            assert service_info.url_prefix == SERVICE_CONFIG["url_prefix"]
 
     def test_get_service_info(self):
         """Test for getting service info."""
@@ -48,10 +48,10 @@ class TestRegisterServiceInfo:
             custom=CustomConfig(**CUSTOM_CONFIG),
         )
         mock_resp = deepcopy(SERVICE_INFO_CONFIG)
-        app.config.foca.db.dbs[DB].collections[coll] \
-            .client = mongomock.MongoClient().db.collection
-        app.config.foca.db.dbs[DB].collections[coll] \
-            .client.insert_one(mock_resp)
+        app.config.foca.db.dbs[DB].collections[
+            coll
+        ].client = mongomock.MongoClient().db.collection
+        app.config.foca.db.dbs[DB].collections[coll].client.insert_one(mock_resp)
 
         with app.app_context():
             service_info = RegisterServiceInfo()
@@ -65,8 +65,9 @@ class TestRegisterServiceInfo:
             db=MongoConfig(**MONGO_CONFIG),
             custom=CustomConfig(**CUSTOM_CONFIG),
         )
-        app.config.foca.db.dbs[DB].collections[coll] \
-            .client = mongomock.MongoClient().db.collection
+        app.config.foca.db.dbs[DB].collections[
+            coll
+        ].client = mongomock.MongoClient().db.collection
 
         with app.app_context():
             with pytest.raises(NotFound):
@@ -79,8 +80,9 @@ class TestRegisterServiceInfo:
             db=MongoConfig(**MONGO_CONFIG),
             custom=CustomConfig(**CUSTOM_CONFIG),
         )
-        app.config.foca.db.dbs[DB].collections[coll] \
-            .client = mongomock.MongoClient().db.collection
+        app.config.foca.db.dbs[DB].collections[
+            coll
+        ].client = mongomock.MongoClient().db.collection
 
         with app.app_context():
             service_info = RegisterServiceInfo()
@@ -97,10 +99,10 @@ class TestRegisterServiceInfo:
             custom=CustomConfig(**CUSTOM_CONFIG),
         )
         mock_resp = deepcopy(SERVICE_INFO_CONFIG)
-        app.config.foca.db.dbs[DB].collections[coll] \
-            .client = mongomock.MongoClient().db.collection
-        app.config.foca.db.dbs[DB].collections[coll] \
-            .client.insert_one(mock_resp)
+        app.config.foca.db.dbs[DB].collections[
+            coll
+        ].client = mongomock.MongoClient().db.collection
+        app.config.foca.db.dbs[DB].collections[coll].client.insert_one(mock_resp)
 
         with app.app_context():
             service_info = RegisterServiceInfo()
@@ -114,8 +116,9 @@ class TestRegisterServiceInfo:
             db=MongoConfig(**MONGO_CONFIG),
             custom=CustomConfig(**CUSTOM_CONFIG),
         )
-        app.config.foca.db.dbs[DB].collections[coll] \
-            .client = mongomock.MongoClient().db.collection
+        app.config.foca.db.dbs[DB].collections[
+            coll
+        ].client = mongomock.MongoClient().db.collection
 
         with app.app_context():
             service_info = RegisterServiceInfo()
@@ -131,11 +134,12 @@ class TestRegisterServiceInfo:
             db=MongoConfig(**MONGO_CONFIG),
             custom=CustomConfig(**CUSTOM_CONFIG),
         )
-        app.config.foca.db.dbs[DB].collections[coll] \
-            .client = mongomock.MongoClient().db.collection
+        app.config.foca.db.dbs[DB].collections[
+            coll
+        ].client = mongomock.MongoClient().db.collection
 
         data = deepcopy(SERVICE_INFO_CONFIG)
-        del data['contactUrl']
+        del data["contactUrl"]
         with app.app_context():
             service_info = RegisterServiceInfo()
             service_info._upsert_service_info(data=data)
@@ -150,13 +154,13 @@ class TestRegisterServiceInfo:
             custom=CustomConfig(**CUSTOM_CONFIG),
         )
         mock_resp = deepcopy(SERVICE_INFO_CONFIG)
-        app.config.foca.db.dbs[DB].collections[coll] \
-            .client = mongomock.MongoClient().db.collection
-        app.config.foca.db.dbs[DB].collections[coll] \
-            .client.insert_one(mock_resp)
+        app.config.foca.db.dbs[DB].collections[
+            coll
+        ].client = mongomock.MongoClient().db.collection
+        app.config.foca.db.dbs[DB].collections[coll].client.insert_one(mock_resp)
 
         data = deepcopy(SERVICE_INFO_CONFIG)
-        del data['contactUrl']
+        del data["contactUrl"]
         with app.app_context():
             service_info = RegisterServiceInfo()
             service_info._upsert_service_info(data=data)

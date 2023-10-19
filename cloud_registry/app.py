@@ -7,8 +7,8 @@ from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
 def main():
     # create app object
     foca = Foca(
-        config_file='config.yaml',
-        custom_config_model='service_models.custom_config.CustomConfig'
+        config_file="config.yaml",
+        custom_config_model="service_models.custom_config.CustomConfig",
     )
     app = foca.create_app()
 
@@ -21,5 +21,5 @@ def main():
     app.run(port=app.port)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

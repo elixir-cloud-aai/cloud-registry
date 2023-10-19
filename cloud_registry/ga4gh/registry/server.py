@@ -1,9 +1,9 @@
 """Controllers for service endpoints."""
 
 import logging
-from typing import (Dict, List, Tuple)
+from typing import Dict, List, Tuple
 
-from flask import (current_app, request)
+from flask import current_app, request
 from foca.utils.logging import log_traffic
 from cloud_registry.exceptions import NotFound, BadRequest
 from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
@@ -22,8 +22,7 @@ def getServices(**kwargs) -> List:
     """
     foca_conf = current_app.config.foca  # type: ignore[attr-defined]
     db_collection_service = (
-        foca_conf.db.dbs['serviceStore']
-        .collections['services'].client
+        foca_conf.db.dbs["serviceStore"].collections["services"].client
     )
     records = db_collection_service.find(
         filter={},
@@ -45,8 +44,7 @@ def getServiceById(serviceId: str, **kwargs) -> Dict:
     """
     foca_conf = current_app.config.foca  # type: ignore[attr-defined]
     db_collection_service = (
-        foca_conf.db.dbs['serviceStore']
-        .collections['services'].client
+        foca_conf.db.dbs["serviceStore"].collections["services"].client
     )
     obj = db_collection_service.find_one({"id": serviceId})
     if not obj:
@@ -64,7 +62,7 @@ def getServiceTypes(**kwargs) -> List:
         List of distinct service types.
     """
     services = getServices.__wrapped__()
-    types = [s['type'] for s in services]
+    types = [s["type"] for s in services]
     uniq_types = [dict(t) for t in {tuple(sorted(d.items())) for d in types}]
 
     return uniq_types
@@ -94,7 +92,7 @@ def postService(**kwargs) -> str:
     if isinstance(request_json, dict):
         service = RegisterService(data=request_json)
         service.register_metadata()
-        return service.data['id']
+        return service.data["id"]
     else:
         logger.error("Invalid request payload.")
         raise BadRequest
@@ -113,10 +111,9 @@ def deleteService(serviceId: str, **kwargs) -> str:
     """
     foca_conf = current_app.config.foca  # type: ignore[attr-defined]
     db_collection_service = (
-        foca_conf.db.dbs['serviceStore']
-        .collections['services'].client
+        foca_conf.db.dbs["serviceStore"].collections["services"].client
     )
-    res = db_collection_service.delete_one({'id': serviceId})
+    res = db_collection_service.delete_one({"id": serviceId})
     if not res.deleted_count:
         raise NotFound
     return serviceId
@@ -140,7 +137,7 @@ def putService(serviceId: str, **kwargs) -> str:
             id=serviceId,
         )
         service.register_metadata()
-        return service.data['id']
+        return service.data["id"]
     else:
         logger.error("Invalid request payload.")
         raise BadRequest
@@ -157,10 +154,8 @@ def postServiceInfo(**kwargs) -> Tuple[None, str, Dict]:
     request_json = request.json
     if isinstance(request_json, dict):
         service_info = RegisterServiceInfo()
-        headers = service_info.set_service_info_from_app_context(
-            data=request_json
-        )
-        return None, '201', headers
+        headers = service_info.set_service_info_from_app_context(data=request_json)
+        return None, "201", headers
     else:
         logger.error("Invalid request payload.")
         raise BadRequest

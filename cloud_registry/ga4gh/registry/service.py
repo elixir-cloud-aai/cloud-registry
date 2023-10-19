@@ -2,9 +2,9 @@
 
 import logging
 import string  # noqa: F401
-from typing import (Dict, Optional)
+from typing import Dict, Optional
 
-from flask import (current_app)
+from flask import current_app
 from pymongo.errors import DuplicateKeyError
 
 from cloud_registry.exceptions import InternalServerError
@@ -43,15 +43,12 @@ class RegisterService:
         foca_conf = current_app.config.foca  # type: ignore[attr-defined]
         endpoint_conf = foca_conf.custom.endpoints
         self.data = data
-        self.data['id'] = None if id is None else id
+        self.data["id"] = None if id is None else id
         self.replace = True
         self.was_replaced = False
         self.id_charset: str = endpoint_conf.services.id.charset
         self.id_length = int(endpoint_conf.services.id.length)
-        self.db_coll = (
-            foca_conf.db.dbs['serviceStore']
-            .collections['services'].client
-        )
+        self.db_coll = foca_conf.db.dbs["serviceStore"].collections["services"].client
 
     def register_metadata(self, retries: int = 9) -> None:
         """Register service.
@@ -64,19 +61,17 @@ class RegisterService:
         """
         # keep trying to generate unique ID
         for i in range(retries + 1):
-
             # set random ID unless ID is provided
-            if self.data['id'] is None:
+            if self.data["id"] is None:
                 self.replace = False
-                self.data['id'] = generate_id(
-                    charset=self.id_charset,
-                    length=self.id_length
+                self.data["id"] = generate_id(
+                    charset=self.id_charset, length=self.id_length
                 )
 
             # replace or insert service, then return (PUT)
             if self.replace:
                 result_object = self.db_coll.replace_one(
-                    filter={'id': self.data['id']},
+                    filter={"id": self.data["id"]},
                     replacement=self.data,
                     upsert=True,
                 )
