@@ -3,3 +3,9 @@ max-line-length = 88
 target-version = ["py310"]
 workers = 1
 
+[tool.mypy]
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["cloud_registry"]
+omit = ["cloud_registry/app.py"]
