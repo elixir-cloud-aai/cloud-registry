@@ -14,8 +14,7 @@ COPY ./ /app
 
 ## Install app
 RUN cd /app \
-  && python setup.py develop \
-  && pip install -r requirements.txt \
+  && pip install -e . \
   && cd / \
   && chmod g+w /app/cloud_registry/api/ \
   && pip install yq
