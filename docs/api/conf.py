@@ -19,7 +19,7 @@ root_dir = Path.cwd().resolve().parents[1]
 
 sys.path.insert(0, root_dir)
 
-exec(open(root_dir / "cloud_registry" / "version.py").read())
+__version__ = open(root_dir / "cloud_registry" / "version").read()
 
 
 # -- Project information -----------------------------------------------------
