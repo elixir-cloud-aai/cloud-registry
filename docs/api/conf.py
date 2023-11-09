@@ -20,7 +20,7 @@ root_dir = Path.cwd().resolve().parents[1]
 
 sys.path.insert(0, root_dir)
 
-with open(root_dir / "pyproject.toml", 'r') as f:
+with open(root_dir / "pyproject.toml", "r") as f:
     config = toml.load(f)
     __version__ = config["project"]["version"]
 
