@@ -3,3 +3,55 @@ max-line-length = 88
 target-version = ["py310"]
 workers = 1
 
+[tool.mypy]
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["cloud_registry"]
+omit = ["cloud_registry/app.py"]
+
+[tool.flake8]
+exclude = [".git", ".eggs", "build", "venv", "env"]
+max-line-length = 88
+extend-ignore = "E203"
+
+[project]
+name ="cloud-registry"
+version="0.2.0"
+authors = [{name = "ELIXIR Cloud & AAI"}, {email = "alexander.kanitz@alumni.ethz.ch"}]
+keywords = [
+    "ga4gh", "service", "registry", "elixir", "cloud", "rest", "restful", 
+    "api", "app", "server", "openapi", "swagger", "mongodb", "python", "flask"
+]
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3.8",
+]
+description = "GA4GH Service Registry API implementation for the ELIXIR Cloud"
+dynamic = ["dependencies"]
+
+[project.license]
+text = "Apache License 2.0"
+
+[project.readme]
+file = "README.md"
+content-type = "text/markdown"
+
+[project.urls]
+homepage = "https://github.com/elixir-cloud-aai/cloud-registry.git"
+
+[tool.setuptools.dynamic.version]
+file = ["cloud_registry/version"]
+
+[tool.setuptools.packages.find]
+exclude = ["deployment", "docs"]
+
+[tool.setuptools.dynamic.dependencies]
+file = ["requirements.txt"]
+
+[tool.setuptools.dynamic.optional-dependencies]
+dev = { file = ["requirements_dev.txt"] }
