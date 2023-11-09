@@ -1,6 +1,6 @@
 coverage==6.3.2
 Flake8-pyproject==1.2.3
-flake8==4.0.1
+flake8==6.1.0
 mongomock==4.0.0
 mypy==0.971
 pytest==7.1.1
