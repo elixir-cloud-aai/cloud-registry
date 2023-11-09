@@ -12,6 +12,7 @@
 #
 from pathlib import Path
 import sys
+import toml
 
 from sphinx.ext import apidoc
 
@@ -19,7 +20,9 @@ root_dir = Path.cwd().resolve().parents[1]
 
 sys.path.insert(0, root_dir)
 
-__version__ = open(root_dir / "cloud_registry" / "version").read()
+with open(root_dir / "pyproject.toml", 'r') as f:
+    config = toml.load(f)
+    __version__ = config["project"]["version"]
 
 
 # -- Project information -----------------------------------------------------
