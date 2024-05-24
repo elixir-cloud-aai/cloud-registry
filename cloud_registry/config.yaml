@@ -53,9 +53,9 @@ db:
 api:
     specs:
         - path:
-            - api/20201108.11d2c12.service-info.yaml
-            - api/20201108.e0358db.openapi.yaml
-            - api/additions.openapi.yaml
+            - cloud_registry/api/20201108.11d2c12.service-info.yaml
+            - cloud_registry/api/20201108.e0358db.openapi.yaml
+            - cloud_registry/api/additions.openapi.yaml
           add_operation_fields:
               x-openapi-router-controller: ga4gh.registry.server
           add_security_fields:
