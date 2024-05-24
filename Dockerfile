@@ -19,4 +19,6 @@ RUN cd /app \
   && chmod g+w /app/cloud_registry/api/ \
   && pip install yq
 
-CMD ["bash", "-c", "cd /app/cloud_registry; python app.py"]
+WORKDIR /app
+
+CMD ["python", "cloud_registry/app.py"]
