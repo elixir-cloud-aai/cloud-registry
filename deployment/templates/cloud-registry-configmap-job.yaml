@@ -28,6 +28,8 @@ spec:
           value: {{ .Values.cloud_registry.appName }}
         - name: HOST_NAME
           value:  {{ .Values.host_name }}
+        - name: MONGO_HOST
+          value: mongodb-{{ .Values.cloud-registry.appName }}
       restartPolicy: Never
       serviceAccountName: {{ .Values.cloud_registry.appName }}-configurer
 status: {}
