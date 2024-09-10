@@ -1,25 +1,20 @@
+"""Entry point to start service."""
+from pathlib import Path
+
+from connexion import App
 from foca import Foca
-from foca.security.auth import validate_token  # noqa: F401
-
-from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
 
 
-def main():
-    # create app object
-    foca = Foca(
-        config_file='config.yaml',
-        custom_config_model='service_models.custom_config.CustomConfig'
-    )
+def init_app() -> App:
+    foca = Foca(Path(__file__).resolve().parent / "config.yaml")
     app = foca.create_app()
+    return app
 
-    # register service info
-    with app.app.app_context():
-        service_info = RegisterServiceInfo()
-        service_info.set_service_info_from_config()
 
-    # start app
+def run_app(app: App) -> None:
     app.run(port=app.port)
 
 
 if __name__ == '__main__':
-    main()
+    app = init_app()
+    run_app(app)

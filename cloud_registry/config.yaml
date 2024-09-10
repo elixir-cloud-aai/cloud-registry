@@ -59,7 +59,7 @@ api:
           add_operation_fields:
               x-openapi-router-controller: ga4gh.registry.server
           add_security_fields:
-              x-bearerInfoFunc: app.validate_token
+              x-bearerInfoFunc: foca.security.auth.validate_token
           disable_auth: False
           connexion:
               strict_validation: True
