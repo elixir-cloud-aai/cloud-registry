@@ -2,10 +2,10 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
-host_name: ""
+host_name: "tristan-registry.rahtiapp.fi"
 
 cloud_registry:
-  image: elixircloud/cloud-registry:latest
+  image: elixircloud/cloud-registry:20240716
   appName: cloud-registry
   resources:
     limits:
