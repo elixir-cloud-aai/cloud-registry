@@ -7,6 +7,12 @@ host_name: ""
 cloud_registry:
   image: elixircloud/cloud-registry:20240716
   appName: cloud-registry
+  # if ingress.enabled: false, it will deploy an OpenShift Route (https://docs.redhat.com/en/documentation/openshift_container_platform/4.19/html/network_apis/route-route-openshift-io-v1)
+  ingress:
+    enabled: true
+    https:
+      enabled: false
+      issuer: letsencrypt-prod
   resources:
     limits:
       cpu: 100m
