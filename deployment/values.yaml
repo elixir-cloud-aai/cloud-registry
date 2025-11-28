@@ -2,14 +2,29 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
-host_name: cloud-registry.rahtiapp.fi
+host_name: ""
 
 cloud_registry:
-  image: elixircloud/cloud-registry:0.1.0
+  image: elixircloud/cloud-registry:latest
   appName: cloud-registry
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
 
 apiServer: kubernetes.default.svc:443 # address of k8s API server
 
 mongodb:
-  image: mongo:3.6
+  image: docker.io/library/mongo:noble
   volumeSize: 1Gi
+  resources:
+    limits:
+      cpu: 200m
+      memory: 512Mi
+    requests:
+      cpu: 200m
+      memory: 512Mi
+

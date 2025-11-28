@@ -47,4 +47,3 @@ spec:
               path: config.yaml
           name: app-config
         name: config-yaml
-status:

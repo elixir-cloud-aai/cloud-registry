@@ -12,5 +12,3 @@ spec:
     app: {{ .Values.cloud_registry.appName }}
   sessionAffinity: None
   type: ClusterIP
-status:
-  loadBalancer: {}
