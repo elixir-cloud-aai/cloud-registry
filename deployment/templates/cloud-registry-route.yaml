@@ -1,4 +1,4 @@
-{{ if .Capabilities.APIVersions.Has "route.openshift.io/v1" }}
+{{ if (and (.Capabilities.APIVersions.Has "route.openshift.io/v1") (not .Values.cloud_registry.ingress.enabled)) }}
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
@@ -15,6 +15,4 @@ spec:
     name: {{ .Values.cloud_registry.appName }}
     weight: 100
   wildcardPolicy: None
-status:
-  ingress: []
 {{ end }}

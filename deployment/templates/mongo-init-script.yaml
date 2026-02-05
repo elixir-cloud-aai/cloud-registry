@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mongo-init-script
+data:
+  init-script.js: |
+    db = db.getSiblingDB('serviceStore');
+
+    // Create the 'services' and 'service_info' collections
+    // Database configuration from https://github.com/elixir-cloud-aai/cloud-registry/blob/fa8a1b0dd1361751574550116150a630035dc199/cloud_registry/config.yaml#L32
+    db.createCollection('services');
+    db.services.createIndex(
+      { id: 1 },
+      { unique: true }
+    );
+    db.createCollection('service_info');
+    db.service_info.createIndex(
+      { id: 1 },
+      { unique: true }
+    );
+

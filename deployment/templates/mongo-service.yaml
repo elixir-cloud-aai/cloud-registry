@@ -14,5 +14,3 @@ spec:
     app: mongodb
   sessionAffinity: None
   type: ClusterIP
-status:
-  loadBalancer: {}

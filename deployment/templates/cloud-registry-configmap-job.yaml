@@ -29,10 +29,9 @@ spec:
         - name: HOST_NAME
           value:  {{ .Values.host_name }}
         - name: MONGO_HOST
-          value: mongodb-{{ .Values.cloud-registry.appName }}
+          value: mongodb
       restartPolicy: Never
       serviceAccountName: {{ .Values.cloud_registry.appName }}-configurer
-status: {}
 ---
 apiVersion: v1
 kind: ServiceAccount
