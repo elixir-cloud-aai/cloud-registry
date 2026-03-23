@@ -1,13 +1,15 @@
 """Controller for service info endpoint."""
 
 import logging
-from typing import Dict
+from datetime import datetime, timezone
+from typing import Dict, FrozenSet, Optional
 
 from flask import current_app
 
 from cloud_registry.exceptions import NotFound
 
 logger = logging.getLogger(__name__)
+TIMESTAMP_FIELDS = frozenset({"createdAt", "updatedAt"})
 
 
 class RegisterServiceInfo:
@@ -34,7 +36,7 @@ class RegisterServiceInfo:
         self.host_name = endpoint_conf.service.external_host
         self.external_port = endpoint_conf.service.external_port
         self.api_path = endpoint_conf.service.api_path
-        self.conf_info = endpoint_conf.service_info.dict()
+        self.conf_info = endpoint_conf.service_info.dict(exclude_none=True)
         self.collection = (
             foca_conf.db.dbs["serviceStore"].collections["service_info"].client
         )
@@ -67,17 +69,24 @@ class RegisterServiceInfo:
             cloud_registry.exceptions.ValidationError: Service info
                 configuration does not conform to API specification.
         """
-        add = False
         try:
             db_info = self.get_service_info()
         except NotFound:
             db_info = {}
-        add = False if db_info == self.conf_info else True
-        if add:
-            self._upsert_service_info(data=self.conf_info)
-            logger.info("Service info registered.")
-        else:
+        service_info = self._get_service_info_from_config(
+            db_info=db_info or None,
+        )
+        ignored_fields = self._dynamic_timestamp_fields()
+        if (
+            db_info
+            and self._without_fields(db_info, ignored_fields)
+            == self._without_fields(service_info, ignored_fields)
+            and self._has_fields(db_info, ignored_fields)
+        ):
             logger.info("Using available service info.")
+            return
+        self._upsert_service_info(data=service_info)
+        logger.info("Service info registered.")
 
     def set_service_info_from_app_context(
         self,
@@ -119,3 +128,46 @@ class RegisterServiceInfo:
             f"{self.api_path}/service-info"
         )
         return headers
+
+    def _get_service_info_from_config(
+        self,
+        db_info: Optional[Dict] = None,
+    ) -> Dict:
+        """Build service info from config and dynamic timestamp fields."""
+        service_info = dict(self.conf_info)
+        current_timestamp = self._current_timestamp()
+        if not service_info.get("createdAt"):
+            service_info["createdAt"] = (
+                current_timestamp
+                if db_info is None or not db_info.get("createdAt")
+                else db_info["createdAt"]
+            )
+        if not service_info.get("updatedAt"):
+            service_info["updatedAt"] = current_timestamp
+        return service_info
+
+    @staticmethod
+    def _current_timestamp() -> str:
+        """Return the current UTC timestamp in RFC 3339 format."""
+        return (
+            datetime.now(timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+
+    def _dynamic_timestamp_fields(self) -> FrozenSet[str]:
+        """Return timestamp fields that should be auto-managed."""
+        return frozenset(
+            field for field in TIMESTAMP_FIELDS if not self.conf_info.get(field)
+        )
+
+    @staticmethod
+    def _has_fields(data: Dict, fields: FrozenSet[str]) -> bool:
+        """Check whether all requested fields are present in service info."""
+        return all(data.get(field) for field in fields)
+
+    @staticmethod
+    def _without_fields(data: Dict, fields: FrozenSet[str]) -> Dict:
+        """Remove a selected set of fields from service-info data."""
+        return {key: value for key, value in data.items() if key not in fields}
