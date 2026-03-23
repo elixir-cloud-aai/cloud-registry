@@ -1,5 +1,7 @@
 """Cloud Registry custom config models."""
 
+from typing import Optional
+
 from foca.models.config import FOCABaseConfig
 
 
@@ -191,8 +193,8 @@ tionUrl='service_document_url', createdAt='2020-11-04T12:58:19Z', updatedAt='2\
     organization: OrganizationConfig
     contactUrl: str
     documentationUrl: str
-    createdAt: str
-    updatedAt: str
+    createdAt: Optional[str] = None
+    updatedAt: Optional[str] = None
     environment: str
     version: str
 
