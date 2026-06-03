@@ -26,12 +26,14 @@ paths:
           required: false
           schema:
             type: integer
+            minimum: 1
             example: 1
         - name: page_size
           in: query
           required: false
           schema:
             type: integer
+            minimum: 1
             example: 10
       responses:
         '200':

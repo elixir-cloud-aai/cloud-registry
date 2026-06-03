@@ -45,7 +45,7 @@ def getServices(**kwargs) -> List:
     total_count = db_collection_service.count_documents({})
     total_pages = floor(total_count / page_size) + (1 if total_count % page_size > 0 else 0)
 
-    if page < 1 or page > total_pages:
+    if page < 1 or (total_count > 0 and page > total_pages):
         raise BadRequest
     
     skip_items = (page - 1) * page_size
@@ -112,7 +112,7 @@ def getServiceTypes(**kwargs) -> List:
     page = page or 1
     page_size = page_size or 10
     total_count = len(uniq_types)
-    total_pages = (total_count // page_size) + (1 if total_count % page_size > 0 else 0)
+    total_pages = floor(total_count / page_size) + (1 if total_count % page_size > 0 else 0)
 
     if page < 1 or (total_count > 0 and page > total_pages):
         raise BadRequest
