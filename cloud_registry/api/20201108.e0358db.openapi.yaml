@@ -223,7 +223,8 @@ components:
       required:
         - page
         - page_size
-        - total
+        - total_count
+        - total_pages
       properties:
         page:
           type: integer
@@ -233,7 +234,11 @@ components:
           type: integer
           description: "Number of entries in a page"
           example: 10
-        total:
+        total_count:
+          type: integer
+          description: "Total number of entries for the query"
+          example: 30
+        total_pages:
           type: integer
           description: "Total number of entries for the query"
           example: 30

@@ -1,7 +1,7 @@
 """Controllers for service endpoints."""
 
 import logging
-from math import floor
+from math import ceil
 from typing import Dict, List, Tuple
 
 from cloud_registry.exceptions import BadRequest, NotFound
@@ -43,7 +43,7 @@ def getServices(**kwargs) -> List:
     page = page or 1
     page_size = page_size or 10
     total_count = db_collection_service.count_documents({})
-    total_pages = floor(total_count / page_size) + (1 if total_count % page_size > 0 else 0)
+    total_pages = ceil(total_count / page_size)
 
     if page < 1 or (total_count > 0 and page > total_pages):
         raise BadRequest
@@ -59,7 +59,8 @@ def getServices(**kwargs) -> List:
         "pagination": {
             "page": page,
             "page_size": page_size,
-            "total": total_count,
+            "total_count": total_count,
+            "total_pages": total_pages
         }
     }
 
@@ -112,7 +113,7 @@ def getServiceTypes(**kwargs) -> List:
     page = page or 1
     page_size = page_size or 10
     total_count = len(uniq_types)
-    total_pages = floor(total_count / page_size) + (1 if total_count % page_size > 0 else 0)
+    total_pages = ceil(total_count / page_size)
 
     if page < 1 or (total_count > 0 and page > total_pages):
         raise BadRequest
@@ -125,7 +126,8 @@ def getServiceTypes(**kwargs) -> List:
         "pagination": {
             "page": page,
             "page_size": page_size,
-            "total": total_count,
+            "total_count": total_count,
+            "total_pages": total_pages
         }
     }
 
