@@ -1,13 +1,14 @@
 """Controllers for service endpoints."""
 
 import logging
+from math import floor
 from typing import Dict, List, Tuple
 
+from cloud_registry.exceptions import BadRequest, NotFound
+from cloud_registry.ga4gh.registry.service import RegisterService
+from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
 from flask import current_app, request
 from foca.utils.logging import log_traffic
-from cloud_registry.exceptions import NotFound, BadRequest
-from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
-from cloud_registry.ga4gh.registry.service import RegisterService
 
 logger = logging.getLogger(__name__)
 
@@ -18,18 +19,49 @@ def getServices(**kwargs) -> List:
     """List all services.
 
     Returns:
-        List of services.
+        List of services or Paginated list of services.
     """
+
+    # Get pagination data
+    page = request.args.get("page", type=int)
+    page_size = request.args.get("page_size", type=int)
+
     foca_conf = current_app.config.foca  # type: ignore[attr-defined]
     db_collection_service = (
         foca_conf.db.dbs["serviceStore"].collections["services"].client
     )
+    
+    # return list if no pagination query found
+    if page == None and page_size == None:
+        records = db_collection_service.find(
+            filter={},
+            projection={"_id": False},
+        )
+        return list(records)
+    
+    # Return paginated response
+    page = page or 1
+    page_size = page_size or 10
+    total_count = db_collection_service.count_documents({})
+    total_pages = floor(total_count / page_size) + (1 if total_count % page_size > 0 else 0)
+
+    if page < 1 or page > total_pages:
+        raise BadRequest
+    
+    skip_items = (page - 1) * page_size
     records = db_collection_service.find(
         filter={},
         projection={"_id": False},
-    )
-    return list(records)
+    ).skip(skip_items).limit(page_size)
 
+    return {
+        "results": list(records),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total_count,
+        }
+    }
 
 # GET /services/{serviceId}
 @log_traffic
@@ -61,12 +93,41 @@ def getServiceTypes(**kwargs) -> List:
     Returns:
         List of distinct service types.
     """
+    
+    # Get pagination data
+    page = request.args.get("page", type=int)
+    page_size = request.args.get("page_size", type=int)
+    
     services = getServices.__wrapped__()
+    if isinstance(services, dict):
+        services = services["results"]
     types = [s["type"] for s in services]
     uniq_types = [dict(t) for t in {tuple(sorted(d.items())) for d in types}]
+    
+    # return list if no pagination query found
+    if page == None and page_size == None:    
+        return uniq_types
+    
+    # return paginated response
+    page = page or 1
+    page_size = page_size or 10
+    total_count = len(uniq_types)
+    total_pages = (total_count // page_size) + (1 if total_count % page_size > 0 else 0)
 
-    return uniq_types
-
+    if page < 1 or (total_count > 0 and page > total_pages):
+        raise BadRequest
+    
+    skip_items = (page - 1) * page_size
+    paginated_types = uniq_types[skip_items : skip_items + page_size]
+    
+    return {
+        "results": paginated_types,
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total_count,
+        }
+    }
 
 # GET /service-info
 @log_traffic
