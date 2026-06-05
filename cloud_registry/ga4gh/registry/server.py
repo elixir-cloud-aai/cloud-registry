@@ -2,7 +2,7 @@
 
 import logging
 from math import ceil
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union
 
 from cloud_registry.exceptions import BadRequest, NotFound
 from cloud_registry.ga4gh.registry.service import RegisterService
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 # GET /services
 @log_traffic
-def getServices(**kwargs) -> List:
+def getServices(**kwargs) -> Union[List, Dict]:
     """List all services.
 
     Returns:
@@ -89,7 +89,7 @@ def getServiceById(serviceId: str, **kwargs) -> Dict:
 
 # GET /services/types
 @log_traffic
-def getServiceTypes(**kwargs) -> List:
+def getServiceTypes(**kwargs) -> Union[List, Dict]:
     """List types of services.
 
     Returns:
