@@ -49,10 +49,14 @@ def getServices(**kwargs) -> Union[List, Dict]:
         raise BadRequest
 
     skip_items = (page - 1) * page_size
-    records = db_collection_service.find(
-        filter={},
-        projection={"_id": False},
-    ).skip(skip_items).limit(page_size)
+    records = (
+        db_collection_service.find(
+            filter={},
+            projection={"_id": False},
+        )
+        .skip(skip_items)
+        .limit(page_size)
+    )
 
     return {
         "results": list(records),
@@ -60,8 +64,8 @@ def getServices(**kwargs) -> Union[List, Dict]:
             "page": page,
             "page_size": page_size,
             "total_count": total_count,
-            "total_pages": total_pages
-        }
+            "total_pages": total_pages,
+        },
     }
 
 
@@ -120,7 +124,8 @@ def getServiceTypes(**kwargs) -> Union[List, Dict]:
         raise BadRequest
 
     skip_items = (page - 1) * page_size
-    paginated_types = uniq_types[skip_items:skip_items + page_size]
+    end = skip_items + page_size
+    paginated_types = uniq_types[skip_items:end]
 
     return {
         "results": paginated_types,
@@ -128,8 +133,8 @@ def getServiceTypes(**kwargs) -> Union[List, Dict]:
             "page": page,
             "page_size": page_size,
             "total_count": total_count,
-            "total_pages": total_pages
-        }
+            "total_pages": total_pages,
+        },
     }
 
 
