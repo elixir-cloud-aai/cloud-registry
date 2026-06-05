@@ -30,15 +30,15 @@ def getServices(**kwargs) -> List:
     db_collection_service = (
         foca_conf.db.dbs["serviceStore"].collections["services"].client
     )
-    
+
     # return list if no pagination query found
-    if page == None and page_size == None:
+    if page is None and page_size is None:
         records = db_collection_service.find(
             filter={},
             projection={"_id": False},
         )
         return list(records)
-    
+
     # Return paginated response
     page = page or 1
     page_size = page_size or 10
@@ -47,7 +47,7 @@ def getServices(**kwargs) -> List:
 
     if page < 1 or (total_count > 0 and page > total_pages):
         raise BadRequest
-    
+
     skip_items = (page - 1) * page_size
     records = db_collection_service.find(
         filter={},
@@ -63,6 +63,7 @@ def getServices(**kwargs) -> List:
             "total_pages": total_pages
         }
     }
+
 
 # GET /services/{serviceId}
 @log_traffic
@@ -94,21 +95,21 @@ def getServiceTypes(**kwargs) -> List:
     Returns:
         List of distinct service types.
     """
-    
+
     # Get pagination data
     page = request.args.get("page", type=int)
     page_size = request.args.get("page_size", type=int)
-    
+
     services = getServices.__wrapped__()
     if isinstance(services, dict):
         services = services["results"]
     types = [s["type"] for s in services]
     uniq_types = [dict(t) for t in {tuple(sorted(d.items())) for d in types}]
-    
+
     # return list if no pagination query found
-    if page == None and page_size == None:    
+    if page is None and page_size is None:
         return uniq_types
-    
+
     # return paginated response
     page = page or 1
     page_size = page_size or 10
@@ -117,10 +118,10 @@ def getServiceTypes(**kwargs) -> List:
 
     if page < 1 or (total_count > 0 and page > total_pages):
         raise BadRequest
-    
+
     skip_items = (page - 1) * page_size
-    paginated_types = uniq_types[skip_items : skip_items + page_size]
-    
+    paginated_types = uniq_types[skip_items:skip_items + page_size]
+
     return {
         "results": paginated_types,
         "pagination": {
@@ -130,6 +131,7 @@ def getServiceTypes(**kwargs) -> List:
             "total_pages": total_pages
         }
     }
+
 
 # GET /service-info
 @log_traffic
