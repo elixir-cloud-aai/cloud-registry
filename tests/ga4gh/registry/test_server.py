@@ -55,8 +55,11 @@ def test_getServices():
         data.append(mock_resp)
 
     # check whether getServices returns the same list
-    with app.app_context():
+    with app.test_request_context("services"):
         res = getServices.__wrapped__()
+        # For paginated response extract the data present in result field
+        if "results" in res:
+            res = res["results"]
         assert res == data
 
 
@@ -111,8 +114,10 @@ def test_getServiceTypes_duplicates():
             "services"
         ].client.insert_one(mock_resp)
 
-    with app.app_context():
+    with app.test_request_context("services"):
         res = getServiceTypes.__wrapped__()
+        if "results" in res:
+            res = res["results"]
         # All written services have same type, we expect list of length 1
         assert res == [MOCK_TYPE]
 
@@ -139,8 +144,11 @@ def test_getServiceTypes_distinct():
             "services"
         ].client.insert_one(mock_resp)
 
-    with app.app_context():
+    with app.test_request_context("services"):
         res = getServiceTypes.__wrapped__()
+        # For paginated response extract the data present in result field
+        if "results" in res:
+            res = res["results"]
         # All written services have distinct types, we expect a list of the
         # same length as there are entries in the database collection
         assert len(res) == len(services)

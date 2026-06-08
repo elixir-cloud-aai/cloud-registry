@@ -20,15 +20,32 @@ paths:
       operationId: getServices
       tags:
         - services
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            example: 1
+        - name: page_size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            example: 10
       responses:
         '200':
           description: 'List of services'
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/ExternalService'
+                oneOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/ExternalService'
+                  - $ref: '#/components/schemas/PaginatedExternalService'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -80,9 +97,11 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/ServiceType'
+                oneOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/ServiceType'
+                  - $ref: '#/components/schemas/PaginatedServiceType'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -198,3 +217,46 @@ components:
       required:
         - status
         - title
+    PaginationMetadata:
+      description: 'Pagination Metadata'
+      type: object
+      required:
+        - page
+        - page_size
+        - total_count
+        - total_pages
+      properties:
+        page:
+          type: integer
+          description: "Current page of the response"
+          example: 1
+        page_size:
+          type: integer
+          description: "Number of entries in a page"
+          example: 10
+        total_count:
+          type: integer
+          description: "Total number of entries for the query"
+          example: 30
+        total_pages:
+          type: integer
+          description: "Total number of entries for the query"
+          example: 30
+    PaginatedExternalService:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExternalService'
+        pagination:
+          $ref: '#/components/schemas/PaginationMetadata'
+    PaginatedServiceType:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceType'
+        pagination:
+          $ref: '#/components/schemas/PaginationMetadata'
