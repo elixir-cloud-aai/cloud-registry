@@ -104,9 +104,17 @@ def getServiceTypes(**kwargs) -> Union[List, Dict]:
     page = request.args.get("page", type=int)
     page_size = request.args.get("page_size", type=int)
 
-    services = getServices.__wrapped__()
-    if isinstance(services, dict):
-        services = services["results"]
+    # get all the services
+    foca_conf = current_app.config.foca  # type: ignore[attr-defined]
+    db_collection_service = (
+        foca_conf.db.dbs["serviceStore"].collections["services"].client
+    )
+    services = list(
+        db_collection_service.find(
+            filter={},
+            projection={"_id": False},
+        )
+    )
     types = [s["type"] for s in services]
     uniq_types = [dict(t) for t in {tuple(sorted(d.items())) for d in types}]
 
