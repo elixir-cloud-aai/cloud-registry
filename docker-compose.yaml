@@ -1,5 +1,16 @@
-version: '3.6'
 services:
+    cloud-registry-ui:
+        image: cloud-registry-ui
+        build:
+            context: ../cloud-registry-ui
+            dockerfile: Dockerfile
+        container_name: cloud-registry-ui-local
+        networks:
+            - appnet
+        env_file:
+            - ../cloud-registry-ui/.env
+        ports:
+            - "${CLOUD_REGISTRY_UI_PORT:-4000}:3000"
 
     cloud-registry:
         image: elixircloud/cloud-registry:0.1.0
@@ -7,15 +18,23 @@ services:
             context: .
             dockerfile: Dockerfile
         restart: unless-stopped
+        networks:
+            - appnet
         links:
             - mongodb
         ports:
-            - "8080:8080"
+            - "8081:8080"
 
     mongodb:
         image: mongo:3.6
         restart: unless-stopped
+        networks:
+            - appnet
         volumes:
             - ../data/cloud-registry/db:/data/db
         ports:
             - "27017:27017"
+
+networks:
+    appnet:
+        driver: bridge
