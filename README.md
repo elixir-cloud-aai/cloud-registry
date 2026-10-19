@@ -75,6 +75,33 @@ served behind a reverse proxy under a subpath (e.g., `registry`), or leave it
 empty. Previously, `api_path` held the API base path itself (e.g.,
 `ga4gh/registry/v1`); remove that value when upgrading.
 
+### Access control
+
+Services and service info can be read by anyone. Writing requires an access
+token issued by [LS Login][ls-login]:
+
+- Any authenticated user can register a service (`POST /services`) and
+  becomes its **owner**.
+- Owners can update (`PUT`) and delete (`DELETE`) their services, and grant
+  other users the roles `owner` or `maintainer` on them, by their LS Login
+  user identifier (`sub` claim):
+
+  ```bash
+  curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/<id>/permissions/<user-id>" \
+    -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+    -d '{"role": "maintainer"}'
+  ```
+
+  `GET /services/<id>/permissions` lists the roles granted on a service, and
+  `DELETE /services/<id>/permissions/<user-id>` revokes them.
+- **Maintainers** can update, but not delete a service.
+- Members of the LS Login group `ECP_CLN:ADMIN` are **admins**: they can do
+  everything, including setting the service info (`POST /service-info`) and
+  registering services with chosen identifiers (`PUT` of a new service).
+
+Access control is implemented with [FOCA][foca-access-control]; see the
+`security` section of the [configuration][config-app].
+
 ## Installation
 
 To quickly install the service for development/testing purposes, we recommend
@@ -222,3 +249,6 @@ etc.
 [schema-service]: <https://github.com/ga4gh-discovery/ga4gh-service-registry/blob/8c45be52940db92c2fa1cd821519c271c22b1c4c/service-registry.yaml#L158>
 [schema-endpoints]: <https://github.com/ga4gh-discovery/ga4gh-service-registry/blob/8c45be52940db92c2fa1cd821519c271c22b1c4c/service-registry.yaml#L16>
 [url-swagger]: <http://localhost:8080/ga4gh/registry/v1/ui>
+[config-app]: cloud_registry/config.yaml
+[foca-access-control]: https://foca.readthedocs.io/en/latest/access-control/
+[ls-login]: https://lifescience-ri.eu/ls-login/
