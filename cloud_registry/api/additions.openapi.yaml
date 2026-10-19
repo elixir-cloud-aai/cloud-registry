@@ -168,6 +168,7 @@ paths:
         List the roles granted on a service. Only for owners of the service
         and admins.
       operationId: getServicePermissions
+      x-openapi-router-controller: ga4gh.registry.permissions
       tags:
         - cloud-registry
       parameters:
@@ -200,6 +201,7 @@ paths:
         its permissions) or `maintainer` (update the service). Only for
         owners of the service and admins.
       operationId: putServicePermission
+      x-openapi-router-controller: ga4gh.registry.permissions
       tags:
         - cloud-registry
       parameters:
@@ -238,6 +240,7 @@ paths:
         Revoke the roles of a user on a service. Only for owners of the
         service and admins.
       operationId: deleteServicePermission
+      x-openapi-router-controller: ga4gh.registry.permissions
       tags:
         - cloud-registry
       parameters:

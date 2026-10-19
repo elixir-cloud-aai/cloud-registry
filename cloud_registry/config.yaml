@@ -37,7 +37,7 @@ security:
     # services and becomes their owner; owners may update and delete their
     # services and grant other users the roles `owner` or `maintainer`
     # (update only) on them; admins may do everything, including setting the
-    # service info. Policies are added on startup (see
+    # service info. Roles on services are managed by the app (see
     # `cloud_registry/ga4gh/registry/permissions.py`).
     # Cf. https://foca.readthedocs.io/en/latest/access-control/
     access_control:
@@ -49,6 +49,17 @@ security:
         claim_groups: eduperson_entitlement
         group_mapping:
             "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN:ADMIN#aai.lifescience-ri.eu": admin
+        # Added on startup unless stored already; never removed on startup
+        policies:
+            # any authenticated user may register services (and becomes
+            # their owner)
+            - [p, "*", /ga4gh/registry/v1/services, POST]
+            # owners may update and delete their services and manage their
+            # permissions; maintainers may update them
+            - [p, owner, "/ga4gh/registry/v1/services/:id", "(PUT)|(DELETE)"]
+            - [p, owner, "/ga4gh/registry/v1/services/:id/permissions", GET]
+            - [p, owner, "/ga4gh/registry/v1/services/:id/permissions/:user", "(PUT)|(DELETE)"]
+            - [p, maintainer, "/ga4gh/registry/v1/services/:id", PUT]
 
 # Database configuration
 # Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.DBConfig
