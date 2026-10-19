@@ -49,7 +49,8 @@ security:
         claim_groups: eduperson_entitlement
         group_mapping:
             "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN:ADMIN#aai.lifescience-ri.eu": admin
-        # Added on startup unless stored already; never removed on startup
+        # Managed on startup (removed rules are deleted); cannot be changed
+        # via the permissions API
         policies:
             # any authenticated user may register services (and becomes
             # their owner)
