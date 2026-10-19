@@ -29,6 +29,26 @@ security:
         # audiences that the issuer puts into the `aud` claim of tokens for
         # this service and remove `verify_audience` to only accept those.
         verify_audience: False
+        # LS Login provides group memberships via user info only, not in
+        # access tokens; they are needed for the admin role (see below)
+        userinfo_claims:
+          - eduperson_entitlement
+    # Access control: anyone may read, any authenticated user may register
+    # services and becomes their owner; owners may update and delete their
+    # services and grant other users the roles `owner` or `maintainer`
+    # (update only) on them; admins may do everything, including setting the
+    # service info. Policies are added on startup (see
+    # `cloud_registry/ga4gh/registry/permissions.py`).
+    # Cf. https://foca.readthedocs.io/en/latest/access-control/
+    access_control:
+        enabled: True
+        enforce: True
+        model: access_control/model.conf
+        db_name: serviceStore
+        collection_name: policy_rules
+        claim_groups: eduperson_entitlement
+        group_mapping:
+            "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN:ADMIN#aai.lifescience-ri.eu": admin
 
 # Database configuration
 # Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.DBConfig

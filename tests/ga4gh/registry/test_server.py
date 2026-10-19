@@ -8,6 +8,7 @@ import mongomock
 import pytest
 
 from cloud_registry.exceptions import BadRequest, NotFound
+from cloud_registry.ga4gh.registry import server
 from cloud_registry.ga4gh.registry.server import (
     deleteService,
     getServiceById,
@@ -28,6 +29,18 @@ from tests.mock_data import (
     SERVICE_INFO_CONFIG,
     MOCK_SERVICE,
 )
+
+
+@pytest.fixture(autouse=True)
+def ownership(monkeypatch):
+    """Record changes of service ownership, which require access control (cf.
+    `tests/test_access_control.py`)."""
+    calls = []
+    for name in ["add_owner", "remove_permissions"]:
+        monkeypatch.setattr(
+            server, name, lambda serviceId, name=name: calls.append((name, serviceId))
+        )
+    return calls
 
 
 # GET /services
@@ -169,7 +182,7 @@ def test_getServiceInfo():
 
 
 # POST /service
-def test_postService():
+def test_postService(ownership):
     """Test for registering a service; identifier assigned by implementation."""
     app = Flask(__name__)
     app.config.foca = Config(
@@ -185,6 +198,7 @@ def test_postService():
     with app.test_request_context(json=data):
         res = postService.__wrapped__()
         assert isinstance(res, str)
+    assert ownership == [("add_owner", res)]
 
 
 def test_postService_invalid_payload():
@@ -206,7 +220,7 @@ def test_postService_invalid_payload():
 
 
 # DELETE /service/{serviceId}
-def test_deleteService():
+def test_deleteService(ownership):
     """Test for deleting a service."""
     app = Flask(__name__)
     app.config.foca = Config(
@@ -225,6 +239,7 @@ def test_deleteService():
     with app.app_context():
         res = deleteService.__wrapped__(serviceId=MOCK_ID)
         assert res == MOCK_ID
+    assert ownership == [("remove_permissions", MOCK_ID)]
 
 
 def test_deleteService_NotFound():
@@ -250,7 +265,7 @@ def test_deleteService_NotFound():
 
 
 # PUT /service/{serviceId}
-def test_putService():
+def test_putService(ownership):
     """Test for registering a service; identifier provided by client."""
     app = Flask(__name__)
     app.config.foca = Config(
@@ -265,6 +280,10 @@ def test_putService():
     with app.test_request_context(json=data):
         res = putService.__wrapped__(serviceId=MOCK_ID)
         assert res == MOCK_ID
+    # only new services get an owner
+    with app.test_request_context(json=data):
+        putService.__wrapped__(serviceId=MOCK_ID)
+    assert ownership == [("add_owner", MOCK_ID)]
 
 
 def test_putService_invalid_payload():

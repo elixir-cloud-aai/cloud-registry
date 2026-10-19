@@ -12,6 +12,20 @@ from foca.utils.misc import generate_id
 logger = logging.getLogger(__name__)
 
 
+def service_exists(id: str) -> bool:
+    """Check whether a service is registered.
+
+    Args:
+        id: Service identifier.
+
+    Returns:
+        Whether a service with identifier `id` is registered.
+    """
+    foca_conf = current_app.config.foca  # type: ignore[attr-defined]
+    db_coll = foca_conf.db.dbs["serviceStore"].collections["services"].client
+    return db_coll.count_documents({"id": id}, limit=1) > 0
+
+
 class RegisterService:
     """Class for registering services with the registry."""
 
@@ -34,6 +48,7 @@ class RegisterService:
                 otherwise set to `False`.
             was_replaced: Whether an existing service with the provided
                 identifier was replaced.
+            was_created: Whether a new service was registered.
             id_charset: A string of allowed characters for generating service
                 identifiers.
             id_length: Length of generated service identifiers.
@@ -45,6 +60,7 @@ class RegisterService:
         self.data["id"] = None if id is None else id
         self.replace = True
         self.was_replaced = False
+        self.was_created = False
         self.id_charset: str = endpoint_conf.services.id.charset
         self.id_length = int(endpoint_conf.services.id.length)
         self.db_coll = foca_conf.db.dbs["serviceStore"].collections["services"].client
@@ -76,6 +92,7 @@ class RegisterService:
                 )
                 if result_object.modified_count:
                     self.was_replaced = True
+                self.was_created = result_object.upserted_id is not None
                 break
 
             # insert service (POST); continue with next iteration if key exists
@@ -84,6 +101,7 @@ class RegisterService:
             except DuplicateKeyError:
                 continue
 
+            self.was_created = True
             logger.info(f"Added service with id '{self.data['id']}'.")
             break
         else:

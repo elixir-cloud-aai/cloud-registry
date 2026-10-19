@@ -6,6 +6,16 @@ from typing import Dict, List, Tuple
 from flask import current_app, request
 from foca.utils.logging import log_traffic
 from cloud_registry.exceptions import NotFound, BadRequest
+
+# Controllers of the permission endpoints are imported, as all operations are
+# routed to this module
+from cloud_registry.ga4gh.registry.permissions import (  # noqa: F401
+    add_owner,
+    deleteServicePermission,
+    getServicePermissions,
+    putServicePermission,
+    remove_permissions,
+)
 from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
 from cloud_registry.ga4gh.registry.service import RegisterService
 
@@ -92,6 +102,7 @@ def postService(**kwargs) -> str:
     if isinstance(request_json, dict):
         service = RegisterService(data=request_json)
         service.register_metadata()
+        add_owner(service.data["id"])
         return service.data["id"]
     else:
         logger.error("Invalid request payload.")
@@ -116,6 +127,7 @@ def deleteService(serviceId: str, **kwargs) -> str:
     res = db_collection_service.delete_one({"id": serviceId})
     if not res.deleted_count:
         raise NotFound
+    remove_permissions(serviceId)
     return serviceId
 
 
@@ -137,6 +149,8 @@ def putService(serviceId: str, **kwargs) -> str:
             id=serviceId,
         )
         service.register_metadata()
+        if service.was_created:
+            add_owner(service.data["id"])
         return service.data["id"]
     else:
         logger.error("Invalid request payload.")

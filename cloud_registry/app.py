@@ -3,6 +3,7 @@ import logging
 from foca import Foca
 from foca.security.auth import validate_token  # noqa: F401
 
+from cloud_registry.ga4gh.registry.permissions import register_policies
 from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
 
 logger = logging.getLogger(__name__)
@@ -20,10 +21,11 @@ def main():
     )
     app = foca.create_app()
 
-    # register service info
+    # register service info and access control policies
     with app.app.app_context():
         service_info = RegisterServiceInfo()
         service_info.set_service_info_from_config()
+        register_policies()
 
     # start app
     app.run(port=app.port)
