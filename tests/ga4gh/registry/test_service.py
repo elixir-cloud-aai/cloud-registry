@@ -1,7 +1,6 @@
 """Test cases for service registration."""
 
 from copy import deepcopy
-import string  # noqa: F401
 from unittest.mock import MagicMock
 
 from flask import Flask

@@ -1,7 +1,6 @@
 """Tests for getting/setting service info."""
 
 from copy import deepcopy
-import string  # noqa: F401
 import pytest
 
 from flask import Flask

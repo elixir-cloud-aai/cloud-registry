@@ -201,13 +201,11 @@ class IdConfig(FOCABaseConfig):
     """Model for defining unique identifier for services on cloud registry.
 
     Args:
-        charset: A string of allowed characters or an expression evaluating to
-            a string of allowed characters.
+        charset: A string of allowed characters.
         length: Length of returned string.
 
     Attributes:
-        charset: A string of allowed characters or an expression evaluating to
-            a string of allowed characters.
+        charset: A string of allowed characters.
         length: Length of returned string.
 
     Raises:
