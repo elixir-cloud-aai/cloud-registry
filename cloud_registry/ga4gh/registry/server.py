@@ -151,7 +151,7 @@ def putService(serviceId: str, **kwargs) -> str:
 
 # POST /service-info
 @log_traffic
-def postServiceInfo(**kwargs) -> Tuple[None, str, Dict]:
+def postServiceInfo(**kwargs) -> Tuple[None, int, Dict]:
     """Set information about this service.
 
     Returns:
@@ -161,7 +161,7 @@ def postServiceInfo(**kwargs) -> Tuple[None, str, Dict]:
     if isinstance(request_json, dict):
         service_info = RegisterServiceInfo()
         headers = service_info.set_service_info_from_app_context(data=request_json)
-        return None, "201", headers
+        return None, 201, headers
     else:
         logger.error("Invalid request payload.")
         raise BadRequest
