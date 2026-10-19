@@ -13,7 +13,7 @@ services:
             - "8080:8080"
 
     mongodb:
-        image: mongo:3.6
+        image: mongo:8.0
         restart: unless-stopped
         volumes:
             - ../data/cloud-registry/db:/data/db
