@@ -25,9 +25,12 @@ security:
         # rejected
         issuers:
           - https://login.aai.lifescience-ri.eu/oidc/
-        # Tokens are accepted for any audience. Set `audience` to the
-        # audiences that the issuer puts into the `aud` claim of tokens for
-        # this service and remove `verify_audience` to only accept those.
+        # Tokens are accepted for any audience, e.g., for local development.
+        # Deployments should only accept tokens of the apps calling the
+        # registry: LS Login sets the `aud` claim to the client ID of the app
+        # the user logged in with (e.g., the registry's front end, a portal
+        # or a gateway), so set `audience` to their client IDs and remove
+        # `verify_audience`.
         verify_audience: False
 
 # Database configuration
