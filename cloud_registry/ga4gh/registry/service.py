@@ -12,6 +12,18 @@ from cloud_registry.utils import get_collection, get_custom_config
 logger = logging.getLogger(__name__)
 
 
+def service_exists(id: str) -> bool:
+    """Check whether a service is registered.
+
+    Args:
+        id: Service identifier.
+
+    Returns:
+        Whether a service with identifier `id` is registered.
+    """
+    return get_collection("services").count_documents({"id": id}, limit=1) > 0
+
+
 class RegisterService:
     """Class for registering services with the registry."""
 
@@ -32,6 +44,7 @@ class RegisterService:
             replace: Whether an existing service with the provided identifier
                 should be replaced. Set to `True` if an `id` is provided,
                 otherwise set to `False`.
+            was_created: Whether a new service was registered.
             id_charset: A string of allowed characters for generating service
                 identifiers.
             id_length: Length of generated service identifiers.
@@ -41,6 +54,7 @@ class RegisterService:
         self.data = deepcopy(data)
         self.data["id"] = id
         self.replace = id is not None
+        self.was_created = False
         self.id_charset: str = endpoint_conf.services.id.charset
         self.id_length = int(endpoint_conf.services.id.length)
         self.db_coll = get_collection("services")
@@ -56,11 +70,12 @@ class RegisterService:
         """
         # replace or insert service with provided ID (PUT)
         if self.replace:
-            self.db_coll.replace_one(
+            result = self.db_coll.replace_one(
                 filter={"id": self.data["id"]},
                 replacement=self.data,
                 upsert=True,
             )
+            self.was_created = result.upserted_id is not None
 
         # insert service with random ID (POST); new ID if key exists
         else:
@@ -73,6 +88,7 @@ class RegisterService:
                     self.db_coll.insert_one(document=dict(self.data))
                 except DuplicateKeyError:
                     continue
+                self.was_created = True
                 logger.info("Added service with id '%s'.", self.data["id"])
                 break
             else:

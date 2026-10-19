@@ -15,8 +15,12 @@ info:
     email: 'alexander.kanitz@alumni.ethz.ch'
 servers:
   - url: /ga4gh/registry/v1
+# Read operations of the GA4GH specifications are public: the security
+# requirements set here are merged into them
 paths:
   /service-info:
+    get:
+      security: []
     post:
       summary: Register service info.
       description: Create or update the service info.
@@ -51,6 +55,8 @@ paths:
         default:
           $ref: '#/components/responses/Error'
   /services:
+    get:
+      security: []
     post:
       summary: Register service.
       description: Create a service resource.
@@ -83,7 +89,12 @@ paths:
           $ref: '#/components/responses/InternalServerError'
         default:
           $ref: '#/components/responses/Error'
+  /services/types:
+    get:
+      security: []
   "/services/{serviceId}":
+    get:
+      security: []
     delete:
       summary: Delete service.
       description: Delete a service resource.
@@ -156,7 +167,124 @@ paths:
           $ref: '#/components/responses/InternalServerError'
         default:
           $ref: '#/components/responses/Error'
+  "/services/{serviceId}/permissions":
+    get:
+      summary: List service permissions.
+      description: |
+        List the roles granted on a service. Only for owners of the service
+        and admins.
+      operationId: getServicePermissions
+      tags:
+        - cloud-registry
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+      responses:
+        '200':
+          description: Roles granted on the service.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Permission'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+  "/services/{serviceId}/permissions/{userId}":
+    put:
+      summary: Grant service permission.
+      description: |
+        Grant a user a role on a service, replacing any other role of the
+        user on the service: `owner` (update and delete the service, manage
+        its permissions) or `maintainer` (update the service). Only for
+        owners of the service and admins.
+      operationId: putServicePermission
+      tags:
+        - cloud-registry
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        description: Role to grant.
+        required: true
+        content:
+          application/json:
+            schema:
+              x-body-name: permission
+              $ref: '#/components/schemas/PermissionRegister'
+      responses:
+        '200':
+          description: The role was granted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Permission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      summary: Revoke service permission.
+      description: |
+        Revoke the roles of a user on a service. Only for owners of the
+        service and admins.
+      operationId: deleteServicePermission
+      tags:
+        - cloud-registry
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: The roles were revoked.
+          content:
+            application/json:
+              schema:
+                type: string
+                description: Identifier of the user.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
 components:
+  parameters:
+    ServiceId:
+      name: serviceId
+      in: path
+      description: Identifier of the service.
+      required: true
+      schema:
+        type: string
+    UserId:
+      name: userId
+      in: path
+      description: |
+        Identifier of the user, i.e., the `sub` claim of the user's tokens
+        (e.g., `abc123@lifescience-ri.eu` for LS Login).
+      required: true
+      schema:
+        type: string
   # Errors are returned as `application/problem+json` (RFC 7807). The entries
   # below are merged into the error responses of the GA4GH specification
   # (cf. `api.specs` in `config.yaml`), adding that media type
@@ -196,6 +324,36 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    PermissionRegister:
+      description: Role to grant on a service.
+      type: object
+      required:
+        - role
+      additionalProperties: false
+      properties:
+        role:
+          $ref: '#/components/schemas/Role'
+    Permission:
+      description: Role of a user on a service.
+      type: object
+      required:
+        - user_id
+        - role
+      additionalProperties: false
+      properties:
+        user_id:
+          type: string
+          description: Identifier of the user.
+        role:
+          $ref: '#/components/schemas/Role'
+    Role:
+      description: |
+        Role on a service: `owner` (update and delete the service, manage
+        its permissions) or `maintainer` (update the service).
+      type: string
+      enum:
+        - owner
+        - maintainer
     ExternalServiceRegister:
       description: 'GA4GH service with a URL'
       type: object
