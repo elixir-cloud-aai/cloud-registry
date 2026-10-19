@@ -1,11 +1,11 @@
 """Access control: policies, service ownership and controllers for managing
 permissions on services.
 
-Policies are enforced by FOCA on all operations that require authentication
-(`security.access_control.enforce`), using the model in
-`cloud_registry/access_control/model.conf`. Subjects with the role `admin`
-(mapped from group claims via `security.access_control.group_mapping`) may do
-everything.
+Policies are configured in `config.yaml` (`security.access_control`) and
+enforced by FOCA on all operations that require authentication, using the
+model in `cloud_registry/access_control/model.conf`. Subjects with the role
+`admin` (mapped from group claims via `security.access_control.group_mapping`)
+may do everything.
 """
 
 import logging
@@ -19,41 +19,14 @@ from foca.security.access_control import (
     remove_resource,
     remove_resource_role,
 )
-from foca.security.access_control.enforcement import get_enforcer
 
 from cloud_registry.exceptions import BadRequest, NotFound
 from cloud_registry.ga4gh.registry.service import service_exists
 
 logger = logging.getLogger(__name__)
 
-API_PATH = "/ga4gh/registry/v1"
-
 # Roles that can be granted on services
 ROLES = ["owner", "maintainer"]
-
-# Policy rules the registry relies on; roles on services (`g2` rules) are
-# managed by the controllers
-POLICIES = [
-    # any authenticated user may register a service and becomes its owner
-    ("*", f"{API_PATH}/services", "POST"),
-    # owners may update and delete their services and manage their
-    # permissions; maintainers may update them
-    ("owner", f"{API_PATH}/services/:id", "(PUT)|(DELETE)"),
-    ("owner", f"{API_PATH}/services/:id/permissions", "GET"),
-    ("owner", f"{API_PATH}/services/:id/permissions/:user", "(PUT)|(DELETE)"),
-    ("maintainer", f"{API_PATH}/services/:id", "PUT"),
-]
-
-
-def register_policies() -> None:
-    """Add policy rules the registry relies on, if missing.
-
-    Requires an app context.
-    """
-    enforcer = get_enforcer()
-    for policy in POLICIES:
-        if enforcer.add_policy(*policy):
-            logger.info(f"Added access control policy: {policy}")
 
 
 def service_path(serviceId: str) -> str:

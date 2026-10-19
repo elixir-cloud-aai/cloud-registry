@@ -16,7 +16,6 @@ import jwt
 import mongomock
 import pytest
 
-from cloud_registry.ga4gh.registry.permissions import register_policies
 from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
 from tests.mock_data import SERVICE_INFO_CONFIG
 
@@ -120,11 +119,10 @@ def client(monkeypatch):
         cache.clear()
     app = Foca(
         config_file=APP_DIR / "config.yaml",
-        custom_config_model="service_models.custom_config.CustomConfig",
+        custom_config_model="cloud_registry.service_models.custom_config.CustomConfig",
     ).create_app()
     with app.app.app_context():
         RegisterServiceInfo().set_service_info_from_config()
-        register_policies()
     return app.app.test_client()
 
 

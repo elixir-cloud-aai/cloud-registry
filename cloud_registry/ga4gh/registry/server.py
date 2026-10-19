@@ -6,16 +6,7 @@ from flask import Response, request
 from foca.utils.logging import log_traffic
 
 from cloud_registry.exceptions import BadRequest, NotFound
-
-# Controllers of the permission endpoints are imported, as all operations are
-# routed to this module
-from cloud_registry.ga4gh.registry.permissions import (  # noqa: F401
-    add_owner,
-    deleteServicePermission,
-    getServicePermissions,
-    putServicePermission,
-    remove_permissions,
-)
+from cloud_registry.ga4gh.registry.permissions import add_owner, remove_permissions
 from cloud_registry.ga4gh.registry.service import RegisterService
 from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
 from cloud_registry.utils import get_collection
