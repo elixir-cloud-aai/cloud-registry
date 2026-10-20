@@ -253,6 +253,11 @@ def _restore_owner_if_none(serviceId: str, resource: str, userId: str) -> None:
 def putServicePermission(serviceId: str, userId: str, **kwargs) -> dict:
     """Grant a user a role on a service, replacing any other role.
 
+    Other roles are revoked before the role is granted, so that a failure
+    leaves the user with fewer rights, not more. On a user's first role on
+    the service, a name stored for them on it is deleted (cf.
+    `remember_current_user()`).
+
     Args:
         serviceId: Service identifier.
         userId: User identifier (`sub` claim of the user's tokens).
@@ -261,27 +266,30 @@ def putServicePermission(serviceId: str, userId: str, **kwargs) -> dict:
         User identifier and granted role.
 
     Raises:
+        cloud_registry.exceptions.BadRequest: The user identifier can't be
+            stored in policy rules.
         cloud_registry.exceptions.Conflict: The user is the last owner of
             the service, and the role is not `owner`.
+        cloud_registry.exceptions.NotFound: The service doesn't exist.
     """
     role = request.json["role"]
     if not service_exists(serviceId):
         raise NotFound
     resource = service_path(serviceId)
-    roles = [other for user, other in list_resource_roles(resource) if user == userId]
+    previous_roles = [
+        other_role
+        for user, other_role in list_resource_roles(resource)
+        if user == userId
+    ]
     if role != "owner":
         _check_other_owners(resource, userId)
-    # Other roles are revoked before the role is granted, so that a failure
-    # leaves the user with fewer rights, not more
     try:
         for other_role in ROLES:
             if other_role != role:
                 remove_resource_role(subject=userId, role=other_role, resource=resource)
-        if "owner" in roles and role != "owner":
+        if "owner" in previous_roles and role != "owner":
             _restore_owner_if_none(serviceId, resource, userId)
-        if not roles:
-            # Names are only shown once the user has used the registry with
-            # this grant (cf. `remember_current_user()`)
+        if not previous_roles:
             get_collection(USER_NAMES).delete_many(
                 {"service_id": serviceId, "user_id": userId}
             )

@@ -171,13 +171,24 @@ def _register_service(service_id: str | None = None) -> str:
             # revoking them failed) don't apply to the new one
             remove_permissions(service.data["id"])
             add_owner(service.data["id"])
-        except Exception as exc:
-            # Without an owner, only admins could manage the new service
-            service.db_coll.delete_one({"id": service.data["id"]})
-            if isinstance(exc, ValueError):
-                # FOCA rejects values that can't be stored in policy rules
-                # (e.g., identifiers with commas)
-                logger.info("Invalid service identifier: %s", exc)
-                raise BadRequest from exc
+        except ValueError as exc:
+            # FOCA rejects values that can't be stored in policy rules (e.g.,
+            # service identifiers with commas)
+            logger.info("Can't store owner role: %s", exc)
+            _unregister_service(service)
+            raise BadRequest from exc
+        except Exception:
+            _unregister_service(service)
             raise
     return service.data["id"]
+
+
+def _unregister_service(service: RegisterService) -> None:
+    """Delete a new service whose owner couldn't be stored, as only admins
+    could manage it, with any roles stored for it.
+
+    Args:
+        service: Registered service.
+    """
+    service.db_coll.delete_one({"id": service.data["id"]})
+    remove_permissions(service.data["id"])

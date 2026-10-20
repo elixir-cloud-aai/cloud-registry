@@ -351,3 +351,33 @@ def test_stale_name_not_shown(app, client):
         )
     assert grant(client, service_id, BOB, "maintainer") == 200
     assert _names(client, service_id)[BOB] is None
+
+
+def test_owner_failure_rolled_back(client, monkeypatch):
+    """Services whose owner can't be stored for other reasons are not
+    registered either.
+    """
+
+    def fail(serviceId):
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(server_module, "add_owner", fail)
+    response = client.put(
+        f"{BASE}/services/MYSERV", json=_service(), headers=headers(ADMIN)
+    )
+    assert response.status_code == 500
+    assert client.get(f"{BASE}/services/MYSERV").status_code == 404
+
+
+def test_failed_grant_reduces_rights(client, monkeypatch):
+    """If granting a role fails, the user's other roles are revoked already."""
+    service_id = register(client)
+    assert grant(client, service_id, BOB, "owner") == 200
+
+    def fail(**kwargs):
+        raise RuntimeError("database unavailable")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(permissions_module, "add_resource_role", fail)
+        assert grant(client, service_id, BOB, "maintainer") == 500
+    assert permissions(client, service_id) == [(ALICE, "owner")]
