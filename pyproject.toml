@@ -2,12 +2,29 @@
 requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
-[tool.black]
+[tool.ruff]
 line-length = 88
-target-version = ["py310"]
-workers = 1
+target-version = "py310"
+
+[tool.ruff.lint]
+# pycodestyle, Pyflakes, isort, bugbear, pyupgrade, bandit (security),
+# logging format
+select = ["E", "F", "W", "I", "B", "UP", "S", "G"]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+known-first-party = ["cloud_registry", "tests"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
 
 [tool.mypy]
+files = ["cloud_registry", "tests"]
+warn_unused_ignores = true
+
+# Connexion 2 ships no type information
+[[tool.mypy.overrides]]
+module = ["connexion", "connexion.*"]
 ignore_missing_imports = true
 
 [tool.coverage.run]
@@ -15,11 +32,6 @@ source = ["cloud_registry"]
 
 [tool.coverage.report]
 exclude_also = ['if __name__ == "__main__":']
-
-[tool.flake8]
-exclude = [".git", ".eggs", "build", "venv", "env"]
-max-line-length = 88
-extend-ignore = "E203"
 
 [project]
 name ="cloud-registry"

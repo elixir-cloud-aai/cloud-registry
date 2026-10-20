@@ -13,6 +13,7 @@ import time
 from cryptography.hazmat.primitives.asymmetric import rsa
 from flask import Flask
 from foca import Foca
+from foca.config.access import set_app_config
 from foca.database import register_mongodb
 from foca.models.config import Config, MongoConfig
 from foca.security import auth
@@ -160,9 +161,9 @@ def unit_app():
     `config.yaml`.
     """
     app = Flask(__name__)
-    app.config.foca = Config(  # type: ignore[attr-defined]
-        db=MongoConfig(**MONGO_CONFIG),
-        custom=CustomConfig(**CUSTOM_CONFIG),
+    set_app_config(
+        app,
+        Config(db=MongoConfig(**MONGO_CONFIG), custom=CustomConfig(**CUSTOM_CONFIG)),
     )
     db = mongomock.MongoClient().db
     for name, coll_conf in app.config.foca.db.dbs[DB].collections.items():

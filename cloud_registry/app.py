@@ -1,5 +1,6 @@
-from pathlib import Path
 import logging
+from pathlib import Path
+
 from foca import Foca
 from foca.security.auth import validate_token  # noqa: F401
 
@@ -11,7 +12,7 @@ logger = logging.getLogger(__name__)
 def main():
     config_path = Path(__file__).parent / "config.yaml"
     if not config_path.exists():
-        logger.error(f"Config file not found: {config_path}")
+        logger.error("Config file not found: %s", config_path)
         raise FileNotFoundError(f"Config file not found: {config_path}")
     # create app object
     foca = Foca(

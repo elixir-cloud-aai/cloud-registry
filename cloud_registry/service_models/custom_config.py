@@ -1,7 +1,5 @@
 """Cloud Registry custom config models."""
 
-from typing import Optional
-
 from foca.models.config import FOCABaseConfig
 from foca.utils.misc import generate_id
 from pydantic import PositiveInt, field_validator
@@ -199,8 +197,8 @@ tionUrl='service_document_url', createdAt='2020-11-04T12:58:19Z', updatedAt='2\
     organization: OrganizationConfig
     contactUrl: str
     documentationUrl: str
-    createdAt: Optional[str] = None
-    updatedAt: Optional[str] = None
+    createdAt: str | None = None
+    updatedAt: str | None = None
     environment: str
     version: str
 

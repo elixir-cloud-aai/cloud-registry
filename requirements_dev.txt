@@ -1,8 +1,5 @@
-black==26.10.1
 build==1.6.1
 coverage==7.16.2
-flake8==7.4.1
-Flake8-pyproject==1.2.4
 mongomock==4.3.0
 mypy==2.4.0
 pytest==9.1.1

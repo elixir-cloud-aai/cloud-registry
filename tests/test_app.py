@@ -4,8 +4,8 @@ from copy import deepcopy
 import re
 import string
 
-from cryptography.hazmat.primitives.asymmetric import rsa
 import connexion
+from cryptography.hazmat.primitives.asymmetric import rsa
 import pytest
 import yaml
 

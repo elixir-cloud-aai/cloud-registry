@@ -12,15 +12,15 @@
 #
 from pathlib import Path
 import sys
-import toml
 
 from sphinx.ext import apidoc
+import toml
 
 root_dir = Path.cwd().resolve().parents[1]
 
 sys.path.insert(0, root_dir)
 
-with open(root_dir / "pyproject.toml", "r") as f:
+with open(root_dir / "pyproject.toml") as f:
     config = toml.load(f)
     __version__ = config["project"]["version"]
 

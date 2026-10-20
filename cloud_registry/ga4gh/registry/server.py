@@ -1,29 +1,27 @@
 """Controllers for service endpoints."""
 
 import logging
-from typing import Dict, List, Tuple
 
-from flask import current_app, request
+from flask import request
 from foca.utils.logging import log_traffic
-from cloud_registry.exceptions import NotFound, BadRequest
-from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
+
+from cloud_registry.exceptions import BadRequest, NotFound
 from cloud_registry.ga4gh.registry.service import RegisterService
+from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
+from cloud_registry.utils import get_collection
 
 logger = logging.getLogger(__name__)
 
 
 # GET /services
 @log_traffic
-def getServices(**kwargs) -> List:
+def getServices(**kwargs) -> list:
     """List all services.
 
     Returns:
         List of services.
     """
-    foca_conf = current_app.config.foca  # type: ignore[attr-defined]
-    db_collection_service = (
-        foca_conf.db.dbs["serviceStore"].collections["services"].client
-    )
+    db_collection_service = get_collection("services")
     records = db_collection_service.find(
         filter={},
         projection={"_id": False},
@@ -33,7 +31,7 @@ def getServices(**kwargs) -> List:
 
 # GET /services/{serviceId}
 @log_traffic
-def getServiceById(serviceId: str, **kwargs) -> Dict:
+def getServiceById(serviceId: str, **kwargs) -> dict:
     """Retrieve service by its identifier.
 
     Args:
@@ -42,10 +40,7 @@ def getServiceById(serviceId: str, **kwargs) -> Dict:
     Returns:
         Service object.
     """
-    foca_conf = current_app.config.foca  # type: ignore[attr-defined]
-    db_collection_service = (
-        foca_conf.db.dbs["serviceStore"].collections["services"].client
-    )
+    db_collection_service = get_collection("services")
     obj = db_collection_service.find_one({"id": serviceId})
     if not obj:
         raise NotFound
@@ -55,7 +50,7 @@ def getServiceById(serviceId: str, **kwargs) -> Dict:
 
 # GET /services/types
 @log_traffic
-def getServiceTypes(**kwargs) -> List:
+def getServiceTypes(**kwargs) -> list:
     """List types of services.
 
     Returns:
@@ -70,7 +65,7 @@ def getServiceTypes(**kwargs) -> List:
 
 # GET /service-info
 @log_traffic
-def getServiceInfo(**kwargs) -> Dict:
+def getServiceInfo(**kwargs) -> dict:
     """Show information about this service.
 
     Returns:
@@ -109,10 +104,7 @@ def deleteService(serviceId: str, **kwargs) -> str:
     Returns:
         Identifier of deleted service.
     """
-    foca_conf = current_app.config.foca  # type: ignore[attr-defined]
-    db_collection_service = (
-        foca_conf.db.dbs["serviceStore"].collections["services"].client
-    )
+    db_collection_service = get_collection("services")
     res = db_collection_service.delete_one({"id": serviceId})
     if not res.deleted_count:
         raise NotFound
@@ -145,7 +137,7 @@ def putService(serviceId: str, **kwargs) -> str:
 
 # POST /service-info
 @log_traffic
-def postServiceInfo(**kwargs) -> Tuple[None, int, Dict]:
+def postServiceInfo(**kwargs) -> tuple[None, int, dict]:
     """Set information about this service.
 
     Returns:
