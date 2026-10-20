@@ -9,7 +9,6 @@ may do everything.
 """
 
 import logging
-from typing import Dict, List
 
 from flask import request
 from foca.security.access_control import (
@@ -66,7 +65,7 @@ def remove_permissions(serviceId: str) -> None:
 
 
 # GET /services/{serviceId}/permissions
-def getServicePermissions(serviceId: str, **kwargs) -> List[Dict]:
+def getServicePermissions(serviceId: str, **kwargs) -> list[dict]:
     """List roles granted on a service.
 
     Args:
@@ -84,7 +83,7 @@ def getServicePermissions(serviceId: str, **kwargs) -> List[Dict]:
 
 
 # PUT /services/{serviceId}/permissions/{userId}
-def putServicePermission(serviceId: str, userId: str, **kwargs) -> Dict:
+def putServicePermission(serviceId: str, userId: str, **kwargs) -> dict:
     """Grant a user a role on a service, replacing any other role.
 
     Args:
@@ -94,15 +93,15 @@ def putServicePermission(serviceId: str, userId: str, **kwargs) -> Dict:
     Returns:
         User identifier and granted role.
     """
-    role = request.json["role"]  # type: ignore[index]
+    role = request.json["role"]
     if not service_exists(serviceId):
         raise NotFound
     resource = service_path(serviceId)
     try:
         add_resource_role(subject=userId, role=role, resource=resource)
     except ValueError as exc:
-        logger.info(f"Invalid permission: {exc}")
-        raise BadRequest
+        logger.info("Invalid permission: %s", exc)
+        raise BadRequest from exc
     for other_role in ROLES:
         if other_role != role:
             remove_resource_role(subject=userId, role=other_role, resource=resource)
@@ -129,8 +128,8 @@ def deleteServicePermission(serviceId: str, userId: str, **kwargs) -> str:
             revoked |= remove_resource_role(
                 subject=userId, role=role, resource=resource
             )
-        except ValueError:
-            raise NotFound
+        except ValueError as exc:
+            raise NotFound from exc
     if not revoked:
         raise NotFound
     return userId
