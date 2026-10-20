@@ -117,25 +117,7 @@ def putService(serviceId: str, **kwargs) -> str:
     Returns:
         Identifier of registered/updated service.
     """
-    return _register_service(id=serviceId)
-
-
-def _register_service(id: str | None = None) -> str:
-    """Register the service in the request body.
-
-    Args:
-        id: Identifier of the service; generated if not provided.
-
-    Returns:
-        Identifier of registered service.
-    """
-    request_json = request.json
-    if not isinstance(request_json, dict):
-        logger.error("Invalid request payload.")
-        raise BadRequest
-    service = RegisterService(data=request_json, id=id)
-    service.register_metadata()
-    return service.data["id"]
+    return _register_service(service_id=serviceId)
 
 
 # POST /service-info
@@ -146,11 +128,36 @@ def postServiceInfo(**kwargs) -> tuple[None, int, dict]:
     Returns:
         An empty 201 response with headers.
     """
+    service_info = RegisterServiceInfo()
+    headers = service_info.set_service_info_from_app_context(data=_get_request_object())
+    return None, 201, headers
+
+
+def _get_request_object() -> dict:
+    """Get the JSON object in the request body.
+
+    Returns:
+        Request body.
+
+    Raises:
+        cloud_registry.exceptions.BadRequest: The body is not a JSON object.
+    """
     request_json = request.json
-    if isinstance(request_json, dict):
-        service_info = RegisterServiceInfo()
-        headers = service_info.set_service_info_from_app_context(data=request_json)
-        return None, 201, headers
-    else:
+    if not isinstance(request_json, dict):
         logger.error("Invalid request payload.")
         raise BadRequest
+    return request_json
+
+
+def _register_service(service_id: str | None = None) -> str:
+    """Register the service in the request body.
+
+    Args:
+        service_id: Identifier of the service; generated if not provided.
+
+    Returns:
+        Identifier of registered service.
+    """
+    service = RegisterService(data=_get_request_object(), id=service_id)
+    service.register_metadata()
+    return service.data["id"]

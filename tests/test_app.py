@@ -236,7 +236,7 @@ def test_main(monkeypatch, mongo_client, app_env):
 
 
 def test_main_config_missing(monkeypatch, tmp_path):
-    """`main()` fails if the config file is missing."""
+    """`main()` fails if the config file is missing (FOCA raises `OSError`)."""
     monkeypatch.setattr(cloud_registry.app, "__file__", str(tmp_path / "app.py"))
-    with pytest.raises(OSError):
+    with pytest.raises(OSError, match=str(tmp_path / "config.yaml")):
         cloud_registry.app.main()

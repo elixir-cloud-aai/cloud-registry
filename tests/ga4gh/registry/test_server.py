@@ -96,6 +96,22 @@ def test_getServiceTypes_distinct(unit_app, services):
         assert res == [{**MOCK_TYPE, "artifact": i} for i in sorted(ids)]
 
 
+# GET /services/types
+def test_getServiceTypes_sort_order(unit_app, services):
+    """Service types are sorted by group, then artifact, then version."""
+    expected = [
+        {"group": "a", "artifact": "b", "version": "2"},
+        {"group": "a", "artifact": "c", "version": "1"},
+        {"group": "a", "artifact": "c", "version": "2"},
+        {"group": "b", "artifact": "a", "version": "1"},
+    ]
+    for i, service_type in enumerate(reversed(expected * 2)):
+        services.insert_one({**MOCK_SERVICE, "id": f"serv{i}", "type": service_type})
+
+    with unit_app.app_context():
+        assert getServiceTypes.__wrapped__() == expected
+
+
 # GET /service-info
 def test_getServiceInfo(unit_app, service_info):
     """Test for getting service info."""

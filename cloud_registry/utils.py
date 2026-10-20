@@ -18,10 +18,12 @@ def get_custom_config() -> CustomConfig:
     Raises:
         RuntimeError: The app has no custom configuration.
     """
-    # FOCA keeps the custom configuration as an untyped extra field
+    # FOCA keeps the custom configuration as an untyped extra field; it is an
+    # instance of `CustomConfig` only if the app loads the model by its full
+    # path (`cloud_registry.service_models.custom_config.CustomConfig`)
     custom = (get_config().model_extra or {}).get("custom")
     if not isinstance(custom, CustomConfig):
-        raise RuntimeError("No custom configuration available")
+        raise RuntimeError(f"No custom configuration of type {CustomConfig}")
     return custom
 
 
