@@ -48,6 +48,13 @@ another `id`. The most recently written service info is served, so posted
 service info is kept on restarts unless the service info in the config
 changes.
 
+Public URLs, e.g., in the `Location` header of `POST /service-info`
+responses, are built from `custom.endpoints.service` in `config.yaml`. Set
+`api_path` to the path prefix in front of the API base path when the app is
+served behind a reverse proxy under a subpath (e.g., `registry`), or leave it
+empty. Previously, `api_path` held the API base path itself (e.g.,
+`ga4gh/registry/v1`); remove that value when upgrading.
+
 ## Installation
 
 To quickly install the service for development/testing purposes, we recommend

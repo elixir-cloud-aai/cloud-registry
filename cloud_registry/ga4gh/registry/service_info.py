@@ -78,20 +78,25 @@ class RegisterServiceInfo:
         identifier, is thus kept on restarts, unless the configuration
         changes.
         """
+        # `default=str` covers non-JSON values the config model may hold
         config_hash = hashlib.sha256(
             json.dumps(self.conf_info, sort_keys=True, default=str).encode()
         ).hexdigest()
-        stored = self._get_stored_service_info(id=self.conf_info["id"])
         if self._get_config_hash(id=self.conf_info["id"]) == config_hash:
             logger.info("Using available service info.")
             return
+        stored = self._get_stored_service_info(id=self.conf_info["id"])
         managed = [field for field in TIMESTAMP_FIELDS if field not in self.conf_info]
         if (
             stored is not None
             and all(stored.get(field) for field in managed)
             and {k: v for k, v in stored.items() if k not in managed} == self.conf_info
         ):
-            # Written before `CONFIG_HASH` was added; kept as is
+            # Written before `CONFIG_HASH` was added; record the hash only, so
+            # that service info posted with this identifier later is kept
+            self.collection.update_one(
+                {"id": self.conf_info["id"]}, {"$set": {CONFIG_HASH: config_hash}}
+            )
             logger.info("Using available service info.")
             return
         self._upsert_service_info(
@@ -128,8 +133,9 @@ class RegisterServiceInfo:
         data: dict,
         config_hash: str | None = None,
     ) -> None:
-        """Insert or update service info document, marking it as the most
-        recently written one.
+        """Insert or update service info document.
+
+        Marks the document as the most recently written one.
 
         Arguments:
             data: Service info.
@@ -147,8 +153,7 @@ class RegisterServiceInfo:
         )
 
     def _get_config_hash(self, id: str) -> str | None:
-        """Get the hash of the service info config last written to the
-        document with a given identifier.
+        """Get the hash of the config last written to a service info document.
 
         Arguments:
             id: Service info identifier.

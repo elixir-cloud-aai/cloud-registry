@@ -7,6 +7,8 @@ import pytest
 
 from cloud_registry.exceptions import NotFound
 from cloud_registry.ga4gh.registry.service_info import (
+    CONFIG_HASH,
+    WRITTEN_AT,
     RegisterServiceInfo,
 )
 from tests.mock_data import (
@@ -107,6 +109,33 @@ class TestRegisterServiceInfo:
             register.set_service_info_from_config()
             info = register.get_service_info()
         assert (info["id"], info["name"]) == (SERVICE_INFO_CONFIG["id"], "changed")
+
+    def test_legacy_document_then_post(self, unit_app):
+        """Service info posted with the configured identifier after an upgrade
+        from a version without config hashes is kept on restart.
+        """
+        with unit_app.test_request_context(SERVICE_INFO_PATH, method="POST"):
+            register = RegisterServiceInfo()
+            register.collection.insert_one(deepcopy(SERVICE_INFO_CONFIG))
+            register.set_service_info_from_config()
+            register.set_service_info_from_app_context(
+                data={**SERVICE_INFO_CONFIG, "name": "Posted"}
+            )
+            register.set_service_info_from_config()
+            assert register.get_service_info()["name"] == "Posted"
+
+    def test_internal_fields(self, unit_app):
+        """Internal fields are stored but not returned."""
+        with unit_app.app_context():
+            register = RegisterServiceInfo()
+            register.set_service_info_from_config()
+            stored = register.collection.find_one({"id": SERVICE_INFO_CONFIG["id"]})
+            assert {WRITTEN_AT, CONFIG_HASH} <= stored.keys()
+            for info in (
+                register.get_service_info(),
+                register._get_stored_service_info(id=SERVICE_INFO_CONFIG["id"]),
+            ):
+                assert not {"_id", WRITTEN_AT, CONFIG_HASH} & info.keys()
 
     def test__get_headers(self, unit_app):
         """Test for response headers getter."""
