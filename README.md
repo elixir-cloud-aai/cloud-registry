@@ -200,42 +200,59 @@ Then start the app again; it adds the missing keys.
 
 Admins mark services as **verified** once they have checked them, e.g., that
 a service accepts LS Login tokens. What admins check is up to the
-deployment; the registry only records when a service was verified. Owners can't verify their own services.
+deployment; the registry only records when a service was verified. Owners
+can't verify their own services.
 
 ```bash
 curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/<id>/verification" \
-  -H "Authorization: Bearer <admin token>"
+  -H "Authorization: Bearer <admin token>" -H "Content-Type: application/json" \
+  -d '{"url": "https://tes.example.org/ga4gh/tes/v1", "type": {"group": "org.ga4gh", "artifact": "tes", "version": "1.1.0"}}'
 ```
 
-returns the verification, e.g., `{"verified_at": "2026-10-20T12:34:56.789Z"}`;
-verifying a service again renews it. `DELETE` on the same path removes it.
+The body names the URL and API type that the admin checked. It is optional,
+but recommended: the service is only verified if it still has exactly that
+URL (as registered, character by character) and the same API type
+(`type.group` and `type.artifact`, case-insensitive; `type.version` is not
+compared), checked in the same write. Otherwise, e.g., if the owner changed
+the URL after the admin checked it, the request returns `409 Conflict` and
+changes nothing. Without a body, the service is verified as it is
+registered at the time of the request.
+
+The request returns the verification, with the URL and API type of the
+service:
+
+```json
+{"url": "https://tes.example.org/ga4gh/tes/v1", "type": {"group": "org.ga4gh", "artifact": "tes", "version": "1.1.0"}, "verified_at": "2026-10-20T12:34:56.789Z"}
+```
+
+Verifying a service again renews it. `DELETE` on the same path removes it.
 Both are for admins only, and return `404 Not Found` for unknown services
 (`DELETE` also for unverified ones).
 
 Verifications can be read by anyone: `GET /services/<id>/verification`
 returns the verification of a service (`404 Not Found` if it is not
 verified), and `GET /verifications` lists all verified services, sorted by
-identifier:
-
-```json
-[{"service_id": "<id>", "verified_at": "2026-10-20T12:34:56.789Z"}]
-```
+identifier, each with its identifier as `service_id` and the fields above.
 
 The GA4GH endpoints are unchanged: `GET /services` and
 `GET /services/<id>` don't show verifications. Clients that should only use
 verified services (e.g., a [proTES][protes] gateway choosing TES instances)
-list the services (`GET /services`) and keep those whose identifiers are
-listed by `GET /verifications`.
+list the services (`GET /services`) and keep those listed by
+`GET /verifications` with the same identifier, `url` and `type` (`group` and
+`artifact`), so that a service changed between the two requests isn't used.
 
-A verification applies to the URL and API type of the service at the time
-it is verified. It is removed when the service is changed to another URL or
-API type (`type.group` or `type.artifact`, compared as for
-[duplicates](#duplicate-services)), in the same write, as the checks may not
-hold for them; changing them back doesn't restore it. Other updates (e.g., of
-`version`, `type.version` or `name`) keep the verification. Replacements and
-verifications at the same time are ordered: a verification is never kept for
-another URL or API type, and replacements keeping both don't remove
-verifications made meanwhile. Deleting a service deletes its verification.
+A verification applies to the URL, exactly as written, and the API type of
+the service at the time it is verified. It is removed when the service is
+updated with any other URL, even another spelling of the same one (e.g.,
+another case of the host, a trailing slash, or a query or fragment, which
+are ignored when [comparing services](#duplicate-services)), or another API
+type (`type.group` or `type.artifact`, compared as for duplicates), in the
+same write, as the checks may not hold for them; changing them back doesn't
+restore it. Other updates (e.g., of `version`, `type.version` or `name`)
+keep the verification. Replacements and verifications at the same time are
+ordered: a verification is never kept for another URL or API type, and
+replacements keeping both don't remove verifications made meanwhile.
+Deleting a service deletes its verification.
 
 ## Installation
 

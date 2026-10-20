@@ -420,11 +420,13 @@ class TestVerificationReset:
         [
             {"name": "new name", "version": "2.0.0"},
             {"type": {**MOCK_TYPE, "version": "2.0.0"}},
-            {"url": "HTTPS://beacon.example.org/api/"},
+            {"type": {**MOCK_TYPE, "artifact": "BEACON"}},
         ],
     )
     def test_kept(self, unit_app, services, change):
-        """Verifications are kept if the key is unchanged."""
+        """Verifications are kept if the URL (as written) and the key are
+        unchanged.
+        """
         self._verified(services)
         data = {**MOCK_SERVICE, **change}
         self._replace(unit_app, data)
@@ -437,10 +439,16 @@ class TestVerificationReset:
             {"url": "https://other.example.org/api"},
             {"type": {**MOCK_TYPE, "artifact": "tes"}},
             {"type": {**MOCK_TYPE, "group": "org.example"}},
+            # same key, but the URL is written differently
+            {"url": "HTTPS://beacon.example.org/api/"},
+            {"url": "https://beacon.example.org/api?redirect=evil"},
+            {"url": "https://beacon.example.org/api#evil"},
         ],
     )
     def test_removed(self, unit_app, services, change):
-        """Verifications are removed if the key changes."""
+        """Verifications are removed if the URL (in any way) or the key
+        changes.
+        """
         self._verified(services)
         data = {**MOCK_SERVICE, **change}
         self._replace(unit_app, data)
@@ -470,6 +478,8 @@ class TestVerificationReset:
                 },
                 None,
             ),
+            # the URL is written differently (same key)
+            ({"$set": {"url": "HTTPS://beacon.example.org/api/"}}, None),
             # the verification is renewed, or removed
             ({"$set": {VERIFIED: datetime(2026, 10, 21)}}, datetime(2026, 10, 21)),
             ({"$unset": {VERIFIED: ""}}, None),

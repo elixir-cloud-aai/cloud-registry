@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
 # (not version), with a unique index (cf. `config.yaml`); not served
 KEY = "_serviceKey"
 # Internal field with the time an admin verified a service (cf.
-# `verification.py`); removed when its key changes; not served
+# `verification.py`); removed when its URL (as written) or key changes; not
+# served
 VERIFIED = "_verifiedAt"
 # Projection excluding internal fields
 PROJECTION = {"_id": False, KEY: False, VERIFIED: False}
@@ -251,11 +252,14 @@ class RegisterService:
             retries: How many times should the generation of a random
                 identifier and insertion into the database be retried when
                 encountering `DuplicateKeyError`s if a service identifier was
-                not provided.
+                not provided; if it was provided, how many times should the
+                stored service be read again when it changed concurrently.
 
         Raises:
             DuplicateService: Another service with the same URL and API type
                 is registered.
+            InternalServerError: The service could not be registered within
+                the retries.
         """
         key = service_key(self.data)
         self._check_duplicate(key=key)
@@ -293,13 +297,16 @@ class RegisterService:
     def _replace(self, key: str, retries: int) -> None:
         """Replace the service with the provided identifier, or insert it.
 
-        The verification of the service (cf. `VERIFIED`) is kept if its key
-        is unchanged and removed otherwise, in the same write. To this end,
-        the stored service is read first, and only replaced if neither its
-        key nor its verification changed meanwhile (compare-and-swap);
+        The verification of the service (cf. `VERIFIED`) is kept if its URL
+        is unchanged, exactly as written, and so is its key (API type);
+        otherwise, it is removed in the same write. Other spellings of the
+        URL (e.g., with a query, which normalized URLs, and so keys, don't
+        have) remove it, too: the admin checked the URL as written. To this
+        end, the stored service is read first, and only replaced if neither
+        its URL, key nor verification changed meanwhile (compare-and-swap);
         otherwise, it is read again. So a verification is never kept for
         another URL or API type, and verifications concurrent with a
-        replacement keeping the key are not lost. Only if the service is
+        replacement keeping both are not lost. Only if the service is
         inserted concurrently (after it was read as missing) is a
         verification of the inserted service removed.
 
@@ -316,16 +323,20 @@ class RegisterService:
         """
         for _ in range(retries + 1):
             stored = self.db_coll.find_one(
-                {"id": self.data["id"]}, {"_id": False, KEY: True, VERIFIED: True}
+                {"id": self.data["id"]},
+                {"_id": False, "url": True, KEY: True, VERIFIED: True},
             )
             replacement = {**self.data, KEY: key}
             filter: dict = {"id": self.data["id"]}
             if stored is not None:
                 # the fields as read; missing if they were (e.g., services
                 # without key, cf. `add_service_keys()`)
-                for field in (KEY, VERIFIED):
+                for field in ("url", KEY, VERIFIED):
                     filter[field] = stored.get(field, {"$exists": False})
-                if stored.get(KEY) == key and VERIFIED in stored:
+                unchanged = (
+                    stored.get("url") == self.data["url"] and stored.get(KEY) == key
+                )
+                if unchanged and VERIFIED in stored:
                     replacement[VERIFIED] = stored[VERIFIED]
             try:
                 result = self.db_coll.replace_one(

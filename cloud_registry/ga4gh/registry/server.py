@@ -5,6 +5,7 @@ import logging
 
 from flask import Response, request
 from foca.utils.logging import log_traffic
+from werkzeug.exceptions import HTTPException
 
 from cloud_registry.exceptions import BadRequest, NotFound, exceptions
 from cloud_registry.ga4gh.registry.permissions import add_owner, remove_permissions
@@ -174,10 +175,10 @@ def _register_service(
         service.register_metadata()
     except InvalidService as exc:
         logger.info("Service not registered: %s", exc.description)
-        return _problem(exc)
+        return problem(exc)
     except DuplicateService as exc:
         logger.info("Service not registered: %s", exc.description)
-        return _problem(exc, serviceId=exc.existing_id)
+        return problem(exc, serviceId=exc.existing_id)
     if service.was_created:
         try:
             # Roles left on the identifier by a deleted service (e.g., if
@@ -198,7 +199,7 @@ def _register_service(
     return service.data["id"]
 
 
-def _problem(exc: InvalidService | DuplicateService, **extensions: str) -> Response:
+def problem(exc: HTTPException, **extensions: str) -> Response:
     """Build a problem details response with the description of an exception.
 
     FOCA's problem details are fixed per exception class, so responses with
@@ -215,14 +216,14 @@ def _problem(exc: InvalidService | DuplicateService, **extensions: str) -> Respo
     title = next(
         exceptions[cls]["title"] for cls in type(exc).__mro__ if cls in exceptions
     )
-    problem = {
+    details = {
         "title": title,
         "status": exc.code,
         "detail": exc.description,
         **extensions,
     }
     return Response(
-        dumps(problem), status=exc.code, mimetype="application/problem+json"
+        dumps(details), status=exc.code, mimetype="application/problem+json"
     )
 
 

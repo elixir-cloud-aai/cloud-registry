@@ -42,17 +42,30 @@ def put_service(client, service=None, user=ADMIN, service_id=SERVICE_ID):
     ).status_code
 
 
-def verification(client, service_id=SERVICE_ID, method="get", user=None):
+def verification(client, service_id=SERVICE_ID, method="get", user=None, **kwargs):
     """Send a request to the verification of a service."""
     return client.open(
         f"{BASE}/services/{service_id}/verification",
         method=method,
         headers=headers(user),
+        **kwargs,
     )
 
 
-def verify(client, service_id=SERVICE_ID, user=ADMIN):
-    return verification(client, service_id, method="put", user=user)
+def verify(client, service_id=SERVICE_ID, user=ADMIN, checked=None):
+    """Verify a service, with the URL and API type checked, if given."""
+    kwargs = {} if checked is None else {"json": checked}
+    return verification(client, service_id, method="put", user=user, **kwargs)
+
+
+def checked(service=SERVICE):
+    """URL and API type of a service, as checked by an admin."""
+    return {"url": service["url"], "type": deepcopy(service["type"])}
+
+
+def expected(verified_at, service=SERVICE):
+    """Expected verification of a service."""
+    return {**checked(service), "verified_at": verified_at}
 
 
 def unverify(client, service_id=SERVICE_ID, user=ADMIN):
@@ -90,11 +103,77 @@ def test_verify(client, service):
     verified_at = response.json["verified_at"]
     assert datetime.fromisoformat(verified_at.replace("Z", "+00:00")) >= before
 
+    assert response.json == expected(verified_at)
+
     response = verification(client)
     assert response.status_code == 200
-    assert response.json == {"verified_at": verified_at}
+    assert response.json == expected(verified_at)
     response = client.get(f"{BASE}/verifications")
-    assert response.json == [{"service_id": service, "verified_at": verified_at}]
+    assert response.json == [{"service_id": service, **expected(verified_at)}]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        checked(),
+        # the version is not compared, the API type is case-insensitive
+        {**checked(), "type": {**SERVICE["type"], "version": "9.9.9"}},
+        {**checked(), "type": {**SERVICE["type"], "artifact": "TES"}},
+    ],
+)
+def test_verify_checked(client, service, body):
+    """Services are verified if they have the URL and API type checked."""
+    response = verify(client, checked=body)
+    assert response.status_code == 200
+    assert response.json == expected(response.json["verified_at"])
+    assert verified(client) == [service]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {**checked(), "url": "https://other.example.org/ga4gh/tes/v1"},
+        # same normalized URL, but not as registered
+        {**checked(), "url": "https://tes.example.org/ga4gh/tes/v1/"},
+        {**checked(), "url": "https://tes.example.org/ga4gh/tes/v1?a=b"},
+        # no service can have invalid URLs
+        {**checked(), "url": "https://user@tes.example.org/ga4gh/tes/v1"},
+        {**checked(), "type": {**SERVICE["type"], "artifact": "wes"}},
+        {**checked(), "type": {**SERVICE["type"], "group": "org.example"}},
+    ],
+)
+def test_verify_checked_conflict(client, service, body):
+    """Services with another URL or API type than the one checked are not
+    verified, saying why; verifications are unchanged.
+    """
+    response = verify(client, checked=body)
+    assert response.status_code == 409
+    assert response.mimetype == "application/problem+json"
+    assert "another URL or API type" in response.json["detail"]
+    assert verified(client) == []
+    verified_at = verify(client).json["verified_at"]
+    assert verify(client, checked=body).status_code == 409
+    assert verification(client).json == expected(verified_at)
+
+
+def test_verify_checked_not_found(client):
+    """Unknown services can't be verified, also with a body."""
+    assert verify(client, "UNKNWN", checked=checked()).status_code == 404
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"url": SERVICE["url"]},
+        {"type": SERVICE["type"]},
+        {**checked(), "name": "My TES"},
+        {**checked(), "type": {"group": "org.ga4gh", "artifact": "tes"}},
+    ],
+)
+def test_verify_checked_invalid(client, service, body):
+    """Bodies need exactly a URL and an API type."""
+    assert verify(client, checked=body).status_code == 400
+    assert verified(client) == []
 
 
 def test_verify_again(client, service):
@@ -176,10 +255,17 @@ def test_list(client):
         {"url": "https://other.example.org/ga4gh/tes/v1"},
         {"type": {**SERVICE["type"], "artifact": "wes"}},
         {"type": {**SERVICE["type"], "group": "org.example"}},
+        # same normalized URL (and so the same service), but spelled
+        # differently, e.g., with a query
+        {"url": "HTTPS://TES.example.org:443/ga4gh/tes/v1/"},
+        {"url": "https://tes.example.org/ga4gh/tes/v1?redirect=evil"},
+        {"url": "https://tes.example.org/ga4gh/tes/v1#evil"},
     ],
 )
 def test_reset_on_change(client, service, change):
-    """Changing the URL or API type of a service removes its verification."""
+    """Changing the URL (as written) or API type of a service removes its
+    verification.
+    """
     assert verify(client).status_code == 200
     assert put_service(client, _service(**change), user=USER) == 200
     assert verification(client).status_code == 404
@@ -194,18 +280,17 @@ def test_reset_on_change(client, service, change):
     [
         {"type": {**SERVICE["type"], "version": "2.0.0"}},
         {"version": "2.0.0", "name": "New name"},
-        # same URL and API type, in another spelling
-        {"url": "HTTPS://TES.example.org:443/ga4gh/tes/v1/"},
+        # same API type, in another spelling
         {"type": {**SERVICE["type"], "artifact": " TES "}},
     ],
 )
 def test_kept_on_update(client, service, change):
     """Updating a service with the same URL and API type keeps its
-    verification.
+    verification, served with the URL and API type as updated.
     """
     verified_at = verify(client).json["verified_at"]
     assert put_service(client, _service(**change), user=USER) == 200
-    assert verification(client).json == {"verified_at": verified_at}
+    assert verification(client).json == expected(verified_at, _service(**change))
     assert client.get(f"{BASE}/services/{service}").json == _service(
         id=service, **change
     )
