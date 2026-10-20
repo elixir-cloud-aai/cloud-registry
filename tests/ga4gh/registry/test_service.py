@@ -146,29 +146,61 @@ class TestRegisterService:
             obj.register_metadata()
             assert isinstance(obj.data["id"], str)
 
+    def test_register_metadata_duplicate_key_new_id(self, monkeypatch):
+        """Test for registering a service; a new identifier is generated after
+        a duplicate key error.
+        """
+        app = _app_with_unique_index()
+        coll = app.config.foca.db.dbs["serviceStore"].collections["services"].client
+        coll.insert_one({"id": "AAAAAA"})
+        ids = iter(["AAAAAA", "BBBBBB"])
+        monkeypatch.setattr(
+            "cloud_registry.ga4gh.registry.service.generate_id",
+            lambda **kwargs: next(ids),
+        )
+
+        with app.app_context():
+            obj = RegisterService(data=deepcopy(MOCK_SERVICE))
+            obj.register_metadata()
+        assert obj.data["id"] == "BBBBBB"
+        assert coll.find_one({"id": "BBBBBB"})["name"] == MOCK_SERVICE["name"]
+
     def test_register_metadata_duplicate_keys_repeated(self):
         """Test for registering a service; running out of unique identifiers."""
         custom_config = deepcopy(CUSTOM_CONFIG)
-        custom_config["endpoints"]["services"]["id"]["length"] = MOCK_ID_ONE_CHAR
+        custom_config["endpoints"]["services"]["id"]["charset"] = MOCK_ID_ONE_CHAR
         custom_config["endpoints"]["services"]["id"]["length"] = 1
-        app = Flask(__name__)
-        app.config.foca = Config(
-            db=MongoConfig(**MONGO_CONFIG),
-            custom=CustomConfig(**CUSTOM_CONFIG),
-        )
-        mock_resp = deepcopy(MOCK_SERVICE)
-        app.config.foca.db.dbs["serviceStore"].collections[
-            "services"
-        ].client = mongomock.MongoClient().db.collection
-        app.config.foca.db.dbs["serviceStore"].collections[
-            "services"
-        ].client.insert_one(mock_resp)
+        app = _app_with_unique_index(custom_config)
+        coll = app.config.foca.db.dbs["serviceStore"].collections["services"].client
+        coll.insert_one({"id": MOCK_ID_ONE_CHAR})
 
-        data = deepcopy(MOCK_SERVICE)
         with app.app_context():
+            obj = RegisterService(data=deepcopy(MOCK_SERVICE))
             with pytest.raises(InternalServerError):
-                obj = RegisterService(data=data)
                 obj.register_metadata()
-                obj = RegisterService(data=data)
-                obj.register_metadata()
-                print(obj.data["id"])
+        assert coll.count_documents({}) == 1
+
+    def test_register_metadata_does_not_modify_data(self):
+        """Test that registering a service does not modify the caller's data."""
+        app = _app_with_unique_index()
+        data = deepcopy(MOCK_SERVICE)
+
+        with app.app_context():
+            RegisterService(data=data).register_metadata()
+            RegisterService(data=data, id=MOCK_ID).register_metadata()
+        assert data == MOCK_SERVICE
+
+
+def _app_with_unique_index(custom_config=CUSTOM_CONFIG) -> Flask:
+    """Create app whose services collection is an in-memory MongoDB
+    collection with a unique index on `id`.
+    """
+    app = Flask(__name__)
+    app.config.foca = Config(
+        db=MongoConfig(**MONGO_CONFIG),
+        custom=CustomConfig(**custom_config),
+    )
+    coll = mongomock.MongoClient().db.services
+    coll.create_index("id", unique=True)
+    app.config.foca.db.dbs["serviceStore"].collections["services"].client = coll
+    return app
