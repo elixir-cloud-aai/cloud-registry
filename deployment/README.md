@@ -15,7 +15,7 @@ helm install cloud-registry . -n namespace
 
 If you need to change any parameter of the deployment, the procedure is similar to installing:
 
-1. Edit `values.yaml` with the new configuration you want to apply. For example, if you want to 
+1. Edit `values.yaml` with the new configuration you want to apply. For example, if you want to
    change the image of cloud-registry, change `cloud_registry.image`.
 
 2. Upgrade the Helm chart. Run this from the `deployment` folder:
@@ -23,6 +23,5 @@ If you need to change any parameter of the deployment, the procedure is similar 
 helm upgrade cloud-registry . -n namespace
 ```
 `namespace` is the name of the namespace where the cluster was installed.
-`cloud-registry` is the name given when installing. In order to see the correct name, do a `helm ls 
+`cloud-registry` is the name given when installing. In order to see the correct name, do a `helm ls
 -n namespace`.
-

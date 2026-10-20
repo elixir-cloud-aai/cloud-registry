@@ -5,15 +5,15 @@ import re
 
 import pytest
 
+from cloud_registry.exceptions import NotFound
+from cloud_registry.ga4gh.registry.service_info import (
+    RegisterServiceInfo,
+)
 from tests.mock_data import (
     HEADERS_SERVICE_INFO,
     SERVICE_CONFIG,
     SERVICE_INFO_CONFIG,
 )
-from cloud_registry.ga4gh.registry.service_info import (
-    RegisterServiceInfo,
-)
-from cloud_registry.exceptions import NotFound
 
 
 class TestRegisterServiceInfo:

@@ -2,13 +2,12 @@
 
 from copy import deepcopy
 import logging
-from typing import Dict, Optional
 
-from flask import current_app
+from foca.utils.misc import generate_id
 from pymongo.errors import DuplicateKeyError
 
 from cloud_registry.exceptions import InternalServerError
-from foca.utils.misc import generate_id
+from cloud_registry.utils import get_collection, get_custom_config
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +17,8 @@ class RegisterService:
 
     def __init__(
         self,
-        data: Dict,
-        id: Optional[str] = None,
+        data: dict,
+        id: str | None = None,
     ) -> None:
         """Initialize service data.
 
@@ -40,15 +39,14 @@ class RegisterService:
             id_length: Length of generated service identifiers.
             db_coll: Database collection for storing service objects.
         """
-        foca_conf = current_app.config.foca  # type: ignore[attr-defined]
-        endpoint_conf = foca_conf.custom.endpoints
+        endpoint_conf = get_custom_config().endpoints
         self.data = deepcopy(data)
         self.data["id"] = id
         self.replace = id is not None
         self.was_replaced = False
         self.id_charset: str = endpoint_conf.services.id.charset
         self.id_length = int(endpoint_conf.services.id.length)
-        self.db_coll = foca_conf.db.dbs["serviceStore"].collections["services"].client
+        self.db_coll = get_collection("services")
 
     def register_metadata(self, retries: int = 9) -> None:
         """Register service.
@@ -71,7 +69,7 @@ class RegisterService:
 
         # insert service with random ID (POST); new ID if key exists
         else:
-            for i in range(retries + 1):
+            for _ in range(retries + 1):
                 self.data["id"] = generate_id(
                     charset=self.id_charset, length=self.id_length
                 )
@@ -80,11 +78,11 @@ class RegisterService:
                     self.db_coll.insert_one(document=dict(self.data))
                 except DuplicateKeyError:
                     continue
-                logger.info(f"Added service with id '{self.data['id']}'.")
+                logger.info("Added service with id '%s'.", self.data["id"])
                 break
             else:
                 raise InternalServerError
         logger.debug(
-            "Entry in 'services' collection: "
-            f"{self.db_coll.find_one({'id': self.data['id']})}"
+            "Entry in 'services' collection: %s",
+            self.db_coll.find_one({"id": self.data["id"]}),
         )

@@ -101,6 +101,27 @@ changes. Please refer to our organization's [contribution
 guidelines][contributing] if you are interested to contribute. Please mind the
 [code of conduct][coc] for all interactions with the community.
 
+To set up a development environment and run the checks that CI runs:
+
+```bash
+pip install -r requirements.txt -r requirements_dev.txt
+pre-commit install  # run the checks on every commit
+pre-commit run --all-files  # ruff, mypy, semgrep, ast-grep
+pre-commit run --all-files --hook-stage manual gitleaks-all  # secrets
+pytest
+```
+
+Run `pre-commit` in the environment with the dev requirements: the mypy and
+ast-grep hooks use the installed packages. The first run sets up the other
+hooks, which takes a few minutes.
+
+The checks are configured in `.pre-commit-config.yaml` and `pyproject.toml`.
+Project-specific rules are in `.semgrep/` (security) and `.ast-grep/`
+(anti-patterns such as HTTP status codes as strings). To suppress a false
+positive, add a comment with the reason to the line: `# noqa: <code>` (ruff),
+`# nosemgrep: <rule-id>`, `# ast-grep-ignore: <rule-id>` or
+`# gitleaks:allow`.
+
 ## Versioning
 
 The project adopts the [semantic versioning][semver] scheme for versioning.

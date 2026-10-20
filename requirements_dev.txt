@@ -1,8 +1,8 @@
-black==26.10.1
+ast-grep-cli==0.51.0
 build==1.6.1
 coverage==7.16.2
-flake8==7.4.1
-Flake8-pyproject==1.2.4
 mongomock==4.3.0
 mypy==2.4.0
+pre-commit==4.6.2
 pytest==9.1.1
+types-PyYAML==6.0.12.20260906

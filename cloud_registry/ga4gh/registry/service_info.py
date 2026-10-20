@@ -1,12 +1,10 @@
 """Controller for service info endpoint."""
 
-import logging
 from datetime import datetime, timezone
-from typing import Dict, Optional
-
-from flask import current_app
+import logging
 
 from cloud_registry.exceptions import NotFound
+from cloud_registry.utils import get_collection, get_custom_config
 
 logger = logging.getLogger(__name__)
 TIMESTAMP_FIELDS = ("createdAt", "updatedAt")
@@ -30,18 +28,15 @@ class RegisterServiceInfo:
             conf_info: Service info details as per endpoints config.
             collection: Database collection storing service info objects.
         """
-        foca_conf = current_app.config.foca  # type: ignore[attr-defined]
-        endpoint_conf = foca_conf.custom.endpoints
+        endpoint_conf = get_custom_config().endpoints
         self.url_prefix = endpoint_conf.service.url_prefix
         self.host_name = endpoint_conf.service.external_host
         self.external_port = endpoint_conf.service.external_port
         self.api_path = endpoint_conf.service.api_path
         self.conf_info = endpoint_conf.service_info.model_dump(exclude_none=True)
-        self.collection = (
-            foca_conf.db.dbs["serviceStore"].collections["service_info"].client
-        )
+        self.collection = get_collection("service_info")
 
-    def get_service_info(self) -> Dict:
+    def get_service_info(self) -> dict:
         """Get latest service info from database.
 
         Returns:
@@ -54,8 +49,8 @@ class RegisterServiceInfo:
                 .limit(1)
                 .next()
             )
-        except StopIteration:
-            raise NotFound
+        except StopIteration as exc:
+            raise NotFound from exc
 
     def set_service_info_from_config(
         self,
@@ -85,8 +80,8 @@ class RegisterServiceInfo:
 
     def set_service_info_from_app_context(
         self,
-        data: Dict,
-    ) -> Dict:
+        data: dict,
+    ) -> dict:
         """Create or update service info from a request.
 
         Missing timestamps are added: `createdAt` is kept from stored service
@@ -105,7 +100,7 @@ class RegisterServiceInfo:
 
     def _upsert_service_info(
         self,
-        data: Dict,
+        data: dict,
     ) -> None:
         """Insert or updated service info document."""
         self.collection.replace_one(
@@ -114,13 +109,13 @@ class RegisterServiceInfo:
             upsert=True,
         )
 
-    def _get_headers(self) -> Dict:
+    def _get_headers(self) -> dict:
         """Build dictionary of response headers.
 
         Returns:
             Response headers.
         """
-        headers: Dict = {
+        headers: dict = {
             "Content-type": "application/json",
         }
         headers["Location"] = (
@@ -129,7 +124,7 @@ class RegisterServiceInfo:
         )
         return headers
 
-    def _get_stored_service_info(self, id: str) -> Optional[Dict]:
+    def _get_stored_service_info(self, id: str) -> dict | None:
         """Get stored service info with a given identifier.
 
         Arguments:
@@ -140,7 +135,7 @@ class RegisterServiceInfo:
         """
         return self.collection.find_one({"id": id}, {"_id": False})
 
-    def _add_timestamps(self, data: Dict, stored: Optional[Dict]) -> Dict:
+    def _add_timestamps(self, data: dict, stored: dict | None) -> dict:
         """Add missing timestamps to service info.
 
         Arguments:

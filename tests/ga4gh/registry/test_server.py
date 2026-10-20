@@ -17,9 +17,9 @@ from cloud_registry.ga4gh.registry.server import (
 )
 from tests.mock_data import (
     MOCK_ID,
+    MOCK_SERVICE,
     MOCK_TYPE,
     SERVICE_INFO_CONFIG,
-    MOCK_SERVICE,
 )
 
 
