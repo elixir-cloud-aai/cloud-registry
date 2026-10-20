@@ -85,6 +85,14 @@ db:
                               id: 1
                           options:
                             'unique': True
+                        # Services are unique by URL and API type; sparse,
+                        # as services registered before have no key until
+                        # it's added on startup
+                        - keys:
+                              _serviceKey: 1
+                          options:
+                            'unique': True
+                            'sparse': True
                 # Display names of users with roles on services, per service
                 user_names:
                     indexes:
