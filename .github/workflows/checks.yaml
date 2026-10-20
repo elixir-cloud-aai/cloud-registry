@@ -31,8 +31,13 @@ jobs:
       - name: Code formatting check with black
         run: black --check .
   test:
-    name: Run tests
+    name: Run tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.12: Python version of the base image in the Dockerfile
+        python-version: ["3.10", "3.12"]
     env:
       PROBE_ENDPOINT: http://localhost:8080/ga4gh/registry/v1/ui/
     steps:
@@ -41,7 +46,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: ${{ matrix.python-version }}
       - name: Install requirements
         run: |
           pip install --upgrade pip==24.0
@@ -55,6 +60,7 @@ jobs:
       # Upload errors fail the workflow only on pushes, because pull requests
       # from forks and Dependabot get no access to the Codecov token
       - name: Submit Report to Codecov
+        if: matrix.python-version == '3.12'
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
