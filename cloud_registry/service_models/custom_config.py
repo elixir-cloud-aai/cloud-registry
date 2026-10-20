@@ -241,34 +241,6 @@ class IdConfig(FOCABaseConfig):
         return charset
 
 
-class MetaVersionConfig(FOCABaseConfig):
-    """Model for storing version control configurations for services onboarded
-    on cloud registry.
-
-    Args:
-        init: Initial version number for a given service.
-        increment: Incremental value for next version.
-
-    Attributes:
-        init: Initial version number for a given service.
-        increment: Incremental value for next versions.
-
-    Raises:
-        pydantic.ValidationError: The class was instantianted with an illegal
-            data type.
-
-    Example:
-        >>> MetaVersionConfig(
-        ...     init=1,
-        ...     increment=1
-        ... )
-        MetaVersionConfig(init=1, increment=1)
-    """
-
-    init: int
-    increment: int
-
-
 class ServicesConfig(FOCABaseConfig):
     """Model for defining the service database store for cloud registry. This
     defines the configurations for service identifiers stored on cloud
@@ -276,11 +248,9 @@ class ServicesConfig(FOCABaseConfig):
 
     Args:
         id: Unique identifier for a service in cloud registry.
-        meta_version: Version increment configuration for service upgrades.
 
     Attributes:
         id: Unique identifier for a service in cloud registry.
-        meta_version: Version increment configuration for service upgrades.
 
     Raises:
         pydantic.ValidationError: The class was instantianted with an illegal
@@ -291,18 +261,13 @@ class ServicesConfig(FOCABaseConfig):
         ...     id=IdConfig(
         ...         charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
         ...         length=6
-        ...     ),
-        ...     meta_version=MetaVersionConfig(
-        ...         init=1,
-        ...         increment=1
         ...     )
         ... )
         ServicesConfig(id=IdConfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ01234567\
-89', length=6), meta_version=MetaVersionConfig(init=1, increment=1))
+89', length=6))
     """
 
     id: IdConfig
-    meta_version: MetaVersionConfig
 
 
 class EndpointsConfig(FOCABaseConfig):
@@ -354,10 +319,6 @@ class EndpointsConfig(FOCABaseConfig):
         ...         id=IdConfig(
         ...             charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
         ...             length=6
-        ...         ),
-        ...         meta_version=MetaVersionConfig(
-        ...             init=1,
-        ...             increment=1
         ...         )
         ...     )
         ... )
@@ -369,8 +330,7 @@ anizationConfig(name='organization_name',url='organization_url'),contactUrl='s\
 ervice_contact_url',documentationUrl='service_document_url',createdAt='2020-11\
 -04T12:58:19Z',updatedAt='2020-11-04T12:58:19Z',environment='dev',version='1.0\
 .0-dev-XXXXXX'),services=ServicesConfig(id=IdConfig(charset='ABCDEFGHIJKLMNOPQ\
-RSTUVWXYZ0123456789',length=6),meta_version=MetaVersionConfig(init=1,increment\
-=1)))
+RSTUVWXYZ0123456789',length=6)))
     """
 
     service: ServiceConfig
@@ -424,10 +384,6 @@ class CustomConfig(FOCABaseConfig):
         ...             id=IdConfig(
         ...                 charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
         ...                 length=6
-        ...             ),
-        ...             meta_version=MetaVersionConfig(
-        ...                 init=1,
-        ...                 increment=1
         ...             )
         ...         )
         ...     )
@@ -440,8 +396,7 @@ tion.',organization=OrganizationConfig(name='organization_name',url='organizat\
 ion_url'),contactUrl='service_contact_url',documentationUrl='service_document_\
 url',createdAt='2020-11-04T12:58:19Z',updatedAt='2020-11-04T12:58:19Z',environ\
 ment='dev',version='1.0.0-dev-XXXXXX'),services=ServicesConfig(id=IdConfig(cha\
-rset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',length=6),meta_version=MetaVersion\
-Config(init=1,increment=1))))
+rset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',length=6))))
     """
 
     endpoints: EndpointsConfig

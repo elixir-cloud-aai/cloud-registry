@@ -83,7 +83,7 @@ def test_getServiceTypes_distinct(unit_app, services):
     """Test for getting a list of all available service types when all
     registered services are of distinct service types.
     """
-    ids = ["serv1", "serv2", "serv3"]
+    ids = ["serv3", "serv1", "serv2"]
     for i in ids:
         mock_resp = deepcopy(MOCK_SERVICE)
         mock_resp["id"] = i
@@ -92,12 +92,24 @@ def test_getServiceTypes_distinct(unit_app, services):
 
     with unit_app.app_context():
         res = getServiceTypes.__wrapped__()
-        # All written services have distinct types, we expect a list of the
-        # same length as there are entries in the database collection
-        assert len(res) == len(ids)
-        # Asserting that artifacts for all services match the ones registered
-        # (and are thus distinct)
-        assert set([s["artifact"] for s in res]) == set(ids)
+        # All written services have distinct types, sorted by artifact
+        assert res == [{**MOCK_TYPE, "artifact": i} for i in sorted(ids)]
+
+
+# GET /services/types
+def test_getServiceTypes_sort_order(unit_app, services):
+    """Service types are sorted by group, then artifact, then version."""
+    expected = [
+        {"group": "a", "artifact": "b", "version": "2"},
+        {"group": "a", "artifact": "c", "version": "1"},
+        {"group": "a", "artifact": "c", "version": "2"},
+        {"group": "b", "artifact": "a", "version": "1"},
+    ]
+    for i, service_type in enumerate(reversed(expected * 2)):
+        services.insert_one({**MOCK_SERVICE, "id": f"serv{i}", "type": service_type})
+
+    with unit_app.app_context():
+        assert getServiceTypes.__wrapped__() == expected
 
 
 # GET /service-info

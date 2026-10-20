@@ -26,4 +26,4 @@ USER 1000
 
 WORKDIR /app
 
-CMD ["python", "cloud_registry/app.py"]
+CMD ["python", "-m", "cloud_registry.app"]

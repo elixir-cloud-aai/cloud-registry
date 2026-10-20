@@ -124,8 +124,6 @@ def mock_idp(monkeypatch):
 def app_env(monkeypatch, mongo_client, mock_idp):
     """Environment for creating the app from `config.yaml`, without network."""
     monkeypatch.setattr(socket.socket, "connect", _no_network)
-    # Modules referenced in the config are imported from the app directory
-    monkeypatch.syspath_prepend(str(APP_DIR))
     monkeypatch.delenv("FOCA_CONFIG_OVERLAY", raising=False)
 
 
@@ -134,7 +132,7 @@ def app(app_env):
     """App created from `config.yaml`, with service info registered."""
     connexion_app = Foca(
         config_file=APP_DIR / "config.yaml",
-        custom_config_model="service_models.custom_config.CustomConfig",
+        custom_config_model="cloud_registry.service_models.custom_config.CustomConfig",
     ).create_app()
     with connexion_app.app.app_context():
         RegisterServiceInfo().set_service_info_from_config()

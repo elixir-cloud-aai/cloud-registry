@@ -16,7 +16,7 @@ def test_get_custom_config(unit_app):
 def test_get_custom_config_missing(unit_app):
     """A missing custom config raises an error."""
     del get_app_config(unit_app).model_extra["custom"]
-    with unit_app.app_context(), pytest.raises(KeyError):
+    with unit_app.app_context(), pytest.raises(RuntimeError):
         get_custom_config()
 
 
