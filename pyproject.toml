@@ -12,7 +12,6 @@ ignore_missing_imports = true
 
 [tool.coverage.run]
 source = ["cloud_registry"]
-omit = ["cloud_registry/app.py"]
 
 [tool.flake8]
 exclude = [".git", ".eggs", "build", "venv", "env"]
