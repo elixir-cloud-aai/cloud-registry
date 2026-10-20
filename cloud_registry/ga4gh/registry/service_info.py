@@ -36,7 +36,7 @@ class RegisterServiceInfo:
         self.host_name = endpoint_conf.service.external_host
         self.external_port = endpoint_conf.service.external_port
         self.api_path = endpoint_conf.service.api_path
-        self.conf_info = endpoint_conf.service_info.dict(exclude_none=True)
+        self.conf_info = endpoint_conf.service_info.model_dump(exclude_none=True)
         self.collection = (
             foca_conf.db.dbs["serviceStore"].collections["service_info"].client
         )

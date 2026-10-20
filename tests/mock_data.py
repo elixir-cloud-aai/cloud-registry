@@ -3,7 +3,7 @@
 DB = "serviceStore"
 MOCK_ID = "mock_id"
 MOCK_ID_ONE_CHAR = "A"
-CHARSET_EXPRESSION = "string.digits"
+CHARSET = "0123456789"
 INDEX_CONFIG = {"keys": [("id", 1)]}
 COLLECTION_CONFIG = {
     "indexes": [INDEX_CONFIG],
@@ -49,7 +49,7 @@ SERVICE_INFO_CONFIG = {
 }
 SERVICES_CONFIG = {
     "id": {
-        "charset": CHARSET_EXPRESSION,
+        "charset": CHARSET,
         "length": 6,
     },
     "meta_version": {

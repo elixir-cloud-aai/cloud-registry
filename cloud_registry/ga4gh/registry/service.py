@@ -2,7 +2,6 @@
 
 from copy import deepcopy
 import logging
-import string  # noqa: F401
 from typing import Dict, Optional
 
 from flask import current_app
@@ -36,8 +35,8 @@ class RegisterService:
                 otherwise set to `False`.
             was_replaced: Whether an existing service with the provided
                 identifier was replaced.
-            id_charset: A set of allowed characters or an expression evaluating
-                to an allowed character set for generating service identifiers.
+            id_charset: A string of allowed characters for generating service
+                identifiers.
             id_length: Length of generated service identifiers.
             db_coll: Database collection for storing service objects.
         """

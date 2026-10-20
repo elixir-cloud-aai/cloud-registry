@@ -1,5 +1,5 @@
 ##### BASE IMAGE #####
-FROM elixircloud/foca:20240711-py3.12
+FROM elixircloud/foca:0.14.0-py3.12
 
 ##### METADATA ##### 
 LABEL software="Cloud Registry"
@@ -12,13 +12,17 @@ LABEL maintainer.organisation="ELIXIR Cloud & AAI"
 ## Copy app files
 COPY ./ /app
 
-## Install app; yq is for the Helm config job's update-config-map.sh
-## (remove with #67)
-RUN cd /app \
-  && pip install -e . \
+## Install app; the FOCA image runs as non-root user and has no curl or jq,
+## which are needed by `update-config-map.sh` (as is yq; remove with #67)
+USER root
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl jq \
+  && rm -rf /var/lib/apt/lists/* \
+  && cd /app \
+  && pip install --no-cache-dir -e . \
   && cd / \
-  && chmod g+w /app/cloud_registry/api/ \
-  && pip install yq==3.2.3
+  && pip install --no-cache-dir yq==3.2.3
+USER 1000
 
 WORKDIR /app
 

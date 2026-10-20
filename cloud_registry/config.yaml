@@ -8,10 +8,10 @@
 server:
     host: '0.0.0.0'
     port: 8080
-    debug: True
-    environment: development
+    # Debug mode allows executing arbitrary code; only enable it for local
+    # development, on a loopback host
+    debug: False
     testing: False
-    use_reloader: False
 
 # Security configuration
 # Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.SecurityConfig
@@ -21,11 +21,17 @@ security:
         algorithms:
           - RS256
         allow_expired: False
-        audience: null
-        validation_methods:
-          - userinfo
-          - public_key
-        validation_checks: any
+        # Trusted token issuers (`iss` claim); tokens of other issuers are
+        # rejected
+        issuers:
+          - https://login.aai.lifescience-ri.eu/oidc/
+        # Tokens are accepted for any audience, e.g., for local development.
+        # Deployments should only accept tokens of the apps calling the
+        # registry: LS Login sets the `aud` claim to the client ID of the app
+        # the user logged in with (e.g., the registry's front end, a portal
+        # or a gateway), so set `audience` to their client IDs and remove
+        # `verify_audience`.
+        verify_audience: False
 
 # Database configuration
 # Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.DBConfig
@@ -53,9 +59,9 @@ db:
 api:
     specs:
         - path:
-            - cloud_registry/api/20201108.11d2c12.service-info.yaml
-            - cloud_registry/api/20201108.e0358db.openapi.yaml
-            - cloud_registry/api/additions.openapi.yaml
+            - api/20201108.11d2c12.service-info.yaml
+            - api/20201108.e0358db.openapi.yaml
+            - api/additions.openapi.yaml
           add_operation_fields:
               x-openapi-router-controller: ga4gh.registry.server
           add_security_fields:
@@ -89,9 +95,7 @@ log:
         handlers: [console]
 
 exceptions:
-    required_members: [['detail'], ['status'], ['title']]
-    status_member: ['status']
-    exceptions: cloud_registry.exceptions.exceptions
+    mapping: cloud_registry.exceptions.exceptions
 
 custom:
     endpoints:
@@ -117,7 +121,7 @@ custom:
             version: "1.0.0-dev-20201108.e0358db"
         services:
             id:
-                charset: string.ascii_uppercase + string.digits
+                charset: ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
                 length: 6
             meta_version:
                 init: 1

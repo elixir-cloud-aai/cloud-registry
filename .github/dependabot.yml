@@ -5,10 +5,9 @@ updates:
     schedule:
       interval: monthly
     ignore:
-      # connexion 3 needs a FOCA upgrade; the setuptools cap goes with #65
+      # connexion 3 needs a FOCA upgrade
       - dependency-name: connexion
         update-types: ["version-update:semver-major"]
-      - dependency-name: setuptools
     groups:
       python-dependencies:
         patterns: ["*"]
