@@ -76,6 +76,8 @@ security:
 # Database configuration
 # Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.DBConfig
 db:
+    # MongoDB service of Docker Compose; the Helm chart sets the MongoDB
+    # Service of the release
     host: mongodb
     port: 27017
     dbs:

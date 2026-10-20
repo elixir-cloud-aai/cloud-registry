@@ -1,11 +1,37 @@
-Elixir Cloud Service Registry is being deployed!
+{{- $fullname := include "cloud-registry.fullname" . -}}
+{{- $exposed := or .Values.cloud_registry.ingress.enabled (include "cloud-registry.routeEnabled" .) -}}
+{{- /*
+HTTPS, as advertised by the app (see the ConfigMap template): TLS is
+terminated by the ingress, the route or a proxy in front of the cluster.
+*/ -}}
+{{- $url := "http://localhost:8080" -}}
+{{- if $exposed -}}
+{{- $url = printf "https://%s" .Values.host_name -}}
+{{- end -}}
+Elixir Cloud Service Registry is being deployed as release {{ .Release.Name }}
+in namespace {{ .Release.Namespace }}!
+{{- if and .Values.cloud_registry.ingress.enabled (not .Values.cloud_registry.ingress.https.enabled) }}
 
-Once deployed:
+NOTE: The Ingress has no TLS (cloud_registry.ingress.https.enabled is false),
+so TLS must be terminated in front of the cluster for the URLs below.
+{{- end }}
+{{- if not $exposed }}
 
-  1. Access the API via https://{{ .Values.host_name }}/ga4gh/registry/v1/
+WARNING: Neither an Ingress (cloud_registry.ingress.enabled is false) nor an
+OpenShift Route (the cluster does not serve route.openshift.io/v1) was
+created, so the app is only reachable within the cluster. To access it from
+this machine, run:
 
-     To test the connection, you can run:
+  kubectl port-forward svc/{{ $fullname }} 8080:8080 -n {{ .Release.Namespace }}
+{{- end }}
 
-       curl -X GET "https://{{ .Values.host_name }}/ga4gh/registry/v1/service-info" -H "Accept: application/json"
+Once deployed (check with
+`kubectl rollout status deploy/{{ $fullname }} -n {{ .Release.Namespace }}`):
 
-  2. Access the Swagger UI via https://{{ .Values.host_name }}/ga4gh/registry/v1/ui
+  1. Access the API via {{ $url }}/ga4gh/registry/v1/
+
+     To test the connection (no token needed), you can run:
+
+       curl -X GET "{{ $url }}/ga4gh/registry/v1/service-info" -H "Accept: application/json"
+
+  2. Access the Swagger UI via {{ $url }}/ga4gh/registry/v1/ui/

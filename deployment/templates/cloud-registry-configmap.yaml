@@ -1,9 +1,12 @@
 {{- /*
 Config overlay merged by FOCA into the base config in the image
 (`cloud_registry/config.yaml`); values in `config` take precedence over the
-public URL generated from `host_name` (HTTPS on port 443, as TLS is usually
-terminated by the ingress, the route or a proxy in front of the cluster).
+generated values: the public URL from `host_name` (HTTPS on port 443, as TLS
+is usually terminated by the ingress, the route or a proxy in front of the
+cluster) and the host of the release's MongoDB Service.
 */ -}}
+{{- /* Checks of the values and the release, for the whole chart */ -}}
+{{- include "cloud-registry.validate" . -}}
 {{- /*
 As the app on startup, refuse to render without a group mapped to the role
 `admin`, unless admins are explicitly not required.
@@ -14,15 +17,20 @@ As the app on startup, refuse to render without a group mapped to the role
 {{- if and $requireAdmin (not (has "admin" (values $mapping))) -}}
 {{- fail "config.security.access_control.group_mapping must map a group to the role admin (e.g., the admin group of the identity provider), or set config.custom.access_control.require_admin to false" -}}
 {{- end -}}
-{{- $generated := dict "custom" (dict "endpoints" (dict "service" (dict
-  "url_prefix" "https"
-  "external_host" (required "host_name must be set" .Values.host_name)
-  "external_port" 443
-))) -}}
+{{- $generated := dict
+  "custom" (dict "endpoints" (dict "service" (dict
+    "url_prefix" "https"
+    "external_host" (required "host_name must be set" .Values.host_name)
+    "external_port" 443
+  )))
+  "db" (dict "host" (include "cloud-registry.mongodbFullname" .))
+-}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ .Values.cloud_registry.appName }}-config
+  name: {{ printf "%s-config" (include "cloud-registry.fullname" .) | quote }}
+  labels:
+    {{- include "cloud-registry.labels" (dict "root" . "component" "app") | nindent 4 }}
 data:
   overlay.yaml: |
     {{- mergeOverwrite $generated (deepCopy (.Values.config | default dict)) | toYaml | nindent 4 }}

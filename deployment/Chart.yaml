@@ -1,6 +1,8 @@
 apiVersion: v2
 name: cloud-registry
-description: A Helm chart for Kubernetes
+description: >-
+  ELIXIR Cloud Service Registry, an implementation of the GA4GH Service
+  Registry API, with a MongoDB database
 type: application
-version: 3.0.0
+version: 4.0.0
 appVersion: 2.0.0
