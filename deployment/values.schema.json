@@ -28,6 +28,16 @@
           }
         }
       }
+    },
+    "cloud_registry": {
+      "type": "object",
+      "properties": {
+        "probePath": {
+          "type": "string",
+          "pattern": "^/",
+          "description": "Path of the app's probes"
+        }
+      }
     }
   }
 }

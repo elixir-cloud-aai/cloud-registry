@@ -38,19 +38,26 @@ spec:
         ports:
         - containerPort: 8080
           protocol: TCP
-        # All API endpoints require authentication, so probe the Swagger UI
+        # All API endpoints require authentication, so probe the Swagger UI;
+        # up to 5 minutes are allowed for the start before liveness checks
+        startupProbe:
+          httpGet:
+            path: {{ .Values.cloud_registry.probePath }}
+            port: 8080
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30
         readinessProbe:
           httpGet:
-            path: /ga4gh/registry/v1/ui/
+            path: {{ .Values.cloud_registry.probePath }}
             port: 8080
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
         livenessProbe:
           httpGet:
-            path: /ga4gh/registry/v1/ui/
+            path: {{ .Values.cloud_registry.probePath }}
             port: 8080
-          initialDelaySeconds: 30
           periodSeconds: 20
           timeoutSeconds: 5
           failureThreshold: 3

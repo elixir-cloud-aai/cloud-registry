@@ -32,6 +32,9 @@ config: {}
 cloud_registry:
   image: elixircloud/cloud-registry:20261020
   appName: cloud-registry
+  # Path of the app's startup, readiness and liveness probes; change it if
+  # the config disables the Swagger UI
+  probePath: /ga4gh/registry/v1/ui/
   # if ingress.enabled: false, it will deploy an OpenShift Route (https://docs.redhat.com/en/documentation/openshift_container_platform/4.19/html/network_apis/route-route-openshift-io-v1)
   ingress:
     enabled: true
@@ -54,9 +57,12 @@ mongodb:
   # Pinned to a minor version; patch versions are updated on restarts
   image: docker.io/library/mongo:7.0
   auth:
-    # Require credentials; only applied when MongoDB starts with an empty
-    # data directory (see the deployment docs for existing databases)
-    enabled: false
+    # Require credentials (set `existingSecret`); only applied when MongoDB
+    # starts with an empty data directory (see the deployment docs for
+    # existing databases). Without authentication, any pod that can reach the
+    # MongoDB service can read and modify the data, so disable it explicitly
+    # only if that is acceptable
+    enabled: true
     # Name of an existing Secret with keys `root-username` and
     # `root-password` (MongoDB root user) and `username` and `password` (app
     # user, created with access to the app's database)

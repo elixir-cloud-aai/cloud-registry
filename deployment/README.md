@@ -38,7 +38,10 @@ upgrade. As `config` is stored in a ConfigMap, it must not contain secrets
 
 ## Installation
 
-Install the chart from the `deployment` folder:
+Create the Secret with the MongoDB credentials (see
+[Authentication](#authentication)) and set its name in the values file
+(`mongodb.auth.existingSecret`), then install the chart from the
+`deployment` folder:
 
 ```bash
 helm install cloud-registry . -n <namespace> -f values-prod.yaml
@@ -69,21 +72,23 @@ version (e.g., 9.0), while chart version 3 defaults to `mongo:7.0`, which
 cannot read the data of newer versions. **Before upgrading from chart version
 2, check the running MongoDB version (see [Version](#version)) and set
 `mongodb.image` to its major and minor version (e.g.,
-`docker.io/library/mongo:9.0`).**
+`docker.io/library/mongo:9.0`).** Chart version 3 also enables MongoDB
+authentication by default: for an existing database, create the users first
+(see [Authentication](#authentication)), or set `mongodb.auth.enabled: false`.
 
 ## Probes
 
-The probes are fixed:
-
-- **App:** ready once it serves its Swagger UI (`/ga4gh/registry/v1/ui/`; all
-  API endpoints require authentication), checked every 10 seconds, so
+- **App:** ready once it serves its Swagger UI (`/ga4gh/registry/v1/ui/`;
+  all API endpoints require authentication; set `cloud_registry.probePath`
+  if the config disables the Swagger UI), checked every 10 seconds, so
   `kubectl rollout status deploy/<appName> -n <namespace>` waits until it can
-  serve requests; restarted after failing for a minute (liveness probe, from
-  30 seconds after the start).
-- **MongoDB:** ready once it accepts connections; up to 5 minutes are allowed
-  for the first start (startup probe), as MongoDB only listens on localhost
-  while it initializes an empty data directory; restarted after failing for a
-  minute afterwards (liveness probe).
+  serve requests; up to 5 minutes are allowed for the start (startup probe);
+  restarted after failing for a minute afterwards (liveness probe).
+- **MongoDB:** ready once it accepts connections; up to 30 minutes are
+  allowed for the start (startup probe), as MongoDB only listens on localhost
+  while it initializes an empty data directory, and recovery after an
+  unclean shutdown can take a while; restarted after failing for a minute
+  afterwards (liveness probe).
 
 ## MongoDB
 
@@ -94,13 +99,17 @@ refuses to start on Linux kernels 6.19 to 7.0.13, cf.
 [SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)). MongoDB
 only starts on data whose feature compatibility version (FCV) it supports,
 so check the running version and the FCV before changing the image of an
-existing database (with authentication enabled, the command needs the root
-user's credentials, see [Authentication](#authentication)):
+existing database. With authentication (the default), the command uses the
+root user's credentials from the container's environment:
 
 ```bash
-kubectl exec deploy/mongodb -n <namespace> -- mongosh --quiet --eval \
-  "printjson({version: db.version(), fcv: db.adminCommand({getParameter: 1, featureCompatibilityVersion: 1}).featureCompatibilityVersion})"
+kubectl exec deploy/mongodb -n <namespace> -- sh -c 'mongosh --quiet \
+  -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" \
+  --authenticationDatabase admin --eval "printjson({version: db.version(), fcv: db.adminCommand({getParameter: 1, featureCompatibilityVersion: 1}).featureCompatibilityVersion})"'
 ```
+
+Without authentication (e.g., chart version 2), omit `-u`, `-p` and
+`--authenticationDatabase`.
 
 - **Upgrades** go one major version at a time (e.g., 6.0 → 7.0 → 8.0): set
   the image of the next version, wait for the rollout, then set the FCV to
@@ -119,9 +128,9 @@ MongoDB release notes for details.
 
 ### Authentication
 
-By default, MongoDB runs without authentication and is only reachable within
-the cluster. To require credentials, create a Secret with the credentials of
-the MongoDB root user and the app user:
+MongoDB requires authentication by default. Before installing the chart,
+create a Secret with the credentials of the MongoDB root user and the app
+user:
 
 ```bash
 kubectl create secret generic cloud-registry-mongodb -n <namespace> \
@@ -131,14 +140,18 @@ kubectl create secret generic cloud-registry-mongodb -n <namespace> \
   --from-literal=password="$(openssl rand -hex 24)"
 ```
 
-and set in the values file:
+and set its name in the values file:
 
 ```yaml
 mongodb:
   auth:
-    enabled: true
     existingSecret: cloud-registry-mongodb
 ```
+
+Without a Secret name, rendering the chart fails. To run MongoDB without
+authentication, set `mongodb.auth.enabled: false` explicitly; any pod that
+can reach the MongoDB service (it is only exposed within the cluster) can
+then read and modify the data.
 
 MongoDB creates both users when it starts with an empty data directory (the
 app user may only access the app's database, `serviceStore`, which is also
@@ -161,9 +174,9 @@ change it in MongoDB (e.g.,
 then update the Secret and restart the app (`kubectl rollout restart
 deploy/<appName> -n <namespace>`).
 
-For an existing database, or if the app user is missing (e.g., because the
-first start was interrupted), create the users before enabling
-authentication, with the credentials from the Secret:
+For an existing database without authentication (e.g., from chart version
+2), create the users before enabling authentication, with the credentials
+from the Secret:
 
 ```bash
 kubectl exec -it deploy/mongodb -n <namespace> -- mongosh
@@ -171,5 +184,18 @@ kubectl exec -it deploy/mongodb -n <namespace> -- mongosh
 
 ```javascript
 db.getSiblingDB("admin").createUser({user: "root", pwd: "<root-password>", roles: ["root"]})
+db.getSiblingDB("serviceStore").createUser({user: "cloud-registry", pwd: "<password>", roles: [{role: "readWrite", db: "serviceStore"}]})
+```
+
+If the root user exists but the app user is missing (e.g., because the first
+start was interrupted), log in as the root user and create only the app user:
+
+```bash
+kubectl exec -it deploy/mongodb -n <namespace> -- sh -c 'mongosh \
+  -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" \
+  --authenticationDatabase admin'
+```
+
+```javascript
 db.getSiblingDB("serviceStore").createUser({user: "cloud-registry", pwd: "<password>", roles: [{role: "readWrite", db: "serviceStore"}]})
 ```
