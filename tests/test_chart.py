@@ -53,6 +53,17 @@ def _startup_window(container: dict) -> int:
     )
 
 
+def test_config_change_restarts_app():
+    """Changing the config (e.g., the service info) restarts the app."""
+
+    def checksum(*args: str) -> str:
+        template = _render(*args)[("Deployment", "cloud-registry")]["spec"]["template"]
+        return template["metadata"]["annotations"]["checksum/config"]
+
+    changed = ("--set", "config.custom.endpoints.service_info.environment=prod")
+    assert checksum() != checksum(*changed)
+
+
 def test_mongodb_pinned_and_recreated():
     """MongoDB is pinned to a minor version and replaced, not rolled."""
     docs = _render()

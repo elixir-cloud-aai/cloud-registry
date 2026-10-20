@@ -10,7 +10,6 @@ from cloud_registry.ga4gh.registry import permissions as permissions_module
 from cloud_registry.ga4gh.registry import server as server_module
 from cloud_registry.utils import get_collection
 from tests.conftest import ADMIN, NAMES, USER, make_headers
-from tests.mock_data import SERVICE_INFO_CONFIG
 
 BASE = "/ga4gh/registry/v1"
 SERVICE = {
@@ -90,8 +89,6 @@ def test_write_requires_authentication(client):
     assert client.post(f"{BASE}/services", json=_service()).status_code == 401
     assert client.put(f"{BASE}/services/X", json=_service()).status_code == 401
     assert client.delete(f"{BASE}/services/{service_id}").status_code == 401
-    response = client.post(f"{BASE}/service-info", json=SERVICE_INFO_CONFIG)
-    assert response.status_code == 401
     response = client.get(f"{BASE}/services/{service_id}/permissions")
     assert response.status_code == 401
     assert client.get(f"{BASE}/me").status_code == 401
@@ -124,19 +121,6 @@ def test_admin(client):
     assert update(client, service_id, ADMIN) == 200
     assert grant(client, service_id, CAROL, "owner", ADMIN) == 200
     assert delete(client, service_id, ADMIN) == 200
-
-
-def test_service_info_admin_only(client):
-    """Only admins can set the service info."""
-    for user, status in [
-        (ALICE, 403),
-        (BOB, 403),
-        (ADMIN, 201),
-    ]:
-        response = client.post(
-            f"{BASE}/service-info", json=SERVICE_INFO_CONFIG, headers=headers(user)
-        )
-        assert response.status_code == status, user
 
 
 def test_maintainer(client):

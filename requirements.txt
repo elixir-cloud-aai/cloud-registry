@@ -1,2 +1,4 @@
 connexion>=2.15.1,<3.0.0
 foca>=0.14.0,<0.15
+jsonschema>=4.17.3,<5
+PyYAML>=6.0,<7

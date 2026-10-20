@@ -1,271 +1,190 @@
-"""Tests for getting/setting service info."""
+"""Tests for service info from the config."""
 
 from copy import deepcopy
-import re
+from importlib.metadata import PackageNotFoundError
 
 import pytest
 
-from cloud_registry.exceptions import NotFound
+from cloud_registry.ga4gh.registry import service_info as module
 from cloud_registry.ga4gh.registry.service_info import (
-    CONFIG_HASH,
-    WRITTEN_AT,
-    RegisterServiceInfo,
+    InvalidServiceInfo,
+    check_service_info,
+    get_service_info,
+    package_fields,
 )
-from tests.mock_data import (
-    HEADERS_SERVICE_INFO,
-    SERVICE_CONFIG,
-    SERVICE_INFO_CONFIG,
-    SERVICE_INFO_PATH,
-)
+from tests.mock_data import SERVICE_INFO_CONFIG
+
+REQUIRED = ("id", "name", "type", "organization", "version")
 
 
-class TestRegisterServiceInfo:
-    """Tests for `RegisterServiceInfo` class."""
+def _configure(unit_app, **fields) -> dict:
+    """Set fields of the configured service info (`None` removes them)."""
+    config = unit_app.config.foca.custom.endpoints.service_info
+    for field, value in fields.items():
+        if value is None:
+            del config[field]
+        else:
+            config[field] = value
+    return config
 
-    def test_init(self, unit_app):
-        """Test for constructing class."""
-        with unit_app.app_context():
-            service_info = RegisterServiceInfo()
-            assert service_info.url_prefix == SERVICE_CONFIG["url_prefix"]
 
-    def test_get_service_info(self, unit_app, service_info):
-        """Test for getting service info."""
-        service_info.insert_one(deepcopy(SERVICE_INFO_CONFIG))
+def _update(unit_app, **fields) -> None:
+    """Update the configured service info, keeping `None` values (as config
+    overlays do).
+    """
+    unit_app.config.foca.custom.endpoints.service_info.update(fields)
 
-        with unit_app.app_context():
-            res = RegisterServiceInfo().get_service_info()
-            assert res == SERVICE_INFO_CONFIG
 
-    def test_get_service_info_na(self, unit_app):
-        """Test for getting service info when service info is unavailable."""
-        with unit_app.app_context():
-            with pytest.raises(NotFound):
-                RegisterServiceInfo().get_service_info()
+def _not_installed(name):
+    raise PackageNotFoundError(name)
 
-    def test_set_service_info_from_config(self, unit_app):
-        """Test for setting service info from config."""
-        with unit_app.app_context():
-            service_info = RegisterServiceInfo()
-            service_info.set_service_info_from_config()
-            assert service_info.get_service_info() == SERVICE_INFO_CONFIG
 
-    def test_set_service_info_from_config_skip(self, unit_app, service_info):
-        """Test for skipping setting service info because identical service
-        info is already available.
-        """
-        service_info.insert_one(deepcopy(SERVICE_INFO_CONFIG))
+def test_package_fields(monkeypatch):
+    """The version is taken from the package metadata, if installed."""
+    monkeypatch.setattr(module, "version", lambda name: f"{name} 1.2.3")
+    assert package_fields() == {"version": "cloud-registry 1.2.3"}
+    monkeypatch.setattr(module, "version", _not_installed)
+    assert package_fields() == {}
 
-        with unit_app.app_context():
-            register = RegisterServiceInfo()
-            register.set_service_info_from_config()
-            assert register.get_service_info() == SERVICE_INFO_CONFIG
-        assert service_info.count_documents({}) == 1
 
-    def test_set_service_info_from_app_context(self, unit_app):
-        """Test for setting service info from app context."""
-        with unit_app.test_request_context(SERVICE_INFO_PATH, method="POST"):
-            service_info = RegisterServiceInfo()
-            service_info.set_service_info_from_app_context(
-                data=SERVICE_INFO_CONFIG,
-            )
-            assert service_info.get_service_info() == SERVICE_INFO_CONFIG
+def test_get_service_info(unit_app):
+    """The configured service info is returned."""
+    with unit_app.app_context():
+        assert get_service_info() == SERVICE_INFO_CONFIG
 
-    def test__upsert_service_info_insert(self, unit_app):
-        """Test for creating service info document in database."""
-        data = deepcopy(SERVICE_INFO_CONFIG)
-        del data["contactUrl"]
-        with unit_app.app_context():
-            service_info = RegisterServiceInfo()
-            service_info._upsert_service_info(data=data)
-            assert service_info.get_service_info() == data
-            assert service_info.get_service_info() != SERVICE_INFO_CONFIG
 
-    def test__upsert_service_info_update(self, unit_app, service_info):
-        """Test for replacing service info document in database."""
-        service_info.insert_one(deepcopy(SERVICE_INFO_CONFIG))
+def test_get_service_info_runtime_fields(unit_app):
+    """Runtime fields are added unless configured."""
+    _configure(unit_app, version=None)
+    with unit_app.app_context():
+        info = get_service_info(
+            runtime_fields=lambda: {"version": "runtime", "name": "runtime"}
+        )
+    assert info == {**SERVICE_INFO_CONFIG, "version": "runtime"}
 
-        data = deepcopy(SERVICE_INFO_CONFIG)
-        del data["contactUrl"]
-        with unit_app.app_context():
-            register = RegisterServiceInfo()
-            register._upsert_service_info(data=data)
-            assert register.get_service_info() == data
-            assert register.get_service_info() != SERVICE_INFO_CONFIG
-        assert service_info.count_documents({}) == 1
 
-    def test_legacy_documents(self, unit_app, service_info):
-        """Documents written before write times were tracked are served in
-        insertion order, and newly written service info takes precedence.
-        """
-        service_info.insert_one(deepcopy(SERVICE_INFO_CONFIG))
-        service_info.insert_one({**SERVICE_INFO_CONFIG, "id": "posted"})
-
-        with unit_app.app_context():
-            register = RegisterServiceInfo()
-            register.set_service_info_from_config()  # unchanged: not written
-            assert register.get_service_info()["id"] == "posted"
-
-            register.conf_info = {**register.conf_info, "name": "changed"}
-            register.set_service_info_from_config()
-            info = register.get_service_info()
-        assert (info["id"], info["name"]) == (SERVICE_INFO_CONFIG["id"], "changed")
-
-    def test_legacy_document_then_post(self, unit_app):
-        """Service info posted with the configured identifier after an upgrade
-        from a version without config hashes is kept on restart.
-        """
-        with unit_app.test_request_context(SERVICE_INFO_PATH, method="POST"):
-            register = RegisterServiceInfo()
-            register.collection.insert_one(deepcopy(SERVICE_INFO_CONFIG))
-            register.set_service_info_from_config()
-            register.set_service_info_from_app_context(
-                data={**SERVICE_INFO_CONFIG, "name": "Posted"}
-            )
-            register.set_service_info_from_config()
-            assert register.get_service_info()["name"] == "Posted"
-
-    def test_internal_fields(self, unit_app):
-        """Internal fields are stored but not returned."""
-        with unit_app.app_context():
-            register = RegisterServiceInfo()
-            register.set_service_info_from_config()
-            stored = register.collection.find_one({"id": SERVICE_INFO_CONFIG["id"]})
-            assert {WRITTEN_AT, CONFIG_HASH} <= stored.keys()
-            for info in (
-                register.get_service_info(),
-                register._get_stored_service_info(id=SERVICE_INFO_CONFIG["id"]),
-            ):
-                assert not {"_id", WRITTEN_AT, CONFIG_HASH} & info.keys()
-
-    def test__get_headers(self, unit_app):
-        """Test for response headers getter."""
-        with unit_app.test_request_context(SERVICE_INFO_PATH, method="POST"):
-            headers = RegisterServiceInfo()._get_headers()
-            assert headers == HEADERS_SERVICE_INFO
-
-    def test__get_headers_script_root(self, unit_app):
-        """`Location` includes the path the app is mounted at."""
-        with unit_app.test_request_context(
-            SERVICE_INFO_PATH, method="POST", base_url="http://localhost/prefix"
-        ):
-            headers = RegisterServiceInfo()._get_headers()
-        assert headers == {
-            "Location": "http://1.2.3.4:80/registry/prefix/ga4gh/registry/v1/"
-            "service-info"
+def test_get_service_info_copy(unit_app):
+    """Changing the returned service info doesn't change the config."""
+    _update(unit_app, **{"x-links": [{"url": "https://example.org"}]})
+    with unit_app.app_context():
+        info = get_service_info()
+        info["organization"]["name"] = "changed"
+        info["x-links"].append({})
+        assert get_service_info() == {
+            **SERVICE_INFO_CONFIG,
+            "x-links": [{"url": "https://example.org"}],
         }
 
 
-class TestServiceInfoTimestamps:
-    """Tests for timestamps of service info registered from a config without
-    `createdAt` and `updatedAt`.
+def test_get_service_info_nulls(unit_app):
+    """Fields and list items set to `null` are removed, also nested."""
+    organization = {**SERVICE_INFO_CONFIG["organization"], "x-logo": None}
+    links = [None, {"url": "https://example.org", "title": None}]
+    _update(unit_app, contactUrl=None, organization=organization, **{"x-links": links})
+    with unit_app.app_context():
+        info = get_service_info()
+        check_service_info()
+    expected = {k: v for k, v in SERVICE_INFO_CONFIG.items() if k != "contactUrl"}
+    assert info == {**expected, "x-links": [{"url": "https://example.org"}]}
+
+
+def test_null_runtime_field(unit_app):
+    """A required field set to `null` is missing, even if set at runtime."""
+    _update(unit_app, version=None)
+    with unit_app.app_context(), pytest.raises(InvalidServiceInfo, match="'version'"):
+        check_service_info(runtime_fields=lambda: {"version": "1.2.3"})
+
+
+def test_check_service_info(unit_app, caplog):
+    """Valid service info passes and is logged."""
+    caplog.set_level("INFO")
+    with unit_app.app_context():
+        check_service_info()
+    assert "Serving service info 'org.ga4gh.myservice', version '1.0.0'" in caplog.text
+
+
+def test_check_service_info_required_only(unit_app):
+    """Service info with the required fields only is valid."""
+    for field in set(SERVICE_INFO_CONFIG) - set(REQUIRED):
+        _configure(unit_app, **{field: None})
+    with unit_app.app_context():
+        check_service_info()
+
+
+def test_check_service_info_package_version(unit_app):
+    """The package version can provide the required version."""
+    _configure(unit_app, version=None)
+    with unit_app.app_context():
+        check_service_info(runtime_fields=lambda: {"version": "1.2.3"})
+
+
+@pytest.mark.parametrize("field", REQUIRED)
+def test_check_service_info_missing(unit_app, field):
+    """Service info without a required field is invalid."""
+    _configure(unit_app, **{field: None})
+    with (
+        unit_app.app_context(),
+        pytest.raises(
+            InvalidServiceInfo,
+            match=rf"in `custom\.endpoints\.service_info`: '{field}' is a required",
+        ),
+    ):
+        check_service_info(runtime_fields=dict)
+
+
+@pytest.mark.parametrize(
+    "fields, path",
+    [
+        ({"contactUrl": "support"}, "contactUrl"),
+        ({"documentationUrl": "docs example org"}, "documentationUrl"),
+        ({"organization": {"name": "org", "url": "/org"}}, "organization.url"),
+        ({"organization": {"name": "org"}}, "organization"),
+        ({"createdAt": "yesterday"}, "createdAt"),
+        ({"updatedAt": "2020-11-08"}, "updatedAt"),
+        ({"updatedAt": "2020-11-08T00:00:00"}, "updatedAt"),
+        ({"updatedAt": "2020-13-45T25:99:99Z"}, "updatedAt"),
+        ({"updatedAt": "2021-02-29T00:00:00Z"}, "updatedAt"),
+        ({"updatedAt": "2020-11-08T00:00:00+00:60"}, "updatedAt"),
+        ({"updatedAt": "2020-11-08T00:00:00+24:00"}, "updatedAt"),
+        ({"updatedAt": "2020-11-08 00:00:00Z"}, "updatedAt"),
+        ({"updatedAt": "２０２０-11-08T00:00:00Z"}, "updatedAt"),
+        ({"type": {"group": "org.ga4gh", "artifact": "x"}}, "type"),
+        ({"name": 1}, "name"),
+    ],
+)
+def test_check_service_info_invalid(unit_app, fields, path):
+    """Invalid fields are named."""
+    _configure(unit_app, **fields)
+    with (
+        unit_app.app_context(),
+        pytest.raises(
+            InvalidServiceInfo, match=rf"`custom\.endpoints\.service_info\.{path}`"
+        ),
+    ):
+        check_service_info()
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"contactUrl": "mailto:support@example.com"},
+        {"createdAt": "2020-11-08T10:20:30.123+01:00"},
+        {"updatedAt": "2020-11-08t10:20:30z"},
+        {"updatedAt": "2020-02-29T10:20:30.1234567-05:30"},
+        {"updatedAt": "2016-12-31T23:59:60Z"},
+        {"x-custom": {"any": "value"}},
+    ],
+)
+def test_check_service_info_valid(unit_app, fields):
+    """URIs with any scheme, RFC 3339 date-times and extra fields are
+    valid.
     """
+    _configure(unit_app, **deepcopy(fields))
+    with unit_app.app_context():
+        check_service_info()
 
-    @pytest.fixture
-    def app(self, unit_app, monkeypatch):
-        """App whose service info config has no timestamps, with a fake clock."""
-        conf = unit_app.config.foca.custom.endpoints.service_info
-        conf.createdAt = None
-        conf.updatedAt = None
-        self.now = "2026-01-01T00:00:00Z"
-        monkeypatch.setattr(
-            RegisterServiceInfo, "_current_timestamp", staticmethod(lambda: self.now)
-        )
-        return unit_app
 
-    def _register(self, app):
-        with app.app_context():
-            register = RegisterServiceInfo()
-            register.set_service_info_from_config()
-            return register.get_service_info()
-
-    def test_first_registration(self, app):
-        """Both timestamps are set to the current time."""
-        info = self._register(app)
-        assert info["createdAt"] == info["updatedAt"] == self.now
-
-    def test_unchanged_config(self, app, service_info):
-        """Restarting with an unchanged config keeps the timestamps."""
-        first = self._register(app)
-        self.now = "2026-02-01T00:00:00Z"
-        assert self._register(app) == first
-        assert service_info.count_documents({}) == 1
-
-    def test_changed_config(self, app, service_info):
-        """A changed config updates `updatedAt` but keeps `createdAt`."""
-        self._register(app)
-        app.config.foca.custom.endpoints.service_info.description = "new"
-        self.now = "2026-02-01T00:00:00Z"
-        info = self._register(app)
-        assert info["description"] == "new"
-        assert info["createdAt"] == "2026-01-01T00:00:00Z"
-        assert info["updatedAt"] == self.now
-        assert service_info.count_documents({}) == 1
-
-    def test_stored_without_timestamps(self, app, service_info):
-        """Service info stored without timestamps gets them."""
-        data = deepcopy(SERVICE_INFO_CONFIG)
-        del data["createdAt"]
-        del data["updatedAt"]
-        service_info.insert_one(data)
-        info = self._register(app)
-        assert info["createdAt"] == info["updatedAt"] == self.now
-
-    def test_other_service_info_stored(self, app, service_info):
-        """Timestamps are not taken from stored service info with another
-        identifier, even if it was stored later.
-        """
-        self._register(app)
-        other = {**SERVICE_INFO_CONFIG, "id": "other"}
-        other["createdAt"] = "2000-01-01T00:00:00Z"
-        service_info.insert_one(other)
-        self.now = "2026-02-01T00:00:00Z"
-        self._register(app)
-        own = service_info.find_one({"id": SERVICE_INFO_CONFIG["id"]})
-        assert own["createdAt"] == own["updatedAt"] == "2026-01-01T00:00:00Z"
-
-    def test_configured_timestamp(self, app, service_info):
-        """A configured timestamp is used as is; the other one is managed."""
-        conf = app.config.foca.custom.endpoints.service_info
-        conf.createdAt = "2020-01-01T00:00:00Z"
-        info = self._register(app)
-        assert info["createdAt"] == "2020-01-01T00:00:00Z"
-        assert info["updatedAt"] == self.now
-
-        conf.createdAt = "2021-01-01T00:00:00Z"
-        self.now = "2026-02-01T00:00:00Z"
-        info = self._register(app)
-        assert info["createdAt"] == "2021-01-01T00:00:00Z"
-        assert info["updatedAt"] == self.now
-
-    def test_set_from_app_context(self, app):
-        """Service info set without timestamps keeps `createdAt` of the stored
-        service info with the same identifier and gets a new `updatedAt`.
-        """
-        self._register(app)
-        data = deepcopy(SERVICE_INFO_CONFIG)
-        del data["createdAt"]
-        del data["updatedAt"]
-        self.now = "2026-02-01T00:00:00Z"
-        with app.test_request_context(SERVICE_INFO_PATH, method="POST"):
-            register = RegisterServiceInfo()
-            register.set_service_info_from_app_context(data=data)
-            info = register.get_service_info()
-        assert info["createdAt"] == "2026-01-01T00:00:00Z"
-        assert info["updatedAt"] == self.now
-        assert "createdAt" not in data
-
-    def test_set_from_app_context_new(self, app):
-        """New service info set without timestamps gets both."""
-        data = {**SERVICE_INFO_CONFIG, "id": "other"}
-        del data["createdAt"]
-        del data["updatedAt"]
-        with app.test_request_context(SERVICE_INFO_PATH, method="POST"):
-            register = RegisterServiceInfo()
-            register.set_service_info_from_app_context(data=data)
-            info = register.get_service_info()
-        assert info["createdAt"] == info["updatedAt"] == self.now
-
-    def test_current_timestamp(self):
-        """The current time is formatted as an RFC 3339 UTC timestamp."""
-        timestamp = RegisterServiceInfo._current_timestamp()
-        assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", timestamp)
+@pytest.mark.parametrize("check", [module._is_uri, module._is_date_time])
+def test_format_checks_non_strings(check):
+    """Format checks leave type checks to the schema."""
+    assert check(1)

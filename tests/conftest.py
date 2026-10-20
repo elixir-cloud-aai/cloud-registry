@@ -22,7 +22,6 @@ import jwt
 import mongomock
 import pytest
 
-from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
 from cloud_registry.service_models.custom_config import CustomConfig
 from tests.mock_data import CUSTOM_CONFIG, DB, MONGO_CONFIG
 
@@ -164,16 +163,11 @@ def app_env(monkeypatch, mongo_client, mock_idp):
 
 @pytest.fixture
 def app(app_env):
-    """App created from `config.yaml` and the test overlay, with service info
-    registered.
-    """
-    connexion_app = Foca(
+    """App created from `config.yaml` and the test overlay."""
+    return Foca(
         config_file=APP_DIR / "config.yaml",
         custom_config_model="cloud_registry.service_models.custom_config.CustomConfig",
     ).create_app()
-    with connexion_app.app.app_context():
-        RegisterServiceInfo().set_service_info_from_config()
-    return connexion_app
 
 
 @pytest.fixture
@@ -217,9 +211,3 @@ def unit_app():
 def services(unit_app):
     """`services` collection of `unit_app`."""
     return unit_app.config.foca.db.dbs[DB].collections["services"].client
-
-
-@pytest.fixture
-def service_info(unit_app):
-    """`service_info` collection of `unit_app`."""
-    return unit_app.config.foca.db.dbs[DB].collections["service_info"].client

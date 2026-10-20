@@ -19,7 +19,7 @@ config: {}
 #       # Client IDs of the apps calling the registry
 #       audience: ["my-portal-client-id"]
 #     access_control:
-#       # Members of this group may manage all services and the service info
+#       # Members of this group may manage all services
 #       group_mapping:
 #         "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN:ADMIN#aai.lifescience-ri.eu": admin
 #   log:
@@ -28,6 +28,8 @@ config: {}
 #         level: 20
 #   custom:
 #     endpoints:
+#       # Service info (GA4GH `Service` schema, checked on startup); the
+#       # version defaults to the app version
 #       service_info:
 #         organization:
 #           name: "My organization"

@@ -34,10 +34,17 @@ config:
       # Client IDs of the apps calling the registry
       audience: ["my-portal-client-id"]
     access_control:
-      # Members of this group may manage all services and the service info
+      # Members of this group may manage all services
       group_mapping:
         "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN:ADMIN#aai.lifescience-ri.eu": admin
 ```
+
+The service info served at `/service-info` is set via
+`config.custom.endpoints.service_info` (mappings are merged, so set only the
+fields to change, e.g., `environment: prod`, and set optional fields of the
+default to `null` to remove them, e.g., `contactUrl: null`). Pods are restarted
+when the ConfigMap changes, and the app refuses to start if the service info is
+invalid.
 
 Do not edit the ConfigMap with `kubectl edit`: Helm overwrites it on the next
 upgrade. As `config` is stored in a ConfigMap, it must not contain secrets
