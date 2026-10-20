@@ -117,9 +117,11 @@ class ServiceInfoConfig(FOCABaseConfig):
             including any specifics required to access data, e.g.
             authentication.
         createdAt: Timestamp describing when the service was first deployed and
-            available (RFC 3339 format).
+            available (RFC 3339 format). If not set, the time the service info
+            was first registered.
         updatedAt: Timestamp describing when the service was last updated (RFC
-            3339 format).
+            3339 format). If not set, the time the service info was last
+            changed.
         environment: Environment the service is running in. Use this to
             distinguish between production, development and testing/staging
             deployments. Suggested values are prod, test, dev, staging.
@@ -142,9 +144,11 @@ class ServiceInfoConfig(FOCABaseConfig):
             including any specifics required to access data, e.g.
             authentication.
         createdAt: Timestamp describing when the service was first deployed and
-            available (RFC 3339 format).
+            available (RFC 3339 format). If not set, the time the service info
+            was first registered.
         updatedAt: Timestamp describing when the service was last updated (RFC
-            3339 format).
+            3339 format). If not set, the time the service info was last
+            changed.
         environment: Environment the service is running in. Use this to
             distinguish between production, development and testing/staging
             deployments. Suggested values are prod, test, dev, staging.

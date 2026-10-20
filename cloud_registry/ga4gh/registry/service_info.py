@@ -2,14 +2,14 @@
 
 import logging
 from datetime import datetime, timezone
-from typing import Dict, FrozenSet, Optional
+from typing import Dict, Optional
 
 from flask import current_app
 
 from cloud_registry.exceptions import NotFound
 
 logger = logging.getLogger(__name__)
-TIMESTAMP_FIELDS = frozenset({"createdAt", "updatedAt"})
+TIMESTAMP_FIELDS = ("createdAt", "updatedAt")
 
 
 class RegisterServiceInfo:
@@ -69,30 +69,29 @@ class RegisterServiceInfo:
             cloud_registry.exceptions.ValidationError: Service info
                 configuration does not conform to API specification.
         """
-        try:
-            db_info = self.get_service_info()
-        except NotFound:
-            db_info = {}
-        service_info = self._get_service_info_from_config(
-            db_info=db_info or None,
-        )
-        ignored_fields = self._dynamic_timestamp_fields()
+        stored = self._get_stored_service_info(id=self.conf_info["id"])
+        managed = [field for field in TIMESTAMP_FIELDS if field not in self.conf_info]
         if (
-            db_info
-            and self._without_fields(db_info, ignored_fields)
-            == self._without_fields(service_info, ignored_fields)
-            and self._has_fields(db_info, ignored_fields)
+            stored is not None
+            and all(stored.get(field) for field in managed)
+            and {k: v for k, v in stored.items() if k not in managed} == self.conf_info
         ):
             logger.info("Using available service info.")
             return
-        self._upsert_service_info(data=service_info)
+        self._upsert_service_info(
+            data=self._add_timestamps(data=self.conf_info, stored=stored)
+        )
         logger.info("Service info registered.")
 
     def set_service_info_from_app_context(
         self,
         data: Dict,
     ) -> Dict:
-        """Return service info.
+        """Create or update service info from a request.
+
+        Missing timestamps are added: `createdAt` is kept from stored service
+        info with the same identifier (or set to the current time), and
+        `updatedAt` is set to the current time.
 
         Arguments:
             data: Service info according to API specification.
@@ -100,7 +99,8 @@ class RegisterServiceInfo:
         Returns:
             Response headers.
         """
-        self._upsert_service_info(data=data)
+        stored = self._get_stored_service_info(id=data["id"])
+        self._upsert_service_info(data=self._add_timestamps(data=data, stored=stored))
         return self._get_headers()
 
     def _upsert_service_info(
@@ -129,22 +129,31 @@ class RegisterServiceInfo:
         )
         return headers
 
-    def _get_service_info_from_config(
-        self,
-        db_info: Optional[Dict] = None,
-    ) -> Dict:
-        """Build service info from config and dynamic timestamp fields."""
-        service_info = dict(self.conf_info)
-        current_timestamp = self._current_timestamp()
-        if not service_info.get("createdAt"):
-            service_info["createdAt"] = (
-                current_timestamp
-                if db_info is None or not db_info.get("createdAt")
-                else db_info["createdAt"]
-            )
-        if not service_info.get("updatedAt"):
-            service_info["updatedAt"] = current_timestamp
-        return service_info
+    def _get_stored_service_info(self, id: str) -> Optional[Dict]:
+        """Get stored service info with a given identifier.
+
+        Arguments:
+            id: Service info identifier.
+
+        Returns:
+            Stored service info, or `None` if there is none.
+        """
+        return self.collection.find_one({"id": id}, {"_id": False})
+
+    def _add_timestamps(self, data: Dict, stored: Optional[Dict]) -> Dict:
+        """Add missing timestamps to service info.
+
+        Arguments:
+            data: Service info.
+            stored: Stored service info with the same identifier, if any.
+
+        Returns:
+            Copy of `data`, with `createdAt` taken from `stored` (or the current
+            time) and `updatedAt` set to the current time, unless provided.
+        """
+        now = self._current_timestamp()
+        created_at = (stored or {}).get("createdAt") or now
+        return {"createdAt": created_at, "updatedAt": now, **data}
 
     @staticmethod
     def _current_timestamp() -> str:
@@ -155,19 +164,3 @@ class RegisterServiceInfo:
             .isoformat()
             .replace("+00:00", "Z")
         )
-
-    def _dynamic_timestamp_fields(self) -> FrozenSet[str]:
-        """Return timestamp fields that should be auto-managed."""
-        return frozenset(
-            field for field in TIMESTAMP_FIELDS if not self.conf_info.get(field)
-        )
-
-    @staticmethod
-    def _has_fields(data: Dict, fields: FrozenSet[str]) -> bool:
-        """Check whether all requested fields are present in service info."""
-        return all(data.get(field) for field in fields)
-
-    @staticmethod
-    def _without_fields(data: Dict, fields: FrozenSet[str]) -> Dict:
-        """Remove a selected set of fields from service-info data."""
-        return {key: value for key, value in data.items() if key not in fields}
