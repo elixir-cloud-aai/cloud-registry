@@ -381,3 +381,38 @@ def test_failed_grant_reduces_rights(client, monkeypatch):
         patch.setattr(permissions_module, "add_resource_role", fail)
         assert grant(client, service_id, BOB, "maintainer") == 500
     assert permissions(client, service_id) == [(ALICE, "owner")]
+
+
+def test_permissions_of_unknown_service(client):
+    """Permissions of unknown services are not found."""
+    response = client.get(f"{BASE}/services/UNKNWN/permissions", headers=headers(ADMIN))
+    assert response.status_code == 404
+
+
+def test_revoke_invalid_user_id(client):
+    """Roles of invalid user identifiers are not found."""
+    service_id = register(client)
+    assert revoke(client, service_id, "bob,x") == 404
+
+
+def test_owner_not_restored_on_deleted_service(client, monkeypatch):
+    """No owner is restored for a service deleted concurrently."""
+    service_id = register(client)
+    calls = []
+
+    def exists_once(serviceId):
+        # The service exists for the first check only.
+        calls.append(serviceId)
+        return len(calls) == 1
+
+    with monkeypatch.context() as patch:
+        patch.setattr(permissions_module, "_check_other_owners", lambda *args: None)
+        patch.setattr(permissions_module, "service_exists", exists_once)
+        assert revoke(client, service_id, ALICE) == 404
+    assert permissions(client, service_id) == []
+
+
+def test_no_claims_without_token(app):
+    """Without a validated token, there are no claims."""
+    with app.app.test_request_context():
+        assert permissions_module._get_current_claims() == {}
