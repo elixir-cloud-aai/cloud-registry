@@ -172,7 +172,9 @@ Changing the Secret does not change the users: to change a password, first
 change it in MongoDB (e.g.,
 `db.getSiblingDB("serviceStore").changeUserPassword("cloud-registry", "<new password>")`),
 then update the Secret and restart the app (`kubectl rollout restart
-deploy/<appName> -n <namespace>`).
+deploy/<appName> -n <namespace>`). Until the app has restarted, its
+requests to the database fail, so change passwords when a short outage is
+acceptable.
 
 For an existing database without authentication (e.g., from chart version
 2), MongoDB enforces authentication as soon as the chart enables it, but
