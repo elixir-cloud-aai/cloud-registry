@@ -1,5 +1,7 @@
 """Cloud Registry custom config models."""
 
+from typing import Optional
+
 from foca.models.config import FOCABaseConfig
 from foca.utils.misc import generate_id
 from pydantic import field_validator
@@ -117,9 +119,11 @@ class ServiceInfoConfig(FOCABaseConfig):
             including any specifics required to access data, e.g.
             authentication.
         createdAt: Timestamp describing when the service was first deployed and
-            available (RFC 3339 format).
+            available (RFC 3339 format). If not set, the time the service info
+            was first registered.
         updatedAt: Timestamp describing when the service was last updated (RFC
-            3339 format).
+            3339 format). If not set, the time the service info was last
+            changed.
         environment: Environment the service is running in. Use this to
             distinguish between production, development and testing/staging
             deployments. Suggested values are prod, test, dev, staging.
@@ -142,9 +146,11 @@ class ServiceInfoConfig(FOCABaseConfig):
             including any specifics required to access data, e.g.
             authentication.
         createdAt: Timestamp describing when the service was first deployed and
-            available (RFC 3339 format).
+            available (RFC 3339 format). If not set, the time the service info
+            was first registered.
         updatedAt: Timestamp describing when the service was last updated (RFC
-            3339 format).
+            3339 format). If not set, the time the service info was last
+            changed.
         environment: Environment the service is running in. Use this to
             distinguish between production, development and testing/staging
             deployments. Suggested values are prod, test, dev, staging.
@@ -193,8 +199,8 @@ tionUrl='service_document_url', createdAt='2020-11-04T12:58:19Z', updatedAt='2\
     organization: OrganizationConfig
     contactUrl: str
     documentationUrl: str
-    createdAt: str
-    updatedAt: str
+    createdAt: Optional[str] = None
+    updatedAt: Optional[str] = None
     environment: str
     version: str
 
