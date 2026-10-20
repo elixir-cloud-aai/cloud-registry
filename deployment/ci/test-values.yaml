@@ -8,3 +8,6 @@ config:
     auth:
       audience: ["test-client"]
       verify_audience: True
+    access_control:
+      group_mapping:
+        test-admins: admin

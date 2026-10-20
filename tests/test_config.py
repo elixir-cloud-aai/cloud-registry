@@ -11,7 +11,7 @@ import pytest
 import yaml
 
 from tests.conftest import CONFIG_OVERLAY
-from tests.helm import CHART, HELM, render
+from tests.helm import ADMIN_GROUP, CHART, HELM, render
 
 ROOT = Path(__file__).parents[1]
 CONFIG_FILE = ROOT / "cloud_registry" / "config.yaml"
@@ -49,9 +49,10 @@ def _get_overlay_configmap(docs: list[dict]) -> dict:
     return configmaps[0]
 
 
-def _render_overlay(*args: str) -> dict:
+def _render_overlay(*args: str, **kwargs) -> dict:
     """Render the chart's config overlay with `helm template` arguments."""
-    return yaml.safe_load(_get_overlay_configmap(render(*args))["data"]["overlay.yaml"])
+    docs = render(*args, **kwargs)
+    return yaml.safe_load(_get_overlay_configmap(docs)["data"]["overlay.yaml"])
 
 
 def test_config_overlay(tmp_path, monkeypatch):
@@ -133,6 +134,29 @@ class TestChartOverlay:
         assert config.custom.endpoints.service.external_host == "registry.example.org"
         assert config.custom.endpoints.service.external_port == 8443
         assert config.security.auth.audience == ["test-client"]
+
+    def test_admin_group_required(self):
+        """Rendering fails without a group mapped to the role `admin`."""
+        with pytest.raises(subprocess.CalledProcessError) as exc:
+            _render_overlay("--set", "host_name=example.org", admin_group=None)
+        assert "must map a group to the role admin" in exc.value.stderr
+
+    def test_admin_group_optional(self):
+        """Without admin groups, rendering works if admins are not required."""
+        overlay = _render_overlay(
+            "--set",
+            "host_name=example.org",
+            "--set",
+            "config.custom.access_control.require_admin=false",
+            admin_group=None,
+        )
+        assert overlay["custom"]["access_control"] == {"require_admin": False}
+
+    def test_admin_group(self, tmp_path, monkeypatch):
+        """The admin group is passed to the app."""
+        overlay = _render_overlay("--set", "host_name=example.org")
+        config = _load_config(tmp_path, monkeypatch, overlay)
+        assert config.security.access_control.group_mapping[ADMIN_GROUP] == "admin"
 
     def test_host_name_required(self):
         """Rendering fails without `host_name`."""

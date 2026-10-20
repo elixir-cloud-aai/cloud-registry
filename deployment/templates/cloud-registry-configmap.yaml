@@ -4,6 +4,16 @@ Config overlay merged by FOCA into the base config in the image
 public URL generated from `host_name` (HTTPS on port 443, as TLS is usually
 terminated by the ingress, the route or a proxy in front of the cluster).
 */ -}}
+{{- /*
+As the app on startup, refuse to render without a group mapped to the role
+`admin`, unless admins are explicitly not required.
+*/ -}}
+{{- $config := .Values.config | default dict -}}
+{{- $mapping := dig "security" "access_control" "group_mapping" dict $config -}}
+{{- $requireAdmin := dig "custom" "access_control" "require_admin" true $config -}}
+{{- if and $requireAdmin (not (has "admin" (values $mapping))) -}}
+{{- fail "config.security.access_control.group_mapping must map a group to the role admin (e.g., the admin group of the identity provider), or set config.custom.access_control.require_admin to false" -}}
+{{- end -}}
 {{- $generated := dict "custom" (dict "endpoints" (dict "service" (dict
   "url_prefix" "https"
   "external_host" (required "host_name must be set" .Values.host_name)

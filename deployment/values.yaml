@@ -10,13 +10,18 @@ host_name: ""
 # App config overriding the base config in the image (`cloud_registry/config.yaml`
 # of the image's version); mappings are merged recursively, other values
 # (including lists) are replaced. Stored in a ConfigMap, so must not contain
-# secrets. Examples:
+# secrets. Deployments must set `security.auth.audience` and map an admin
+# group to the role `admin` (rendering fails without one, unless
+# `custom.access_control.require_admin` is false). Examples:
 config: {}
 #   security:
 #     auth:
 #       # Client IDs of the apps calling the registry
 #       audience: ["my-portal-client-id"]
-#       verify_audience: True
+#     access_control:
+#       # Members of this group may manage all services and the service info
+#       group_mapping:
+#         "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN:ADMIN#aai.lifescience-ri.eu": admin
 #   log:
 #     handlers:
 #       console:
