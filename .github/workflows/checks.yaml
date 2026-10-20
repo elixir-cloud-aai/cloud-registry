@@ -190,7 +190,7 @@ jobs:
       - name: Build and publish image
         if: steps.head.outputs.current == 'true'
         id: docker
-        uses: philips-software/docker-ci-scripts@69ca3b3e358f8746c67341d6ab551ef5ec25a36c # v5.0.0
+        uses: philips-software/docker-ci-scripts@548508e51f0308bde0ed83396312de36638e409c # v6.0.0
         with:
           dockerfile: .
           image-name: "cloud-registry"
