@@ -5,6 +5,7 @@ generated values: the public URL from `host_name` (HTTPS on port 443, as TLS
 is usually terminated by the ingress, the route or a proxy in front of the
 cluster) and the host of the release's MongoDB Service.
 */ -}}
+{{- /* Checks of the values and the release, for the whole chart */ -}}
 {{- include "cloud-registry.validate" . -}}
 {{- /*
 As the app on startup, refuse to render without a group mapped to the role

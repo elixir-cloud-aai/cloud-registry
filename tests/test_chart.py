@@ -286,14 +286,22 @@ def test_upgrade():
     assert ("Deployment", APP) in _render("--is-upgrade")
 
 
+# Labels that Helm adds to all resources it creates, of any chart version
+HELM_LABELS = {"app.kubernetes.io/managed-by": "Helm"}
+
+
 @pytest.mark.parametrize(
     ("owner", "labels", "fails"),
     [
-        ("cloud-registry", {}, True),
-        ("cloud-registry", {"app": "mongodb"}, True),
-        ("other", {}, False),
+        ("cloud-registry", HELM_LABELS, True),
+        ("cloud-registry", {**HELM_LABELS, "app": "mongodb"}, True),
+        ("other", HELM_LABELS, False),
         ("", {}, False),
-        ("cloud-registry", {"app.kubernetes.io/managed-by": "Helm"}, False),
+        (
+            "cloud-registry",
+            {**HELM_LABELS, "app.kubernetes.io/instance": "cloud-registry"},
+            False,
+        ),
     ],
     ids=["legacy", "legacy-labels", "other-release", "unmanaged", "chart-4"],
 )
@@ -315,13 +323,13 @@ def test_upgrade_legacy(owner, labels, fails):
         '{{- include "cloud-registry.failIfLegacy" (dict "root" . "kind"'
         f' "PersistentVolumeClaim" "resource" (fromJson {literal})) }}}}'
     )
-    try:
-        render_with({"legacy-test.yaml": template}, "--set", "host_name=x")
-    except subprocess.CalledProcessError as exc:
-        assert fails
-        assert "chart version 3 or earlier" in exc.stderr
+    args = ({"legacy-test.yaml": template}, "--set", "host_name=x")
+    if fails:
+        with pytest.raises(subprocess.CalledProcessError) as exc:
+            render_with(*args)
+        assert "chart version 3 or earlier" in exc.value.stderr
     else:
-        assert not fails
+        render_with(*args)
 
 
 @pytest.mark.parametrize(
@@ -497,22 +505,24 @@ def test_route():
 
 
 @pytest.mark.parametrize(
-    ("args", "exposed"),
+    ("args", "exposed", "tls_note"),
     [
-        ((), True),
-        (("--set", "cloud_registry.ingress.https.enabled=true"), True),
-        (ROUTE_API, True),
-        ((*NO_INGRESS, *ROUTE_API), True),
-        (NO_INGRESS, False),
+        ((), True, True),
+        (("--set", "cloud_registry.ingress.https.enabled=true"), True, False),
+        (ROUTE_API, True, True),
+        ((*NO_INGRESS, *ROUTE_API), True, False),
+        (NO_INGRESS, False, False),
     ],
     ids=["ingress", "ingress-https", "ingress-route-api", "route", "none"],
 )
-def test_notes(args, exposed):
+def test_notes(args, exposed, tls_note):
     """The notes show the app's HTTPS URL (as advertised by the app) with a
-    request, or warn and show a port forward if the app is not exposed.
+    request, noting if the Ingress has no TLS, or warn and show a port
+    forward if the app is not exposed.
     """
     notes = render_notes("--set", "host_name=x", *args)
     url = "https://x" if exposed else "http://localhost:8080"
     assert f'curl -X GET "{url}/ga4gh/registry/v1/service-info"' in notes
     assert ("WARNING" in notes) is not exposed
+    assert ("TLS must be terminated in front" in notes) is tls_note
     assert (f"kubectl port-forward svc/{APP} 8080:8080" in notes) is not exposed

@@ -22,7 +22,7 @@ ADMIN_GROUP = "test-admins"
 # Templates added to a copy of the chart to render its notes into a ConfigMap,
 # as `helm template` does not render notes (and `helm install --dry-run` needs
 # a cluster)
-NOTES_HELPER = '{{- define "notes-test" }}%s{{- end }}'
+NOTES_HELPER = '{{- define "notes-test" }}NOTES{{- end }}'
 NOTES_CONFIGMAP = """apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -96,7 +96,7 @@ def render_notes(*args: str, **kwargs) -> str:
     """
     notes = (CHART / "templates" / "NOTES.txt").read_text()
     templates = {
-        "_notes-test.tpl": NOTES_HELPER % notes,
+        "_notes-test.tpl": NOTES_HELPER.replace("NOTES", notes),
         "notes-test.yaml": NOTES_CONFIGMAP,
     }
     docs = render_with(templates, *args, **kwargs)

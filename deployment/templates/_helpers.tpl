@@ -72,14 +72,15 @@ MongoDB volume (`mongodb`), as its name changed. `lookup` finds nothing in
 
 {{/*
 Fails if a resource named `mongodb` (looked up in the cluster) belongs to
-this release, but was created by chart version 3 or earlier (without the
-standard labels); call with a dict of the root context (`root`), the
+this release, but was created by chart version 3 or earlier: without the
+label `app.kubernetes.io/instance` (Helm itself adds `managed-by` to all
+resources, of any chart version); call with a dict of the root context (`root`), the
 resource's kind (`kind`) and the resource (`resource`, empty if none).
 */}}
 {{- define "cloud-registry.failIfLegacy" -}}
 {{- $owner := dig "metadata" "annotations" "meta.helm.sh/release-name" "" .resource -}}
 {{- $labels := dig "metadata" "labels" dict .resource -}}
-{{- if and (eq $owner .root.Release.Name) (not (hasKey $labels "app.kubernetes.io/managed-by")) -}}
+{{- if and (eq $owner .root.Release.Name) (not (hasKey $labels "app.kubernetes.io/instance")) -}}
 {{- fail (printf "release %s was installed with chart version 3 or earlier, and upgrading it would delete its MongoDB data (%s mongodb): uninstall it and install chart version 4 instead, keeping the data as described in deployment/README.md (Upgrades, From chart version 3)" .root.Release.Name .kind) -}}
 {{- end -}}
 {{- end -}}

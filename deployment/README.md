@@ -338,14 +338,8 @@ set in the init script, `templates/mongo-init-script.yaml`); the app connects
 as the app user. Credentials never appear in values files or
 ConfigMaps.
 
-Commands that need privileges, e.g., to check the version, can use the root
-user's credentials from the container's environment:
-
-```bash
-kubectl exec deploy/cloud-registry-mongodb -n <namespace> -- sh -c 'mongosh --quiet \
-  -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" \
-  --authenticationDatabase admin --eval "db.version()"'
-```
+Commands that need privileges can use the root user's credentials from the
+container's environment, as in [Version](#version).
 
 Changing the Secret does not change the users: to change a password, first
 change it in MongoDB (e.g.,
@@ -357,8 +351,8 @@ acceptable. Helm does not restart pods when the Secret changes (only when the
 config changes), as the chart does not manage the Secret.
 
 For an existing database without authentication (deployed with
-`mongodb.auth.enabled: false`), MongoDB enforces authentication as soon as the chart enables it, but
-does not create the users. Create them first, while authentication is still
+`mongodb.auth.enabled: false`), MongoDB enforces authentication as soon as
+the chart enables it, but does not create the users. Create them first, while authentication is still
 off:
 
 1. Create the Secret (see above).
