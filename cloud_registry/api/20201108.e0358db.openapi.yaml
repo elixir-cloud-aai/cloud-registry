@@ -153,8 +153,10 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
-    Service:
-      $ref: 'https://raw.githubusercontent.com/ga4gh-discovery/ga4gh-service-info/v1.0.0/service-info.yaml#/components/schemas/Service'
+    # Deviation from upstream: `Service` and `ServiceType` referenced
+    # https://raw.githubusercontent.com/ga4gh-discovery/ga4gh-service-info/v1.0.0/service-info.yaml
+    # and were fetched at startup. They are identical to the schemas in
+    # `20201108.11d2c12.service-info.yaml`, which is merged with this file.
     ExternalService:
       description: 'GA4GH service with a URL'
       allOf:
@@ -171,8 +173,6 @@ components:
               example: 'https://api.example.com/v1'
           required:
             - url
-    ServiceType:
-      $ref: 'https://raw.githubusercontent.com/ga4gh-discovery/ga4gh-service-info/v1.0.0/service-info.yaml#/components/schemas/ServiceType'
     Error:
       type: object
       properties:

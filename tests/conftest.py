@@ -2,10 +2,12 @@
 
 Unit tests use a bare Flask app with the test configuration from
 `tests/mock_data.py`. App tests use the app created from `config.yaml`, with
-MongoDB replaced by an in-memory database and the identity provider by a mock.
+MongoDB replaced by an in-memory database and the identity provider by a mock;
+they have no network access.
 """
 
 from pathlib import Path
+import socket
 import time
 
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -29,9 +31,6 @@ JWKS_URI = f"{ISSUER}jwk"
 USERINFO_URI = f"{ISSUER}userinfo"
 USER = "alice@example.org"
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-# `requests.get()`, for requests other than to the identity provider (e.g.,
-# for references in the API specifications)
-REQUESTS_GET = auth.requests.get
 
 
 class MockResponse:
@@ -52,8 +51,8 @@ class MockResponse:
 def mock_get(url, headers=None, **kwargs):
     """Mock `requests.get()` for the identity provider.
 
-    Serves the discovery, JWK set and user info endpoints; other requests are
-    passed through.
+    Serves the discovery, JWK set and user info endpoints; other requests
+    fail.
     """
     if url.rstrip("/") == f"{ISSUER}.well-known/openid-configuration":
         return MockResponse(
@@ -73,7 +72,7 @@ def mock_get(url, headers=None, **kwargs):
         except jwt.InvalidTokenError:
             return MockResponse({"error": "invalid_token"}, status_code=401)
         return MockResponse({"sub": claims["sub"]})
-    return REQUESTS_GET(url, headers=headers, **kwargs)
+    raise auth.requests.ConnectionError(f"Unexpected request in tests: {url}")
 
 
 def make_headers(user=USER, key=KEY):
@@ -101,6 +100,10 @@ def mongo_client(monkeypatch):
     return client
 
 
+def _no_network(*args, **kwargs):
+    raise OSError("Network access in tests")
+
+
 def _clear_auth_caches():
     # FOCA caches the identity provider's responses
     for cache in [auth._oidc_configs, auth._jwk_sets, auth._userinfo_cache]:
@@ -118,7 +121,8 @@ def mock_idp(monkeypatch):
 
 @pytest.fixture
 def app_env(monkeypatch, mongo_client, mock_idp):
-    """Environment for creating the app from `config.yaml`."""
+    """Environment for creating the app from `config.yaml`, without network."""
+    monkeypatch.setattr(socket.socket, "connect", _no_network)
     # Modules referenced in the config are imported from the app directory
     monkeypatch.syspath_prepend(str(APP_DIR))
     monkeypatch.delenv("FOCA_CONFIG_OVERLAY", raising=False)
