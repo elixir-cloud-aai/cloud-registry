@@ -22,6 +22,7 @@ import jwt
 import mongomock
 import pytest
 
+from cloud_registry.ga4gh.registry.service import KEY as SERVICE_KEY
 from cloud_registry.service_models.custom_config import CustomConfig
 from tests.mock_data import CUSTOM_CONFIG, DB, MONGO_CONFIG
 
@@ -204,6 +205,8 @@ def unit_app():
     for name, coll_conf in app.config.foca.db.dbs[DB].collections.items():
         coll_conf.client = db[name]
         coll_conf.client.create_index("id", unique=True)
+    services = app.config.foca.db.dbs[DB].collections["services"].client
+    services.create_index(SERVICE_KEY, unique=True, sparse=True)
     return app
 
 

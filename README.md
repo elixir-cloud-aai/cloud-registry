@@ -39,6 +39,14 @@ You can explore the service via the [Swagger UI][url-swagger].
 curl -X GET "http://localhost:8080/ga4gh/registry/v1/services" -H  "accept: application/json"
 ```
 
+Registering a service (`POST /services`, or `PUT /services/{serviceId}` with a
+new identifier) returns `201 Created`, with the identifier of the service in
+the body and its [public URL](#public-urls) in the `Location` header; both
+returned `200 OK` before. Updating a service (`PUT`) returns `200 OK`, as
+before. Identifiers `.` and `..` are rejected (`400 Bad Request`); services
+registered with them before can still be read and deleted, but must be
+registered again under other identifiers to be updated.
+
 ### Configuration
 
 The app is configured by [`cloud_registry/config.yaml`][config]. To override
@@ -70,6 +78,18 @@ services:
             - ./config.local.yaml:/etc/cloud-registry/config.local.yaml:ro
 ```
 
+#### Public URLs
+
+Public URLs, e.g., in `Location` headers, are built from
+`custom.endpoints.service` (scheme, host and port). The Helm chart sets them
+from its `host_name` value; other deployments must set them, as the defaults
+(`https://0.0.0.0:8080`) aren't reachable (the Docker Compose setup sets
+`http://localhost:8080` in [`config.dev.yaml`][config-dev]). Set `api_path` to
+the path prefix in front of the API base path when the app is served behind a
+reverse proxy under a subpath (e.g., `registry`), or leave it empty.
+Previously, `api_path` held the API base path itself (e.g.,
+`ga4gh/registry/v1`); remove that value when upgrading.
+
 ### Service info
 
 `GET /service-info` serves the service info from the config
@@ -85,13 +105,6 @@ the `config` value changes).
 Previously, service info could be set via `POST /service-info` and was stored
 in the database. That endpoint is gone, and stored service info is no longer
 served (the `service_info` collection can be dropped): put it in the config
-when upgrading.
-
-Public URLs, e.g., in `Location` headers, are built from
-`custom.endpoints.service` in `config.yaml`. Set `api_path` to the path prefix
-in front of the API base path when the app is served behind a reverse proxy
-under a subpath (e.g., `registry`), or leave it empty. Previously, `api_path`
-held the API base path itself (e.g., `ga4gh/registry/v1`); remove that value
 when upgrading.
 
 ### Access control
@@ -121,7 +134,7 @@ token issued by [LS Login][ls-login]:
 - Members of the groups that the deployment maps to the role `admin`
   (`security.access_control.group_mapping`) are **admins**: they can do
   everything, including registering services with chosen identifiers (`PUT`
-  of a new service). For
+  of a new service) and [verifying services](#verified-services). For
   ELIXIR, that is the LS Login group `ECP_CLN:ADMIN`:
 
   ```yaml
@@ -140,6 +153,108 @@ public service responses.
 
 Access control is implemented with [FOCA][foca-access-control]; see the
 `security` section of the [configuration][config].
+
+### Duplicate services
+
+A service is identified by its base URL (`url`) and its API type (`type.group`
+and `type.artifact`, case-insensitive, but not `type.version`, so that
+upgrading a service to a new API version updates its entry). URLs are compared
+after normalizing common spellings: lowercase schemes and hosts, encoded
+international host names (IDNA 2008), canonical IPv6 addresses, percent-encoded
+non-ASCII characters in paths, and without trailing dots of hosts, default
+ports, dot segments (`/./`, `/../`), repeated and trailing slashes, needless
+percent-encoding in paths, queries and fragments. URLs with other schemes
+(e.g., `http` and `https`) are different services. Invalid URLs, URLs without
+scheme or host, and URLs with user info (`user:password@`) are rejected (`400
+Bad Request`, saying why).
+
+Registering a service again (`POST /services`), or changing a service to the
+URL and API type of another one (`PUT`), returns `409 Conflict`, with the
+identifier of the registered service in `serviceId`, so that users can
+contact its owner or an admin.
+
+As anyone logged in can register a URL first, including one of a deployment
+they don't operate, a squatter could block the real operator of a service.
+Admins resolve such cases: they can delete the entry, or grant the real
+operator the role `owner` on it and revoke the squatter's role. Consumers that
+need trustworthy entries should rely on entries checked by admins (see
+[Verified services](#verified-services)). Proving control of a
+URL (e.g., by fetching `{url}/service-info` on registration) was rejected:
+the identifier in service info is self-declared, and fetching user-supplied
+URLs would allow server-side request forgery.
+
+Services stored before this check get their key on startup. If some of them
+have invalid URLs, or the same URL and API type as another one, the app
+refuses to start and names all of them. Fix or delete them in the database,
+e.g., with `mongosh` (see the [deployment instructions][deployment-instructions]
+for access to the database of a Helm deployment):
+
+```javascript
+db.getSiblingDB("serviceStore").services.deleteOne({id: "<id>"})
+db.getSiblingDB("serviceStore").services.updateOne({id: "<id>"}, {$set: {url: "<URL>"}})
+```
+
+Then start the app again; it adds the missing keys.
+
+### Verified services
+
+Admins mark services as **verified** once they have checked them, e.g., that
+a service accepts LS Login tokens. What admins check is up to the
+deployment; the registry only records when a service was verified. Owners
+can't verify their own services.
+
+```bash
+curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/<id>/verification" \
+  -H "Authorization: Bearer <admin token>" -H "Content-Type: application/json" \
+  -d '{"url": "https://tes.example.org/ga4gh/tes/v1", "type": {"group": "org.ga4gh", "artifact": "tes", "version": "1.1.0"}}'
+```
+
+The body names the URL and API type that the admin checked. It is optional,
+but recommended: the service is only verified if it still has exactly that
+URL (as registered, character by character) and the same API type
+(`type.group` and `type.artifact`, case-insensitive; `type.version` is not
+compared), checked in the same write. Otherwise, e.g., if the owner changed
+the URL after the admin checked it, the request returns `409 Conflict` and
+changes nothing. Invalid URLs, and bodies that aren't JSON (e.g., form
+data), return `400 Bad Request`. Without a body (or with `null`), the
+service is verified as it is registered at the time of the request.
+
+The request returns the verification, with the URL and API type of the
+service:
+
+```json
+{"url": "https://tes.example.org/ga4gh/tes/v1", "type": {"group": "org.ga4gh", "artifact": "tes", "version": "1.1.0"}, "verified_at": "2026-10-20T12:34:56.789Z"}
+```
+
+Verifying a service again renews it. `DELETE` on the same path removes it.
+Both are for admins only, and return `404 Not Found` for unknown services
+(`DELETE` also for unverified ones).
+
+Verifications can be read by anyone: `GET /services/<id>/verification`
+returns the verification of a service (`404 Not Found` if it is not
+verified), and `GET /verifications` lists all verified services, sorted by
+identifier, each with its identifier as `service_id` and the fields above.
+
+The GA4GH endpoints are unchanged: `GET /services` and
+`GET /services/<id>` don't show verifications. Clients that should only use
+verified services (e.g., a [proTES][protes] gateway choosing TES instances)
+list the services (`GET /services`) and keep those listed by
+`GET /verifications` with the same identifier, `url` and `type` (`group` and
+`artifact`), so that a service changed between the two requests isn't used.
+
+A verification applies to the service as it was when it was verified:
+
+- **URL, as written:** updating the service with any other URL removes the
+  verification, even another spelling of the same one (e.g., another case
+  of the host, a trailing slash, or a query or fragment, which are ignored
+  when [comparing services](#duplicate-services)).
+- **API type:** updating `type.group` or `type.artifact` (compared as for
+  duplicates) removes it.
+- Changing them back doesn't restore it. Other updates (e.g., of `version`,
+  `type.version` or `name`) keep it.
+- Deleting a service deletes its verification.
+- Admins should send the URL and API type they checked when verifying (see
+  above), so that a service changed meanwhile isn't verified.
 
 ## Installation
 
@@ -291,3 +406,4 @@ etc.
 [url-swagger]: <http://localhost:8080/ga4gh/registry/v1/ui>
 [foca-access-control]: https://foca.readthedocs.io/en/latest/access-control/
 [ls-login]: https://lifescience-ri.eu/ls-login/
+[protes]: https://github.com/elixir-cloud-aai/proTES

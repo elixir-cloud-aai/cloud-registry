@@ -14,6 +14,8 @@ from cloud_registry.ga4gh.registry.service_info import InvalidServiceInfo
 from tests.conftest import ADMIN_GROUP, APP_DIR, make_headers
 
 BASE = "/ga4gh/registry/v1"
+# Public URL of the app, as configured in `config.yaml`
+PUBLIC_URL = "https://0.0.0.0:8080"
 TIMESTAMPS = {"createdAt", "updatedAt"}
 # Unlike `tests.mock_data.MOCK_SERVICE` (for unit tests, which bypass request
 # validation), this service is valid according to the API specification
@@ -44,7 +46,8 @@ def _post(client, headers, service=None):
         json=_service() if service is None else service,
         headers=headers,
     )
-    assert response.status_code == 200, response.json
+    assert response.status_code == 201, response.json
+    assert response.location == f"{PUBLIC_URL}{BASE}/services/{response.json}"
     return response.json
 
 
@@ -96,7 +99,9 @@ def test_empty_database(client, headers, path):
 
 
 def test_post_service(client, headers):
-    """A posted service gets a generated identifier and can be retrieved."""
+    """A posted service gets a generated identifier and can be retrieved at
+    its location (cf. `_post`).
+    """
     service_id = _post(client, headers)
     assert len(service_id) == 6
     assert set(service_id) <= set(string.ascii_uppercase + string.digits)
@@ -112,7 +117,10 @@ def test_post_service(client, headers):
 
 def test_post_service_ids_unique(client, headers):
     """Each posted service gets its own identifier."""
-    ids = {_post(client, headers) for _ in range(3)}
+    ids = {
+        _post(client, headers, _service(url=f"https://tes{i}.example.org"))
+        for i in range(3)
+    }
     assert len(ids) == 3
 
 
@@ -123,7 +131,8 @@ def test_post_service_ids_exhausted(app, client, headers):
     id_conf.length = 1
     assert _post(client, headers) == "A"
 
-    response = client.post(f"{BASE}/services", json=_service(), headers=headers)
+    service = _service(url="https://other.example.org")
+    response = client.post(f"{BASE}/services", json=service, headers=headers)
     _assert_error(response, 500)
 
 
@@ -143,20 +152,166 @@ def test_get_service_not_found(client, headers):
     _assert_error(client.get(f"{BASE}/services/abc", headers=headers), 404)
 
 
+def _assert_duplicate(response, existing_id):
+    """Assert that a response names the registered service with the same URL
+    and API type.
+    """
+    assert response.status_code == 409
+    assert response.mimetype == "application/problem+json"
+    assert response.json["serviceId"] == existing_id
+    assert existing_id in response.json["detail"]
+
+
+def test_post_duplicate(client, headers):
+    """A service with the same URL (in any spelling) and API type can't be
+    registered again, also with another API version.
+    """
+    existing = _post(client, headers)
+    for service in [
+        _service(),
+        _service(url="HTTPS://TES.example.org:443/ga4gh/tes/v1/"),
+        _service(type={**SERVICE["type"], "version": "2.0.0"}),
+    ]:
+        response = client.post(f"{BASE}/services", json=service, headers=headers)
+        _assert_duplicate(response, existing)
+    services = client.get(f"{BASE}/services").json
+    assert [service["id"] for service in services] == [existing]
+    assert "_serviceKey" not in services[0]
+    assert "_serviceKey" not in client.get(f"{BASE}/services/{existing}").json
+
+
+def test_post_same_url_other_type(client, headers):
+    """Services with other API types can share a URL."""
+    wes = {"group": "org.ga4gh", "artifact": "wes", "version": "1.1.0"}
+    assert _post(client, headers) != _post(client, headers, _service(type=wes))
+
+
+def test_put_duplicate(client, admin_headers):
+    """Services can't be changed to the URL and API type of another
+    service.
+    """
+    existing = _post(client, admin_headers)
+    other = _service(url="https://other.example.org")
+    response = client.put(f"{BASE}/services/OTHER", json=other, headers=admin_headers)
+    assert response.status_code == 201
+    response = client.put(
+        f"{BASE}/services/OTHER", json=_service(), headers=admin_headers
+    )
+    _assert_duplicate(response, existing)
+    assert "Location" not in response.headers
+    response = client.put(
+        f"{BASE}/services/{existing}", json=_service(name="New"), headers=admin_headers
+    )
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("method, path", [("post", ""), ("put", "/abc")])
+@pytest.mark.parametrize(
+    "url, detail",
+    [
+        ("https://user:secret@tes.example.org", "must not contain user info"),
+        ("tes.example.org/v1", "need a scheme and a host"),
+        ("http://[::1/v1", "Invalid service URL"),
+    ],
+)
+def test_service_url_invalid(client, admin_headers, method, path, url, detail):
+    """Invalid service URLs are rejected, saying why."""
+    response = getattr(client, method)(
+        f"{BASE}/services{path}", json=_service(url=url), headers=admin_headers
+    )
+    _assert_error(response, 400)
+    assert response.mimetype == "application/problem+json"
+    assert response.json["title"] == "Bad request"
+    assert detail in response.json["detail"]
+    assert "Location" not in response.headers
+
+
 def test_put_service(client, admin_headers):
-    """PUT creates a service with the given identifier, then replaces it."""
+    """PUT creates a service with the given identifier (`201`, with its
+    location), then replaces it (`200`).
+    """
     url = f"{BASE}/services/my-tes"
     response = client.put(url, json=_service(), headers=admin_headers)
-    assert response.status_code == 200
+    assert response.status_code == 201
     assert response.json == "my-tes"
+    assert response.location == f"{PUBLIC_URL}{url}"
     assert client.get(url, headers=admin_headers).json == _service(id="my-tes")
 
     response = client.put(url, json=_service(name="Your TES"), headers=admin_headers)
     assert response.status_code == 200
+    assert response.json == "my-tes"
+    assert "Location" not in response.headers
     assert client.get(url, headers=admin_headers).json == _service(
         id="my-tes", name="Your TES"
     )
     assert len(client.get(f"{BASE}/services", headers=admin_headers).json) == 1
+
+
+@pytest.fixture
+def proxy_app(app):
+    """App served behind a reverse proxy under a subpath, with one possible
+    generated service identifier (`A`).
+    """
+    endpoints = app.app.config.foca.custom.endpoints
+    endpoints.service.api_path = "/proxy/registry/"
+    endpoints.services.id.charset = "A"
+    endpoints.services.id.length = 1
+    return app
+
+
+@pytest.mark.parametrize(
+    "method, path, location",
+    [
+        (
+            "POST",
+            "/services",
+            "https://0.0.0.0:8080/proxy/registry/ga4gh/registry/v1/services/A",
+        ),
+        (
+            "PUT",
+            "/services/my-tes",
+            "https://0.0.0.0:8080/proxy/registry/ga4gh/registry/v1/services/my-tes",
+        ),
+        (
+            "PUT",
+            "/services/my%20tes",
+            "https://0.0.0.0:8080/proxy/registry/ga4gh/registry/v1/services/my%20tes",
+        ),
+    ],
+)
+def test_location_proxy_path(proxy_app, admin_headers, method, path, location):
+    """Locations of new services start with the configured path prefix and
+    are percent-encoded.
+    """
+    client = proxy_app.app.test_client()
+    response = client.open(
+        f"{BASE}{path}", method=method, json=_service(), headers=admin_headers
+    )
+    assert response.status_code == 201
+    assert response.location == location
+
+
+@pytest.mark.parametrize("service_id", [".", "..", "%2E", "%2E%2E"])
+def test_put_dot_segment_id(client, admin_headers, service_id):
+    """Identifiers that are dot segments are rejected, as clients would
+    resolve their URLs to other ones.
+    """
+    response = client.put(
+        f"{BASE}/services/{service_id}", json=_service(), headers=admin_headers
+    )
+    _assert_error(response, 400)
+    assert "Location" not in response.headers
+    assert client.get(f"{BASE}/services").json == []
+
+
+@pytest.mark.parametrize("service_id", ["...", ".a", "a."])
+def test_put_dotted_id(client, admin_headers, service_id):
+    """Identifiers with dots that aren't dot segments are accepted."""
+    response = client.put(
+        f"{BASE}/services/{service_id}", json=_service(), headers=admin_headers
+    )
+    assert response.status_code == 201
+    assert response.location == f"{PUBLIC_URL}{BASE}/services/{service_id}"
 
 
 def test_delete_service(client, headers, admin_headers):
@@ -173,7 +328,8 @@ def test_delete_service(client, headers, admin_headers):
 def test_get_service_types(client, headers):
     """Service types are listed once each, sorted."""
     wes = {"group": "org.ga4gh", "artifact": "wes", "version": "1.1.0"}
-    for service in [_service(type=wes), _service(), _service()]:
+    other = "https://other.example.org"
+    for service in [_service(type=wes), _service(), _service(url=other)]:
         _post(client, headers, service)
 
     for _ in range(2):
@@ -268,14 +424,28 @@ def test_main(monkeypatch, mongo_client, app_env, capsys):
     runs the app on the configured port.
     """
     ports = _mock_run(monkeypatch)
+    # registered without a key, e.g., before keys were introduced
+    services = mongo_client["serviceStore"]["services"]
+    services.insert_one({**SERVICE, "id": "OLD"})
 
     cloud_registry.app.main()
 
     assert ports == [8080]
+    assert services.find_one({"id": "OLD"})["_serviceKey"]
     # FOCA configures logging to stderr
     err = capsys.readouterr().err
     assert f"Groups mapped to the role 'admin': {ADMIN_GROUP}" in err
     assert "Serving service info 'ELIXIR_CLOUD_SERVICE_REGISTRY_1'" in err
+
+
+def test_main_duplicate_services(monkeypatch, mongo_client, app_env):
+    """`main()` fails if services have the same URL and API type."""
+    ports = _mock_run(monkeypatch)
+    services = mongo_client["serviceStore"]["services"]
+    services.insert_many([{**SERVICE, "id": "FIRST"}, {**SERVICE, "id": "SECOND"}])
+    with pytest.raises(RuntimeError, match="same URL and API type"):
+        cloud_registry.app.main()
+    assert ports == []
 
 
 def test_main_requires_admin(monkeypatch, tmp_path, app_env):

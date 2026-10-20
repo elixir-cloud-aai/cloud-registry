@@ -2,16 +2,27 @@
 
 import logging
 
-from flask import request
+from flask import Response, request
 from foca.utils.logging import log_traffic
 
-from cloud_registry.exceptions import BadRequest, NotFound
+from cloud_registry.exceptions import BadRequest, NotFound, problem
 from cloud_registry.ga4gh.registry.permissions import add_owner, remove_permissions
-from cloud_registry.ga4gh.registry.service import RegisterService
+from cloud_registry.ga4gh.registry.service import (
+    PROJECTION,
+    DuplicateService,
+    InvalidService,
+    RegisterService,
+)
 from cloud_registry.ga4gh.registry.service_info import get_service_info
-from cloud_registry.utils import get_collection
+from cloud_registry.utils import get_collection, get_public_url
 
 logger = logging.getLogger(__name__)
+# Response for a registered service: its identifier, status `201` and its URL
+# as `Location` header
+CreatedResponse = tuple[str, int, dict[str, str]]
+# Response of a registration: the identifier of a replaced service, a
+# registered service, or an error
+RegisterResponse = str | CreatedResponse | Response
 
 
 # GET /services
@@ -25,7 +36,7 @@ def getServices(**kwargs) -> list:
     db_collection_service = get_collection("services")
     records = db_collection_service.find(
         filter={},
-        projection={"_id": False},
+        projection=PROJECTION,
     )
     return list(records)
 
@@ -42,7 +53,7 @@ def getServiceById(serviceId: str, **kwargs) -> dict:
         Service object.
     """
     db_collection_service = get_collection("services")
-    obj = db_collection_service.find_one({"id": serviceId}, {"_id": False})
+    obj = db_collection_service.find_one({"id": serviceId}, PROJECTION)
     if not obj:
         raise NotFound
     return obj
@@ -79,13 +90,14 @@ def getServiceInfo(**kwargs) -> dict:
 
 # POST /services
 @log_traffic
-def postService(**kwargs) -> str:
+def postService(**kwargs) -> RegisterResponse:
     """Add service with an auto-generated identifier.
 
     Returns:
-        Identifier of registered service.
+        Identifier of registered service, with status `201` and its URL as
+        `Location`.
     """
-    return _register_service()
+    return _register_service(collection_path=request.path)
 
 
 # DELETE /services/{serviceId}
@@ -109,16 +121,20 @@ def deleteService(serviceId: str, **kwargs) -> str:
 
 # PUT /services/{serviceId}
 @log_traffic
-def putService(serviceId: str, **kwargs) -> str:
+def putService(serviceId: str, **kwargs) -> RegisterResponse:
     """Add/replace service with a user-supplied ID.
 
     Args:
         serviceId: Identifier of service to be registered/updated.
 
     Returns:
-        Identifier of registered/updated service.
+        Identifier of registered/updated service; for registered services,
+        with status `201` and their URL as `Location`.
     """
-    return _register_service(service_id=serviceId)
+    # the request path is the service's URL path: `/services/{serviceId}`,
+    # with the API base path and the identifier as routed (decoded)
+    collection_path = request.path.removesuffix(f"/{serviceId}")
+    return _register_service(collection_path=collection_path, service_id=serviceId)
 
 
 def _get_request_object() -> dict:
@@ -137,17 +153,30 @@ def _get_request_object() -> dict:
     return request_json
 
 
-def _register_service(service_id: str | None = None) -> str:
+def _register_service(
+    collection_path: str, service_id: str | None = None
+) -> RegisterResponse:
     """Register the service in the request body.
 
     Args:
+        collection_path: Path of the service collection (`/services`, with the
+            API base path), for the URL of new services.
         service_id: Identifier of the service; generated if not provided.
 
     Returns:
-        Identifier of registered service.
+        Identifier of the service; if it is new, with status `201` and its URL
+        as `Location`. Or an error response: `400` for invalid URLs, `409`
+        naming the registered service with the same URL and API type.
     """
     service = RegisterService(data=_get_request_object(), id=service_id)
-    service.register_metadata()
+    try:
+        service.register_metadata()
+    except InvalidService as exc:
+        logger.info("Service not registered: %s", exc.description)
+        return problem(exc)
+    except DuplicateService as exc:
+        logger.info("Service not registered: %s", exc.description)
+        return problem(exc, serviceId=exc.existing_id)
     if service.was_created:
         try:
             # Roles left on the identifier by a deleted service (e.g., if
@@ -163,6 +192,8 @@ def _register_service(service_id: str | None = None) -> str:
         except Exception:
             _unregister_service(service)
             raise
+        path = f"{collection_path.rstrip('/')}/{service.data['id']}"
+        return service.data["id"], 201, {"Location": get_public_url(path)}
     return service.data["id"]
 
 

@@ -12,6 +12,7 @@ from pydantic import ValidationError
 import pytest
 import yaml
 
+from cloud_registry.ga4gh.registry.service import KEY
 from tests.conftest import CONFIG_OVERLAY
 from tests.helm import ADMIN_GROUP, CHART, HELM, render
 
@@ -105,6 +106,16 @@ def test_config_dev_overlay(monkeypatch):
     config = _parse_config()
     assert config.security.auth.verify_audience is False
     assert config.custom.access_control.require_admin is False
+
+
+def test_service_key_index(monkeypatch):
+    """Service keys are unique; the index is sparse, so that it can be created
+    before keys are added to services stored without one.
+    """
+    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(CONFIG_OVERLAY))
+    indexes = _parse_config().db.dbs["serviceStore"].collections["services"].indexes
+    key_index = next(index for index in indexes if dict(index.keys) == {KEY: 1})
+    assert key_index.options == {"unique": True, "sparse": True}
 
 
 def test_config_overlay_missing(tmp_path, monkeypatch):

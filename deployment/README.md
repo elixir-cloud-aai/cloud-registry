@@ -265,6 +265,16 @@ Deployment is called after `cloud_registry.appName`, by default
 Once the new release works, delete a retained volume
 (`kubectl delete pv <name>`) and the local dump.
 
+Since app version 0.3.0 (the first release after 0.2.0), services are unique by
+URL and API type. Upgrade to it with the app scaled to 0 replicas (`kubectl
+scale deploy/<appName> --replicas=0 -n <namespace>`, then `helm upgrade`), so
+that no pod of the old version registers services while the new one adds keys
+to the stored ones. If stored services have invalid URLs or the same URL and
+API type, the new version refuses to start and names them: fix or delete them
+in MongoDB (see "Duplicate services" in the
+[README](../README.md#duplicate-services) and [Authentication](#authentication)
+for credentials).
+
 ## Probes
 
 - **App:** ready once it serves its Swagger UI (`/ga4gh/registry/v1/ui/`;

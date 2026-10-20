@@ -27,6 +27,8 @@ SERVICE_CONFIG = {
     # Path prefix of a reverse proxy
     "api_path": "registry",
 }
+# Public URL of the app with `SERVICE_CONFIG`
+MOCK_PUBLIC_URL = "http://1.2.3.4:80/registry"
 SERVICE_INFO_CONFIG = {
     "contactUrl": "mailto:support@example.com",
     "createdAt": "2019-06-04T12:58:19Z",
@@ -65,4 +67,5 @@ MOCK_SERVICE = {
     "type": MOCK_TYPE,
     "organization": "organization",
     "version": "version",
+    "url": "https://beacon.example.org/api",
 }
