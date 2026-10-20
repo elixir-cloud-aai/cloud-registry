@@ -411,11 +411,11 @@ HELM_LABELS = {"app.kubernetes.io/managed-by": "Helm"}
             False,
         ),
     ],
-    ids=["legacy", "legacy-labels", "other-release", "unmanaged", "chart-4"],
+    ids=["legacy", "legacy-labels", "other-release", "unmanaged", "current"],
 )
 def test_upgrade_legacy(owner, labels, fails):
-    """Upgrades fail if the release has MongoDB resources of chart version 3
-    or earlier, which the upgrade would delete; checked with a resource as
+    """Upgrades fail if the release has MongoDB resources of a legacy chart
+    (version 2 or 3), which the upgrade would delete; checked with a resource as
     returned by `lookup`, which finds nothing in `helm template`.
     """
     resource = {
@@ -435,7 +435,7 @@ def test_upgrade_legacy(owner, labels, fails):
     if fails:
         with pytest.raises(subprocess.CalledProcessError) as exc:
             render_with(*args)
-        assert "chart version 3 or earlier" in exc.value.stderr
+        assert "legacy chart (version 2 or 3)" in exc.value.stderr
     else:
         render_with(*args)
 

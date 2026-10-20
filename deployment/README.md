@@ -186,13 +186,16 @@ helm upgrade cloud-registry . -n <namespace> -f values-prod.yaml
 The app pods are replaced when the config changes. `helm ls -n <namespace>`
 lists the releases.
 
-### From chart version 3 or 2
+### From the legacy charts
 
-Chart version 4 renames the resources (see
+The legacy charts (versions 2.x and 3.0.0, installed from the repository
+before charts were released from Git tags) used other resource names and
+selectors. The current chart (released from Git tags, 0.3.0 and later, or
+installed from the repository) renames the resources (see
 [Names and labels](#names-and-labels); e.g., `mongodb` becomes
 `cloud-registry-mongodb`) and changes the selectors of the Deployments,
-which cannot be changed in place, so **releases of earlier chart versions
-cannot be upgraded: uninstall them and install chart version 4.** An upgrade
+which cannot be changed in place, so **releases of the legacy charts cannot
+be upgraded: uninstall them and install the current chart.** An upgrade
 would delete the `mongodb` PersistentVolumeClaim, so `helm upgrade` fails
 for such releases (only when Helm can query the cluster: not in
 `helm template` or client-side dry runs). Uninstalling also deletes the
@@ -265,7 +268,7 @@ Deployment is called after `cloud_registry.appName`, by default
    the chart's default version (see [Version](#version)); set
    `mongodb.image` to the dumped version if needed.
 
-6. Install chart version 4 (see [Installation](#installation)), stop its
+6. Install the current chart (see [Installation](#installation)), stop its
    app again, so that it does not write during the restore, and wait for
    MongoDB:
 
