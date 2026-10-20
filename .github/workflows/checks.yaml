@@ -126,14 +126,16 @@ jobs:
       - name: Install requirements
         run: |
           pip install --upgrade pip==24.0
-          pip install -r requirements.txt
+          pip install -r requirements.txt -r requirements_dev.txt
           pip install -e .
       # Helm is preinstalled on GitHub-hosted Ubuntu runners
       - name: Lint chart
         run: helm lint deployment --strict -f deployment/ci/test-values.yaml
-      # Renders the chart and validates its config overlay (needs helm)
-      - name: Test config overlay
-        run: pip install -r requirements_dev.txt && pytest tests/test_config.py
+      # Fails instead of skipping the chart tests if helm is missing
+      - name: Test chart
+        run: |
+          helm version
+          pytest tests/test_config.py
   smoke_test:
     name: Run app with Docker Compose
     runs-on: ubuntu-latest
