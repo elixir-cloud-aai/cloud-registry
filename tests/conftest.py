@@ -23,8 +23,7 @@ from cloud_registry.service_models.custom_config import CustomConfig
 from tests.mock_data import CUSTOM_CONFIG, DB, MONGO_CONFIG
 
 APP_DIR = Path(__file__).parents[1] / "cloud_registry"
-# The trusted issuer from `config.yaml` (from FOCA 0.14 on, only configured
-# issuers are accepted); all its endpoints are mocked
+# The trusted issuer from `config.yaml`; all its endpoints are mocked
 ISSUER = "https://login.aai.lifescience-ri.eu/oidc/"
 JWKS_URI = f"{ISSUER}jwk"
 USERINFO_URI = f"{ISSUER}userinfo"
@@ -94,37 +93,18 @@ def make_headers(user=USER, key=KEY):
     return {"Authorization": f"Bearer {token}"}
 
 
-# TODO(#65): remove, along with the FOCA < 0.14 branches in the fixtures
-class MockPyMongo:
-    """Mock of `flask_pymongo.PyMongo` (FOCA < 0.14), backed by mongomock."""
-
-    def __init__(self, app, client):
-        self.cx = client
-        self.db = client[app.config["MONGO_URI"].rsplit("/", 1)[-1]]
-
-
 @pytest.fixture
 def mongo_client(monkeypatch):
     """In-memory MongoDB client used by the app."""
     client = mongomock.MongoClient()
-    # FOCA >= 0.14 creates a `pymongo.MongoClient`, older versions a
-    # `flask_pymongo.PyMongo` client
-    if hasattr(register_mongodb, "MongoClient"):
-        monkeypatch.setattr(
-            register_mongodb, "MongoClient", lambda *args, **kwargs: client
-        )
-    else:
-        monkeypatch.setattr(
-            register_mongodb, "PyMongo", lambda app: MockPyMongo(app, client)
-        )
+    monkeypatch.setattr(register_mongodb, "MongoClient", lambda *args, **kwargs: client)
     return client
 
 
 def _clear_auth_caches():
-    # FOCA >= 0.14 caches the identity provider's responses
-    for cache in ["_oidc_configs", "_jwk_sets", "_userinfo_cache"]:
-        if hasattr(auth, cache):
-            getattr(auth, cache).clear()
+    # FOCA caches the identity provider's responses
+    for cache in [auth._oidc_configs, auth._jwk_sets, auth._userinfo_cache]:
+        cache.clear()
 
 
 @pytest.fixture
