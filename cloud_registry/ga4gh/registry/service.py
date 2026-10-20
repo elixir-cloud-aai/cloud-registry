@@ -1,5 +1,6 @@
 """Controller for registering services."""
 
+from copy import deepcopy
 import logging
 import string  # noqa: F401
 from typing import Dict, Optional
@@ -29,7 +30,7 @@ class RegisterService:
             id: Service identifier. Auto-generated if not provided.
 
         Attributes:
-            data: Service metadata.
+            data: Service metadata; a copy of `data`, with the identifier.
             replace: Whether an existing service with the provided identifier
                 should be replaced. Set to `True` if an `id` is provided,
                 otherwise set to `False`.
@@ -42,9 +43,9 @@ class RegisterService:
         """
         foca_conf = current_app.config.foca  # type: ignore[attr-defined]
         endpoint_conf = foca_conf.custom.endpoints
-        self.data = data
-        self.data["id"] = None if id is None else id
-        self.replace = True
+        self.data = deepcopy(data)
+        self.data["id"] = id
+        self.replace = id is not None
         self.was_replaced = False
         self.id_charset: str = endpoint_conf.services.id.charset
         self.id_length = int(endpoint_conf.services.id.length)
@@ -59,36 +60,31 @@ class RegisterService:
                 encountering `DuplicateKeyError`s if a service identifier was
                 not provided.
         """
-        # keep trying to generate unique ID
-        for i in range(retries + 1):
-            # set random ID unless ID is provided
-            if self.data["id"] is None:
-                self.replace = False
+        # replace or insert service with provided ID (PUT)
+        if self.replace:
+            result_object = self.db_coll.replace_one(
+                filter={"id": self.data["id"]},
+                replacement=self.data,
+                upsert=True,
+            )
+            if result_object.modified_count:
+                self.was_replaced = True
+
+        # insert service with random ID (POST); new ID if key exists
+        else:
+            for i in range(retries + 1):
                 self.data["id"] = generate_id(
                     charset=self.id_charset, length=self.id_length
                 )
-
-            # replace or insert service, then return (PUT)
-            if self.replace:
-                result_object = self.db_coll.replace_one(
-                    filter={"id": self.data["id"]},
-                    replacement=self.data,
-                    upsert=True,
-                )
-                if result_object.modified_count:
-                    self.was_replaced = True
+                try:
+                    # insert a copy, as `insert_one()` adds an `_id` field
+                    self.db_coll.insert_one(document=dict(self.data))
+                except DuplicateKeyError:
+                    continue
+                logger.info(f"Added service with id '{self.data['id']}'.")
                 break
-
-            # insert service (POST); continue with next iteration if key exists
-            try:
-                self.db_coll.insert_one(document=self.data)
-            except DuplicateKeyError:
-                continue
-
-            logger.info(f"Added service with id '{self.data['id']}'.")
-            break
-        else:
-            raise InternalServerError
+            else:
+                raise InternalServerError
         logger.debug(
             "Entry in 'services' collection: "
             f"{self.db_coll.find_one({'id': self.data['id']})}"

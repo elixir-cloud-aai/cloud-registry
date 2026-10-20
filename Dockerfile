@@ -12,12 +12,13 @@ LABEL maintainer.organisation="ELIXIR Cloud & AAI"
 ## Copy app files
 COPY ./ /app
 
-## Install app
+## Install app; yq is for the Helm config job's update-config-map.sh
+## (remove with #67)
 RUN cd /app \
   && pip install -e . \
   && cd / \
   && chmod g+w /app/cloud_registry/api/ \
-  && pip install yq
+  && pip install yq==3.2.3
 
 WORKDIR /app
 
