@@ -61,7 +61,7 @@ def getServiceTypes(**kwargs) -> List:
     Returns:
         List of distinct service types.
     """
-    services = getServices.__wrapped__()
+    services = getServices.__wrapped__()  # type: ignore[attr-defined]
     types = [s["type"] for s in services]
     uniq_types = [dict(t) for t in {tuple(sorted(d.items())) for d in types}]
 
