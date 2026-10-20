@@ -24,7 +24,7 @@ RUN pip install --no-cache-dir --no-deps /tmp/src \
   && rm -rf /tmp/src
 USER 1000
 
-## All API endpoints require authentication, so probe the Swagger UI instead;
+## Probe the Swagger UI, which needs neither authentication nor the database;
 ## set `HEALTHCHECK_URL` if the config changes the port, the API base path or
 ## the Swagger UI setting (`server.port`, `api.specs[]`)
 ENV HEALTHCHECK_URL=http://localhost:8080/ga4gh/registry/v1/ui/
