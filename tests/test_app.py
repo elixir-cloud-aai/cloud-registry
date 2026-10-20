@@ -199,13 +199,24 @@ def test_put_duplicate(client, admin_headers):
     assert response.status_code == 200
 
 
-def test_service_url_with_user_info(client, headers):
-    """Service URLs with user info are rejected, saying why."""
-    service = _service(url="https://user:secret@tes.example.org")
-    response = client.post(f"{BASE}/services", json=service, headers=headers)
+@pytest.mark.parametrize("method, path", [("post", ""), ("put", "/abc")])
+@pytest.mark.parametrize(
+    "url, detail",
+    [
+        ("https://user:secret@tes.example.org", "must not contain user info"),
+        ("tes.example.org/v1", "need a scheme and a host"),
+        ("http://[::1/v1", "Invalid service URL"),
+    ],
+)
+def test_service_url_invalid(client, admin_headers, method, path, url, detail):
+    """Invalid service URLs are rejected, saying why."""
+    response = getattr(client, method)(
+        f"{BASE}/services{path}", json=_service(url=url), headers=admin_headers
+    )
     _assert_error(response, 400)
     assert response.mimetype == "application/problem+json"
-    assert response.json["detail"] == "Service URLs must not contain user info."
+    assert response.json["title"] == "Bad request"
+    assert detail in response.json["detail"]
 
 
 def test_put_service(client, admin_headers):

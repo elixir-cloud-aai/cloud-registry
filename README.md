@@ -143,15 +143,17 @@ Access control is implemented with [FOCA][foca-access-control]; see the
 
 ### Duplicate services
 
-A service is identified by its base URL (`url`) and its API type
-(`type.group` and `type.artifact`, case-insensitive, but not `type.version`,
-so that upgrading a service to a new API version updates its entry). URLs are
-compared with lowercase schemes and hosts and encoded international host
-names, and without trailing dots of hosts, default ports, dot segments
-(`/./`, `/../`), repeated and trailing slashes, needless percent-encoding,
-queries and fragments. URLs with other schemes (e.g., `http` and `https`) are
-different services. Invalid URLs, URLs without scheme or host, and URLs with
-user info (`user:password@`) are rejected (`400 Bad Request`, saying why).
+A service is identified by its base URL (`url`) and its API type (`type.group`
+and `type.artifact`, case-insensitive, but not `type.version`, so that
+upgrading a service to a new API version updates its entry). URLs are compared
+after normalizing common spellings: lowercase schemes and hosts, encoded
+international host names (IDNA 2008), canonical IPv6 addresses, percent-encoded
+non-ASCII characters in paths, and without trailing dots of hosts, default
+ports, dot segments (`/./`, `/../`), repeated and trailing slashes, needless
+percent-encoding in paths, queries and fragments. URLs with other schemes
+(e.g., `http` and `https`) are different services. Invalid URLs, URLs without
+scheme or host, and URLs with user info (`user:password@`) are rejected (`400
+Bad Request`, saying why).
 
 Registering a service again (`POST /services`), or changing a service to the
 URL and API type of another one (`PUT`), returns `409 Conflict`, with the
@@ -176,9 +178,10 @@ for access to the database of a Helm deployment):
 
 ```javascript
 db.getSiblingDB("serviceStore").services.deleteOne({id: "<id>"})
+db.getSiblingDB("serviceStore").services.updateOne({id: "<id>"}, {$set: {url: "<URL>"}})
 ```
 
-Then start the app again.
+Then start the app again; it adds the missing keys.
 
 ## Installation
 

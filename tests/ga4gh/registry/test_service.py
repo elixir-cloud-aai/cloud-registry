@@ -11,6 +11,7 @@ from cloud_registry.ga4gh.registry.service import (
     DuplicateService,
     InvalidService,
     RegisterService,
+    _normalize_host,
     add_service_keys,
     normalize_url,
     service_key,
@@ -151,8 +152,17 @@ class TestRegisterService:
             "https://tes.example.org/ga4gh/tes/v1",
         ),
         ("https://tes.example.org/../v1", "https://tes.example.org/v1"),
+        ("https://tes.example.org/a/%2e%2E/v1", "https://tes.example.org/v1"),
+        ("https://tes.example.org.:8443/v1", "https://tes.example.org:8443/v1"),
         ("https://tes.example.org/%74es/a%2fb", "https://tes.example.org/tes/a%2Fb"),
         ("https://bücher.example.org", "https://xn--bcher-kva.example.org"),
+        ("https://XN--BCHER-KVA.example.org", "https://xn--bcher-kva.example.org"),
+        ("https://faß.de", "https://xn--fa-hia.de"),
+        ("https://a.com。/x", "https://a.com/x"),
+        ("https://my_host.internal", "https://my_host.internal"),
+        ("https://[0::FFFF:1.2.3.4]/v1", "https://[::ffff:1.2.3.4]/v1"),
+        ("https://[fe80::1%25eth0]", "https://[fe80::1%25eth0]"),
+        ("https://tes.example.org/ü", "https://tes.example.org/%C3%BC"),
         ("http://tes.example.org:443", "http://tes.example.org:443"),
     ],
 )
@@ -175,7 +185,9 @@ def test_normalize_url(url, normalized):
         "https://tes.example.org:99999",
         "https://tes.example.org:port",
         "http://[::1/v1",
-        f"https://{'a' * 64}.example.org",
+        "https://.",
+        "https://[::g]",
+        f"https://{'ü' * 64}.example.org",
     ],
 )
 def test_normalize_url_invalid(url):
@@ -184,6 +196,12 @@ def test_normalize_url_invalid(url):
     """
     with pytest.raises(InvalidService):
         normalize_url(url)
+
+
+def test_normalize_host_invalid_ipv6():
+    """Invalid IPv6 addresses are rejected (`urlsplit()` rejects most)."""
+    with pytest.raises(InvalidService):
+        _normalize_host("::g")
 
 
 def test_service_key():
@@ -300,6 +318,20 @@ class TestAddServiceKeys:
             add_service_keys()
         assert services.find_one({"id": "OLD"})[KEY] == service_key(MOCK_SERVICE)
         assert services.find_one({"id": "NEW"})[KEY] == "kept"
+
+    def test_concurrent(self, monkeypatch, unit_app, services):
+        """Services registered concurrently with the same key are named."""
+        services.insert_one({**MOCK_SERVICE, "id": "OLD"})
+
+        def fail(*args, **kwargs):
+            raise DuplicateKeyError(KEY)
+
+        monkeypatch.setattr(services, "update_one", fail)
+        with (
+            unit_app.app_context(),
+            pytest.raises(RuntimeError, match="'OLD': same URL and API type"),
+        ):
+            add_service_keys()
 
     def test_problems(self, unit_app, services):
         """All services with the same URL and API type as another one, or

@@ -337,11 +337,10 @@ components:
       description: |
         A service with the same URL and API type (`type.group` and
         `type.artifact`, case-insensitive) is registered. URLs are compared
-        with lowercase schemes and hosts and encoded international host
-        names, and without trailing dots of hosts, default ports, dot
-        segments, repeated and trailing slashes, needless percent-encoding,
-        queries and fragments. `serviceId` names the registered service;
-        contact its owner or an admin.
+        after normalizing common spellings (e.g., case of schemes and hosts,
+        default ports, trailing slashes, queries and fragments; see the
+        README). `serviceId` names the registered service; contact its owner
+        or an admin.
       content:
         application/problem+json:
           schema:

@@ -1,12 +1,14 @@
 """Controller for registering services."""
 
 from copy import deepcopy
+import ipaddress
 import logging
 import re
 import string
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from foca.utils.misc import generate_id
+import idna
 from pymongo.errors import DuplicateKeyError
 
 from cloud_registry.exceptions import BadRequest, Conflict, InternalServerError
@@ -22,6 +24,8 @@ DEFAULT_PORTS = {"http": 80, "https": 443}
 PERCENT_ENCODED = re.compile(r"%([0-9A-Fa-f]{2})")
 # RFC 3986, section 2.3
 UNRESERVED = frozenset(string.ascii_letters + string.digits + "-._~")
+# Printable ASCII characters, kept when percent-encoding non-ASCII ones
+ASCII_PRINTABLE = "".join(chr(code) for code in range(33, 127))
 
 
 class DuplicateService(Conflict):
@@ -45,10 +49,12 @@ class InvalidService(BadRequest):
 def normalize_url(url: str) -> str:
     """Normalize a service URL for comparisons.
 
-    Lowercases the scheme and host, encodes international host names
-    (IDNA), and removes trailing dots of hosts, default ports, dot segments,
-    repeated and trailing slashes, needless percent-encoding, queries and
-    fragments. Other schemes (e.g., `http` and `https`) give other URLs.
+    Normalizes common spellings: lowercases the scheme and host, encodes
+    international host names (IDNA), writes IPv6 addresses in canonical form,
+    percent-encodes non-ASCII characters of paths, and removes trailing dots
+    of hosts, default ports, dot segments, repeated and trailing slashes,
+    needless percent-encoding of paths, queries and fragments. Other schemes
+    (e.g., `http` and `https`) give other URLs.
 
     Args:
         url: Service URL.
@@ -57,8 +63,8 @@ def normalize_url(url: str) -> str:
         Normalized URL.
 
     Raises:
-        InvalidService: The URL is invalid, has no scheme or host, or has
-            user info.
+        InvalidService: The URL is invalid, has no scheme or an invalid or no
+            host, or has user info.
     """
     try:
         parts = urlsplit(url.strip())
@@ -70,17 +76,41 @@ def normalize_url(url: str) -> str:
     if parts.username is not None or parts.password is not None:
         raise InvalidService("Service URLs must not contain user info.")
     scheme = parts.scheme.lower()
-    host = parts.hostname.rstrip(".")  # lowercased, without IPv6 brackets
-    if ":" in host:
-        host = f"[{host}]"
-    else:
-        try:
-            host = host.encode("idna").decode("ascii")
-        except UnicodeError as exc:
-            raise InvalidService(f"Invalid host in service URL: {exc}.") from exc
+    host = _normalize_host(parts.hostname)
     if port is not None and port != DEFAULT_PORTS.get(scheme):
         host = f"{host}:{port}"
     return urlunsplit((scheme, host, _normalize_path(parts.path), "", ""))
+
+
+def _normalize_host(host: str) -> str:
+    """Normalize the host of a URL.
+
+    Args:
+        host: Lowercase host, without brackets for IPv6 addresses.
+
+    Returns:
+        Host without trailing dots; IPv6 addresses in canonical form, in
+        brackets; international host names encoded (IDNA 2008, UTS 46).
+
+    Raises:
+        InvalidService: The host is invalid or empty.
+    """
+    if ":" in host:
+        address, _, zone = host.partition("%")
+        try:
+            address = ipaddress.IPv6Address(address).compressed
+        except ValueError as exc:
+            raise InvalidService(f"Invalid host in service URL: {exc}.") from exc
+        return f"[{address}%{zone}]" if zone else f"[{address}]"
+    if not host.isascii():
+        try:
+            host = idna.encode(host, uts46=True, transitional=False).decode()
+        except idna.IDNAError as exc:
+            raise InvalidService(f"Invalid host in service URL: {exc}.") from exc
+    host = host.rstrip(".")
+    if not host:
+        raise InvalidService("Service URLs need a scheme and a host.")
+    return host
 
 
 def _normalize_path(path: str) -> str:
@@ -90,11 +120,12 @@ def _normalize_path(path: str) -> str:
         path: URL path.
 
     Returns:
-        Path with unreserved characters decoded, other percent-encodings in
-        uppercase, dot segments resolved, and without repeated and trailing
+        Path with non-ASCII characters percent-encoded (UTF-8), unreserved
+        characters decoded, other percent-encodings in uppercase, dot
+        segments resolved, and without repeated and trailing
         slashes.
     """
-    path = PERCENT_ENCODED.sub(_decode_unreserved, path)
+    path = PERCENT_ENCODED.sub(_decode_unreserved, quote(path, safe=ASCII_PRINTABLE))
     segments: list[str] = []
     for segment in path.split("/"):
         if segment == "..":
@@ -106,7 +137,15 @@ def _normalize_path(path: str) -> str:
 
 
 def _decode_unreserved(match: re.Match) -> str:
-    """Decode a percent-encoded character if it is unreserved."""
+    """Decode a percent-encoded character if it is unreserved.
+
+    Args:
+        match: Match of a percent-encoded character (`PERCENT_ENCODED`).
+
+    Returns:
+        The character if it is unreserved, otherwise its percent-encoding in
+        uppercase.
+    """
     char = chr(int(match.group(1), 16))
     return char if char in UNRESERVED else match.group(0).upper()
 
@@ -264,7 +303,9 @@ def add_service_keys() -> None:
 
     Raises:
         RuntimeError: Services have invalid URLs or types, or the same URL
-            and API type; the message names all of them.
+            and API type; the message names all of them. Assumes that no
+            services without keys are registered concurrently (e.g., by an
+            app of an older version).
     """
     collection = get_collection("services")
     problems = []
@@ -280,7 +321,12 @@ def add_service_keys() -> None:
                 f"'{service['id']}': same URL and API type as '{existing['id']}'"
             )
             continue
-        collection.update_one({"id": service["id"]}, {"$set": {KEY: key}})
+        try:
+            collection.update_one({"id": service["id"]}, {"$set": {KEY: key}})
+        except DuplicateKeyError:
+            # registered concurrently, e.g., by an app of an older version
+            problems.append(f"'{service['id']}': same URL and API type as another")
+            continue
         logger.info("Added key to service '%s'.", service["id"])
     if problems:
         raise RuntimeError(
