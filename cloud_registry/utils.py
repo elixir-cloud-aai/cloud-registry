@@ -1,5 +1,6 @@
 """Typed access to the configuration and collections of the app."""
 
+import ipaddress
 from urllib.parse import quote
 
 from flask import request
@@ -50,14 +51,30 @@ def get_public_url(path: str) -> str:
         (e.g., for an empty path, `api_path` and root path of the app).
     """
     conf = get_custom_config().endpoints.service
-    # IPv6 addresses are bracketed in URLs
-    host = conf.external_host
-    if ":" in host and not host.startswith("["):
-        host = f"[{host}]"
+    host = _format_host(conf.external_host)
     # `api_path` is configured as it appears in URLs, so it isn't encoded
     parts = (conf.api_path, quote(request.script_root + path))
     url_path = "/".join(filter(None, (part.strip("/") for part in parts)))
     return f"{conf.url_prefix}://{host}:{conf.external_port}/{url_path}"
+
+
+def _format_host(host: str) -> str:
+    """Format a host for URLs.
+
+    Args:
+        host: Host name or IP address, with or without brackets for IPv6
+            addresses.
+
+    Returns:
+        Host; IPv6 addresses in brackets, with zone IDs percent-encoded (RFC
+        6874).
+    """
+    address, _, zone = host.partition("%")
+    try:
+        ipaddress.IPv6Address(address)
+    except ValueError:
+        return host
+    return f"[{address}%25{zone}]" if zone else f"[{address}]"
 
 
 def get_collection(name: str) -> Collection:

@@ -53,11 +53,17 @@ def test_get_public_url(unit_app, api_path, root, path, url):
     [
         ("::1", "http://[::1]:80/registry/services"),
         ("[::1]", "http://[::1]:80/registry/services"),
+        ("fe80::1%eth0", "http://[fe80::1%25eth0]:80/registry/services"),
         ("example.org", "http://example.org:80/registry/services"),
+        ("1.2.3.4", "http://1.2.3.4:80/registry/services"),
+        # misconfigured with a port: not an IPv6 address, kept
+        ("example.org:8443", "http://example.org:8443:80/registry/services"),
     ],
 )
 def test_get_public_url_host(unit_app, host, url):
-    """IPv6 addresses are bracketed in public URLs, unless configured so."""
+    """IPv6 addresses are bracketed in public URLs (with encoded zone IDs),
+    unless configured so.
+    """
     get_app_config(unit_app).model_extra[
         "custom"
     ].endpoints.service.external_host = host

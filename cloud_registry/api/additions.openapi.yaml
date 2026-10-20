@@ -114,6 +114,7 @@ paths:
           required: true
           schema:
             type: string
+            # anything but `.` and `..` (dot segments in URLs)
             pattern: '^(?!\.\.?$)'
       requestBody:
         description: Service metadata.

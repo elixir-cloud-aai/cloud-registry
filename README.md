@@ -43,7 +43,9 @@ Registering a service (`POST /services`, or `PUT /services/{serviceId}` with a
 new identifier) returns `201 Created`, with the identifier of the service in
 the body and its [public URL](#public-urls) in the `Location` header; both
 returned `200 OK` before. Updating a service (`PUT`) returns `200 OK`, as
-before. Identifiers `.` and `..` are rejected (`400 Bad Request`).
+before. Identifiers `.` and `..` are rejected (`400 Bad Request`); services
+registered with them before can still be read and deleted, but must be
+registered again under other identifiers to be updated.
 
 ### Configuration
 

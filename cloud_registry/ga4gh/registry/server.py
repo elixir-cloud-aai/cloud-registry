@@ -17,11 +17,13 @@ from cloud_registry.ga4gh.registry.service import (
 from cloud_registry.ga4gh.registry.service_info import get_service_info
 from cloud_registry.utils import get_collection, get_public_url
 
+logger = logging.getLogger(__name__)
 # Response for a registered service: its identifier, status `201` and its URL
 # as `Location` header
 CreatedResponse = tuple[str, int, dict[str, str]]
-
-logger = logging.getLogger(__name__)
+# Response of a registration: the identifier of a replaced service, a
+# registered service, or an error
+RegisterResponse = str | CreatedResponse | Response
 
 
 # GET /services
@@ -89,7 +91,7 @@ def getServiceInfo(**kwargs) -> dict:
 
 # POST /services
 @log_traffic
-def postService(**kwargs) -> str | CreatedResponse | Response:
+def postService(**kwargs) -> RegisterResponse:
     """Add service with an auto-generated identifier.
 
     Returns:
@@ -120,7 +122,7 @@ def deleteService(serviceId: str, **kwargs) -> str:
 
 # PUT /services/{serviceId}
 @log_traffic
-def putService(serviceId: str, **kwargs) -> str | CreatedResponse | Response:
+def putService(serviceId: str, **kwargs) -> RegisterResponse:
     """Add/replace service with a user-supplied ID.
 
     Args:
@@ -130,8 +132,9 @@ def putService(serviceId: str, **kwargs) -> str | CreatedResponse | Response:
         Identifier of registered/updated service; for registered services,
         with status `201` and their URL as `Location`.
     """
-    # the request path ends with the identifier, which can't contain a slash
-    collection_path = request.path.rsplit("/", 1)[0]
+    # the request path is the service's URL path: `/services/{serviceId}`,
+    # with the API base path and the identifier as routed (decoded)
+    collection_path = request.path.removesuffix(f"/{serviceId}")
     return _register_service(collection_path=collection_path, service_id=serviceId)
 
 
@@ -153,7 +156,7 @@ def _get_request_object() -> dict:
 
 def _register_service(
     collection_path: str, service_id: str | None = None
-) -> str | CreatedResponse | Response:
+) -> RegisterResponse:
     """Register the service in the request body.
 
     Args:
