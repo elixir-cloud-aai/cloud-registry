@@ -9,9 +9,14 @@ merges into the base config on startup (via `FOCA_CONFIG_OVERLAY`):
 
 - `host_name` sets the public URL of the app
   (`custom.endpoints.service`: `https://<host_name>:443`);
-- `config` overrides any key of the base config; it takes precedence over the
+- `config` overrides keys of the base config; it takes precedence over the
   values generated from `host_name`. Mappings are merged recursively, all
-  other values (including lists) replace those of the base config.
+  other values (including lists) replace those of the base config. Do not
+  change `server.port` and `db.host`: the chart's Services expect port 8080
+  and the `mongodb` host.
+
+The overlay requires an image built with FOCA 0.14 or later (e.g.,
+`elixircloud/cloud-registry:20261020` or later); older images ignore it.
 
 Keep the values of each deployment in its own values file outside this
 repository (e.g., `values-prod.yaml` in the deployment's infrastructure
@@ -28,7 +33,8 @@ config:
 ```
 
 Do not edit the ConfigMap with `kubectl edit`: Helm overwrites it on the next
-upgrade.
+upgrade. As `config` is stored in a ConfigMap, it must not contain secrets
+(e.g., database credentials).
 
 ## Installation
 

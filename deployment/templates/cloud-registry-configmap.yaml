@@ -6,7 +6,7 @@ terminated by the ingress, the route or a proxy in front of the cluster).
 */ -}}
 {{- $generated := dict "custom" (dict "endpoints" (dict "service" (dict
   "url_prefix" "https"
-  "external_host" .Values.host_name
+  "external_host" (required "host_name must be set" .Values.host_name)
   "external_port" 443
 ))) -}}
 apiVersion: v1

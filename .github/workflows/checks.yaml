@@ -128,30 +128,12 @@ jobs:
           pip install --upgrade pip==24.0
           pip install -r requirements.txt
           pip install -e .
-      # Helm and yq are preinstalled on GitHub-hosted Ubuntu runners
+      # Helm is preinstalled on GitHub-hosted Ubuntu runners
       - name: Lint chart
         run: helm lint deployment --strict -f deployment/ci/test-values.yaml
-      - name: Render chart
-        run: helm template cloud-registry deployment -f deployment/ci/test-values.yaml > rendered.yaml
-      - name: Check rendered config overlay
-        run: |
-          yq 'select(.kind == "ConfigMap" and .metadata.name == "cloud-registry-config") | .data."overlay.yaml"' rendered.yaml > overlay.yaml
-          FOCA_CONFIG_OVERLAY=overlay.yaml python - <<'PY'
-          from foca.config.config_parser import ConfigParser
-
-          config = ConfigParser(
-              config_file="cloud_registry/config.yaml",
-              custom_config_model="cloud_registry.service_models.custom_config.CustomConfig",
-              format_logs=False,
-          ).config
-          service = config.custom.endpoints.service
-          assert (service.url_prefix, service.external_host, service.external_port) == (
-              "https",
-              "registry.example.org",
-              443,
-          ), service
-          assert config.security.auth.audience == ["test-client"], config.security.auth
-          PY
+      # Renders the chart and validates its config overlay (needs helm)
+      - name: Test config overlay
+        run: pip install -r requirements_dev.txt && pytest tests/test_config.py
   smoke_test:
     name: Run app with Docker Compose
     runs-on: ubuntu-latest

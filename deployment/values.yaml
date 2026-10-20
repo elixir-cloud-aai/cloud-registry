@@ -7,9 +7,10 @@
 # `config.custom.endpoints.service`)
 host_name: ""
 
-# App config overriding the base config in the image
-# (https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/cloud_registry/config.yaml);
-# keys are merged recursively, lists are replaced. Examples:
+# App config overriding the base config in the image (`cloud_registry/config.yaml`
+# of the image's version); mappings are merged recursively, other values
+# (including lists) are replaced. Stored in a ConfigMap, so must not contain
+# secrets. Examples:
 config: {}
 #   security:
 #     auth:

@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir -r /tmp/src/requirements.txt
 
 ## Install app (non-editable; the base config is installed with the package,
 ## and deployments override it via `FOCA_CONFIG_OVERLAY`)
+## (`README.md` is the package's long description)
 COPY pyproject.toml README.md /tmp/src/
 COPY cloud_registry /tmp/src/cloud_registry
 RUN pip install --no-cache-dir --no-deps /tmp/src \
