@@ -3,17 +3,16 @@ kind: Deployment
 metadata:
   name: mongodb
 spec:
-  progressDeadlineSeconds: 600
+  # Longer than the startup window (see `startupProbe`)
+  progressDeadlineSeconds: 2400
   replicas: 1
   revisionHistoryLimit: 10
   selector:
     matchLabels:
       app: mongodb
+  # The data volume can only be used by one pod at a time
   strategy:
-    rollingUpdate:
-      maxSurge: 25%
-      maxUnavailable: 25%
-    type: RollingUpdate
+    type: Recreate
   template:
     metadata:
       creationTimestamp: null
@@ -24,6 +23,33 @@ spec:
       - image: {{ .Values.mongodb.image }}
         imagePullPolicy: Always
         name: mongodb
+        {{- if .Values.mongodb.auth.enabled }}
+        env:
+        {{- include "cloud-registry.mongodbSecretEnv" (dict "root" . "vars" (dict
+          "MONGO_INITDB_ROOT_USERNAME" "root-username"
+          "MONGO_INITDB_ROOT_PASSWORD" "root-password"
+          "MONGO_APP_USERNAME" "username"
+          "MONGO_APP_PASSWORD" "password"
+        )) | trim | nindent 8 }}
+        {{- end }}
+        # TCP checks are cheaper than starting `mongosh` within the CPU limit.
+        # MongoDB listens on localhost only while initializing an empty data
+        # directory, and recovery after an unclean shutdown can take a while,
+        # so allow up to 30 minutes before liveness checks start, as
+        # interrupting the initialization skips it on the next start
+        startupProbe:
+          tcpSocket:
+            port: 27017
+          periodSeconds: 10
+          failureThreshold: 180
+        readinessProbe:
+          tcpSocket:
+            port: 27017
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: 27017
+          periodSeconds: 20
         ports:
         - containerPort: 27017
           protocol: TCP
@@ -33,9 +59,11 @@ spec:
         volumeMounts:
         - mountPath: /data/db/
           name: mongodb
+        {{- if .Values.mongodb.auth.enabled }}
         - name: init-script
-          mountPath: /docker-entrypoint-initdb.d/init-script.js
-          subPath: init-script.js
+          mountPath: /docker-entrypoint-initdb.d
+          readOnly: true
+        {{- end }}
       dnsPolicy: ClusterFirst
       restartPolicy: Always
       schedulerName: default-scheduler
@@ -45,6 +73,8 @@ spec:
       - name: mongodb
         persistentVolumeClaim:
           claimName: mongodb
+      {{- if .Values.mongodb.auth.enabled }}
       - name: init-script
         configMap:
           name: mongo-init-script
+      {{- end }}

@@ -1,5 +1,8 @@
 # Values for rendering the chart in CI
 host_name: registry.example.org
+mongodb:
+  auth:
+    existingSecret: mongodb
 config:
   security:
     auth:

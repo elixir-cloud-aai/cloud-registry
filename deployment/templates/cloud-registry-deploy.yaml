@@ -29,9 +29,39 @@ spec:
         env:
         - name: FOCA_CONFIG_OVERLAY
           value: /etc/cloud-registry/overlay.yaml
+        {{- if .Values.mongodb.auth.enabled }}
+        {{- include "cloud-registry.mongodbSecretEnv" (dict "root" . "vars" (dict
+          "MONGO_USERNAME" "username"
+          "MONGO_PASSWORD" "password"
+        )) | trim | nindent 8 }}
+        {{- end }}
         ports:
         - containerPort: 8080
           protocol: TCP
+        # Probes request `cloud_registry.probePath`, by default the Swagger UI
+        # (no authentication, no database access)
+        # Up to 5 minutes are allowed for the start before liveness checks
+        startupProbe:
+          httpGet:
+            path: {{ .Values.cloud_registry.probePath | quote }}
+            port: 8080
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30
+        readinessProbe:
+          httpGet:
+            path: {{ .Values.cloud_registry.probePath | quote }}
+            port: 8080
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: {{ .Values.cloud_registry.probePath | quote }}
+            port: 8080
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
         resources: {{- toYaml .Values.cloud_registry.resources | nindent 10 }}
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
