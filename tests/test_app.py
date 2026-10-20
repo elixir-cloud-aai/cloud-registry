@@ -10,6 +10,7 @@ import pytest
 import yaml
 
 import cloud_registry.app
+from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
 from tests.conftest import APP_DIR, make_headers
 
 BASE = "/ga4gh/registry/v1"
@@ -193,6 +194,62 @@ def test_service_info_invalid(client, headers):
     """Service info that does not match the schema is rejected."""
     response = client.post(f"{BASE}/service-info", json={}, headers=headers)
     _assert_error(response, 400)
+
+
+def _register_config_service_info(app):
+    """Register service info from the config, as on startup."""
+    with app.app.app_context():
+        RegisterServiceInfo().set_service_info_from_config()
+
+
+def test_service_info_no_id(client, headers):
+    """Service info without an identifier is rejected."""
+    info = client.get(f"{BASE}/service-info", headers=headers).json
+    del info["id"]
+    response = client.post(f"{BASE}/service-info", json=info, headers=headers)
+    _assert_error(response, 400)
+
+
+def test_service_info_response(client, headers):
+    """Registering service info returns the URL of the service info endpoint
+    and no body.
+    """
+    info = client.get(f"{BASE}/service-info", headers=headers).json
+    response = client.post(f"{BASE}/service-info", json=info, headers=headers)
+    assert response.status_code == 201
+    assert response.data == b""
+    assert "Content-Type" not in response.headers
+    assert response.headers["Location"] == (f"https://0.0.0.0:8080{BASE}/service-info")
+
+
+def test_service_info_precedence(app, client, headers):
+    """The most recently written service info is served: posted service info
+    is kept on restart, unless the service info in the config changed.
+    """
+    info = client.get(f"{BASE}/service-info", headers=headers).json
+    posted = {**info, "id": "OTHER", "name": "Posted"}
+    response = client.post(f"{BASE}/service-info", json=posted, headers=headers)
+    assert response.status_code == 201
+
+    _register_config_service_info(app)
+    response = client.get(f"{BASE}/service-info", headers=headers)
+    assert response.json["id"] == "OTHER"
+
+    app.app.config.foca.custom.endpoints.service_info.name = "Changed"
+    _register_config_service_info(app)
+    response = client.get(f"{BASE}/service-info", headers=headers)
+    assert (response.json["id"], response.json["name"]) == (info["id"], "Changed")
+
+
+def test_error_media_type(client, headers):
+    """Error responses have a media type declared in the specification."""
+    response = client.get(f"{BASE}/services/unknown", headers=headers)
+    assert response.status_code == 404
+
+    spec = client.get(f"{BASE}/openapi.json").json
+    declared = spec["paths"]["/services/{serviceId}"]["get"]["responses"]["404"]
+    name = declared["$ref"].rsplit("/", 1)[-1]
+    assert response.mimetype in spec["components"]["responses"][name]["content"]
 
 
 def _refs(obj):

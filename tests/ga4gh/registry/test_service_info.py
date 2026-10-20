@@ -13,6 +13,7 @@ from tests.mock_data import (
     HEADERS_SERVICE_INFO,
     SERVICE_CONFIG,
     SERVICE_INFO_CONFIG,
+    SERVICE_INFO_PATH,
 )
 
 
@@ -60,7 +61,7 @@ class TestRegisterServiceInfo:
 
     def test_set_service_info_from_app_context(self, unit_app):
         """Test for setting service info from app context."""
-        with unit_app.app_context():
+        with unit_app.test_request_context(SERVICE_INFO_PATH, method="POST"):
             service_info = RegisterServiceInfo()
             service_info.set_service_info_from_app_context(
                 data=SERVICE_INFO_CONFIG,
@@ -92,7 +93,7 @@ class TestRegisterServiceInfo:
 
     def test__get_headers(self, unit_app):
         """Test for response headers getter."""
-        with unit_app.app_context():
+        with unit_app.test_request_context(SERVICE_INFO_PATH, method="POST"):
             headers = RegisterServiceInfo()._get_headers()
             assert headers == HEADERS_SERVICE_INFO
 
@@ -188,7 +189,7 @@ class TestServiceInfoTimestamps:
         del data["createdAt"]
         del data["updatedAt"]
         self.now = "2026-02-01T00:00:00Z"
-        with app.app_context():
+        with app.test_request_context(SERVICE_INFO_PATH, method="POST"):
             register = RegisterServiceInfo()
             register.set_service_info_from_app_context(data=data)
             info = register.get_service_info()
@@ -201,7 +202,7 @@ class TestServiceInfoTimestamps:
         data = {**SERVICE_INFO_CONFIG, "id": "other"}
         del data["createdAt"]
         del data["updatedAt"]
-        with app.app_context():
+        with app.test_request_context(SERVICE_INFO_PATH, method="POST"):
             register = RegisterServiceInfo()
             register.set_service_info_from_app_context(data=data)
             info = register.get_service_info()

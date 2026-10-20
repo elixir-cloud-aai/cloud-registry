@@ -25,7 +25,8 @@ SERVICE_CONFIG = {
     "url_prefix": "http",
     "external_host": "1.2.3.4",
     "external_port": 80,
-    "api_path": "ga4gh/registry/v1",
+    # Path prefix of a reverse proxy
+    "api_path": "registry",
 }
 SERVICE_INFO_CONFIG = {
     "contactUrl": "mailto:support@example.com",
@@ -59,13 +60,9 @@ ENDPOINT_CONFIG = {
     "services": SERVICES_CONFIG,
 }
 CUSTOM_CONFIG = {"endpoints": ENDPOINT_CONFIG}
+SERVICE_INFO_PATH = "/ga4gh/registry/v1/service-info"
 HEADERS_SERVICE_INFO = {
-    "Content-type": "application/json",
-    "Location": (
-        f"{SERVICE_CONFIG['url_prefix']}://{SERVICE_CONFIG['external_host']}:"
-        f"{SERVICE_CONFIG['external_port']}/{SERVICE_CONFIG['api_path']}/"
-        "service-info"
-    ),
+    "Location": "http://1.2.3.4:80/registry/ga4gh/registry/v1/service-info",
 }
 MOCK_TYPE = {"group": "org.ga4gh", "artifact": "beacon", "version": "1.0.0"}
 MOCK_SERVICE = {

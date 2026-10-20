@@ -3,11 +3,17 @@
 from datetime import datetime, timezone
 import logging
 
+from flask import request
+
 from cloud_registry.exceptions import NotFound
 from cloud_registry.utils import get_collection, get_custom_config
 
 logger = logging.getLogger(__name__)
 TIMESTAMP_FIELDS = ("createdAt", "updatedAt")
+# Internal field with the time a service info document was last written; the
+# most recently written service info is served
+WRITTEN_AT = "_writtenAt"
+PROJECTION = {"_id": False, WRITTEN_AT: False}
 
 
 class RegisterServiceInfo:
@@ -23,8 +29,8 @@ class RegisterServiceInfo:
             url_prefix: URL scheme of application instance.
             host_name: Host name of application instance.
             external_port: Port at which application instance is served.
-            api_path: Base path at which API endpoints can be reached for this
-                application instance.
+            api_path: Path prefix in front of the API base path in public
+                URLs, e.g., when served behind a reverse proxy.
             conf_info: Service info details as per endpoints config.
             collection: Database collection storing service info objects.
         """
@@ -37,15 +43,15 @@ class RegisterServiceInfo:
         self.collection = get_collection("service_info")
 
     def get_service_info(self) -> dict:
-        """Get latest service info from database.
+        """Get the most recently written service info from the database.
 
         Returns:
             Latest service info details.
         """
         try:
             return (
-                self.collection.find({}, {"_id": False})
-                .sort([("_id", -1)])
+                self.collection.find({}, PROJECTION)
+                .sort([(WRITTEN_AT, -1), ("_id", -1)])
                 .limit(1)
                 .next()
             )
@@ -58,7 +64,8 @@ class RegisterServiceInfo:
         """Create or update service info from service configuration.
 
         Will create service info if it does not exist or current
-        configuration differs from available one.
+        configuration differs from available one. Service info posted since
+        is thus kept on restarts, unless the configuration changes.
         """
         stored = self._get_stored_service_info(id=self.conf_info["id"])
         managed = [field for field in TIMESTAMP_FIELDS if field not in self.conf_info]
@@ -98,10 +105,13 @@ class RegisterServiceInfo:
         self,
         data: dict,
     ) -> None:
-        """Insert or updated service info document."""
+        """Insert or update service info document, marking it as the most
+        recently written one.
+        """
+        written_at = datetime.now(timezone.utc).isoformat()
         self.collection.replace_one(
             filter={"id": data["id"]},
-            replacement=data,
+            replacement={**data, WRITTEN_AT: written_at},
             upsert=True,
         )
 
@@ -109,16 +119,16 @@ class RegisterServiceInfo:
         """Build dictionary of response headers.
 
         Returns:
-            Response headers.
+            Response headers, with the public URL of the service info
+            endpoint (the current request's path) as `Location`.
         """
-        headers: dict = {
-            "Content-type": "application/json",
-        }
-        headers["Location"] = (
-            f"{self.url_prefix}://{self.host_name}:{self.external_port}/"
-            f"{self.api_path}/service-info"
+        path = "/".join(
+            part for part in (self.api_path.strip("/"), request.path.strip("/")) if part
         )
-        return headers
+        return {
+            "Location": f"{self.url_prefix}://{self.host_name}:{self.external_port}"
+            f"/{path}"
+        }
 
     def _get_stored_service_info(self, id: str) -> dict | None:
         """Get stored service info with a given identifier.
@@ -129,7 +139,7 @@ class RegisterServiceInfo:
         Returns:
             Stored service info, or `None` if there is none.
         """
-        return self.collection.find_one({"id": id}, {"_id": False})
+        return self.collection.find_one({"id": id}, PROJECTION)
 
     def _add_timestamps(self, data: dict, stored: dict | None) -> dict:
         """Add missing timestamps to service info.

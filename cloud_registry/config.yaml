@@ -99,6 +99,9 @@ exceptions:
 
 custom:
     endpoints:
+        # Public URL of the app, e.g., for the `Location` header; `api_path` is
+        # a path prefix in front of the API base path (e.g., of a reverse
+        # proxy)
         service:
             url_prefix: https
             external_host: 0.0.0.0

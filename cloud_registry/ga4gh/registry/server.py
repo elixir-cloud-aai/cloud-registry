@@ -2,7 +2,7 @@
 
 import logging
 
-from flask import request
+from flask import Response, request
 from foca.utils.logging import log_traffic
 
 from cloud_registry.exceptions import BadRequest, NotFound
@@ -122,15 +122,18 @@ def putService(serviceId: str, **kwargs) -> str:
 
 # POST /service-info
 @log_traffic
-def postServiceInfo(**kwargs) -> tuple[None, int, dict]:
+def postServiceInfo(**kwargs) -> Response:
     """Set information about this service.
 
     Returns:
-        An empty 201 response with headers.
+        An empty 201 response with a `Location` header.
     """
     service_info = RegisterServiceInfo()
     headers = service_info.set_service_info_from_app_context(data=_get_request_object())
-    return None, 201, headers
+    response = Response(status=201, headers=headers)
+    # The body is empty, so it has no media type
+    del response.headers["Content-Type"]
+    return response
 
 
 def _get_request_object() -> dict:

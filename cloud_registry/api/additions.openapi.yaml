@@ -151,11 +151,41 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 components:
+  # Errors are returned as `application/problem+json` (RFC 7807); the media
+  # type is added to the error responses of the GA4GH specification
   responses:
     BadRequest:
       description: 'Bad request ([RFC 7235](https://tools.ietf.org/html/rfc7235))'
       content:
         application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalServerError:
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error:
+      content:
+        application/problem+json:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
@@ -236,6 +266,7 @@ components:
       description: 'GA4GH service'
       type: object
       required:
+        - id
         - name
         - type
         - organization
