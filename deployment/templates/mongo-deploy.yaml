@@ -3,7 +3,8 @@ kind: Deployment
 metadata:
   name: mongodb
 spec:
-  progressDeadlineSeconds: 600
+  # Longer than the startup window (see `startupProbe`)
+  progressDeadlineSeconds: 2400
   replicas: 1
   revisionHistoryLimit: 10
   selector:
@@ -33,13 +34,14 @@ spec:
         {{- end }}
         # TCP checks are cheaper than starting `mongosh` within the CPU limit.
         # MongoDB listens on localhost only while initializing an empty data
-        # directory, so allow up to 5 minutes before liveness checks start, as
+        # directory, and recovery after an unclean shutdown can take a while,
+        # so allow up to 30 minutes before liveness checks start, as
         # interrupting the initialization skips it on the next start
         startupProbe:
           tcpSocket:
             port: 27017
           periodSeconds: 10
-          failureThreshold: 30
+          failureThreshold: 180
         readinessProbe:
           tcpSocket:
             port: 27017

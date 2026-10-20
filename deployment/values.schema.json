@@ -14,18 +14,32 @@
       "type": "object",
       "properties": {
         "image": {
-          "type": "string"
+          "type": "string",
+          "description": "MongoDB image, pinned to a minor version"
         },
         "auth": {
           "type": "object",
           "properties": {
             "enabled": {
-              "type": "boolean"
+              "type": "boolean",
+              "description": "Require MongoDB credentials"
             },
             "existingSecret": {
-              "type": "string"
+              "type": "string",
+              "description": "Secret with the MongoDB credentials; required if authentication is enabled"
             }
           }
+        }
+      }
+    },
+    "cloud_registry": {
+      "type": "object",
+      "required": ["probePath"],
+      "properties": {
+        "probePath": {
+          "type": "string",
+          "pattern": "^/",
+          "description": "Path of the app's probes"
         }
       }
     }
