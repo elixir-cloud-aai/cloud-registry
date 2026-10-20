@@ -2,10 +2,34 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
+# Public host name of the app; sets `custom.endpoints.service.external_host`
+# in the app config, with URL scheme `https` and port 443 (override them via
+# `config.custom.endpoints.service`)
 host_name: ""
 
+# App config overriding the base config in the image
+# (https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/cloud_registry/config.yaml);
+# keys are merged recursively, lists are replaced. Examples:
+config: {}
+#   security:
+#     auth:
+#       # Client IDs of the apps calling the registry
+#       audience: ["my-portal-client-id"]
+#       verify_audience: True
+#   log:
+#     handlers:
+#       console:
+#         level: 20
+#   custom:
+#     endpoints:
+#       service_info:
+#         organization:
+#           name: "My organization"
+#           url: "https://example.org"
+#         environment: "prod"
+
 cloud_registry:
-  image: elixircloud/cloud-registry:20240716
+  image: elixircloud/cloud-registry:20261020
   appName: cloud-registry
   # if ingress.enabled: false, it will deploy an OpenShift Route (https://docs.redhat.com/en/documentation/openshift_container_platform/4.19/html/network_apis/route-route-openshift-io-v1)
   ingress:
@@ -20,8 +44,6 @@ cloud_registry:
     requests:
       cpu: 100m
       memory: 128Mi
-
-apiServer: kubernetes.default.svc:443 # address of k8s API server
 
 mongodb:
   image: docker.io/library/mongo:noble

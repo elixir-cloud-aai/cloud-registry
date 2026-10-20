@@ -1,0 +1,18 @@
+{{- /*
+Config overlay merged by FOCA into the base config in the image
+(`cloud_registry/config.yaml`); values in `config` take precedence over the
+public URL generated from `host_name` (HTTPS on port 443, as TLS is usually
+terminated by the ingress, the route or a proxy in front of the cluster).
+*/ -}}
+{{- $generated := dict "custom" (dict "endpoints" (dict "service" (dict
+  "url_prefix" "https"
+  "external_host" .Values.host_name
+  "external_port" 443
+))) -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.cloud_registry.appName }}-config
+data:
+  overlay.yaml: |
+    {{- mergeOverwrite $generated (deepCopy (.Values.config | default dict)) | toYaml | nindent 4 }}

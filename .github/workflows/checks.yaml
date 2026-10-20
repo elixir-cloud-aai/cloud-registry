@@ -108,6 +108,50 @@ jobs:
     steps:
       - name: Check that all test jobs passed
         run: test "${{ needs.test.result }}" = "success"
+  helm:
+    name: Check Helm chart
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: Install requirements
+        run: |
+          pip install --upgrade pip==24.0
+          pip install -r requirements.txt
+          pip install -e .
+      # Helm and yq are preinstalled on GitHub-hosted Ubuntu runners
+      - name: Lint chart
+        run: helm lint deployment --strict -f deployment/ci/test-values.yaml
+      - name: Render chart
+        run: helm template cloud-registry deployment -f deployment/ci/test-values.yaml > rendered.yaml
+      - name: Check rendered config overlay
+        run: |
+          yq 'select(.kind == "ConfigMap" and .metadata.name == "cloud-registry-config") | .data."overlay.yaml"' rendered.yaml > overlay.yaml
+          FOCA_CONFIG_OVERLAY=overlay.yaml python - <<'PY'
+          from foca.config.config_parser import ConfigParser
+
+          config = ConfigParser(
+              config_file="cloud_registry/config.yaml",
+              custom_config_model="cloud_registry.service_models.custom_config.CustomConfig",
+              format_logs=False,
+          ).config
+          service = config.custom.endpoints.service
+          assert (service.url_prefix, service.external_host, service.external_port) == (
+              "https",
+              "registry.example.org",
+              443,
+          ), service
+          assert config.security.auth.audience == ["test-client"], config.security.auth
+          PY
   smoke_test:
     name: Run app with Docker Compose
     runs-on: ubuntu-latest
@@ -133,7 +177,7 @@ jobs:
     name: Build and publish app image
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'push' }}
-    needs: [analyze_code, tests_passed, smoke_test]
+    needs: [analyze_code, tests_passed, helm, smoke_test]
     # Publish one image at a time, and only for the newest commit on the
     # branch, so that an older run cannot overwrite `latest` with older code
     concurrency:

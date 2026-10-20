@@ -29,14 +29,34 @@ http://localhost:8080/ga4gh/registry/v1/
 
 You can explore the service via the [Swagger UI][url-swagger].
 
-> Note that host and port can be adapted in the [`docker-compose`
-> configuration][config]. In that case, the values in the URLs above need to be
-> updated accordingly.
+> The app listens on the port set in the [config][config] (`server.port`);
+> [`docker-compose.yaml`][compose] publishes it on the host. If you change
+> either, update the URLs above accordingly.
 
 [Endpoints][schema-endpoints] can be probed with `curl`, for example:
 
 ```bash
 curl -X GET "http://localhost:8080/ga4gh/registry/v1/services" -H  "accept: application/json"
+```
+
+### Configuration
+
+The app is configured by [`cloud_registry/config.yaml`][config], which works
+as-is with Docker Compose. To override some of its values, write them to a
+config overlay file and list it in environment variable `FOCA_CONFIG_OVERLAY`
+(several files separated by `:`); FOCA merges overlays into the config on
+startup. The [Helm chart][deployment-instructions] uses the same mechanism.
+For local development with Docker Compose, put the overlay in
+`config.local.yaml` and mount it in a `docker-compose.override.yaml` (both are
+ignored by Git):
+
+```yaml
+services:
+    cloud-registry:
+        environment:
+            FOCA_CONFIG_OVERLAY: /etc/cloud-registry/config.local.yaml
+        volumes:
+            - ./config.local.yaml:/etc/cloud-registry/config.local.yaml:ro
 ```
 
 ### Service info
@@ -60,7 +80,7 @@ empty. Previously, `api_path` held the API base path itself (e.g.,
 To quickly install the service for development/testing purposes, we recommend
 deployment via [Docker Compose][docker-compose], as described below. For
 more durable deployments on cloud native infrastructure, we also provide a
-[Helm][helm] chart in the [`deployments/`][deployment] directory, together with
+[Helm][helm] chart in the [`deployment/`][deployment] directory, together with
 [basic deployment instructions][deployment-instructions] (details may need to
 be adapted for your specific infrastructure).
 
@@ -183,7 +203,8 @@ etc.
 [badge-url-github-tag]:<https://github.com/elixir-cloud-aai/cloud-registry/releases>
 [badge-url-license]:<http://www.apache.org/licenses/LICENSE-2.0>
 [ga4gh-registry]: <https://github.com/ga4gh-discovery/ga4gh-service-registry>
-[config]: docker-compose.yaml
+[compose]: docker-compose.yaml
+[config]: cloud_registry/config.yaml
 [deploy_url]: <https://cloud-registry.rahtiapp.fi/ga4gh/registry/v1/ui>
 [deployment]: deployment/
 [deployment-instructions]: deployment/README.md

@@ -1,0 +1,7 @@
+# Values for rendering the chart in CI
+host_name: registry.example.org
+config:
+  security:
+    auth:
+      audience: ["test-client"]
+      verify_audience: True
