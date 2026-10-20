@@ -25,7 +25,7 @@ spec:
         {{- include "cloud-registry.selectorLabels" (dict "root" . "component" "app") | nindent 8 }}
     spec:
       containers:
-      - image: {{ .Values.cloud_registry.image }}
+      - image: {{ include "cloud-registry.image" . | quote }}
         imagePullPolicy: Always
         name: cloud-registry
         env:

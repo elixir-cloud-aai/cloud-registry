@@ -18,8 +18,12 @@ RUN pip install --no-cache-dir -r /tmp/src/requirements.txt
 ## Install app (non-editable; the base config is installed with the package,
 ## and deployments override it via `FOCA_CONFIG_OVERLAY`)
 ## (`README.md` is the package's long description)
+## The build context has no Git metadata, so the version is passed as a build
+## argument (e.g., `--build-arg SETUPTOOLS_SCM_PRETEND_VERSION=0.3.0`, as the
+## workflows do); without it, the app reports version `0.0.0.dev0`
 COPY pyproject.toml README.md /tmp/src/
 COPY cloud_registry /tmp/src/cloud_registry
+ARG SETUPTOOLS_SCM_PRETEND_VERSION
 RUN pip install --no-cache-dir --no-deps /tmp/src \
   && rm -rf /tmp/src
 USER 1000

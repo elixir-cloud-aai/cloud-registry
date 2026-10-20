@@ -48,14 +48,15 @@ app's ConfigMap template).
 */}}
 {{- define "cloud-registry.validate" -}}
 {{- if .Values.cloud_registry.appName -}}
-{{- fail "cloud_registry.appName was removed in chart version 4: resource names are derived from the release name; set fullnameOverride to choose them at installation (see deployment/README.md, Names and labels)" -}}
+{{- fail "cloud_registry.appName was removed after the legacy charts (versions 2 and 3): resource names are derived from the release name; set fullnameOverride to choose them at installation (see deployment/README.md, Names and labels)" -}}
 {{- end -}}
 {{- $fullname := include "cloud-registry.fullname" . -}}
 {{- if eq $fullname (include "cloud-registry.mongodbFullname" .) -}}
 {{- fail (printf "the app and MongoDB resources would both be named %s: choose a fullnameOverride that does not end in -mongodb" $fullname) -}}
 {{- end -}}
 {{- /*
-Upgrades of releases of chart version 3 or earlier would delete their
+Upgrades of releases of the legacy charts (versions 2 and 3, installed from
+the repository before charts were released from Git tags) would delete their
 MongoDB volume (`mongodb`), as its name changed. `lookup` finds nothing in
 `helm template` and client-side dry runs.
 */ -}}
@@ -72,7 +73,7 @@ MongoDB volume (`mongodb`), as its name changed. `lookup` finds nothing in
 
 {{/*
 Fails if a resource named `mongodb` (looked up in the cluster) belongs to
-this release, but was created by chart version 3 or earlier: without the
+this release, but was created by a legacy chart (version 2 or 3): without the
 label `app.kubernetes.io/instance` (Helm itself adds `managed-by` to all
 resources, of any chart version); call with a dict of the root context (`root`), the
 resource's kind (`kind`) and the resource (`resource`, empty if none).
@@ -81,7 +82,7 @@ resource's kind (`kind`) and the resource (`resource`, empty if none).
 {{- $owner := dig "metadata" "annotations" "meta.helm.sh/release-name" "" .resource -}}
 {{- $labels := dig "metadata" "labels" dict .resource -}}
 {{- if and (eq $owner .root.Release.Name) (not (hasKey $labels "app.kubernetes.io/instance")) -}}
-{{- fail (printf "release %s was installed with chart version 3 or earlier, and upgrading it would delete its MongoDB data (%s mongodb): uninstall it and install chart version 4 instead, keeping the data as described in deployment/README.md (Upgrades, From chart version 3)" .root.Release.Name .kind) -}}
+{{- fail (printf "release %s was installed with a legacy chart (version 2 or 3), and upgrading it would delete its MongoDB data (%s mongodb): uninstall it and install the current chart instead, keeping the data as described in deployment/README.md (Upgrades, From the legacy charts)" .root.Release.Name .kind) -}}
 {{- end -}}
 {{- end -}}
 
@@ -142,4 +143,21 @@ alphabetical order.
       name: {{ $secret | quote }}
       key: {{ $key }}
 {{- end }}
+{{- end -}}
+
+{{/*
+App image: `cloud_registry.image` with `cloud_registry.tag`, by default the
+chart's `appVersion`; an image with a tag or digest is used as it is.
+*/}}
+{{- define "cloud-registry.image" -}}
+{{- $image := .Values.cloud_registry.image -}}
+{{- $tag := .Values.cloud_registry.tag -}}
+{{- if or (contains "@" $image) (regexMatch ":[^/]+$" $image) -}}
+{{- if $tag -}}
+{{- fail "cloud_registry.tag must not be set if cloud_registry.image includes a tag or digest" -}}
+{{- end -}}
+{{- $image -}}
+{{- else -}}
+{{- printf "%s:%s" $image ($tag | default .Chart.AppVersion) -}}
+{{- end -}}
 {{- end -}}

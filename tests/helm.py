@@ -47,7 +47,7 @@ def render(
             set if `None`.
         admin_group: Group mapped to the role `admin`; not set if `None`.
         release: Name of the release.
-        chart: Path of the chart.
+        chart: Chart directory or packaged chart.
     """
     assert HELM is not None
     if admin_group is not None:

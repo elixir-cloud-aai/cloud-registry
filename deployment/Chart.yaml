@@ -4,5 +4,9 @@ description: >-
   ELIXIR Cloud Service Registry, an implementation of the GA4GH Service
   Registry API, with a MongoDB database
 type: application
-version: 4.0.0
-appVersion: 2.0.0
+# Placeholders: releases set `version` and `appVersion` from the tag
+# (`vX.Y.Z`, see "Versioning and releases" in README.md).
+version: 0.0.0
+# `appVersion` is the default image tag, so the chart in the repository
+# deploys the `dev` image unless `cloud_registry.tag` is set
+appVersion: "dev"

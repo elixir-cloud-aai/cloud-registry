@@ -1,0 +1,60 @@
+"""Tests for the package version, derived from Git tags."""
+
+from importlib.metadata import version
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+
+from packaging.version import Version
+import pytest
+import setuptools_scm
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
+
+ROOT = Path(__file__).parents[1]
+GIT = shutil.which("git")
+
+
+def test_installed_version():
+    """The installed package has a valid PEP 440 version."""
+    installed = version("cloud-registry")
+    assert str(Version(installed)) == installed
+
+
+def test_fallback_version():
+    """Builds without Git metadata get a development version."""
+    config = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    fallback = Version(config["tool"]["setuptools_scm"]["fallback_version"])
+    assert fallback.is_devrelease
+
+
+def test_pretend_version(monkeypatch, tmp_path):
+    """The version passed to Docker builds is used without Git metadata."""
+    monkeypatch.setenv("SETUPTOOLS_SCM_PRETEND_VERSION", "1.2.3rc1")
+    assert setuptools_scm.get_version(root=str(tmp_path)) == "1.2.3rc1"
+
+
+@pytest.mark.skipif(GIT is None, reason="git not installed")
+def test_version_from_tag(monkeypatch, tmp_path):
+    """The version of a tagged commit is the tag without the `v`."""
+    assert GIT is not None
+    for name in ("SETUPTOOLS_SCM_PRETEND_VERSION", "GIT_DIR", "GIT_WORK_TREE"):
+        monkeypatch.delenv(name, raising=False)
+
+    def git(*args: str) -> None:
+        subprocess.run(  # noqa: S603
+            [GIT, "-C", str(tmp_path), "-c", "user.name=test"]
+            + ["-c", "user.email=test@example.org", "-c", "commit.gpgsign=false"]
+            + ["-c", "tag.gpgsign=false", *args],
+            capture_output=True,
+            check=True,
+        )
+
+    git("init", "-q")
+    git("commit", "-q", "--allow-empty", "-m", "release")
+    git("tag", "-a", "v1.2.3", "-m", "v1.2.3")
+    assert setuptools_scm.get_version(root=str(tmp_path)) == "1.2.3"

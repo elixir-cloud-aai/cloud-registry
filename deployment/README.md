@@ -18,7 +18,9 @@ config on startup (via `FOCA_CONFIG_OVERLAY`):
   the app is to use another MongoDB).
 
 The overlay requires an image built with FOCA 0.14 or later (e.g.,
-`elixircloud/cloud-registry:20261020` or later); older images ignore it.
+`elixircloud/cloud-registry:20261020` or later, any `dev` or `sha-<commit>`
+image, or any release from the first one tagged from Git on; see the release
+notes); older images ignore it.
 
 Each deployment must set the audience (`config.security.auth.audience`, the
 app refuses to start without it) and map an admin group to the role `admin`
@@ -51,6 +53,29 @@ invalid.
 Do not edit the ConfigMap with `kubectl edit`: Helm overwrites it on the next
 upgrade. As `config` is stored in a ConfigMap, it must not contain secrets
 (e.g., database credentials).
+
+## Image
+
+The app image is `cloud_registry.image` (default
+`elixircloud/cloud-registry`) with tag `cloud_registry.tag`, which defaults to
+the chart's `appVersion`. Charts attached to [GitHub
+releases](https://github.com/elixir-cloud-aai/cloud-registry/releases) have
+the release version as `version` and `appVersion`, so they deploy the image of
+their release (`X.Y.Z`). In the repository, both are placeholders, and
+`appVersion` is `dev`: the chart deploys the latest image of branch `dev`,
+which changes with every commit. For deployments from the repository, set the
+tag of a release (e.g., `0.3.0`) or of a commit on `dev` (`sha-<commit>`, the
+full commit SHA) in the values file:
+
+```yaml
+cloud_registry:
+  tag: sha-0123456789abcdef0123456789abcdef01234567
+```
+
+`cloud_registry.image` may also include a tag or digest (e.g.,
+`elixircloud/cloud-registry:0.3.0`, as in earlier chart versions); then
+`cloud_registry.tag` must be empty. See "Versioning and releases" in the
+[README](../README.md#versioning-and-releases) for the image tags.
 
 ## Installation
 
@@ -150,7 +175,7 @@ removes `fsGroup`.
 
 ## Upgrades
 
-Change the values file (e.g., `cloud_registry.image` for a new image or
+Change the values file (e.g., `cloud_registry.tag` for a new image or
 `config` for the config) and upgrade the release from the `deployment`
 folder:
 
@@ -161,13 +186,16 @@ helm upgrade cloud-registry . -n <namespace> -f values-prod.yaml
 The app pods are replaced when the config changes. `helm ls -n <namespace>`
 lists the releases.
 
-### From chart version 3 or 2
+### From the legacy charts
 
-Chart version 4 renames the resources (see
+The legacy charts (versions 2.x and 3.0.0, installed from the repository
+before charts were released from Git tags) used other resource names and
+selectors. The current chart (released from Git tags, 0.3.0 and later, or
+installed from the repository) renames the resources (see
 [Names and labels](#names-and-labels); e.g., `mongodb` becomes
 `cloud-registry-mongodb`) and changes the selectors of the Deployments,
-which cannot be changed in place, so **releases of earlier chart versions
-cannot be upgraded: uninstall them and install chart version 4.** An upgrade
+which cannot be changed in place, so **releases of the legacy charts cannot
+be upgraded: uninstall them and install the current chart.** An upgrade
 would delete the `mongodb` PersistentVolumeClaim, so `helm upgrade` fails
 for such releases (only when Helm can query the cluster: not in
 `helm template` or client-side dry runs). Uninstalling also deletes the
@@ -240,7 +268,7 @@ Deployment is called after `cloud_registry.appName`, by default
    the chart's default version (see [Version](#version)); set
    `mongodb.image` to the dumped version if needed.
 
-6. Install chart version 4 (see [Installation](#installation)), stop its
+6. Install the current chart (see [Installation](#installation)), stop its
    app again, so that it does not write during the restore, and wait for
    MongoDB:
 

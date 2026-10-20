@@ -27,6 +27,8 @@ INIT_SCRIPT = f"{MONGODB}-init-script"
 # Mount path of the containers' temporary directory
 TMP = "/tmp"  # noqa: S108 (a path in the container)
 PROBES = ("startupProbe", "readinessProbe", "livenessProbe")
+# Default image tag
+APP_VERSION = yaml.safe_load((CHART / "Chart.yaml").read_text())["appVersion"]
 
 pytestmark = pytest.mark.skipif(HELM is None, reason="helm not installed")
 
@@ -100,6 +102,81 @@ def test_config_change_restarts_app():
 
     changed = ("--set", "config.custom.endpoints.service_info.environment=prod")
     assert checksum() != checksum(*changed)
+
+
+def _app_image(*args: str, **kwargs) -> str:
+    """Render the chart and get the app image."""
+    return _container(_render(*args, **kwargs), "cloud-registry")["image"]
+
+
+def test_image_defaults_to_app_version():
+    """Without a tag, the image of the chart's `appVersion` is deployed (`dev`
+    for the chart in the repository).
+    """
+    assert _app_image() == f"elixircloud/cloud-registry:{APP_VERSION}"
+
+
+# Chart versions are SemVer, app versions PEP 440; the pairs mirror the
+# mapping in the release workflow, which is not tested itself
+@pytest.mark.parametrize(
+    ("chart_version", "app_version"),
+    [
+        ("0.3.0", "0.3.0"),
+        ("0.3.0-a1", "0.3.0a1"),
+        ("0.3.0-b2", "0.3.0b2"),
+        ("0.3.0-rc1", "0.3.0rc1"),
+    ],
+)
+def test_image_of_packaged_chart(tmp_path, chart_version, app_version):
+    """Released charts deploy the image of their version, as set by the
+    release workflow.
+    """
+    assert HELM is not None
+    subprocess.run(  # noqa: S603
+        [HELM, "package", str(CHART), "--version", chart_version]
+        + ["--app-version", app_version, "-d", str(tmp_path)],
+        capture_output=True,
+        check=True,
+    )
+    package = tmp_path / f"cloud-registry-{chart_version}.tgz"
+    assert _app_image(chart=package) == f"elixircloud/cloud-registry:{app_version}"
+
+
+@pytest.mark.parametrize(
+    ("args", "image"),
+    [
+        (("--set", "cloud_registry.tag=sha-abc"), "elixircloud/cloud-registry:sha-abc"),
+        (
+            ("--set", "cloud_registry.image=registry.example.org:5000/cr"),
+            f"registry.example.org:5000/cr:{APP_VERSION}",
+        ),
+        # Image references with a tag or digest, as in earlier chart versions
+        (("--set", "cloud_registry.image=host:5000/cr:1.0"), "host:5000/cr:1.0"),
+        (
+            ("--set", "cloud_registry.image=elixircloud/cloud-registry:20261020"),
+            "elixircloud/cloud-registry:20261020",
+        ),
+        (
+            ("--set", f"cloud_registry.image=cr@sha256:{'0' * 64}"),
+            f"cr@sha256:{'0' * 64}",
+        ),
+    ],
+)
+def test_image_set(args, image):
+    """The image and its tag can be set."""
+    assert _app_image(*args) == image
+
+
+def test_image_tag_conflict():
+    """A tag cannot be set for an image that has one."""
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render(
+            "--set",
+            "cloud_registry.image=elixircloud/cloud-registry:0.3.0",
+            "--set",
+            "cloud_registry.tag=dev",
+        )
+    assert "cloud_registry.tag must not be set" in exc.value.stderr
 
 
 def test_mongodb_pinned_and_recreated():
@@ -334,11 +411,11 @@ HELM_LABELS = {"app.kubernetes.io/managed-by": "Helm"}
             False,
         ),
     ],
-    ids=["legacy", "legacy-labels", "other-release", "unmanaged", "chart-4"],
+    ids=["legacy", "legacy-labels", "other-release", "unmanaged", "current"],
 )
 def test_upgrade_legacy(owner, labels, fails):
-    """Upgrades fail if the release has MongoDB resources of chart version 3
-    or earlier, which the upgrade would delete; checked with a resource as
+    """Upgrades fail if the release has MongoDB resources of a legacy chart
+    (version 2 or 3), which the upgrade would delete; checked with a resource as
     returned by `lookup`, which finds nothing in `helm template`.
     """
     resource = {
@@ -358,7 +435,7 @@ def test_upgrade_legacy(owner, labels, fails):
     if fails:
         with pytest.raises(subprocess.CalledProcessError) as exc:
             render_with(*args)
-        assert "chart version 3 or earlier" in exc.value.stderr
+        assert "legacy chart (version 2 or 3)" in exc.value.stderr
     else:
         render_with(*args)
 

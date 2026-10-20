@@ -1,5 +1,7 @@
 [build-system]
-requires = ["setuptools>=77"]
+# setuptools-scm is pinned separately in `requirements_dev.txt` for CI, which
+# computes the version of dev images with it
+requires = ["setuptools>=77", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [tool.ruff]
@@ -35,7 +37,6 @@ exclude_also = ['if __name__ == "__main__":']
 
 [project]
 name ="cloud-registry"
-version="0.2.0"
 authors = [{name = "ELIXIR Cloud & AAI"}, {email = "alexander.kanitz@alumni.ethz.ch"}]
 keywords = [
     "ga4gh", "service", "registry", "elixir", "cloud", "rest", "restful",
@@ -54,7 +55,7 @@ classifiers = [
 requires-python = ">=3.10"
 description = "GA4GH Service Registry API implementation for the ELIXIR Cloud"
 license = "Apache-2.0"
-dynamic = ["dependencies"]
+dynamic = ["dependencies", "version"]
 
 [project.readme]
 file = "README.md"
@@ -62,6 +63,13 @@ content-type = "text/markdown"
 
 [project.urls]
 homepage = "https://github.com/elixir-cloud-aai/cloud-registry.git"
+
+[tool.setuptools_scm]
+# Version from Git tags (`vX.Y.Z`), the only place it is stored; builds
+# without Git metadata (e.g., Docker builds, which get no `.git`) report the
+# fallback unless `SETUPTOOLS_SCM_PRETEND_VERSION` is set. See "Versioning
+# and releases" in README.md
+fallback_version = "0.0.0.dev0"
 
 [tool.setuptools.packages.find]
 include = ["cloud_registry*"]

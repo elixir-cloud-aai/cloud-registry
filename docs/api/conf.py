@@ -13,16 +13,16 @@
 from pathlib import Path
 import sys
 
+from setuptools_scm import get_version
 from sphinx.ext import apidoc
-import toml
 
 root_dir = Path.cwd().resolve().parents[1]
 
 sys.path.insert(0, root_dir)
 
-with open(root_dir / "pyproject.toml") as f:
-    config = toml.load(f)
-    __version__ = config["project"]["version"]
+# The version comes from Git tags (cf. `[tool.setuptools_scm]` in
+# `pyproject.toml`); the package itself is not installed for the docs
+__version__ = get_version(root=str(root_dir), fallback_version="0.0.0.dev0")
 
 
 # -- Project information -----------------------------------------------------

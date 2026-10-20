@@ -7,6 +7,10 @@ services:
         build:
             context: .
             dockerfile: Dockerfile
+            # App version (the build gets no Git metadata); `0.0.0.dev0` if
+            # unset
+            args:
+                SETUPTOOLS_SCM_PRETEND_VERSION: ${SETUPTOOLS_SCM_PRETEND_VERSION:-}
         restart: unless-stopped
         depends_on:
             mongodb:

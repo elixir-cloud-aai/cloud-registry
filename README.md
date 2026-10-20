@@ -355,11 +355,54 @@ positive, add a comment with the reason to the line: `# noqa: <code>` (ruff),
 `# nosemgrep: <rule-id>`, `# ast-grep-ignore: <rule-id>` or
 `# gitleaks:allow`.
 
-## Versioning
+## Versioning and releases
 
 The project adopts the [semantic versioning][semver] scheme for versioning.
 Currently the service is in beta stage, so the API may change without further
 notice.
+
+The version is only stored in Git tags (`vX.Y.Z`): the package version is
+derived from them (via [setuptools-scm][setuptools-scm]), and the service info
+reports it. Builds without Git metadata, such as local Docker builds (e.g.,
+with Docker Compose), report `0.0.0.dev0`; the workflows pass the version to
+the image build. Images on Docker Hub (`elixircloud/cloud-registry`) are
+tagged:
+
+- `X.Y.Z`: release `X.Y.Z`; `latest`: the highest release on `main`;
+- `dev`: the latest commit on `dev`; `sha-<commit>`: commit `<commit>` on
+  `dev` (full SHA), to deploy a fixed commit.
+
+Features and fixes are merged into `dev`. Branch `main` only ever moves
+forward to commits on `dev` that are released. To release version `X.Y.Z`
+from commit `<sha>` on `dev`, after CI passed for it:
+
+```bash
+git push origin <sha>:main  # fails unless it is a fast-forward
+git tag -s vX.Y.Z <sha> -m "vX.Y.Z"
+git push origin vX.Y.Z
+```
+
+The tag must be annotated and signed (`git tag -s`), with a key that GitHub
+can verify (added to the tagger's GitHub account). The [release
+workflow][release-workflow], triggered by the tag, checks that GitHub
+verified the signature and that the tag's commit is on `main`. It packages
+the Helm chart with the release version as `version` and `appVersion` (the
+default image tag). After approval in the `release` environment, it builds
+the image, checks that the app reports the release version, pushes exactly
+that image tagged `X.Y.Z` (and `latest`, if it is the highest release on
+`main`), and creates a GitHub release with generated notes and the chart
+(`.tgz`). No packages are published to PyPI. Tags of pre-releases (e.g.,
+`vX.Y.Zrc1`, also `aN` and `bN`) create GitHub pre-releases, with chart
+version `X.Y.Z-rc1`, and never update `latest`. Images of commits on `dev`
+are published by the [CI workflow][checks-workflow] (environment
+`dev-images`).
+
+Maintainers: the workflows rely on these repository settings: environment
+`dev-images` limited to branch `dev`; environment `release` with a required
+reviewer; a tag ruleset for `v*` that restricts who may create them and
+prevents moving or deleting them; `main` protected against non-fast-forward
+pushes; and the Docker Hub secrets (`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`,
+`DOCKERHUB_ORG`) only in the two environments, not as repository secrets.
 
 ## License
 
@@ -400,7 +443,10 @@ etc.
 [elixir-cloud]: <https://github.com/elixir-cloud-aai/elixir-cloud-aai>
 [coc]: <https://github.com/elixir-cloud-aai/elixir-cloud-aai/blob/dev/CODE_OF_CONDUCT.md>
 [contributing]: <https://github.com/elixir-cloud-aai/elixir-cloud-aai/blob/dev/CONTRIBUTING.md>
+[checks-workflow]: .github/workflows/checks.yaml
+[release-workflow]: .github/workflows/release.yaml
 [semver]: <https://semver.org/>
+[setuptools-scm]: <https://setuptools-scm.readthedocs.io/>
 [schema-service]: <https://github.com/ga4gh-discovery/ga4gh-service-registry/blob/8c45be52940db92c2fa1cd821519c271c22b1c4c/service-registry.yaml#L158>
 [schema-endpoints]: <https://github.com/ga4gh-discovery/ga4gh-service-registry/blob/8c45be52940db92c2fa1cd821519c271c22b1c4c/service-registry.yaml#L16>
 [url-swagger]: <http://localhost:8080/ga4gh/registry/v1/ui>
