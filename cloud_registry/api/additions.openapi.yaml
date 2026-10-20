@@ -34,6 +34,12 @@ paths:
       responses:
         '201':
           description: The service info was successfully created.
+          headers:
+            Location:
+              description: URL of the service info endpoint.
+              schema:
+                type: string
+                format: uri
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

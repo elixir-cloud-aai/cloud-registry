@@ -222,6 +222,10 @@ def test_service_info_response(client, headers):
     assert "Content-Type" not in response.headers
     assert response.headers["Location"] == (f"https://0.0.0.0:8080{BASE}/service-info")
 
+    spec = client.get(f"{BASE}/openapi.json").json
+    declared = spec["paths"]["/service-info"]["post"]["responses"]["201"]
+    assert "Location" in declared["headers"]
+
 
 def test_service_info_precedence(app, client, headers):
     """The most recently written service info is served: posted service info
@@ -265,9 +269,12 @@ def test_service_info_precedence_same_id(app, client, headers):
 
 
 def test_error_media_type(client, headers):
-    """Error responses have a media type declared in the specification."""
+    """Error responses are problem details, a media type declared in the
+    specification.
+    """
     response = client.get(f"{BASE}/services/unknown", headers=headers)
     assert response.status_code == 404
+    assert response.mimetype == "application/problem+json"
 
     spec = client.get(f"{BASE}/openapi.json").json
     declared = spec["paths"]["/services/{serviceId}"]["get"]["responses"]["404"]
