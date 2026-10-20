@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 import ipaddress
+import json
 import logging
 import re
 import string
@@ -22,6 +23,10 @@ KEY = "_serviceKey"
 PROJECTION = {"_id": False, KEY: False}
 DEFAULT_PORTS = {"http": 80, "https": 443}
 PERCENT_ENCODED = re.compile(r"%([0-9A-Fa-f]{2})")
+# Percent signs not starting a percent-encoding
+MALFORMED_PERCENT = re.compile(r"%(?![0-9A-Fa-f]{2})")
+# Registered names (RFC 3986, section 3.2.2)
+REG_NAME = re.compile(r"(?:[A-Za-z0-9\-._~!$&'()*+,;=]|%[0-9A-Fa-f]{2})*")
 # RFC 3986, section 2.3
 UNRESERVED = frozenset(string.ascii_letters + string.digits + "-._~")
 # Printable ASCII characters, kept when percent-encoding non-ASCII ones
@@ -64,7 +69,7 @@ def normalize_url(url: str) -> str:
 
     Raises:
         InvalidService: The URL is invalid, has no scheme or an invalid or no
-            host, or has user info.
+            host, has user info, or malformed percent-encodings in its path.
     """
     try:
         parts = urlsplit(url.strip())
@@ -107,6 +112,8 @@ def _normalize_host(host: str) -> str:
             host = idna.encode(host, uts46=True, transitional=False).decode()
         except idna.IDNAError as exc:
             raise InvalidService(f"Invalid host in service URL: {exc}.") from exc
+    if not REG_NAME.fullmatch(host):
+        raise InvalidService(f"Invalid host in service URL: '{host}'.")
     host = host.rstrip(".")
     if not host:
         raise InvalidService("Service URLs need a scheme and a host.")
@@ -124,7 +131,12 @@ def _normalize_path(path: str) -> str:
         characters decoded, other percent-encodings in uppercase, dot
         segments resolved, and without repeated and trailing
         slashes.
+
+    Raises:
+        InvalidService: The path has malformed percent-encodings.
     """
+    if MALFORMED_PERCENT.search(path):
+        raise InvalidService("Invalid percent-encoding in service URL path.")
     path = PERCENT_ENCODED.sub(_decode_unreserved, quote(path, safe=ASCII_PRINTABLE))
     segments: list[str] = []
     for segment in path.split("/"):
@@ -157,10 +169,10 @@ def service_key(data: dict) -> str:
         data: Service metadata, with `url` and `type`.
 
     Returns:
-        Key from the normalized URL and the API type (`type.group`,
-        `type.artifact`, case-insensitive and without surrounding
-        whitespace), but not its version, so that upgrading a service to a
-        new API version updates its entry.
+        Key from the API type (`type.group`, `type.artifact`,
+        case-insensitive and without surrounding whitespace) and the
+        normalized URL, as a JSON array, but not the version, so that
+        upgrading a service to a new API version updates its entry.
 
     Raises:
         InvalidService: The URL or type is missing or invalid.
@@ -175,8 +187,10 @@ def service_key(data: dict) -> str:
         raise InvalidService("Services need a URL and a type.") from exc
     if not all(isinstance(value, str) for value in (url, group, artifact)):
         raise InvalidService("Service URLs and types must be strings.")
-    return " ".join(
-        (group.strip().lower(), artifact.strip().lower(), normalize_url(url))
+    return json.dumps(
+        [group.strip().casefold(), artifact.strip().casefold(), normalize_url(url)],
+        ensure_ascii=False,
+        separators=(",", ":"),
     )
 
 
@@ -322,12 +336,16 @@ def add_service_keys() -> None:
             )
             continue
         try:
-            collection.update_one({"id": service["id"]}, {"$set": {KEY: key}})
+            # unless the service was replaced concurrently, with a new key
+            result = collection.update_one(
+                {"id": service["id"], KEY: {"$exists": False}}, {"$set": {KEY: key}}
+            )
         except DuplicateKeyError:
             # registered concurrently, e.g., by an app of an older version
             problems.append(f"'{service['id']}': same URL and API type as another")
             continue
-        logger.info("Added key to service '%s'.", service["id"])
+        if result.modified_count:
+            logger.info("Added key to service '%s'.", service["id"])
     if problems:
         raise RuntimeError(
             "Fix or delete these services (cf. 'Duplicate services' in the "

@@ -188,6 +188,11 @@ def test_normalize_url(url, normalized):
         "https://.",
         "https://[::g]",
         f"https://{'ü' * 64}.example.org",
+        "https://tes example.org",
+        "https://tes<x>.example.org",
+        "https://tes%zz.example.org",
+        "https://tes.example.org/a%ZZ",
+        "https://tes.example.org/a%2",
     ],
 )
 def test_normalize_url_invalid(url):
@@ -216,6 +221,20 @@ def test_service_key():
     assert service_key(other) == service_key(MOCK_SERVICE)
     wes = {**MOCK_SERVICE, "type": {**MOCK_TYPE, "artifact": "wes"}}
     assert service_key(wes) != service_key(MOCK_SERVICE)
+
+
+def test_service_key_unambiguous():
+    """Types whose fields join to the same text have different keys."""
+    first = {**MOCK_SERVICE, "type": {**MOCK_TYPE, "group": "a b", "artifact": "c"}}
+    second = {**MOCK_SERVICE, "type": {**MOCK_TYPE, "group": "a", "artifact": "b c"}}
+    assert service_key(first) != service_key(second)
+
+
+def test_service_key_casefold():
+    """Types are compared with Unicode case folding."""
+    first = {**MOCK_SERVICE, "type": {**MOCK_TYPE, "artifact": "straße"}}
+    second = {**MOCK_SERVICE, "type": {**MOCK_TYPE, "artifact": "STRASSE"}}
+    assert service_key(first) == service_key(second)
 
 
 @pytest.mark.parametrize(
@@ -332,6 +351,22 @@ class TestAddServiceKeys:
             pytest.raises(RuntimeError, match="'OLD': same URL and API type"),
         ):
             add_service_keys()
+
+    def test_replaced_concurrently(self, monkeypatch, unit_app, services):
+        """Keys written concurrently, e.g., by a replacement, are kept."""
+        services.insert_one({**MOCK_SERVICE, "id": "OLD", KEY: "newer"})
+        find = services.find
+
+        def find_without_key(filter=None, *args, **kwargs):
+            # serve the service as read before its replacement
+            if filter == {KEY: {"$exists": False}}:
+                return find({}, {"_id": False, KEY: False})
+            return find(filter, *args, **kwargs)
+
+        monkeypatch.setattr(services, "find", find_without_key)
+        with unit_app.app_context():
+            add_service_keys()
+        assert services.find_one({"id": "OLD"})[KEY] == "newer"
 
     def test_problems(self, unit_app, services):
         """All services with the same URL and API type as another one, or
