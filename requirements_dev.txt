@@ -2,4 +2,6 @@ build==1.6.1
 coverage==7.16.2
 mongomock==4.3.0
 mypy==2.4.0
+pre-commit==4.6.2
 pytest==9.1.1
+types-PyYAML==6.0.12.20260906

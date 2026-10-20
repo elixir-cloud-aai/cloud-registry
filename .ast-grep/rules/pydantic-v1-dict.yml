@@ -1,0 +1,7 @@
+id: pydantic-v1-dict
+language: python
+severity: error
+message: Pydantic v1 method `.dict()`
+note: Use `.model_dump()` (Pydantic v2).
+rule:
+  pattern: $MODEL.dict($$$ARGS)

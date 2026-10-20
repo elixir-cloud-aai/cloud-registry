@@ -1,0 +1,12 @@
+id: foca-config-attribute
+language: python
+severity: error
+message: Untyped access to the FOCA config
+note: |
+  Use `get_custom_config()` and `get_collection()` from
+  `cloud_registry.utils` (or `foca.get_config()`).
+# Tests may access and change the config of test apps directly
+files:
+  - cloud_registry/**
+rule:
+  pattern: $APP.config.foca

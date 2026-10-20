@@ -38,12 +38,8 @@ jobs:
         run: |
           pip install --upgrade pip==24.0
           pip install -r requirements_dev.txt
-      - name: Lint with flake8
-        run: flake8
-      - name: Static type checking with mypy
-        run: mypy cloud_registry
-      - name: Code formatting check with black
-        run: black --check .
+      - name: Run linters, type checks and security checks
+        run: pre-commit run --all-files --show-diff-on-failure
       - name: Build distributions
         run: python -m build
       - name: Check wheel contents

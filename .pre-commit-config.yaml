@@ -1,0 +1,62 @@
+# Checks run on commit (`pre-commit install`) and in CI
+# (`pre-commit run --all-files`); hook versions are pinned to commits
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-yaml
+        # Helm templates are not valid YAML before rendering
+        exclude: ^deployment/templates/
+      # Vendored GA4GH specifications are kept as published
+      - id: end-of-file-fixer
+        exclude: ^cloud_registry/api/20201108\.
+      - id: trailing-whitespace
+        exclude: ^cloud_registry/api/20201108\.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: 38bfb07c0c64c304f47eb52090f8288150c77730  # frozen: v0.17.1
+    hooks:
+      - id: ruff-check
+      - id: ruff-format
+  - repo: https://github.com/semgrep/pre-commit
+    rev: 4442ea4b1e93a847e27a22559ee8d4b53795c549  # frozen: v1.181.0
+    hooks:
+      - id: semgrep
+        args:
+          - --config=.semgrep
+          - --error
+          - --metrics=off
+          - --disable-version-check
+          - --quiet
+          - --skip-unknown-extensions
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e  # frozen: v8.30.1
+    hooks:
+      - id: gitleaks
+        # Scan the working tree, not only staged changes, so that the hook
+        # also checks all files in CI
+        entry: gitleaks dir --redact --verbose
+  - repo: local
+    hooks:
+      - id: ast-grep
+        name: ast-grep
+        entry: ast-grep scan
+        language: python
+        additional_dependencies: [ast-grep-cli==0.51.0]
+        types: [python]
+      - id: ast-grep-test
+        name: ast-grep rule tests
+        entry: ast-grep test --skip-snapshot-tests
+        language: python
+        additional_dependencies: [ast-grep-cli==0.51.0]
+        files: ^(sgconfig\.yml|\.ast-grep/)
+        pass_filenames: false
+      # Uses the installed dependencies (`requirements_dev.txt`), so that
+      # imported packages are type checked
+      - id: mypy
+        name: mypy
+        entry: mypy
+        language: system
+        types: [python]
+        pass_filenames: false
