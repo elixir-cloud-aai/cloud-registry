@@ -63,7 +63,7 @@ The following software needs to be available on your system:
 First, clone the repository and traverse into the root directory with:
 
 ```bash
-git clone git@github.com:elixir-cloud-aai/cloud-registry.git
+git clone https://github.com/elixir-cloud-aai/cloud-registry.git
 cd cloud-registry
 ```
 
@@ -155,7 +155,7 @@ under the API base path `/ga4gh/registry/v1`:
 | `/services` | `POST` | any authenticated user |
 | `/services/types` | `GET` (GA4GH) | anyone |
 | `/services/{serviceId}` | `GET` (GA4GH) | anyone |
-| `/services/{serviceId}` | `PUT` | owners, maintainers, admins |
+| `/services/{serviceId}` | `PUT` | owners, maintainers, admins (new identifiers: admins) |
 | `/services/{serviceId}` | `DELETE` | owners, admins |
 | `/services/{serviceId}/permissions` | `GET` | owners, admins |
 | `/services/{serviceId}/permissions/{userId}` | `PUT`, `DELETE` | owners, admins |
@@ -164,18 +164,16 @@ under the API base path `/ga4gh/registry/v1`:
 | `/verifications` | `GET` | anyone |
 | `/me` | `GET` | any authenticated user |
 
+Registering a service (`POST /services`, or `PUT /services/{serviceId}` with a
+new identifier) returns `201 Created`, with the identifier of the service in
+the body and its [public URL](#public-urls) in the `Location` header; updating
+a service (`PUT`) returns `200 OK`. Identifiers `.` and `..` are rejected
+(`400 Bad Request`).
+
 See [Access control](#access-control) for the roles and [Verified
 services](#verified-services) for verifications. Extensions of the GA4GH
 endpoints, such as pagination, search or filters, will be reconsidered with
 the upcoming new version of the Service Registry specification.
-
-Registering a service (`POST /services`, or `PUT /services/{serviceId}` with a
-new identifier) returns `201 Created`, with the identifier of the service in
-the body and its [public URL](#public-urls) in the `Location` header; both
-returned `200 OK` before. Updating a service (`PUT`) returns `200 OK`, as
-before. Identifiers `.` and `..` are rejected (`400 Bad Request`); services
-registered with them before can still be read and deleted, but must be
-registered again under other identifiers to be updated.
 
 ## Authentication
 
