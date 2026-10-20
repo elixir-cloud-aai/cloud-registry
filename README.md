@@ -69,7 +69,7 @@ be adapted for your specific infrastructure).
 The following software needs to be available on your system:
 
 - [`git 2.17.1`][git]
-- [`docker 28.3.3`][docker], with the [Compose plugin 2][docker-compose]
+- [`docker`][docker], with the [Compose plugin][docker-compose] (version 2)
 
 > Versions used to test deployment are indicated. Other versions with the same
 > major version numbers will likely work as well, especially newer ones.

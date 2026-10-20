@@ -14,14 +14,13 @@ services:
         ports:
             - "8080:8080"
 
+    # Port 27017 is reachable from the app only; to connect from the host,
+    # add `ports: ["127.0.0.1:27017:27017"]` in a `docker-compose.override.yaml`
     mongodb:
         # MongoDB 8.0 refuses to start on Linux kernels 6.19 to 7.0.13
         # (https://jira.mongodb.org/browse/SERVER-121912)
         image: mongo:7.0
         restart: unless-stopped
-        # Port 27017 is reachable from the app only; to connect from the
-        # host, add `ports: ["127.0.0.1:27017:27017"]` in a
-        # `docker-compose.override.yaml`
         volumes:
             - mongodb-data:/data/db
         healthcheck:

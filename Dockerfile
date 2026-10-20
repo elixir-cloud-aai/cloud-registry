@@ -26,10 +26,13 @@ COPY update-config-map.sh /app/
 COPY cloud_registry /app/cloud_registry
 USER 1000
 
+## Make the package importable from any working directory, e.g., in
+## `docker exec`, as the editable install did before
 WORKDIR /app
 ENV PYTHONPATH=/app
 
 ## All API endpoints require authentication, so probe the Swagger UI instead
+## (requires `api.specs[].swagger_ui` in the config, enabled by default)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/ga4gh/registry/v1/ui/', timeout=4)"]
 
