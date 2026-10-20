@@ -1,9 +1,10 @@
 """Shared fixtures.
 
 Unit tests use a bare Flask app with the test configuration from
-`tests/mock_data.py`. App tests use the app created from `config.yaml`, with
-MongoDB replaced by an in-memory database and the identity provider by a mock;
-they have no network access.
+`tests/mock_data.py`. App tests use the app created from `config.yaml` and the
+test overlay (`tests/config_overlay.yaml`), with MongoDB replaced by an
+in-memory database and the identity provider by a mock; they have no network
+access.
 """
 
 from pathlib import Path
@@ -26,11 +27,35 @@ from cloud_registry.service_models.custom_config import CustomConfig
 from tests.mock_data import CUSTOM_CONFIG, DB, MONGO_CONFIG
 
 APP_DIR = Path(__file__).parents[1] / "cloud_registry"
+# Config overlay with the settings each deployment must make (audience, admin
+# group)
+CONFIG_OVERLAY = Path(__file__).parent / "config_overlay.yaml"
+AUDIENCE = "client-id"
 # The trusted issuer from `config.yaml`; all its endpoints are mocked
 ISSUER = "https://login.aai.lifescience-ri.eu/oidc/"
 JWKS_URI = f"{ISSUER}jwk"
 USERINFO_URI = f"{ISSUER}userinfo"
 USER = "alice@example.org"
+ADMIN = "admin@example.org"
+# Group mapped to the role `admin` in the test overlay
+ADMIN_GROUP = (
+    "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN:ADMIN#aai.lifescience-ri.eu"
+)
+# Group memberships and display names the identity provider returns as user
+# info, like LS Login (not in access tokens)
+ENTITLEMENTS = {
+    ADMIN: [ADMIN_GROUP],
+    "bob@example.org": [
+        "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN#aai.lifescience-ri.eu"
+    ],
+}
+NAMES = {
+    USER: "Alice Example",
+    ADMIN: "Admin Example",
+    "bob@example.org": "Bob Example",
+    # blank names are not stored
+    "dave@example.org": " ",
+}
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 
@@ -69,10 +94,16 @@ def mock_get(url, headers=None, **kwargs):
     if url == USERINFO_URI:
         token = headers["Authorization"].removeprefix("Bearer ")
         try:
-            claims = jwt.decode(token, KEY.public_key(), algorithms=["RS256"])
+            claims = jwt.decode(
+                token, KEY.public_key(), algorithms=["RS256"], audience=AUDIENCE
+            )
         except jwt.InvalidTokenError:
             return MockResponse({"error": "invalid_token"}, status_code=401)
-        return MockResponse({"sub": claims["sub"]})
+        sub = claims["sub"]
+        userinfo = {"sub": sub, "eduperson_entitlement": ENTITLEMENTS.get(sub, [])}
+        if sub in NAMES:
+            userinfo["name"] = NAMES[sub]
+        return MockResponse(userinfo)
     raise auth.requests.ConnectionError(f"Unexpected request in tests: {url}")
 
 
@@ -81,14 +112,16 @@ def make_headers(user=USER, key=KEY):
     now = int(time.time())
     token = jwt.encode(
         {
+            "aud": AUDIENCE,
             "sub": user,
+            "scope": "openid eduperson_entitlement",
             "iss": ISSUER,
             "iat": now,
             "exp": now + 300,
         },
         key,
         algorithm="RS256",
-        headers={"kid": "rsa1"},
+        headers={"kid": "rsa1", "typ": "at+jwt"},
     )
     return {"Authorization": f"Bearer {token}"}
 
@@ -122,14 +155,18 @@ def mock_idp(monkeypatch):
 
 @pytest.fixture
 def app_env(monkeypatch, mongo_client, mock_idp):
-    """Environment for creating the app from `config.yaml`, without network."""
+    """Environment for creating the app from `config.yaml` and the test
+    overlay, without network.
+    """
     monkeypatch.setattr(socket.socket, "connect", _no_network)
-    monkeypatch.delenv("FOCA_CONFIG_OVERLAY", raising=False)
+    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(CONFIG_OVERLAY))
 
 
 @pytest.fixture
 def app(app_env):
-    """App created from `config.yaml`, with service info registered."""
+    """App created from `config.yaml` and the test overlay, with service info
+    registered.
+    """
     connexion_app = Foca(
         config_file=APP_DIR / "config.yaml",
         custom_config_model="cloud_registry.service_models.custom_config.CustomConfig",
@@ -149,6 +186,12 @@ def client(app):
 def headers():
     """Request headers with a valid access token."""
     return make_headers()
+
+
+@pytest.fixture
+def admin_headers():
+    """Request headers with a valid access token of an admin."""
+    return make_headers(user=ADMIN)
 
 
 @pytest.fixture

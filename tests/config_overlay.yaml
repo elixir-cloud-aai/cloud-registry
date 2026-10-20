@@ -1,0 +1,8 @@
+# Config overlay for app tests, with the settings each deployment must make
+security:
+    auth:
+        audience:
+          - client-id
+    access_control:
+        group_mapping:
+            "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN:ADMIN#aai.lifescience-ri.eu": admin

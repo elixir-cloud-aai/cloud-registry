@@ -67,7 +67,7 @@ homepage = "https://github.com/elixir-cloud-aai/cloud-registry.git"
 include = ["cloud_registry*"]
 
 [tool.setuptools.package-data]
-cloud_registry = ["config.yaml", "api/*.yaml"]
+cloud_registry = ["config.yaml", "api/*.yaml", "access_control/*.conf"]
 
 [tool.setuptools.dynamic.dependencies]
 file = ["requirements.txt"]

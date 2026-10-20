@@ -13,6 +13,12 @@ services:
                 condition: service_healthy
         ports:
             - "8080:8080"
+        # Development settings (`config.dev.yaml`): tokens for any audience,
+        # no admin groups required
+        environment:
+            FOCA_CONFIG_OVERLAY: /etc/cloud-registry/config.dev.yaml
+        volumes:
+            - ./config.dev.yaml:/etc/cloud-registry/config.dev.yaml:ro
 
     # Port 27017 is reachable from the app only; to connect from the host,
     # add `ports: ["127.0.0.1:27017:27017"]` in a `docker-compose.override.yaml`

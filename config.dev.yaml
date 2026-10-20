@@ -1,0 +1,12 @@
+# Config overlay for local development with Docker Compose; NOT for
+# deployments, which must set the audience and an admin group instead (see
+# `deployment/README.md`)
+security:
+    auth:
+        # Accept LS Login tokens for any audience (i.e., of any app)
+        verify_audience: False
+custom:
+    access_control:
+        # Start without admin groups (nobody can manage services they don't
+        # own or set the service info)
+        require_admin: False

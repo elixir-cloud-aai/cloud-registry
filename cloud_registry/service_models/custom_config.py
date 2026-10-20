@@ -2,7 +2,7 @@
 
 from foca.models.config import FOCABaseConfig
 from foca.utils.misc import generate_id
-from pydantic import PositiveInt, field_validator
+from pydantic import Field, PositiveInt, field_validator
 
 
 class ServiceConfig(FOCABaseConfig):
@@ -340,14 +340,41 @@ RSTUVWXYZ0123456789',length=6)))
     services: ServicesConfig
 
 
+class AccessControlConfig(FOCABaseConfig):
+    """Model for access control settings of the app.
+
+    Args:
+        require_admin: Whether the app refuses to start unless a group is
+            mapped to the role `admin` (in
+            `security.access_control.group_mapping`).
+
+    Attributes:
+        require_admin: Whether the app refuses to start unless a group is
+            mapped to the role `admin` (in
+            `security.access_control.group_mapping`).
+
+    Raises:
+        pydantic.ValidationError: The class was instantianted with an illegal
+            data type.
+
+    Example:
+        >>> AccessControlConfig(require_admin=False)
+        AccessControlConfig(require_admin=False)
+    """
+
+    require_admin: bool = True
+
+
 class CustomConfig(FOCABaseConfig):
     """Model for defining the custom configurations for cloud registry.
 
     Args:
         endpoints: Endpoint service configurations for cloud registry.
+        access_control: Access control settings of the app.
 
     Attributes:
         endpoints: Endpoint service configurations for cloud registry.
+        access_control: Access control settings of the app.
 
     Raises:
         pydantic.ValidationError: The class was instantianted with an illegal
@@ -398,7 +425,9 @@ tion.',organization=OrganizationConfig(name='organization_name',url='organizat\
 ion_url'),contactUrl='service_contact_url',documentationUrl='service_document_\
 url',createdAt='2020-11-04T12:58:19Z',updatedAt='2020-11-04T12:58:19Z',environ\
 ment='dev',version='1.0.0-dev-XXXXXX'),services=ServicesConfig(id=IdConfig(cha\
-rset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',length=6))))
+rset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',length=6))),access_control=Acces\
+sControlConfig(require_admin=True))
     """
 
     endpoints: EndpointsConfig
+    access_control: AccessControlConfig = Field(default_factory=AccessControlConfig)

@@ -41,20 +41,31 @@ curl -X GET "http://localhost:8080/ga4gh/registry/v1/services" -H  "accept: appl
 
 ### Configuration
 
-The app is configured by [`cloud_registry/config.yaml`][config], which works
-as-is with Docker Compose. To override some of its values, write them to a
-config overlay file and list it in environment variable `FOCA_CONFIG_OVERLAY`
-(several files separated by `:`); FOCA merges overlays into the config on
-startup. The [Helm chart][deployment-instructions] uses the same mechanism.
-For local development with Docker Compose, put the overlay in
-`config.local.yaml` and mount it in a `docker-compose.override.yaml` (both are
-ignored by Git):
+The app is configured by [`cloud_registry/config.yaml`][config]. To override
+some of its values, write them to a config overlay file and list it in
+environment variable `FOCA_CONFIG_OVERLAY` (several files separated by `:`);
+FOCA merges overlays into the config on startup. The
+[Helm chart][deployment-instructions] uses the same mechanism.
+
+Each deployment must set two values that depend on it, otherwise the app
+refuses to start:
+
+- `security.auth.audience`: the client IDs of the apps whose LS Login tokens
+  are accepted (e.g., the registry's front end);
+- `security.access_control.group_mapping`: the group(s) whose members are
+  admins (see [Access control](#access-control)), or
+  `custom.access_control.require_admin: false` to run without admins.
+
+Docker Compose mounts [`config.dev.yaml`][config-dev], an overlay for local
+development that accepts tokens for any audience and requires no admins. To
+override more values locally, put them in `config.local.yaml` and mount it
+in a `docker-compose.override.yaml` (both are ignored by Git):
 
 ```yaml
 services:
     cloud-registry:
         environment:
-            FOCA_CONFIG_OVERLAY: /etc/cloud-registry/config.local.yaml
+            FOCA_CONFIG_OVERLAY: /etc/cloud-registry/config.dev.yaml:/etc/cloud-registry/config.local.yaml
         volumes:
             - ./config.local.yaml:/etc/cloud-registry/config.local.yaml:ro
 ```
@@ -74,6 +85,53 @@ responses, are built from `custom.endpoints.service` in `config.yaml`. Set
 served behind a reverse proxy under a subpath (e.g., `registry`), or leave it
 empty. Previously, `api_path` held the API base path itself (e.g.,
 `ga4gh/registry/v1`); remove that value when upgrading.
+
+### Access control
+
+Services and service info can be read by anyone. Writing requires an access
+token issued by [LS Login][ls-login]:
+
+- Any authenticated user can register a service (`POST /services`) and
+  becomes its **owner**.
+- Owners can update (`PUT`) and delete (`DELETE`) their services, and grant
+  other users the roles `owner` or `maintainer` on them, by their LS Login
+  user identifier (`sub` claim):
+
+  ```bash
+  curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/<id>/permissions/<user-id>" \
+    -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+    -d '{"role": "maintainer"}'
+  ```
+
+  `GET /services/<id>/permissions` lists the roles granted on a service
+  (with the users' names, once they have used the registry since being
+  granted the role; names are deleted with the role), and
+  `DELETE /services/<id>/permissions/<user-id>` revokes them. The last owner
+  of a service can't be removed or downgraded (`409 Conflict`); delete the
+  service instead.
+- **Maintainers** can update, but not delete a service.
+- Members of the groups that the deployment maps to the role `admin`
+  (`security.access_control.group_mapping`) are **admins**: they can do
+  everything, including setting the service info (`POST /service-info`) and
+  registering services with chosen identifiers (`PUT` of a new service). For
+  ELIXIR, that is the LS Login group `ECP_CLN:ADMIN`:
+
+  ```yaml
+  security:
+      access_control:
+          group_mapping:
+              "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN:ADMIN#aai.lifescience-ri.eu": admin
+  ```
+
+  On startup, the app logs the groups mapped to `admin`.
+
+`GET /me` returns the current user's identifier (to give to owners), whether
+they are an admin, and their roles on services; it also stores their name for
+these services. Owners are not shown in the
+public service responses.
+
+Access control is implemented with [FOCA][foca-access-control]; see the
+`security` section of the [configuration][config].
 
 ## Installation
 
@@ -205,6 +263,7 @@ etc.
 [ga4gh-registry]: <https://github.com/ga4gh-discovery/ga4gh-service-registry>
 [compose]: docker-compose.yaml
 [config]: cloud_registry/config.yaml
+[config-dev]: config.dev.yaml
 [deploy_url]: <https://cloud-registry.rahtiapp.fi/ga4gh/registry/v1/ui>
 [deployment]: deployment/
 [deployment-instructions]: deployment/README.md
@@ -222,3 +281,5 @@ etc.
 [schema-service]: <https://github.com/ga4gh-discovery/ga4gh-service-registry/blob/8c45be52940db92c2fa1cd821519c271c22b1c4c/service-registry.yaml#L158>
 [schema-endpoints]: <https://github.com/ga4gh-discovery/ga4gh-service-registry/blob/8c45be52940db92c2fa1cd821519c271c22b1c4c/service-registry.yaml#L16>
 [url-swagger]: <http://localhost:8080/ga4gh/registry/v1/ui>
+[foca-access-control]: https://foca.readthedocs.io/en/latest/access-control/
+[ls-login]: https://lifescience-ri.eu/ls-login/

@@ -6,6 +6,7 @@ from flask import Response, request
 from foca.utils.logging import log_traffic
 
 from cloud_registry.exceptions import BadRequest, NotFound
+from cloud_registry.ga4gh.registry.permissions import add_owner, remove_permissions
 from cloud_registry.ga4gh.registry.service import RegisterService
 from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
 from cloud_registry.utils import get_collection
@@ -103,6 +104,7 @@ def deleteService(serviceId: str, **kwargs) -> str:
     res = db_collection_service.delete_one({"id": serviceId})
     if not res.deleted_count:
         raise NotFound
+    remove_permissions(serviceId)
     return serviceId
 
 
@@ -163,4 +165,30 @@ def _register_service(service_id: str | None = None) -> str:
     """
     service = RegisterService(data=_get_request_object(), id=service_id)
     service.register_metadata()
+    if service.was_created:
+        try:
+            # Roles left on the identifier by a deleted service (e.g., if
+            # revoking them failed) don't apply to the new one
+            remove_permissions(service.data["id"])
+            add_owner(service.data["id"])
+        except ValueError as exc:
+            # FOCA rejects values that can't be stored in policy rules (e.g.,
+            # service identifiers with commas)
+            logger.info("Can't store owner role: %s", exc)
+            _unregister_service(service)
+            raise BadRequest from exc
+        except Exception:
+            _unregister_service(service)
+            raise
     return service.data["id"]
+
+
+def _unregister_service(service: RegisterService) -> None:
+    """Delete a new service whose owner couldn't be stored, as only admins
+    could manage it, with any roles stored for it.
+
+    Args:
+        service: Registered service.
+    """
+    service.db_coll.delete_one({"id": service.data["id"]})
+    remove_permissions(service.data["id"])

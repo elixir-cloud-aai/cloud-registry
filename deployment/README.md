@@ -18,9 +18,13 @@ merges into the base config on startup (via `FOCA_CONFIG_OVERLAY`):
 The overlay requires an image built with FOCA 0.14 or later (e.g.,
 `elixircloud/cloud-registry:20261020` or later); older images ignore it.
 
-Keep the values of each deployment in its own values file outside this
-repository (e.g., `values-prod.yaml` in the deployment's infrastructure
-repository), for example:
+Each deployment must set the audience (`config.security.auth.audience`, the
+app refuses to start without it) and map an admin group to the role `admin`
+(`config.security.access_control.group_mapping`; rendering fails without one,
+unless `config.custom.access_control.require_admin` is `false`). Keep the
+values of each deployment in its own values file outside this repository
+(e.g., `values-prod.yaml` in the deployment's infrastructure repository), for
+example:
 
 ```yaml
 host_name: registry.example.org
@@ -29,7 +33,10 @@ config:
     auth:
       # Client IDs of the apps calling the registry
       audience: ["my-portal-client-id"]
-      verify_audience: True
+    access_control:
+      # Members of this group may manage all services and the service info
+      group_mapping:
+        "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN:ADMIN#aai.lifescience-ri.eu": admin
 ```
 
 Do not edit the ConfigMap with `kubectl edit`: Helm overwrites it on the next

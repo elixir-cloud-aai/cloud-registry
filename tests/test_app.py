@@ -11,7 +11,7 @@ import yaml
 
 import cloud_registry.app
 from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
-from tests.conftest import APP_DIR, make_headers
+from tests.conftest import ADMIN_GROUP, APP_DIR, make_headers
 
 BASE = "/ga4gh/registry/v1"
 TIMESTAMPS = {"createdAt", "updatedAt"}
@@ -49,12 +49,23 @@ def _post(client, headers, service=None):
 
 
 @pytest.mark.parametrize(
+    "method, path, status",
+    [
+        ("get", "/services", 200),
+        ("get", "/services/types", 200),
+        ("get", "/services/abc", 404),
+        ("get", "/service-info", 200),
+    ],
+)
+def test_public_read(client, method, path, status):
+    """Services and service info can be read without an access token."""
+    response = getattr(client, method)(f"{BASE}{path}")
+    assert response.status_code == status
+
+
+@pytest.mark.parametrize(
     "method, path",
     [
-        ("get", "/services"),
-        ("get", "/services/types"),
-        ("get", "/services/abc"),
-        ("get", "/service-info"),
         ("post", "/services"),
         ("put", "/services/abc"),
         ("delete", "/services/abc"),
@@ -62,7 +73,7 @@ def _post(client, headers, service=None):
     ],
 )
 def test_no_token(client, method, path):
-    """Requests without an access token are rejected."""
+    """Write requests without an access token are rejected."""
     _assert_error(getattr(client, method)(f"{BASE}{path}", json={}), 401)
 
 
@@ -71,7 +82,9 @@ def test_invalid_token(client):
     rejected.
     """
     other_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    response = client.get(f"{BASE}/services", headers=make_headers(key=other_key))
+    response = client.post(
+        f"{BASE}/services", json=_service(), headers=make_headers(key=other_key)
+    )
     _assert_error(response, 401)
 
 
@@ -131,23 +144,23 @@ def test_get_service_not_found(client, headers):
     _assert_error(client.get(f"{BASE}/services/abc", headers=headers), 404)
 
 
-def test_put_service(client, headers):
+def test_put_service(client, admin_headers):
     """PUT creates a service with the given identifier, then replaces it."""
     url = f"{BASE}/services/my-tes"
-    response = client.put(url, json=_service(), headers=headers)
+    response = client.put(url, json=_service(), headers=admin_headers)
     assert response.status_code == 200
     assert response.json == "my-tes"
-    assert client.get(url, headers=headers).json == _service(id="my-tes")
+    assert client.get(url, headers=admin_headers).json == _service(id="my-tes")
 
-    response = client.put(url, json=_service(name="Your TES"), headers=headers)
+    response = client.put(url, json=_service(name="Your TES"), headers=admin_headers)
     assert response.status_code == 200
-    assert client.get(url, headers=headers).json == _service(
+    assert client.get(url, headers=admin_headers).json == _service(
         id="my-tes", name="Your TES"
     )
-    assert len(client.get(f"{BASE}/services", headers=headers).json) == 1
+    assert len(client.get(f"{BASE}/services", headers=admin_headers).json) == 1
 
 
-def test_delete_service(client, headers):
+def test_delete_service(client, headers, admin_headers):
     """Deleted services are gone; deleting them again returns 404."""
     service_id = _post(client, headers)
     url = f"{BASE}/services/{service_id}"
@@ -155,7 +168,7 @@ def test_delete_service(client, headers):
     assert response.status_code == 200
     assert response.json == service_id
     _assert_error(client.get(url, headers=headers), 404)
-    _assert_error(client.delete(url, headers=headers), 404)
+    _assert_error(client.delete(url, headers=admin_headers), 404)
 
 
 def test_get_service_types(client, headers):
@@ -170,14 +183,14 @@ def test_get_service_types(client, headers):
         assert response.json == [SERVICE["type"], wes]
 
 
-def test_service_info(app, client, headers):
+def test_service_info(app, client, admin_headers):
     """Service info is registered from the config, with timestamps set on
     registration, and can be replaced.
     """
     config = app.app.config.foca.custom.endpoints.service_info.model_dump(
         exclude_none=True
     )
-    response = client.get(f"{BASE}/service-info", headers=headers)
+    response = client.get(f"{BASE}/service-info", headers=admin_headers)
     assert response.status_code == 200
     info = response.json
     assert {k: v for k, v in info.items() if k not in TIMESTAMPS} == config
@@ -185,9 +198,9 @@ def test_service_info(app, client, headers):
     assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", info["createdAt"])
 
     new = {**info, "name": "New name"}
-    response = client.post(f"{BASE}/service-info", json=new, headers=headers)
+    response = client.post(f"{BASE}/service-info", json=new, headers=admin_headers)
     assert response.status_code == 201
-    assert client.get(f"{BASE}/service-info", headers=headers).json == new
+    assert client.get(f"{BASE}/service-info", headers=admin_headers).json == new
 
 
 def test_service_info_invalid(client, headers):
@@ -211,12 +224,12 @@ def test_service_info_no_id(client, headers):
     assert response.mimetype == "application/problem+json"
 
 
-def test_service_info_response(client, headers):
+def test_service_info_response(client, admin_headers):
     """Registering service info returns the URL of the service info endpoint
     and no body.
     """
-    info = client.get(f"{BASE}/service-info", headers=headers).json
-    response = client.post(f"{BASE}/service-info", json=info, headers=headers)
+    info = client.get(f"{BASE}/service-info", headers=admin_headers).json
+    response = client.post(f"{BASE}/service-info", json=info, headers=admin_headers)
     assert response.status_code == 201
     assert response.data == b""
     assert "Content-Type" not in response.headers
@@ -227,41 +240,41 @@ def test_service_info_response(client, headers):
     assert "Location" in declared["headers"]
 
 
-def test_service_info_precedence(app, client, headers):
+def test_service_info_precedence(app, client, admin_headers):
     """The most recently written service info is served: posted service info
     is kept on restart, unless the service info in the config changed.
     """
-    info = client.get(f"{BASE}/service-info", headers=headers).json
+    info = client.get(f"{BASE}/service-info", headers=admin_headers).json
     posted = {**info, "id": "OTHER", "name": "Posted"}
-    response = client.post(f"{BASE}/service-info", json=posted, headers=headers)
+    response = client.post(f"{BASE}/service-info", json=posted, headers=admin_headers)
     assert response.status_code == 201
 
     _register_config_service_info(app)
-    response = client.get(f"{BASE}/service-info", headers=headers)
+    response = client.get(f"{BASE}/service-info", headers=admin_headers)
     assert response.json["id"] == "OTHER"
 
     app.app.config.foca.custom.endpoints.service_info.name = "Changed"
     _register_config_service_info(app)
-    response = client.get(f"{BASE}/service-info", headers=headers)
+    response = client.get(f"{BASE}/service-info", headers=admin_headers)
     assert (response.json["id"], response.json["name"]) == (info["id"], "Changed")
 
 
-def test_service_info_precedence_same_id(app, client, headers):
+def test_service_info_precedence_same_id(app, client, admin_headers):
     """Posted service info with the identifier from the config is kept on
     restart, unless the service info in the config changed.
     """
-    info = client.get(f"{BASE}/service-info", headers=headers).json
+    info = client.get(f"{BASE}/service-info", headers=admin_headers).json
     posted = {**info, "name": "Posted"}
-    response = client.post(f"{BASE}/service-info", json=posted, headers=headers)
+    response = client.post(f"{BASE}/service-info", json=posted, headers=admin_headers)
     assert response.status_code == 201
 
     _register_config_service_info(app)
-    response = client.get(f"{BASE}/service-info", headers=headers)
+    response = client.get(f"{BASE}/service-info", headers=admin_headers)
     assert response.json["name"] == "Posted"
 
     app.app.config.foca.custom.endpoints.service_info.description = "Changed"
     _register_config_service_info(app)
-    response = client.get(f"{BASE}/service-info", headers=headers)
+    response = client.get(f"{BASE}/service-info", headers=admin_headers)
     assert (response.json["name"], response.json["description"]) == (
         info["name"],
         "Changed",
@@ -306,20 +319,62 @@ def test_specs_local_refs():
         assert all(ref.startswith("#/") for ref in refs), path
 
 
-def test_main(monkeypatch, mongo_client, app_env):
-    """`main()` creates the app, registers service info and runs the app on
-    the configured port.
-    """
-    ports = []
+def _mock_run(monkeypatch) -> list:
+    """Replace running the app; return the list of ports it is run on."""
+    ports: list = []
     monkeypatch.setattr(
         connexion.FlaskApp, "run", lambda self, port=None, **kwargs: ports.append(port)
     )
+    return ports
+
+
+def _set_overlay(monkeypatch, tmp_path, overlay: dict) -> None:
+    """Use a config overlay instead of the test overlay."""
+    path = tmp_path / "overlay.yaml"
+    path.write_text(yaml.safe_dump(overlay))
+    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(path))
+
+
+def test_main(monkeypatch, mongo_client, app_env, capsys):
+    """`main()` creates the app, logs the admin groups, registers service info
+    and runs the app on the configured port.
+    """
+    ports = _mock_run(monkeypatch)
 
     cloud_registry.app.main()
 
     assert ports == [8080]
     service_info = mongo_client["serviceStore"]["service_info"].find_one()
     assert service_info["id"] == "ELIXIR_CLOUD_SERVICE_REGISTRY_1"
+    # FOCA configures logging to stderr
+    assert (
+        f"Groups mapped to the role 'admin': {ADMIN_GROUP}" in capsys.readouterr().err
+    )
+
+
+def test_main_requires_admin(monkeypatch, tmp_path, app_env):
+    """`main()` fails if no group is mapped to the role `admin`."""
+    _set_overlay(monkeypatch, tmp_path, {"security": {"auth": {"audience": ["a"]}}})
+    ports = _mock_run(monkeypatch)
+    with pytest.raises(RuntimeError, match="require_admin"):
+        cloud_registry.app.main()
+    assert ports == []
+
+
+def test_main_admin_optional(monkeypatch, tmp_path, app_env, capsys):
+    """Without admin groups, `main()` warns if admins are not required."""
+    _set_overlay(
+        monkeypatch,
+        tmp_path,
+        {
+            "security": {"auth": {"audience": ["a"]}},
+            "custom": {"access_control": {"require_admin": False}},
+        },
+    )
+    ports = _mock_run(monkeypatch)
+    cloud_registry.app.main()
+    assert ports == [8080]
+    assert "No group is mapped to the role 'admin'" in capsys.readouterr().err
 
 
 def test_main_config_missing(monkeypatch, tmp_path):

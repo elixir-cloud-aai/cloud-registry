@@ -1,15 +1,24 @@
 """Tests for the app config and the config overlay rendered by the Helm chart."""
 
+import fnmatch
 import os
 from pathlib import Path
 import subprocess
+import sys
 
 from foca.config.config_parser import ConfigParser
 from foca.models.config import Config
+from pydantic import ValidationError
 import pytest
 import yaml
 
-from tests.helm import CHART, HELM, render
+from tests.conftest import CONFIG_OVERLAY
+from tests.helm import ADMIN_GROUP, CHART, HELM, render
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # pytest depends on tomli on Python 3.10
+    import tomli as tomllib
 
 ROOT = Path(__file__).parents[1]
 CONFIG_FILE = ROOT / "cloud_registry" / "config.yaml"
@@ -26,8 +35,8 @@ def _parse_config() -> Config:
 
 
 def _load_config(tmp_path: Path, monkeypatch, *overlays: dict) -> Config:
-    """Load the base config with overlays."""
-    paths = []
+    """Load the base config with the test overlay and further overlays."""
+    paths = [str(CONFIG_OVERLAY)]
     for index, overlay in enumerate(overlays):
         path = tmp_path / f"overlay{index}.yaml"
         path.write_text(yaml.safe_dump(overlay))
@@ -47,9 +56,10 @@ def _get_overlay_configmap(docs: list[dict]) -> dict:
     return configmaps[0]
 
 
-def _render_overlay(*args: str) -> dict:
+def _render_overlay(*args: str, **kwargs) -> dict:
     """Render the chart's config overlay with `helm template` arguments."""
-    return yaml.safe_load(_get_overlay_configmap(render(*args))["data"]["overlay.yaml"])
+    docs = render(*args, **kwargs)
+    return yaml.safe_load(_get_overlay_configmap(docs)["data"]["overlay.yaml"])
 
 
 def test_config_overlay(tmp_path, monkeypatch):
@@ -78,6 +88,23 @@ def test_config_overlays(tmp_path, monkeypatch):
     later = {"custom": {"endpoints": {"service": {"external_host": "second"}}}}
     config = _load_config(tmp_path, monkeypatch, service, later)
     assert config.custom.endpoints.service.external_host == "second"
+
+
+def test_config_requires_audience(monkeypatch):
+    """The base config alone is invalid: deployments must set the audience."""
+    monkeypatch.delenv("FOCA_CONFIG_OVERLAY", raising=False)
+    with pytest.raises(ValidationError, match="audience"):
+        _parse_config()
+
+
+def test_config_dev_overlay(monkeypatch):
+    """The Docker Compose overlay accepts tokens for any audience and does not
+    require admin groups.
+    """
+    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(ROOT / "config.dev.yaml"))
+    config = _parse_config()
+    assert config.security.auth.verify_audience is False
+    assert config.custom.access_control.require_admin is False
 
 
 def test_config_overlay_missing(tmp_path, monkeypatch):
@@ -115,6 +142,29 @@ class TestChartOverlay:
         assert config.custom.endpoints.service.external_port == 8443
         assert config.security.auth.audience == ["test-client"]
 
+    def test_admin_group_required(self):
+        """Rendering fails without a group mapped to the role `admin`."""
+        with pytest.raises(subprocess.CalledProcessError) as exc:
+            _render_overlay("--set", "host_name=example.org", admin_group=None)
+        assert "must map a group to the role admin" in exc.value.stderr
+
+    def test_admin_group_optional(self):
+        """Without admin groups, rendering works if admins are not required."""
+        overlay = _render_overlay(
+            "--set",
+            "host_name=example.org",
+            "--set",
+            "config.custom.access_control.require_admin=false",
+            admin_group=None,
+        )
+        assert overlay["custom"]["access_control"] == {"require_admin": False}
+
+    def test_admin_group(self, tmp_path, monkeypatch):
+        """The admin group is passed to the app."""
+        overlay = _render_overlay("--set", "host_name=example.org")
+        config = _load_config(tmp_path, monkeypatch, overlay)
+        assert config.security.access_control.group_mapping[ADMIN_GROUP] == "admin"
+
     def test_host_name_required(self):
         """Rendering fails without `host_name`."""
         with pytest.raises(subprocess.CalledProcessError) as exc:
@@ -150,3 +200,18 @@ class TestChartOverlay:
         volume = next(vol for vol in pod["volumes"] if vol["name"] == mount["name"])
         assert volume["configMap"]["name"] == configmap["metadata"]["name"]
         assert Path(env["FOCA_CONFIG_OVERLAY"]).name == "overlay.yaml"
+
+
+def test_package_data():
+    """Files that the base config references are installed with the package."""
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    patterns = pyproject["tool"]["setuptools"]["package-data"]["cloud_registry"]
+    config = yaml.safe_load(CONFIG_FILE.read_text())
+    files = [
+        config["security"]["access_control"]["model"],
+        *(path for spec in config["api"]["specs"] for path in spec["path"]),
+    ]
+    for path in ["config.yaml", *files]:
+        assert (ROOT / "cloud_registry" / path).is_file(), path
+        # setuptools matches the patterns from the package directory
+        assert any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns), path

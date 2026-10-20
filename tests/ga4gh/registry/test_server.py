@@ -5,6 +5,7 @@ from copy import deepcopy
 import pytest
 
 from cloud_registry.exceptions import BadRequest, NotFound
+from cloud_registry.ga4gh.registry import server
 from cloud_registry.ga4gh.registry.server import (
     deleteService,
     getServiceById,
@@ -21,6 +22,18 @@ from tests.mock_data import (
     MOCK_TYPE,
     SERVICE_INFO_CONFIG,
 )
+
+
+@pytest.fixture(autouse=True)
+def ownership(monkeypatch):
+    """Record changes of service ownership, which require access control (cf.
+    `tests/test_access_control.py`)."""
+    calls = []
+    for name in ["add_owner", "remove_permissions"]:
+        monkeypatch.setattr(
+            server, name, lambda serviceId, name=name: calls.append((name, serviceId))
+        )
+    return calls
 
 
 def _insert_services(services, ids):
@@ -123,13 +136,14 @@ def test_getServiceInfo(unit_app, service_info):
 
 
 # POST /service
-def test_postService(unit_app, services):
+def test_postService(unit_app, services, ownership):
     """Test for registering a service; identifier assigned by implementation."""
     data = deepcopy(MOCK_SERVICE)
     data["id"] = MOCK_ID
     with unit_app.test_request_context(json=data):
         res = postService.__wrapped__()
         assert isinstance(res, str)
+    assert ownership == [("remove_permissions", res), ("add_owner", res)]
 
 
 def test_postService_invalid_payload(unit_app, services):
@@ -142,13 +156,14 @@ def test_postService_invalid_payload(unit_app, services):
 
 
 # DELETE /service/{serviceId}
-def test_deleteService(unit_app, services):
+def test_deleteService(unit_app, services, ownership):
     """Test for deleting a service."""
     _insert_services(services, [MOCK_ID])
 
     with unit_app.app_context():
         res = deleteService.__wrapped__(serviceId=MOCK_ID)
         assert res == MOCK_ID
+    assert ownership == [("remove_permissions", MOCK_ID)]
 
 
 def test_deleteService_NotFound(unit_app, services):
@@ -163,12 +178,16 @@ def test_deleteService_NotFound(unit_app, services):
 
 
 # PUT /service/{serviceId}
-def test_putService(unit_app, services):
+def test_putService(unit_app, services, ownership):
     """Test for registering a service; identifier provided by client."""
     data = deepcopy(MOCK_SERVICE)
     with unit_app.test_request_context(json=data):
         res = putService.__wrapped__(serviceId=MOCK_ID)
         assert res == MOCK_ID
+    # only new services get an owner
+    with unit_app.test_request_context(json=data):
+        putService.__wrapped__(serviceId=MOCK_ID)
+    assert ownership == [("remove_permissions", MOCK_ID), ("add_owner", MOCK_ID)]
 
 
 def test_putService_invalid_payload(unit_app, services):
