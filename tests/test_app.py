@@ -11,7 +11,7 @@ import yaml
 
 import cloud_registry.app
 from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
-from tests.conftest import APP_DIR, make_headers
+from tests.conftest import ADMIN_GROUP, APP_DIR, make_headers
 
 BASE = "/ga4gh/registry/v1"
 TIMESTAMPS = {"createdAt", "updatedAt"}
@@ -319,20 +319,62 @@ def test_specs_local_refs():
         assert all(ref.startswith("#/") for ref in refs), path
 
 
-def test_main(monkeypatch, mongo_client, app_env):
-    """`main()` creates the app, registers service info and runs the app on
-    the configured port.
-    """
-    ports = []
+def _mock_run(monkeypatch) -> list:
+    """Replace running the app; return the list of ports it is run on."""
+    ports: list = []
     monkeypatch.setattr(
         connexion.FlaskApp, "run", lambda self, port=None, **kwargs: ports.append(port)
     )
+    return ports
+
+
+def _set_overlay(monkeypatch, tmp_path, overlay: dict) -> None:
+    """Use a config overlay instead of the test overlay."""
+    path = tmp_path / "overlay.yaml"
+    path.write_text(yaml.safe_dump(overlay))
+    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(path))
+
+
+def test_main(monkeypatch, mongo_client, app_env, capsys):
+    """`main()` creates the app, logs the admin groups, registers service info
+    and runs the app on the configured port.
+    """
+    ports = _mock_run(monkeypatch)
 
     cloud_registry.app.main()
 
     assert ports == [8080]
     service_info = mongo_client["serviceStore"]["service_info"].find_one()
     assert service_info["id"] == "ELIXIR_CLOUD_SERVICE_REGISTRY_1"
+    # FOCA configures logging to stderr
+    assert (
+        f"Groups mapped to the role 'admin': {ADMIN_GROUP}" in capsys.readouterr().err
+    )
+
+
+def test_main_requires_admin(monkeypatch, tmp_path, app_env):
+    """`main()` fails if no group is mapped to the role `admin`."""
+    _set_overlay(monkeypatch, tmp_path, {"security": {"auth": {"audience": ["a"]}}})
+    ports = _mock_run(monkeypatch)
+    with pytest.raises(RuntimeError, match="require_admin"):
+        cloud_registry.app.main()
+    assert ports == []
+
+
+def test_main_admin_optional(monkeypatch, tmp_path, app_env, capsys):
+    """Without admin groups, `main()` warns if admins are not required."""
+    _set_overlay(
+        monkeypatch,
+        tmp_path,
+        {
+            "security": {"auth": {"audience": ["a"]}},
+            "custom": {"access_control": {"require_admin": False}},
+        },
+    )
+    ports = _mock_run(monkeypatch)
+    cloud_registry.app.main()
+    assert ports == [8080]
+    assert "No group is mapped to the role 'admin'" in capsys.readouterr().err
 
 
 def test_main_config_missing(monkeypatch, tmp_path):

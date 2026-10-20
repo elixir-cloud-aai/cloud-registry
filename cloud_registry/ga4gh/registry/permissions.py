@@ -4,13 +4,14 @@ permissions on services.
 Policies are configured in `config.yaml` (`security.access_control`) and
 enforced by FOCA on all operations that require authentication, using the
 model in `cloud_registry/access_control/model.conf`. Subjects with the role
-`admin` (mapped from group claims via `security.access_control.group_mapping`)
-may do everything.
+`admin` (mapped from group claims via `security.access_control.group_mapping`,
+which deployments set) may do everything.
 """
 
 import logging
 
 from flask import request
+from foca import get_config
 from foca.security.access_control import (
     add_resource_role,
     get_current_subject,
@@ -21,11 +22,46 @@ from foca.security.access_control import (
 
 from cloud_registry.exceptions import BadRequest, NotFound
 from cloud_registry.ga4gh.registry.service import service_exists
+from cloud_registry.utils import get_custom_config
 
 logger = logging.getLogger(__name__)
 
 # Roles that can be granted on services
 ROLES = ["owner", "maintainer"]
+
+
+def check_admin_groups() -> list[str]:
+    """Check that groups are mapped to the role `admin`, and log them.
+
+    Without such groups, nobody can manage services they don't own or set the
+    service info, so this is an error unless
+    `custom.access_control.require_admin` is false.
+
+    Returns:
+        Groups mapped to the role `admin`, sorted.
+
+    Raises:
+        RuntimeError: No group is mapped to the role `admin`, and
+            `custom.access_control.require_admin` is true.
+    """
+    mapping = get_config().security.access_control.group_mapping or {}
+    groups = sorted(group for group, role in mapping.items() if role == "admin")
+    if groups:
+        logger.info("Groups mapped to the role 'admin': %s", ", ".join(groups))
+    elif get_custom_config().access_control.require_admin:
+        raise RuntimeError(
+            "No group is mapped to the role 'admin': set "
+            "`security.access_control.group_mapping` (e.g., to map an admin "
+            "group of the identity provider to 'admin'), or set "
+            "`custom.access_control.require_admin` to false to run without "
+            "admins"
+        )
+    else:
+        logger.warning(
+            "No group is mapped to the role 'admin', so nobody can manage "
+            "services they don't own or set the service info"
+        )
+    return groups
 
 
 def service_path(serviceId: str) -> str:

@@ -17,6 +17,7 @@ import mongomock
 import pytest
 
 from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
+from tests.conftest import CONFIG_OVERLAY
 from tests.mock_data import SERVICE_INFO_CONFIG
 
 APP_DIR = Path(__file__).parents[1] / "cloud_registry"
@@ -111,7 +112,7 @@ def client(monkeypatch):
     """Client of the app, with in-memory MongoDB and mock LS Login."""
     # Modules referenced in the config are imported from the app directory
     monkeypatch.syspath_prepend(str(APP_DIR))
-    monkeypatch.delenv("FOCA_CONFIG_OVERLAY", raising=False)
+    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(CONFIG_OVERLAY))
     mongo_client = mongomock.MongoClient()
     monkeypatch.setattr(register_mongodb, "MongoClient", lambda uri: mongo_client)
     monkeypatch.setattr(auth.requests, "get", mock_get)

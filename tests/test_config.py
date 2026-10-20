@@ -6,9 +6,11 @@ import subprocess
 
 from foca.config.config_parser import ConfigParser
 from foca.models.config import Config
+from pydantic import ValidationError
 import pytest
 import yaml
 
+from tests.conftest import CONFIG_OVERLAY
 from tests.helm import CHART, HELM, render
 
 ROOT = Path(__file__).parents[1]
@@ -26,8 +28,8 @@ def _parse_config() -> Config:
 
 
 def _load_config(tmp_path: Path, monkeypatch, *overlays: dict) -> Config:
-    """Load the base config with overlays."""
-    paths = []
+    """Load the base config with the test overlay and further overlays."""
+    paths = [str(CONFIG_OVERLAY)]
     for index, overlay in enumerate(overlays):
         path = tmp_path / f"overlay{index}.yaml"
         path.write_text(yaml.safe_dump(overlay))
@@ -78,6 +80,23 @@ def test_config_overlays(tmp_path, monkeypatch):
     later = {"custom": {"endpoints": {"service": {"external_host": "second"}}}}
     config = _load_config(tmp_path, monkeypatch, service, later)
     assert config.custom.endpoints.service.external_host == "second"
+
+
+def test_config_requires_audience(monkeypatch):
+    """The base config alone is invalid: deployments must set the audience."""
+    monkeypatch.delenv("FOCA_CONFIG_OVERLAY", raising=False)
+    with pytest.raises(ValidationError, match="audience"):
+        _parse_config()
+
+
+def test_config_dev_overlay(monkeypatch):
+    """The Docker Compose overlay accepts tokens for any audience and does not
+    require admin groups.
+    """
+    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(ROOT / "config.dev.yaml"))
+    config = _parse_config()
+    assert config.security.auth.verify_audience is False
+    assert config.custom.access_control.require_admin is False
 
 
 def test_config_overlay_missing(tmp_path, monkeypatch):

@@ -25,13 +25,13 @@ security:
         # rejected
         issuers:
           - https://login.aai.lifescience-ri.eu/oidc/
-        # Tokens are accepted for any audience, e.g., for local development.
-        # Deployments should only accept tokens of the apps calling the
-        # registry: LS Login sets the `aud` claim to the client ID of the app
-        # the user logged in with (e.g., the registry's front end, a portal
-        # or a gateway), so set `audience` to their client IDs and remove
-        # `verify_audience`.
-        verify_audience: False
+        # Deployments must set `audience`: only tokens of the apps calling the
+        # registry are accepted. LS Login sets the `aud` claim to the client
+        # ID of the app the user logged in with (e.g., the registry's front
+        # end, a portal or a gateway), so set `audience` to their client IDs,
+        # e.g.:
+        # audience:
+        #   - <client ID>
         # LS Login provides group memberships via user info only, not in
         # access tokens; they are needed for the admin role (see below)
         userinfo_claims:
@@ -50,8 +50,11 @@ security:
         db_name: serviceStore
         collection_name: policy_rules
         claim_groups: eduperson_entitlement
-        group_mapping:
-            "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN:ADMIN#aai.lifescience-ri.eu": admin
+        # Deployments map their admin groups (values of `claim_groups`) to
+        # the role `admin`; the app refuses to start without one, unless
+        # `custom.access_control.require_admin` is false. E.g., for ELIXIR:
+        # group_mapping:
+        #   "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN:ADMIN#aai.lifescience-ri.eu": admin
         # Managed on startup (removed rules are deleted); cannot be changed
         # via the permissions API
         policies:
@@ -130,6 +133,10 @@ exceptions:
     mapping: cloud_registry.exceptions.exceptions
 
 custom:
+    # Refuse to start unless a group is mapped to the role `admin` (see
+    # `security.access_control.group_mapping`)
+    access_control:
+        require_admin: True
     endpoints:
         # Public URL of the app, e.g., for the `Location` header; `api_path` is
         # a path prefix in front of the API base path (e.g., of a reverse
