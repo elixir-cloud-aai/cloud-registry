@@ -114,6 +114,17 @@ class TestRegisterServiceInfo:
             headers = RegisterServiceInfo()._get_headers()
             assert headers == HEADERS_SERVICE_INFO
 
+    def test__get_headers_script_root(self, unit_app):
+        """`Location` includes the path the app is mounted at."""
+        with unit_app.test_request_context(
+            SERVICE_INFO_PATH, method="POST", base_url="http://localhost/prefix"
+        ):
+            headers = RegisterServiceInfo()._get_headers()
+        assert headers == {
+            "Location": "http://1.2.3.4:80/registry/prefix/ga4gh/registry/v1/"
+            "service-info"
+        }
+
 
 class TestServiceInfoTimestamps:
     """Tests for timestamps of service info registered from a config without

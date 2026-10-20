@@ -1,6 +1,8 @@
 """Controller for service info endpoint."""
 
 from datetime import datetime, timezone
+import hashlib
+import json
 import logging
 
 from flask import request
@@ -15,8 +17,13 @@ TIMESTAMP_FIELDS = ("createdAt", "updatedAt")
 # written service info is served. Documents written before the field was added
 # lack it and sort last. Assumes that the clocks of all app instances agree.
 WRITTEN_AT = "_writtenAt"
-# Projection excluding internal fields (MongoDB `_id` and `WRITTEN_AT`)
-PROJECTION = {"_id": False, WRITTEN_AT: False}
+# Internal field with a hash of the service info config last written to the
+# document with the configured identifier; it is kept when service info with
+# that identifier is posted, so that the posted service info is replaced on
+# restart only if the config changed.
+CONFIG_HASH = "_configHash"
+# Projection excluding internal fields
+PROJECTION = {"_id": False, WRITTEN_AT: False, CONFIG_HASH: False}
 
 
 class RegisterServiceInfo:
@@ -66,21 +73,30 @@ class RegisterServiceInfo:
     ) -> None:
         """Create or update service info from service configuration.
 
-        Will create service info if it does not exist or current
-        configuration differs from available one. Service info posted since
-        is thus kept on restarts, unless the configuration changes.
+        Writes the service info from the configuration if the configuration
+        changed since it was last written. Service info posted since, with any
+        identifier, is thus kept on restarts, unless the configuration
+        changes.
         """
+        config_hash = hashlib.sha256(
+            json.dumps(self.conf_info, sort_keys=True, default=str).encode()
+        ).hexdigest()
         stored = self._get_stored_service_info(id=self.conf_info["id"])
+        if self._get_config_hash(id=self.conf_info["id"]) == config_hash:
+            logger.info("Using available service info.")
+            return
         managed = [field for field in TIMESTAMP_FIELDS if field not in self.conf_info]
         if (
             stored is not None
             and all(stored.get(field) for field in managed)
             and {k: v for k, v in stored.items() if k not in managed} == self.conf_info
         ):
+            # Written before `CONFIG_HASH` was added; kept as is
             logger.info("Using available service info.")
             return
         self._upsert_service_info(
-            data=self._add_timestamps(data=self.conf_info, stored=stored)
+            data=self._add_timestamps(data=self.conf_info, stored=stored),
+            config_hash=config_hash,
         )
         logger.info("Service info registered.")
 
@@ -101,22 +117,47 @@ class RegisterServiceInfo:
             Response headers.
         """
         stored = self._get_stored_service_info(id=data["id"])
-        self._upsert_service_info(data=self._add_timestamps(data=data, stored=stored))
+        self._upsert_service_info(
+            data=self._add_timestamps(data=data, stored=stored),
+            config_hash=self._get_config_hash(id=data["id"]),
+        )
         return self._get_headers()
 
     def _upsert_service_info(
         self,
         data: dict,
+        config_hash: str | None = None,
     ) -> None:
         """Insert or update service info document, marking it as the most
         recently written one.
+
+        Arguments:
+            data: Service info.
+            config_hash: Hash of the service info config last written to the
+                document, if any.
         """
         written_at = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+        replacement = {**data, WRITTEN_AT: written_at}
+        if config_hash is not None:
+            replacement[CONFIG_HASH] = config_hash
         self.collection.replace_one(
             filter={"id": data["id"]},
-            replacement={**data, WRITTEN_AT: written_at},
+            replacement=replacement,
             upsert=True,
         )
+
+    def _get_config_hash(self, id: str) -> str | None:
+        """Get the hash of the service info config last written to the
+        document with a given identifier.
+
+        Arguments:
+            id: Service info identifier.
+
+        Returns:
+            Config hash, or `None` if there is none.
+        """
+        doc = self.collection.find_one({"id": id}, {"_id": False, CONFIG_HASH: True})
+        return (doc or {}).get(CONFIG_HASH)
 
     def _get_headers(self) -> dict:
         """Build dictionary of response headers.
@@ -127,8 +168,9 @@ class RegisterServiceInfo:
             Response headers, with the public URL of the service info
             endpoint (the current request's path) as `Location`.
         """
+        request_path = request.script_root + request.path
         path = "/".join(
-            part for part in (self.api_path.strip("/"), request.path.strip("/")) if part
+            part for part in (self.api_path.strip("/"), request_path.strip("/")) if part
         )
         return {
             "Location": f"{self.url_prefix}://{self.host_name}:{self.external_port}"

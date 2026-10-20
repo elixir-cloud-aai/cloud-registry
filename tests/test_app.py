@@ -242,6 +242,28 @@ def test_service_info_precedence(app, client, headers):
     assert (response.json["id"], response.json["name"]) == (info["id"], "Changed")
 
 
+def test_service_info_precedence_same_id(app, client, headers):
+    """Posted service info with the identifier from the config is kept on
+    restart, unless the service info in the config changed.
+    """
+    info = client.get(f"{BASE}/service-info", headers=headers).json
+    posted = {**info, "name": "Posted"}
+    response = client.post(f"{BASE}/service-info", json=posted, headers=headers)
+    assert response.status_code == 201
+
+    _register_config_service_info(app)
+    response = client.get(f"{BASE}/service-info", headers=headers)
+    assert response.json["name"] == "Posted"
+
+    app.app.config.foca.custom.endpoints.service_info.description = "Changed"
+    _register_config_service_info(app)
+    response = client.get(f"{BASE}/service-info", headers=headers)
+    assert (response.json["name"], response.json["description"]) == (
+        info["name"],
+        "Changed",
+    )
+
+
 def test_error_media_type(client, headers):
     """Error responses have a media type declared in the specification."""
     response = client.get(f"{BASE}/services/unknown", headers=headers)
