@@ -1,0 +1,29 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly
+    ignore:
+      # connexion 3 needs a FOCA upgrade; the setuptools cap goes with #65
+      - dependency-name: connexion
+        update-types: ["version-update:semver-major"]
+      - dependency-name: setuptools
+    groups:
+      python-dependencies:
+        patterns: ["*"]
+        exclude-patterns: ["connexion", "foca"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      github-actions:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      docker:
+        patterns: ["*"]
