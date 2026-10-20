@@ -7,27 +7,126 @@
 
 ## Synopsis
 
-GA4GH Service Registry API implementation for the ELIXIR Cloud. The registry is
-currently deployed at [https://cloud-registry.rahtiapp.fi][deploy_url], but
-will likely move soon.
+GA4GH Service Registry API implementation for the ELIXIR Cloud. The ELIXIR
+Cloud registry, with its [web front end][cloud-registry-ui], is deployed at
+[https://registry.elixir-on.cloud/][deploy_url].
+
+## Contents
+
+- [Description](#description)
+- [Installation](#installation)
+- [Usage](#usage)
+- [API](#api)
+- [Authentication](#authentication)
+- [Access control](#access-control)
+- [Service info](#service-info)
+- [Duplicate services](#duplicate-services)
+- [Verified services](#verified-services)
+- [Configuration](#configuration)
+- [Development](#development)
+- [Contributing](#contributing)
+- [Versioning and releases](#versioning-and-releases)
+- [License](#license)
+- [Contact](#contact)
 
 ## Description
 
 Service entries comply with the [`ExternalService` schema][schema-service]
-defined in the [GA4GH Service Registry API][ga4gh-registry].
+defined in the [GA4GH Service Registry API][ga4gh-registry]. Anyone can read
+them; users logged in with [LS Login][ls-login] can register services and
+manage those they own (see [Access control](#access-control)).
 
 For developers, an API documentation (of the code, not the exposed API) is
 available [here][docs-api].
 
+## Installation
+
+To quickly install the service for development/testing purposes, we recommend
+deployment via [Docker Compose][docker-compose], as described below. For
+more durable deployments on cloud native infrastructure, we also provide a
+[Helm][helm] chart in the [`deployment/`][deployment] directory (see
+[Kubernetes](#kubernetes)).
+
+### Requirements
+
+The following software needs to be available on your system:
+
+- [`git 2.17.1`][git]
+- [`docker`][docker], with the [Compose plugin][docker-compose] (version 2)
+
+> Where versions are indicated, they were used to test deployment. Other
+> versions with the same major version numbers will likely work as well,
+> especially newer ones.
+
+### Deployment
+
+First, clone the repository and traverse into the root directory with:
+
+```bash
+git clone https://github.com/elixir-cloud-aai/cloud-registry.git
+cd cloud-registry
+```
+
+Then simply start up the service with:
+
+```bash
+docker compose up --build -d
+```
+
+MongoDB is only reachable from the app container; its data is kept in the
+Compose project's `mongodb-data` volume (e.g., `cloud-registry_mongodb-data`,
+see `docker volume ls`).
+
+> Earlier versions kept the data in `../data/cloud-registry/db`. To keep using
+> it, bind-mount it in a `docker-compose.override.yaml`:
+>
+> ```yaml
+> services:
+>     mongodb:
+>         volumes:
+>             - ../data/cloud-registry/db:/data/db
+> ```
+
+_**That's it!**_
+
+You should now be able to use/explore the API as described in
+the [usage section](#usage).
+
+#### Other useful commands
+
+To shut down the service, run:
+
+```bash
+docker compose down
+```
+
+Add `--volumes` to also delete the database.
+
+If you need to inspect the logs, call:
+
+```bash
+docker compose logs
+```
+
+### Kubernetes
+
+The [Helm chart][deployment] comes with [deployment
+instructions][deployment-instructions]: configuration via values files, image
+tags, installation, ingress, upgrades and MongoDB (details may need to be
+adapted for your specific infrastructure). The [FOCA deployment
+guide][foca-deployment] explains how FOCA apps, such as this one, are
+configured with Docker Compose and Helm (base config, overlays and secrets).
+
 ## Usage
 
-Once [deployed](#Installation), the API will be served here:
+Once [deployed](#installation), the API will be served here:
 
 ```text
 http://localhost:8080/ga4gh/registry/v1/
 ```
 
-You can explore the service via the [Swagger UI][url-swagger].
+You can explore the service via the [Swagger UI][url-swagger], which also
+serves the OpenAPI specification (`/ga4gh/registry/v1/openapi.json`).
 
 > The app listens on the port set in the [config][config] (`server.port`);
 > [`docker-compose.yaml`][compose] publishes it on the host. If you change
@@ -39,78 +138,80 @@ You can explore the service via the [Swagger UI][url-swagger].
 curl -X GET "http://localhost:8080/ga4gh/registry/v1/services" -H  "accept: application/json"
 ```
 
+Requests that change data need an access token (see
+[Authentication](#authentication)).
+
+## API
+
+The endpoints of the [GA4GH Service Registry API][ga4gh-registry] (version
+1.0.0) are unchanged: the registry does not extend their requests or
+responses. Everything else is added as extra operations and endpoints, all
+under the API base path `/ga4gh/registry/v1`:
+
+| Endpoint | Methods | Who |
+| --- | --- | --- |
+| `/service-info` | `GET` (GA4GH) | anyone |
+| `/services` | `GET` (GA4GH) | anyone |
+| `/services` | `POST` | any authenticated user |
+| `/services/types` | `GET` (GA4GH) | anyone |
+| `/services/{serviceId}` | `GET` (GA4GH) | anyone |
+| `/services/{serviceId}` | `PUT` | owners, maintainers, admins (new identifiers: admins) |
+| `/services/{serviceId}` | `DELETE` | owners, admins |
+| `/services/{serviceId}/permissions` | `GET` | owners, admins |
+| `/services/{serviceId}/permissions/{userId}` | `PUT`, `DELETE` | owners, admins |
+| `/services/{serviceId}/verification` | `GET` | anyone |
+| `/services/{serviceId}/verification` | `PUT`, `DELETE` | admins |
+| `/verifications` | `GET` | anyone |
+| `/me` | `GET` | any authenticated user |
+
 Registering a service (`POST /services`, or `PUT /services/{serviceId}` with a
 new identifier) returns `201 Created`, with the identifier of the service in
-the body and its [public URL](#public-urls) in the `Location` header; both
-returned `200 OK` before. Updating a service (`PUT`) returns `200 OK`, as
-before. Identifiers `.` and `..` are rejected (`400 Bad Request`); services
-registered with them before can still be read and deleted, but must be
-registered again under other identifiers to be updated.
+the body and its [public URL](#public-urls) in the `Location` header; updating
+a service (`PUT`) returns `200 OK`. Identifiers `.` and `..` are rejected
+(`400 Bad Request`).
 
-### Configuration
+See [Access control](#access-control) for the roles and [Verified
+services](#verified-services) for verifications. Extensions of the GA4GH
+endpoints, such as pagination, search or filters, will be reconsidered with
+the upcoming new version of the Service Registry specification.
 
-The app is configured by [`cloud_registry/config.yaml`][config]. To override
-some of its values, write them to a config overlay file and list it in
-environment variable `FOCA_CONFIG_OVERLAY` (several files separated by `:`);
-FOCA merges overlays into the config on startup. The
-[Helm chart][deployment-instructions] uses the same mechanism.
+## Authentication
 
-Each deployment must set two values that depend on it, otherwise the app
-refuses to start:
+Read operations (`GET`, except `/services/{serviceId}/permissions` and `/me`,
+see the [table above](#api)) are public. All other operations require an
+access token issued by [LS Login][ls-login], sent as a bearer token:
 
-- `security.auth.audience`: the client IDs of the apps whose LS Login tokens
-  are accepted (e.g., the registry's front end);
-- `security.access_control.group_mapping`: the group(s) whose members are
-  admins (see [Access control](#access-control)), or
-  `custom.access_control.require_admin: false` to run without admins.
-
-Docker Compose mounts [`config.dev.yaml`][config-dev], an overlay for local
-development that accepts tokens for any audience and requires no admins. To
-override more values locally, put them in `config.local.yaml` and mount it
-in a `docker-compose.override.yaml` (both are ignored by Git):
-
-```yaml
-services:
-    cloud-registry:
-        environment:
-            FOCA_CONFIG_OVERLAY: /etc/cloud-registry/config.dev.yaml:/etc/cloud-registry/config.local.yaml
-        volumes:
-            - ./config.local.yaml:/etc/cloud-registry/config.local.yaml:ro
+```bash
+curl -X POST "http://localhost:8080/ga4gh/registry/v1/services" \
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d @service.json
 ```
 
-#### Public URLs
+Requests without a valid token are rejected with `401 Unauthorized`;
+requests with a valid token, but without the required role, with `403
+Forbidden`.
 
-Public URLs, e.g., in `Location` headers, are built from
-`custom.endpoints.service` (scheme, host and port). The Helm chart sets them
-from its `host_name` value; other deployments must set them, as the defaults
-(`https://0.0.0.0:8080`) aren't reachable (the Docker Compose setup sets
-`http://localhost:8080` in [`config.dev.yaml`][config-dev]). Set `api_path` to
-the path prefix in front of the API base path when the app is served behind a
-reverse proxy under a subpath (e.g., `registry`), or leave it empty.
-Previously, `api_path` held the API base path itself (e.g.,
-`ga4gh/registry/v1`); remove that value when upgrading.
+Tokens are obtained by logging in with LS Login through an app registered as
+an LS Login client (OpenID Connect), e.g., the registry's [front
+end][cloud-registry-ui], or a client of your own for scripts. The registry
+accepts tokens only:
 
-### Service info
+- of the issuers in `security.auth.issuers` (LS Login by default);
+- for the client IDs in `security.auth.audience` (the `aud` claim), which each
+  deployment sets to the apps that call it (see
+  [Configuration](#configuration)); the Docker Compose setup accepts tokens
+  for any audience.
 
-`GET /service-info` serves the service info from the config
-(`custom.endpoints.service_info`), without the database. On startup, the app
-checks it against the GA4GH `Service` schema and refuses to start if it is
-invalid, naming the invalid field. `version` defaults to the version of the
-installed app; `createdAt` and `updatedAt` are served only if set, and must be
-RFC 3339 date-times (e.g., `2020-11-08T00:00:00Z`). Fields and list items set
-to `null` (e.g., in a config overlay) are not served. To change the service
-info, change the config and restart the app (the Helm chart restarts it when
-the `config` value changes).
+The registry reads the user's group memberships (`eduperson_entitlement`,
+needed for the [admin role](#access-control)) and name from LS Login's user
+info endpoint with the token, so the token must be allowed to release them
+(e.g., request the corresponding scopes when logging in). Tokens are validated
+by [FOCA][foca-auth].
 
-Previously, service info could be set via `POST /service-info` and was stored
-in the database. That endpoint is gone, and stored service info is no longer
-served (the `service_info` collection can be dropped): put it in the config
-when upgrading.
-
-### Access control
+## Access control
 
 Services and service info can be read by anyone. Writing requires an access
-token issued by [LS Login][ls-login]:
+token issued by [LS Login][ls-login] (see [Authentication](#authentication)):
 
 - Any authenticated user can register a service (`POST /services`) and
   becomes its **owner**.
@@ -154,7 +255,24 @@ public service responses.
 Access control is implemented with [FOCA][foca-access-control]; see the
 `security` section of the [configuration][config].
 
-### Duplicate services
+## Service info
+
+`GET /service-info` serves the service info from the config
+(`custom.endpoints.service_info`), without the database. On startup, the app
+checks it against the GA4GH `Service` schema and refuses to start if it is
+invalid, naming the invalid field. `version` defaults to the version of the
+installed app; `createdAt` and `updatedAt` are served only if set, and must be
+RFC 3339 date-times (e.g., `2020-11-08T00:00:00Z`). Fields and list items set
+to `null` (e.g., in a config overlay) are not served. To change the service
+info, change the config and restart the app (the Helm chart restarts it when
+the `config` value changes).
+
+Previously, service info could be set via `POST /service-info` and was stored
+in the database. That endpoint is gone, and stored service info is no longer
+served (the `service_info` collection can be dropped): put it in the config
+when upgrading.
+
+## Duplicate services
 
 A service is identified by its base URL (`url`) and its API type (`type.group`
 and `type.artifact`, case-insensitive, but not `type.version`, so that
@@ -196,7 +314,7 @@ db.getSiblingDB("serviceStore").services.updateOne({id: "<id>"}, {$set: {url: "<
 
 Then start the app again; it adds the missing keys.
 
-### Verified services
+## Verified services
 
 Admins mark services as **verified** once they have checked them, e.g., that
 a service accepts LS Login tokens. What admins check is up to the
@@ -256,74 +374,90 @@ A verification applies to the service as it was when it was verified:
 - Admins should send the URL and API type they checked when verifying (see
   above), so that a service changed meanwhile isn't verified.
 
-## Installation
+## Configuration
 
-To quickly install the service for development/testing purposes, we recommend
-deployment via [Docker Compose][docker-compose], as described below. For
-more durable deployments on cloud native infrastructure, we also provide a
-[Helm][helm] chart in the [`deployment/`][deployment] directory, together with
-[basic deployment instructions][deployment-instructions] (details may need to
-be adapted for your specific infrastructure).
+The app is configured by [`cloud_registry/config.yaml`][config], the base
+config, which documents its values. To override some of them, write them to a
+config overlay file and list it in environment variable `FOCA_CONFIG_OVERLAY`
+(several files separated by `:`); FOCA merges overlays into the config on
+startup (see the [FOCA deployment guide][foca-deployment]). The [Helm
+chart][deployment-instructions] uses the same mechanism: it renders its
+`config` value (in a values file per deployment) into an overlay.
 
-### Requirements
+Each deployment must set two values that depend on it, otherwise the app
+refuses to start:
 
-The following software needs to be available on your system:
+- `security.auth.audience`: the client IDs of the apps whose LS Login tokens
+  are accepted (e.g., the registry's front end; see
+  [Authentication](#authentication));
+- `security.access_control.group_mapping`: the group(s) whose members are
+  admins (see [Access control](#access-control)), or
+  `custom.access_control.require_admin: false` to run without admins.
 
-- [`git 2.17.1`][git]
-- [`docker`][docker], with the [Compose plugin][docker-compose] (version 2)
+Docker Compose mounts [`config.dev.yaml`][config-dev], an overlay for local
+development that accepts tokens for any audience and requires no admins. To
+override more values locally, put them in `config.local.yaml` and mount it
+in a `docker-compose.override.yaml` (both are ignored by Git):
 
-> Where versions are indicated, they were used to test deployment. Other
-> versions with the same major version numbers will likely work as well,
-> especially newer ones.
-
-### Deployment
-
-First, clone the repository and traverse into the root directory with:
-
-```bash
-git clone git@github.com:elixir-cloud-aai/cloud-registry.git
-cd cloud-registry
+```yaml
+services:
+    cloud-registry:
+        environment:
+            FOCA_CONFIG_OVERLAY: /etc/cloud-registry/config.dev.yaml:/etc/cloud-registry/config.local.yaml
+        volumes:
+            - ./config.local.yaml:/etc/cloud-registry/config.local.yaml:ro
 ```
 
-Then simply start up the service with:
+### Public URLs
+
+Public URLs, e.g., in `Location` headers, are built from
+`custom.endpoints.service` (scheme, host and port). The Helm chart sets them
+from its `host_name` value; other deployments must set them, as the defaults
+(`https://0.0.0.0:8080`) aren't reachable (the Docker Compose setup sets
+`http://localhost:8080` in [`config.dev.yaml`][config-dev]). Set `api_path` to
+the path prefix in front of the API base path when the app is served behind a
+reverse proxy under a subpath (e.g., `registry`), or leave it empty.
+Previously, `api_path` held the API base path itself (e.g.,
+`ga4gh/registry/v1`); remove that value when upgrading.
+
+## Development
+
+Development needs Python 3.10 or later, and [Helm][helm] for the tests of the
+chart (skipped without it). To set up a development environment (e.g., in a
+virtual environment) and run the checks that CI runs:
 
 ```bash
-docker compose up --build -d
+pip install -r requirements.txt -r requirements_dev.txt
+pip install -e .  # the app itself, e.g., for its version
+pre-commit install  # run the checks on every commit
+pre-commit run --all-files  # ruff, mypy, semgrep, ast-grep
+pre-commit run --all-files --hook-stage manual gitleaks-all  # secrets
+pytest
 ```
 
-MongoDB is only reachable from the app container; its data is kept in the
-Compose project's `mongodb-data` volume (e.g., `cloud-registry_mongodb-data`,
-see `docker volume ls`).
+The tests need no database (they use `mongomock`). To try changes in the
+running app, rebuild it with `docker compose up --build -d` (see
+[Deployment](#deployment)).
 
-> Earlier versions kept the data in `../data/cloud-registry/db`. To keep using
-> it, bind-mount it in a `docker-compose.override.yaml`:
->
-> ```yaml
-> services:
->     mongodb:
->         volumes:
->             - ../data/cloud-registry/db:/data/db
-> ```
+Run `pre-commit` in the environment with the dev requirements: the mypy and
+ast-grep hooks use the installed packages. The first run sets up the other
+hooks, which takes a few minutes.
 
-_**That't it!**_
+The checks are configured in [`.pre-commit-config.yaml`][pre-commit-config]
+and [`pyproject.toml`][pyproject]. Project-specific rules are in `.semgrep/`
+(security) and `.ast-grep/` (anti-patterns such as HTTP status codes as
+strings). To suppress a false positive, add a comment with the reason to the
+line: `# noqa: <code>` (ruff), `# nosemgrep: <rule-id>`,
+`# ast-grep-ignore: <rule-id>` or `# gitleaks:allow`.
 
-You should now be able to use/explore the API as described in
-the [usage section](#Usage).
-
-#### Other useful commands
-
-To shut down the service, run:
+The [code documentation][docs-api] is built by Read the Docs (configured in
+[`.readthedocs.yaml`][readthedocs-config]); warnings fail the build. To build
+it locally, with the dev environment set up as above:
 
 ```bash
-docker compose down
-```
-
-Add `--volumes` to also delete the database.
-
-If you need to inspect the logs, call:
-
-```bash
-docker compose logs
+pip install -r docs/api/requirements.txt
+cd docs/api
+sphinx-build -W --keep-going -b html . ../_build/html  # ignored by Git
 ```
 
 ## Contributing
@@ -332,28 +466,8 @@ This project is a community effort and lives off your contributions, be it in
 the form of bug reports, feature requests, discussions, or fixes and other code
 changes. Please refer to our organization's [contribution
 guidelines][contributing] if you are interested to contribute. Please mind the
-[code of conduct][coc] for all interactions with the community.
-
-To set up a development environment and run the checks that CI runs:
-
-```bash
-pip install -r requirements.txt -r requirements_dev.txt
-pre-commit install  # run the checks on every commit
-pre-commit run --all-files  # ruff, mypy, semgrep, ast-grep
-pre-commit run --all-files --hook-stage manual gitleaks-all  # secrets
-pytest
-```
-
-Run `pre-commit` in the environment with the dev requirements: the mypy and
-ast-grep hooks use the installed packages. The first run sets up the other
-hooks, which takes a few minutes.
-
-The checks are configured in `.pre-commit-config.yaml` and `pyproject.toml`.
-Project-specific rules are in `.semgrep/` (security) and `.ast-grep/`
-(anti-patterns such as HTTP status codes as strings). To suppress a false
-positive, add a comment with the reason to the line: `# noqa: <code>` (ruff),
-`# nosemgrep: <rule-id>`, `# ast-grep-ignore: <rule-id>` or
-`# gitleaks:allow`.
+[code of conduct][coc] for all interactions with the community. See
+[Development](#development) to set up a development environment.
 
 ## Versioning and releases
 
@@ -417,20 +531,19 @@ Please mention the name of this service for any inquiry, proposal, question
 etc.
 
 [badge-build-status]:<https://github.com/elixir-cloud-aai/cloud-registry/actions/workflows/checks.yaml/badge.svg>
-[badge-coverage]:<https://img.shields.io/coveralls/github/elixir-cloud-aai/cloud-registry>
+[badge-coverage]:<https://codecov.io/gh/elixir-cloud-aai/cloud-registry/branch/dev/graph/badge.svg>
 [badge-docs]: <https://readthedocs.org/projects/cloud-registry/badge/?version=latest>
-[badge-github-tag]:<https://img.shields.io/github/v/tag/elixir-cloud-aai/cloud-registry?color=C39BD3>
 [badge-license]:<https://img.shields.io/badge/license-Apache%202.0-blue.svg>
 [badge-url-build-status]:<https://github.com/elixir-cloud-aai/cloud-registry/actions/workflows/checks.yaml>
-[badge-url-coverage]:<https://coveralls.io/github/elixir-cloud-aai/cloud-registry>
+[badge-url-coverage]:<https://codecov.io/gh/elixir-cloud-aai/cloud-registry>
 [badge-url-docs]: <https://cloud-registry.readthedocs.io/en/latest/?badge=latest>
-[badge-url-github-tag]:<https://github.com/elixir-cloud-aai/cloud-registry/releases>
-[badge-url-license]:<http://www.apache.org/licenses/LICENSE-2.0>
+[badge-url-license]:<https://www.apache.org/licenses/LICENSE-2.0>
 [ga4gh-registry]: <https://github.com/ga4gh-discovery/ga4gh-service-registry>
+[cloud-registry-ui]: <https://github.com/elixir-cloud-aai/cloud-registry-ui>
 [compose]: docker-compose.yaml
 [config]: cloud_registry/config.yaml
 [config-dev]: config.dev.yaml
-[deploy_url]: <https://cloud-registry.rahtiapp.fi/ga4gh/registry/v1/ui>
+[deploy_url]: <https://registry.elixir-on.cloud/>
 [deployment]: deployment/
 [deployment-instructions]: deployment/README.md
 [docker]: <https://docs.docker.com/get-docker/>
@@ -444,6 +557,9 @@ etc.
 [coc]: <https://github.com/elixir-cloud-aai/elixir-cloud-aai/blob/dev/CODE_OF_CONDUCT.md>
 [contributing]: <https://github.com/elixir-cloud-aai/elixir-cloud-aai/blob/dev/CONTRIBUTING.md>
 [checks-workflow]: .github/workflows/checks.yaml
+[pre-commit-config]: .pre-commit-config.yaml
+[pyproject]: pyproject.toml
+[readthedocs-config]: .readthedocs.yaml
 [release-workflow]: .github/workflows/release.yaml
 [semver]: <https://semver.org/>
 [setuptools-scm]: <https://setuptools-scm.readthedocs.io/>
@@ -451,5 +567,7 @@ etc.
 [schema-endpoints]: <https://github.com/ga4gh-discovery/ga4gh-service-registry/blob/8c45be52940db92c2fa1cd821519c271c22b1c4c/service-registry.yaml#L16>
 [url-swagger]: <http://localhost:8080/ga4gh/registry/v1/ui>
 [foca-access-control]: https://foca.readthedocs.io/en/latest/access-control/
+[foca-auth]: https://foca.readthedocs.io/en/latest/authentication/
+[foca-deployment]: https://foca.readthedocs.io/en/latest/deployment/
 [ls-login]: https://lifescience-ri.eu/ls-login/
 [protes]: https://github.com/elixir-cloud-aai/proTES

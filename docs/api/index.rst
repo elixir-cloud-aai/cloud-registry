@@ -1,20 +1,16 @@
-.. cloud-registry documentation master file, created by
-   sphinx-quickstart on Thu Jun  4 16:04:23 2020.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
+ELIXIR Cloud service registry code docs
+=======================================
 
-ELIXR Cloud service registry API docs
-=====================================
+Documentation of the code of the `ELIXIR Cloud service registry
+<https://github.com/elixir-cloud-aai/cloud-registry>`_, generated from its
+docstrings. For the HTTP API, see the Swagger UI of a deployment
+(``/ga4gh/registry/v1/ui``); for setup, configuration and usage, see the
+`README <https://github.com/elixir-cloud-aai/cloud-registry#readme>`_.
 
 .. toctree::
    :caption: Modules
 
    modules/modules
-
-.. toctree::
-   :caption: Index
-
-   indices
 
 Indices and tables
 ==================
