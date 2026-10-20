@@ -100,8 +100,8 @@ def mongo_client(monkeypatch):
     return client
 
 
-def _no_network(*args, **kwargs):
-    raise OSError("Network access in tests")
+def _no_network(sock, address):
+    raise OSError(f"Network access blocked in tests: {address}")
 
 
 def _clear_auth_caches():

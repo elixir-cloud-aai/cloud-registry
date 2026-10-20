@@ -7,9 +7,10 @@ import string
 from cryptography.hazmat.primitives.asymmetric import rsa
 import connexion
 import pytest
+import yaml
 
 import cloud_registry.app
-from tests.conftest import make_headers
+from tests.conftest import APP_DIR, make_headers
 
 BASE = "/ga4gh/registry/v1"
 TIMESTAMPS = {"createdAt", "updatedAt"}
@@ -194,6 +195,30 @@ def test_service_info_invalid(client, headers):
     """Service info that does not match the schema is rejected."""
     response = client.post(f"{BASE}/service-info", json={}, headers=headers)
     _assert_error(response, 400)
+
+
+def _refs(obj):
+    """Yield the values of all `$ref` fields in a parsed specification."""
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if key == "$ref":
+                yield value
+            else:
+                yield from _refs(value)
+    elif isinstance(obj, list):
+        for item in obj:
+            yield from _refs(item)
+
+
+def test_specs_local_refs():
+    """The API specifications only reference schemas in the merged
+    specification, so the app starts without network access.
+    """
+    paths = sorted((APP_DIR / "api").glob("*.yaml"))
+    assert paths
+    for path in paths:
+        refs = list(_refs(yaml.safe_load(path.read_text())))
+        assert all(ref.startswith("#/") for ref in refs), path
 
 
 def test_main(monkeypatch, mongo_client, app_env):
