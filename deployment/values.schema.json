@@ -34,8 +34,17 @@
     },
     "cloud_registry": {
       "type": "object",
-      "required": ["probePath"],
+      "required": ["image", "probePath"],
       "properties": {
+        "image": {
+          "type": "string",
+          "minLength": 1,
+          "description": "App image repository, optionally with a tag or digest"
+        },
+        "tag": {
+          "type": "string",
+          "description": "App image tag; defaults to the chart's appVersion"
+        },
         "probePath": {
           "type": "string",
           "pattern": "^/",

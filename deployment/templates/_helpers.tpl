@@ -21,3 +21,20 @@ alphabetical order.
       key: {{ $key }}
 {{- end }}
 {{- end -}}
+
+{{/*
+App image: `cloud_registry.image` with `cloud_registry.tag`, by default the
+chart's `appVersion`; an image with a tag or digest is used as it is.
+*/}}
+{{- define "cloud-registry.image" -}}
+{{- $image := .Values.cloud_registry.image -}}
+{{- $tag := .Values.cloud_registry.tag -}}
+{{- if or (contains "@" $image) (regexMatch ":[^/]+$" $image) -}}
+{{- if $tag -}}
+{{- fail "cloud_registry.tag must not be set if cloud_registry.image includes a tag or digest" -}}
+{{- end -}}
+{{- $image -}}
+{{- else -}}
+{{- printf "%s:%s" $image ($tag | default .Chart.AppVersion) -}}
+{{- end -}}
+{{- end -}}

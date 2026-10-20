@@ -23,7 +23,7 @@ spec:
         app: {{ .Values.cloud_registry.appName }}
     spec:
       containers:
-      - image: {{ .Values.cloud_registry.image }}
+      - image: {{ include "cloud-registry.image" . | quote }}
         imagePullPolicy: Always
         name: {{ .Values.cloud_registry.appName }}
         env:

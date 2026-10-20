@@ -16,7 +16,8 @@ merges into the base config on startup (via `FOCA_CONFIG_OVERLAY`):
   and the `mongodb` host.
 
 The overlay requires an image built with FOCA 0.14 or later (e.g.,
-`elixircloud/cloud-registry:20261020` or later); older images ignore it.
+`elixircloud/cloud-registry:20261020` or later, `0.3.0` or later, or any
+`dev` or `sha-<commit>` image); older images ignore it.
 
 Each deployment must set the audience (`config.security.auth.audience`, the
 app refuses to start without it) and map an admin group to the role `admin`
@@ -50,6 +51,29 @@ Do not edit the ConfigMap with `kubectl edit`: Helm overwrites it on the next
 upgrade. As `config` is stored in a ConfigMap, it must not contain secrets
 (e.g., database credentials).
 
+## Image
+
+The app image is `cloud_registry.image` (default
+`elixircloud/cloud-registry`) with tag `cloud_registry.tag`, which defaults to
+the chart's `appVersion`. Charts attached to [GitHub
+releases](https://github.com/elixir-cloud-aai/cloud-registry/releases) have
+the release version as `version` and `appVersion`, so they deploy the image of
+their release (`X.Y.Z`). In the repository, both are placeholders, and
+`appVersion` is `dev`: the chart deploys the latest image of branch `dev`,
+which changes with every commit. For deployments from the repository, set the
+tag of a release (e.g., `0.3.0`) or of a commit on `dev` (`sha-<commit>`, the
+full commit SHA) in the values file:
+
+```yaml
+cloud_registry:
+  tag: sha-0123456789abcdef0123456789abcdef01234567
+```
+
+`cloud_registry.image` may also include a tag or digest (e.g.,
+`elixircloud/cloud-registry:0.3.0`, as in earlier chart versions); then
+`cloud_registry.tag` must be empty. See "Versioning and releases" in the
+[README](../README.md#versioning-and-releases) for the image tags.
+
 ## Installation
 
 Create the Secret with the MongoDB credentials (see
@@ -66,7 +90,7 @@ the release, which is referenced when upgrading or uninstalling.
 
 ## Upgrades
 
-Change the values file (e.g., `cloud_registry.image` for a new image or
+Change the values file (e.g., `cloud_registry.tag` for a new image or
 `config` for the config) and upgrade the release from the `deployment`
 folder:
 

@@ -1,4 +1,6 @@
-"""Tests for the MongoDB deployment and the probes of the Helm chart."""
+"""Tests for the images, the MongoDB deployment and the probes of the Helm
+chart.
+"""
 
 import re
 import subprocess
@@ -62,6 +64,71 @@ def test_config_change_restarts_app():
 
     changed = ("--set", "config.custom.endpoints.service_info.environment=prod")
     assert checksum() != checksum(*changed)
+
+
+def _app_image(*args: str, **kwargs) -> str:
+    """Render the chart and get the app image."""
+    return _container(_render(*args, **kwargs), "cloud-registry")["image"]
+
+
+def test_image_defaults_to_app_version():
+    """Without a tag, the image of the chart's `appVersion` is deployed (`dev`
+    for the chart in the repository).
+    """
+    chart = yaml.safe_load((CHART / "Chart.yaml").read_text())
+    assert chart["appVersion"] == "dev"
+    assert _app_image() == "elixircloud/cloud-registry:dev"
+
+
+def test_image_of_packaged_chart(tmp_path):
+    """Released charts deploy the image of their version, as set by the
+    release workflow.
+    """
+    assert HELM is not None
+    subprocess.run(  # noqa: S603
+        [HELM, "package", str(CHART), "--version", "0.3.0"]
+        + ["--app-version", "0.3.0", "-d", str(tmp_path)],
+        capture_output=True,
+        check=True,
+    )
+    package = tmp_path / "cloud-registry-0.3.0.tgz"
+    assert _app_image(chart=package) == "elixircloud/cloud-registry:0.3.0"
+
+
+@pytest.mark.parametrize(
+    ("args", "image"),
+    [
+        (("--set", "cloud_registry.tag=sha-abc"), "elixircloud/cloud-registry:sha-abc"),
+        (
+            ("--set", "cloud_registry.image=registry.example.org:5000/cr"),
+            "registry.example.org:5000/cr:dev",
+        ),
+        # Image references with a tag or digest, as in earlier chart versions
+        (
+            ("--set", "cloud_registry.image=elixircloud/cloud-registry:20261020"),
+            "elixircloud/cloud-registry:20261020",
+        ),
+        (
+            ("--set", f"cloud_registry.image=cr@sha256:{'0' * 64}"),
+            f"cr@sha256:{'0' * 64}",
+        ),
+    ],
+)
+def test_image_set(args, image):
+    """The image and its tag can be set."""
+    assert _app_image(*args) == image
+
+
+def test_image_tag_conflict():
+    """A tag cannot be set for an image that has one."""
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render(
+            "--set",
+            "cloud_registry.image=elixircloud/cloud-registry:0.3.0",
+            "--set",
+            "cloud_registry.tag=dev",
+        )
+    assert "cloud_registry.tag must not be set" in exc.value.stderr
 
 
 def test_mongodb_pinned_and_recreated():

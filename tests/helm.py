@@ -20,6 +20,7 @@ def render(
     *args: str,
     mongodb_secret: str | None = MONGODB_SECRET,
     admin_group: str | None = ADMIN_GROUP,
+    chart: Path = CHART,
 ) -> list[dict]:
     """Render the chart with `helm template` arguments.
 
@@ -28,6 +29,7 @@ def render(
         mongodb_secret: Name of the Secret with the MongoDB credentials; not
             set if `None`.
         admin_group: Group mapped to the role `admin`; not set if `None`.
+        chart: Chart directory or packaged chart.
     """
     assert HELM is not None
     if admin_group is not None:
@@ -44,7 +46,7 @@ def render(
             HELM,
             "template",
             "cloud-registry",
-            str(CHART),
+            str(chart),
             *args,
         ],
         capture_output=True,

@@ -295,11 +295,42 @@ positive, add a comment with the reason to the line: `# noqa: <code>` (ruff),
 `# nosemgrep: <rule-id>`, `# ast-grep-ignore: <rule-id>` or
 `# gitleaks:allow`.
 
-## Versioning
+## Versioning and releases
 
 The project adopts the [semantic versioning][semver] scheme for versioning.
 Currently the service is in beta stage, so the API may change without further
 notice.
+
+The version is only stored in Git tags (`vX.Y.Z`): the package version is
+derived from them (via [setuptools-scm][setuptools-scm]), and the service info
+reports it. Builds without Git metadata, such as local Docker builds (e.g.,
+with Docker Compose), report `0.0.0.dev0`; the workflows pass the version to
+the image build. Images on Docker Hub (`elixircloud/cloud-registry`) are
+tagged:
+
+- `X.Y.Z`: release `X.Y.Z`; `latest`: the highest release;
+- `dev`: the latest commit on `dev`; `sha-<commit>`: commit `<commit>` on
+  `dev` (full SHA), to deploy a fixed commit.
+
+Features and fixes are merged into `dev`. Branch `main` only ever moves
+forward to commits on `dev` that are released. To release version `X.Y.Z`
+from commit `<sha>` on `dev`, after CI passed for it:
+
+```bash
+git push origin <sha>:main  # fails unless it is a fast-forward
+git tag -s vX.Y.Z <sha> -m "vX.Y.Z"
+git push origin vX.Y.Z
+```
+
+Pushing the tag triggers the [release workflow][release-workflow], which
+checks that the tag is signed and its commit is on `main`, and packages the
+Helm chart with the release version as `version` and `appVersion` (the
+default image tag). After approval in the `release` environment, it pushes
+the image tagged `X.Y.Z` (and `latest`, if it is the highest release) and
+creates a GitHub release with generated notes and the chart (`.tgz`; no
+packages are published to PyPI). Images
+of commits on `dev` are published by the [CI workflow][badge-url-build-status]
+(environment `dev-images`).
 
 ## License
 
@@ -340,7 +371,9 @@ etc.
 [elixir-cloud]: <https://github.com/elixir-cloud-aai/elixir-cloud-aai>
 [coc]: <https://github.com/elixir-cloud-aai/elixir-cloud-aai/blob/dev/CODE_OF_CONDUCT.md>
 [contributing]: <https://github.com/elixir-cloud-aai/elixir-cloud-aai/blob/dev/CONTRIBUTING.md>
+[release-workflow]: .github/workflows/release.yaml
 [semver]: <https://semver.org/>
+[setuptools-scm]: <https://setuptools-scm.readthedocs.io/>
 [schema-service]: <https://github.com/ga4gh-discovery/ga4gh-service-registry/blob/8c45be52940db92c2fa1cd821519c271c22b1c4c/service-registry.yaml#L158>
 [schema-endpoints]: <https://github.com/ga4gh-discovery/ga4gh-service-registry/blob/8c45be52940db92c2fa1cd821519c271c22b1c4c/service-registry.yaml#L16>
 [url-swagger]: <http://localhost:8080/ga4gh/registry/v1/ui>

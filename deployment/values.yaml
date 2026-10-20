@@ -37,7 +37,14 @@ config: {}
 #         environment: "prod"
 
 cloud_registry:
-  image: elixircloud/cloud-registry:20261020
+  # Image repository; may include a tag or digest instead of setting `tag`
+  # (e.g., `elixircloud/cloud-registry:0.3.0`)
+  image: elixircloud/cloud-registry
+  # Image tag; defaults to the chart's `appVersion`, i.e., the release
+  # version for released charts and `dev` for the chart in the repository.
+  # Images of commits on `dev` are tagged `sha-<commit>` (see
+  # deployment/README.md, Image)
+  tag: ""
   appName: cloud-registry
   # Path of the app's startup, readiness and liveness probes; change it if
   # the config disables the Swagger UI
