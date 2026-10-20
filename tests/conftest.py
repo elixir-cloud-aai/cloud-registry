@@ -31,6 +31,13 @@ ISSUER = "https://login.aai.lifescience-ri.eu/oidc/"
 JWKS_URI = f"{ISSUER}jwk"
 USERINFO_URI = f"{ISSUER}userinfo"
 USER = "alice@example.org"
+ADMIN = "admin@example.org"
+# Group memberships the identity provider returns as user info
+ENTITLEMENTS = {
+    ADMIN: [
+        "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN:ADMIN#aai.lifescience-ri.eu"
+    ],
+}
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 
@@ -72,7 +79,10 @@ def mock_get(url, headers=None, **kwargs):
             claims = jwt.decode(token, KEY.public_key(), algorithms=["RS256"])
         except jwt.InvalidTokenError:
             return MockResponse({"error": "invalid_token"}, status_code=401)
-        return MockResponse({"sub": claims["sub"]})
+        sub = claims["sub"]
+        return MockResponse(
+            {"sub": sub, "eduperson_entitlement": ENTITLEMENTS.get(sub, [])}
+        )
     raise auth.requests.ConnectionError(f"Unexpected request in tests: {url}")
 
 
@@ -149,6 +159,12 @@ def client(app):
 def headers():
     """Request headers with a valid access token."""
     return make_headers()
+
+
+@pytest.fixture
+def admin_headers():
+    """Request headers with a valid access token of an admin."""
+    return make_headers(user=ADMIN)
 
 
 @pytest.fixture
