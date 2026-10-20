@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 import re
+
 import pytest
 
 from tests.mock_data import (
@@ -149,6 +150,61 @@ class TestServiceInfoTimestamps:
         del data["updatedAt"]
         service_info.insert_one(data)
         info = self._register(app)
+        assert info["createdAt"] == info["updatedAt"] == self.now
+
+    def test_other_service_info_stored(self, app, service_info):
+        """Timestamps are not taken from stored service info with another
+        identifier, even if it was stored later.
+        """
+        self._register(app)
+        other = {**SERVICE_INFO_CONFIG, "id": "other"}
+        other["createdAt"] = "2000-01-01T00:00:00Z"
+        service_info.insert_one(other)
+        self.now = "2026-02-01T00:00:00Z"
+        self._register(app)
+        own = service_info.find_one({"id": SERVICE_INFO_CONFIG["id"]})
+        assert own["createdAt"] == own["updatedAt"] == "2026-01-01T00:00:00Z"
+
+    def test_configured_timestamp(self, app, service_info):
+        """A configured timestamp is used as is; the other one is managed."""
+        conf = app.config.foca.custom.endpoints.service_info
+        conf.createdAt = "2020-01-01T00:00:00Z"
+        info = self._register(app)
+        assert info["createdAt"] == "2020-01-01T00:00:00Z"
+        assert info["updatedAt"] == self.now
+
+        conf.createdAt = "2021-01-01T00:00:00Z"
+        self.now = "2026-02-01T00:00:00Z"
+        info = self._register(app)
+        assert info["createdAt"] == "2021-01-01T00:00:00Z"
+        assert info["updatedAt"] == self.now
+
+    def test_set_from_app_context(self, app):
+        """Service info set without timestamps keeps `createdAt` of the stored
+        service info with the same identifier and gets a new `updatedAt`.
+        """
+        self._register(app)
+        data = deepcopy(SERVICE_INFO_CONFIG)
+        del data["createdAt"]
+        del data["updatedAt"]
+        self.now = "2026-02-01T00:00:00Z"
+        with app.app_context():
+            register = RegisterServiceInfo()
+            register.set_service_info_from_app_context(data=data)
+            info = register.get_service_info()
+        assert info["createdAt"] == "2026-01-01T00:00:00Z"
+        assert info["updatedAt"] == self.now
+        assert "createdAt" not in data
+
+    def test_set_from_app_context_new(self, app):
+        """New service info set without timestamps gets both."""
+        data = {**SERVICE_INFO_CONFIG, "id": "other"}
+        del data["createdAt"]
+        del data["updatedAt"]
+        with app.app_context():
+            register = RegisterServiceInfo()
+            register.set_service_info_from_app_context(data=data)
+            info = register.get_service_info()
         assert info["createdAt"] == info["updatedAt"] == self.now
 
     def test_current_timestamp(self):

@@ -1,6 +1,7 @@
 """Tests for the app, with requests going through the API."""
 
 from copy import deepcopy
+import re
 import string
 
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -179,6 +180,7 @@ def test_service_info(app, client, headers):
     info = response.json
     assert {k: v for k, v in info.items() if k not in TIMESTAMPS} == config
     assert info["createdAt"] == info["updatedAt"]
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", info["createdAt"])
 
     new = {**info, "name": "New name"}
     response = client.post(f"{BASE}/service-info", json=new, headers=headers)
