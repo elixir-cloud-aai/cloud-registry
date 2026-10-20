@@ -42,13 +42,8 @@ paths:
               x-body-name: external_service
               $ref: '#/components/schemas/ExternalServiceRegister'
       responses:
-        '200':
-          description: The service was successfully registered.
-          content:
-            application/json:
-              schema:
-                description: Service identifier.
-                type: string
+        '201':
+          $ref: '#/components/responses/ServiceCreated'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -103,10 +98,10 @@ paths:
     put:
       summary: Register or update service.
       description: |
-        Create or update a service resource. Services are unique by URL and
-        API type: changing them to those of another service returns `409`.
-        Invalid URLs, URLs without scheme or host, and URLs with user info
-        return `400`.
+        Create (`201`) or update (`200`) a service resource. Services are
+        unique by URL and API type: changing them to those of another service
+        returns `409`. Invalid URLs, URLs without scheme or host, and URLs
+        with user info return `400`.
       operationId: putService
       tags:
         - cloud-registry
@@ -127,12 +122,14 @@ paths:
               $ref: '#/components/schemas/ExternalServiceRegister'
       responses:
         '200':
-          description: The service was successfully registered.
+          description: The service was successfully updated.
           content:
             application/json:
               schema:
                 description: Service identifier.
                 type: string
+        '201':
+          $ref: '#/components/responses/ServiceCreated'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -299,10 +296,25 @@ components:
       required: true
       schema:
         type: string
-  # Errors are returned as `application/problem+json` (RFC 7807). The entries
-  # below are merged into the error responses of the GA4GH specification
-  # (cf. `api.specs` in `config.yaml`), adding that media type
   responses:
+    ServiceCreated:
+      description: |
+        The service was successfully registered. `Location` is its URL
+        (`GET /services/{serviceId}`).
+      headers:
+        Location:
+          description: URL of the registered service.
+          schema:
+            type: string
+            format: uri
+      content:
+        application/json:
+          schema:
+            description: Service identifier.
+            type: string
+    # Errors are returned as `application/problem+json` (RFC 7807). The
+    # entries below are merged into the error responses of the GA4GH
+    # specification (cf. `api.specs` in `config.yaml`), adding that media type
     BadRequest:
       description: 'Bad request ([RFC 7235](https://tools.ietf.org/html/rfc7235))'
       content:

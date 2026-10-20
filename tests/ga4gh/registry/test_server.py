@@ -22,6 +22,9 @@ from tests.mock_data import (
     SERVICE_INFO_CONFIG,
 )
 
+# Public URL of the unit test app (cf. `tests.mock_data.SERVICE_CONFIG`)
+PUBLIC_URL = "http://1.2.3.4:80/registry"
+
 
 @pytest.fixture(autouse=True)
 def ownership(monkeypatch):
@@ -137,10 +140,14 @@ def test_postService(unit_app, services, ownership):
     """Test for registering a service; identifier assigned by implementation."""
     data = deepcopy(MOCK_SERVICE)
     data["id"] = MOCK_ID
-    with unit_app.test_request_context(json=data):
-        res = postService.__wrapped__()
-        assert isinstance(res, str)
-    assert ownership == [("remove_permissions", res), ("add_owner", res)]
+    with unit_app.test_request_context("/services", json=data):
+        service_id, status, headers = postService.__wrapped__()
+    assert status == 201
+    assert headers == {"Location": f"{PUBLIC_URL}/services/{service_id}"}
+    assert ownership == [
+        ("remove_permissions", service_id),
+        ("add_owner", service_id),
+    ]
 
 
 def test_postService_invalid_payload(unit_app, services):
@@ -178,12 +185,13 @@ def test_deleteService_NotFound(unit_app, services):
 def test_putService(unit_app, services, ownership):
     """Test for registering a service; identifier provided by client."""
     data = deepcopy(MOCK_SERVICE)
-    with unit_app.test_request_context(json=data):
+    path = f"/services/{MOCK_ID}"
+    with unit_app.test_request_context(path, json=data):
         res = putService.__wrapped__(serviceId=MOCK_ID)
-        assert res == MOCK_ID
-    # only new services get an owner
-    with unit_app.test_request_context(json=data):
-        putService.__wrapped__(serviceId=MOCK_ID)
+        assert res == (MOCK_ID, 201, {"Location": f"{PUBLIC_URL}{path}"})
+    # only new services get an owner (and a location)
+    with unit_app.test_request_context(path, json=data):
+        assert putService.__wrapped__(serviceId=MOCK_ID) == MOCK_ID
     assert ownership == [("remove_permissions", MOCK_ID), ("add_owner", MOCK_ID)]
 
 

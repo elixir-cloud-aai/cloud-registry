@@ -39,7 +39,7 @@ def register(client, user=ALICE):
     """Register a service (with a new URL) as a user; return its identifier."""
     service = {**_service(), "url": f"https://tes{next(URLS)}.example.org"}
     response = client.post(f"{BASE}/services", json=service, headers=headers(user))
-    assert response.status_code == 200, response.json
+    assert response.status_code == 201, response.json
     return response.json
 
 
@@ -181,7 +181,7 @@ def test_invalid_permissions(client):
 def test_put_create(client):
     """Only admins can register services with chosen identifiers."""
     assert update(client, "MYSERV", ALICE) == 403
-    assert update(client, "MYSERV", ADMIN) == 200
+    assert update(client, "MYSERV", ADMIN) == 201
     assert permissions(client, "MYSERV") == [(ADMIN, "owner")]
 
 
@@ -191,7 +191,7 @@ def test_permissions_removed_with_service(client):
     assert grant(client, service_id, BOB, "maintainer") == 200
     assert delete(client, service_id, ALICE) == 200
     # a new service with the same identifier has none of the old roles
-    assert update(client, service_id, ADMIN) == 200
+    assert update(client, service_id, ADMIN) == 201
     assert permissions(client, service_id) == [(ADMIN, "owner")]
     assert update(client, service_id, BOB) == 403
 
@@ -319,7 +319,7 @@ def test_stale_roles_cleared(client, monkeypatch):
     with monkeypatch.context() as patch:
         patch.setattr(server_module, "remove_permissions", lambda serviceId: None)
         assert delete(client, service_id, ALICE) == 200
-    assert update(client, service_id, ADMIN) == 200
+    assert update(client, service_id, ADMIN) == 201
     assert permissions(client, service_id) == [(ADMIN, "owner")]
 
 
@@ -329,6 +329,7 @@ def test_invalid_identifier_rolled_back(client):
         f"{BASE}/services/a,b", json=_service(), headers=headers(ADMIN)
     )
     assert response.status_code == 400
+    assert "Location" not in response.headers
     assert client.get(f"{BASE}/services/a,b").status_code == 404
 
 

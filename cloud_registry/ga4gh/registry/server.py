@@ -15,9 +15,11 @@ from cloud_registry.ga4gh.registry.service import (
     RegisterService,
 )
 from cloud_registry.ga4gh.registry.service_info import get_service_info
-from cloud_registry.utils import get_collection
+from cloud_registry.utils import get_collection, get_public_url
 
 logger = logging.getLogger(__name__)
+# Response of a created service: identifier, status and headers
+Created = tuple[str, int, dict[str, str]]
 
 
 # GET /services
@@ -85,11 +87,12 @@ def getServiceInfo(**kwargs) -> dict:
 
 # POST /services
 @log_traffic
-def postService(**kwargs) -> str | Response:
+def postService(**kwargs) -> str | Created | Response:
     """Add service with an auto-generated identifier.
 
     Returns:
-        Identifier of registered service.
+        Identifier of registered service, with status `201` and its URL as
+        `Location`.
     """
     return _register_service()
 
@@ -115,14 +118,15 @@ def deleteService(serviceId: str, **kwargs) -> str:
 
 # PUT /services/{serviceId}
 @log_traffic
-def putService(serviceId: str, **kwargs) -> str | Response:
+def putService(serviceId: str, **kwargs) -> str | Created | Response:
     """Add/replace service with a user-supplied ID.
 
     Args:
         serviceId: Identifier of service to be registered/updated.
 
     Returns:
-        Identifier of registered/updated service.
+        Identifier of registered/updated service; for registered services,
+        with status `201` and their URL as `Location`.
     """
     return _register_service(service_id=serviceId)
 
@@ -143,16 +147,16 @@ def _get_request_object() -> dict:
     return request_json
 
 
-def _register_service(service_id: str | None = None) -> str | Response:
+def _register_service(service_id: str | None = None) -> str | Created | Response:
     """Register the service in the request body.
 
     Args:
         service_id: Identifier of the service; generated if not provided.
 
     Returns:
-        Identifier of registered service, or an error response: `400` for
-        invalid URLs, `409` naming the registered service with the same URL
-        and API type.
+        Identifier of the service; if it is new, with status `201` and its URL
+        as `Location`. Or an error response: `400` for invalid URLs, `409`
+        naming the registered service with the same URL and API type.
     """
     service = RegisterService(data=_get_request_object(), id=service_id)
     try:
@@ -178,6 +182,12 @@ def _register_service(service_id: str | None = None) -> str | Response:
         except Exception:
             _unregister_service(service)
             raise
+        # PUT requests are made to the URL of the service, POST requests to
+        # that of the collection
+        path = request.path
+        if service_id is None:
+            path = f"{path}/{service.data['id']}"
+        return service.data["id"], 201, {"Location": get_public_url(path)}
     return service.data["id"]
 
 

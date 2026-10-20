@@ -39,6 +39,12 @@ You can explore the service via the [Swagger UI][url-swagger].
 curl -X GET "http://localhost:8080/ga4gh/registry/v1/services" -H  "accept: application/json"
 ```
 
+Registering a service (`POST /services`, or `PUT /services/{serviceId}` with a
+new identifier) returns `201 Created`, with the identifier of the service in
+the body and its URL (see [Service info](#service-info) for how public URLs
+are built) in the `Location` header. Updating a service (`PUT`) returns `200
+OK`. Previously, both returned `200 OK`.
+
 ### Configuration
 
 The app is configured by [`cloud_registry/config.yaml`][config]. To override
