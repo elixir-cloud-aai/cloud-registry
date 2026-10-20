@@ -10,7 +10,7 @@ which deployments set) may do everything.
 
 import logging
 
-from flask import request
+from flask import current_app, request
 from flask.globals import request_ctx
 from foca import get_config
 from foca.security.access_control import (
@@ -34,19 +34,16 @@ logger = logging.getLogger(__name__)
 
 # Roles that can be granted on services
 ROLES = ["owner", "maintainer"]
-# Collection with the display names of users
-USERS = "users"
+# Collection with the display names of users with roles on services
+USER_NAMES = "user_names"
 
 
-def check_admin_groups() -> list[str]:
+def check_admin_groups() -> None:
     """Check that groups are mapped to the role `admin`, and log them.
 
     Without such groups, nobody can manage services they don't own or set the
     service info, so this is an error unless
     `custom.access_control.require_admin` is false.
-
-    Returns:
-        Groups mapped to the role `admin`, sorted.
 
     Raises:
         RuntimeError: No group is mapped to the role `admin`, and
@@ -69,7 +66,16 @@ def check_admin_groups() -> list[str]:
             "No group is mapped to the role 'admin', so nobody can manage "
             "services they don't own or set the service info"
         )
-    return groups
+
+
+def _api_base_path() -> str:
+    """Get the base path of the API handling the current request.
+
+    Returns:
+        Base path, e.g., `/ga4gh/registry/v1` (Connexion registers each API
+        as a Flask blueprint with its base path as URL prefix).
+    """
+    return current_app.blueprints[request.blueprint].url_prefix or ""  # type: ignore[index]
 
 
 def service_path(serviceId: str) -> str:
@@ -82,8 +88,7 @@ def service_path(serviceId: str) -> str:
         Request path of the service, including the base path of the API
         handling the current request.
     """
-    base_path = request.path.split("/services", 1)[0]
-    return f"{base_path}/services/{serviceId}"
+    return f"{_api_base_path()}/services/{serviceId}"
 
 
 def _get_current_claims() -> dict:
@@ -103,19 +108,28 @@ def _get_current_claims() -> dict:
     return claims if isinstance(claims, dict) else {}
 
 
-def remember_current_user() -> None:
-    """Store the display name of the subject of the current request.
+def remember_current_user(service_ids: list[str]) -> None:
+    """Store the display name of the subject of the current request for
+    services they have a role on.
 
-    Names are shown to owners and admins listing the roles on a service.
-    Nothing is stored if the identity provider reports no name.
+    Names are shown to owners and admins listing the roles on a service, so
+    they are only stored per service, once the user has used the registry
+    with a role on it (and are removed with the role). Nothing is stored if
+    the identity provider reports no name.
+
+    Args:
+        service_ids: Identifiers of services the user has a role on.
     """
     user_id = get_current_subject()
     name = _get_current_claims().get("name")
     if user_id is None or not isinstance(name, str) or not name.strip():
         return
-    get_collection(USERS).update_one(
-        {"user_id": user_id}, {"$set": {"name": name.strip()}}, upsert=True
-    )
+    for service_id in service_ids:
+        get_collection(USER_NAMES).update_one(
+            {"service_id": service_id, "user_id": user_id},
+            {"$set": {"name": name.strip()}},
+            upsert=True,
+        )
 
 
 def add_owner(serviceId: str) -> None:
@@ -129,7 +143,7 @@ def add_owner(serviceId: str) -> None:
         role="owner",
         resource=service_path(serviceId),
     )
-    remember_current_user()
+    remember_current_user([serviceId])
 
 
 def remove_permissions(serviceId: str) -> None:
@@ -139,6 +153,7 @@ def remove_permissions(serviceId: str) -> None:
         serviceId: Service identifier.
     """
     remove_resource(service_path(serviceId))
+    get_collection(USER_NAMES).delete_many({"service_id": serviceId})
 
 
 # GET /services/{serviceId}/permissions
@@ -157,15 +172,25 @@ def getServicePermissions(serviceId: str, **kwargs) -> list[dict]:
     roles = list_resource_roles(service_path(serviceId))
     names = {
         user["user_id"]: user["name"]
-        for user in get_collection(USERS).find(
-            {"user_id": {"$in": [user_id for user_id, _ in roles]}}
-        )
+        for user in get_collection(USER_NAMES).find({"service_id": serviceId})
     }
     return [
         {"user_id": user_id, "role": role}
         | ({"name": names[user_id]} if user_id in names else {})
         for user_id, role in roles
     ]
+
+
+def _owners(resource: str) -> list[str]:
+    """Get the owners of a service.
+
+    Args:
+        resource: Resource path of the service.
+
+    Returns:
+        User identifiers of the owners.
+    """
+    return [user for user, role in list_resource_roles(resource) if role == "owner"]
 
 
 def _check_other_owners(resource: str, userId: str) -> None:
@@ -179,9 +204,29 @@ def _check_other_owners(resource: str, userId: str) -> None:
         cloud_registry.exceptions.Conflict: The user is the only owner of
             the service.
     """
-    owners = [user for user, role in list_resource_roles(resource) if role == "owner"]
-    if owners == [userId]:
+    if _owners(resource) == [userId]:
         logger.info("User '%s' is the last owner of '%s'", userId, resource)
+        raise Conflict
+
+
+def _restore_owner_if_none(resource: str, userId: str) -> None:
+    """Make a former owner owner again if a service has no owners left.
+
+    Checking for other owners before changing roles is not atomic:
+    concurrent requests of owners removing each other could leave a service
+    without owners. Each request therefore checks again afterwards and, if
+    no owner is left, restores the owner role it removed.
+
+    Args:
+        resource: Resource path of the service.
+        userId: Identifier of the user whose owner role was removed.
+
+    Raises:
+        cloud_registry.exceptions.Conflict: The service had no owners left.
+    """
+    if not _owners(resource):
+        add_resource_role(subject=userId, role="owner", resource=resource)
+        logger.info("Restored owner '%s' of '%s'", userId, resource)
         raise Conflict
 
 
@@ -204,16 +249,25 @@ def putServicePermission(serviceId: str, userId: str, **kwargs) -> dict:
     if not service_exists(serviceId):
         raise NotFound
     resource = service_path(serviceId)
+    was_owner = (userId, "owner") in list_resource_roles(resource)
     if role != "owner":
         _check_other_owners(resource, userId)
     try:
         add_resource_role(subject=userId, role=role, resource=resource)
+    # FOCA rejects values that can't be stored in policy rules (e.g., user
+    # identifiers with commas)
     except ValueError as exc:
         logger.info("Invalid permission: %s", exc)
         raise BadRequest from exc
     for other_role in ROLES:
         if other_role != role:
             remove_resource_role(subject=userId, role=other_role, resource=resource)
+    if was_owner and role != "owner":
+        try:
+            _restore_owner_if_none(resource, userId)
+        except Conflict:
+            remove_resource_role(subject=userId, role=role, resource=resource)
+            raise
     return {"user_id": userId, "role": role}
 
 
@@ -236,31 +290,37 @@ def deleteServicePermission(serviceId: str, userId: str, **kwargs) -> str:
         raise NotFound
     resource = service_path(serviceId)
     _check_other_owners(resource, userId)
+    was_owner = (userId, "owner") in list_resource_roles(resource)
     revoked = False
     for role in ROLES:
         try:
             revoked |= remove_resource_role(
                 subject=userId, role=role, resource=resource
             )
+        # FOCA rejects values that can't be in policy rules, so no role
+        # exists for them
         except ValueError as exc:
             raise NotFound from exc
     if not revoked:
         raise NotFound
+    if was_owner:
+        _restore_owner_if_none(resource, userId)
+    get_collection(USER_NAMES).delete_many({"service_id": serviceId, "user_id": userId})
     return userId
 
 
 # GET /me
 def getMe(**kwargs) -> dict:
-    """Get the current user and refresh their display name.
+    """Get the current user, and store or refresh their display name for
+    the services they have a role on.
 
     Returns:
         User identifier, whether the user is an admin, and the user's roles
         on services, sorted by service identifier.
     """
     user_id: str = get_current_subject()  # type: ignore[assignment]
-    remember_current_user()
     prefix = get_config().security.access_control.subject_prefix
-    services_path = f"{request.path.rsplit('/me', 1)[0]}/services/"
+    services_path = f"{_api_base_path()}/services/"
     services = []
     for _, role, resource in get_enforcer().get_filtered_named_grouping_policy(
         RESOURCE_ROLE_PTYPE, 0, f"{prefix}{user_id}"
@@ -268,6 +328,7 @@ def getMe(**kwargs) -> dict:
         service_id = resource.removeprefix(services_path)
         if resource.startswith(services_path) and "/" not in service_id:
             services.append({"service_id": service_id, "role": role})
+    remember_current_user([service["service_id"] for service in services])
     return {
         "user_id": user_id,
         "admin": "admin" in get_current_groups(),

@@ -1,32 +1,15 @@
-"""Tests for access control, with the app created from its config.
-
-MongoDB is replaced by an in-memory database, and LS Login by a mock identity
-provider that, like LS Login, provides group memberships via user info only.
+"""Tests for access control, with the app created from its config (cf.
+`tests/conftest.py`).
 """
 
 from copy import deepcopy
-from pathlib import Path
-import time
 
-from cryptography.hazmat.primitives.asymmetric import rsa
-from foca import Foca
-from foca.database import register_mongodb
-from foca.security import auth
-import jwt
-import mongomock
 import pytest
 
-from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
-from tests.conftest import CONFIG_OVERLAY
+from cloud_registry.ga4gh.registry import permissions as permissions_module
+from tests.conftest import ADMIN, NAMES, USER, make_headers
 from tests.mock_data import SERVICE_INFO_CONFIG
 
-APP_DIR = Path(__file__).parents[1] / "cloud_registry"
-ISSUER = "https://login.aai.lifescience-ri.eu/oidc/"
-USERINFO_URI = "https://login.aai.lifescience-ri.eu/oidc/userinfo"
-JWKS_URI = "https://login.aai.lifescience-ri.eu/oidc/jwk"
-ADMIN_ENTITLEMENT = (
-    "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN:ADMIN#aai.lifescience-ri.eu"
-)
 BASE = "/ga4gh/registry/v1"
 SERVICE = {
     "name": "My TES",
@@ -35,108 +18,18 @@ SERVICE = {
     "version": "1.0.0",
     "url": "https://tes.example.org/ga4gh/tes/v1",
 }
-KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-# `requests.get()`, for requests other than to the identity provider (e.g.,
-# for references in the API specifications)
-REQUESTS_GET = auth.requests.get
-
-# Users and their entitlements
-ENTITLEMENTS = {
-    "alice@lifescience-ri.eu": [],
-    "bob@lifescience-ri.eu": [
-        "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN#aai.lifescience-ri.eu"
-    ],
-    "carol@lifescience-ri.eu": [],
-    "admin@lifescience-ri.eu": [ADMIN_ENTITLEMENT],
-}
-# Display names of users (none for carol)
-NAMES = {
-    "alice@lifescience-ri.eu": "Alice Example",
-    "bob@lifescience-ri.eu": "Bob Example",
-    "admin@lifescience-ri.eu": "Admin Example",
-}
-
-
-class MockResponse:
-    """Mock response of `requests.get()`."""
-
-    def __init__(self, data, status_code=200):
-        self.data = data
-        self.status_code = status_code
-
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            raise auth.requests.HTTPError(str(self.status_code))
-
-    def json(self):
-        return self.data
-
-
-def mock_get(url, headers=None, **kwargs):
-    """Mock of LS Login's discovery, JWK set and user info endpoints."""
-    if url == f"{ISSUER}.well-known/openid-configuration":
-        return MockResponse(
-            {
-                "issuer": ISSUER,
-                "jwks_uri": JWKS_URI,
-                "userinfo_endpoint": USERINFO_URI,
-            }
-        )
-    if url == JWKS_URI:
-        jwk = jwt.algorithms.RSAAlgorithm.to_jwk(KEY.public_key(), as_dict=True)
-        return MockResponse({"keys": [{**jwk, "kid": "rsa1", "use": "sig"}]})
-    if url == USERINFO_URI:
-        token = headers["Authorization"].removeprefix("Bearer ")
-        sub = jwt.decode(token, options={"verify_signature": False})["sub"]
-        userinfo = {"sub": sub, "eduperson_entitlement": ENTITLEMENTS[sub]}
-        if sub in NAMES:
-            userinfo["name"] = NAMES[sub]
-        return MockResponse(userinfo)
-    return REQUESTS_GET(url, headers=headers, **kwargs)
+# Users: alice (owner of services she registers), bob (member of another
+# group), carol (no name in user info), dave (blank name), and an admin
+ALICE, BOB, CAROL = USER, "bob@example.org", "carol@example.org"
+DAVE = "dave@example.org"
 
 
 def headers(user=None):
-    """Request headers with an access token like LS Login's for a user."""
-    if user is None:
-        return {}
-    now = int(time.time())
-    token = jwt.encode(
-        {
-            "aud": "client-id",
-            "sub": user,
-            "scope": "openid eduperson_entitlement",
-            "iss": ISSUER,
-            "iat": now,
-            "exp": now + 300,
-        },
-        KEY,
-        algorithm="RS256",
-        headers={"kid": "rsa1", "typ": "at+jwt"},
-    )
-    return {"Authorization": f"Bearer {token}"}
+    """Request headers with an access token for a user; none if `None`."""
+    return {} if user is None else make_headers(user)
 
 
-@pytest.fixture
-def client(monkeypatch):
-    """Client of the app, with in-memory MongoDB and mock LS Login."""
-    # Modules referenced in the config are imported from the app directory
-    monkeypatch.syspath_prepend(str(APP_DIR))
-    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(CONFIG_OVERLAY))
-    mongo_client = mongomock.MongoClient()
-    monkeypatch.setattr(register_mongodb, "MongoClient", lambda uri: mongo_client)
-    monkeypatch.setattr(auth.requests, "get", mock_get)
-    for cache in [auth._oidc_configs, auth._jwk_sets, auth._userinfo_cache]:
-        cache.clear()
-    app = Foca(
-        config_file=APP_DIR / "config.yaml",
-        custom_config_model="cloud_registry.service_models.custom_config.CustomConfig",
-    ).create_app()
-    with app.app.app_context():
-        RegisterServiceInfo().set_service_info_from_config()
-    return app.app.test_client()
-
-
-def register(client, user="alice@lifescience-ri.eu"):
+def register(client, user=ALICE):
     """Register a service as a user; return its identifier."""
     response = client.post(f"{BASE}/services", json=_service(), headers=headers(user))
     assert response.status_code == 200, response.json
@@ -147,7 +40,7 @@ def _service():
     return deepcopy(SERVICE)
 
 
-def permissions(client, service_id, user="admin@lifescience-ri.eu"):
+def permissions(client, service_id, user=ADMIN):
     response = client.get(
         f"{BASE}/services/{service_id}/permissions", headers=headers(user)
     )
@@ -155,7 +48,7 @@ def permissions(client, service_id, user="admin@lifescience-ri.eu"):
     return sorted((p["user_id"], p["role"]) for p in response.json)
 
 
-def grant(client, service_id, user, role, as_user="alice@lifescience-ri.eu"):
+def grant(client, service_id, user, role, as_user=ALICE):
     return client.put(
         f"{BASE}/services/{service_id}/permissions/{user}",
         json={"role": role},
@@ -204,21 +97,20 @@ def test_write_requires_authentication(client):
 
 def test_creator_is_owner(client):
     """Any authenticated user can register a service and becomes its owner."""
-    service_id = register(client, user="bob@lifescience-ri.eu")
-    assert permissions(client, service_id) == [("bob@lifescience-ri.eu", "owner")]
-    assert update(client, service_id, "bob@lifescience-ri.eu") == 200
-    assert delete(client, service_id, "bob@lifescience-ri.eu") == 200
+    service_id = register(client, user=BOB)
+    assert permissions(client, service_id) == [(BOB, "owner")]
+    assert update(client, service_id, BOB) == 200
+    assert delete(client, service_id, BOB) == 200
 
 
 def test_others_forbidden(client):
     """Other users can neither modify a service nor its permissions."""
     service_id = register(client)
-    bob = "bob@lifescience-ri.eu"
-    assert update(client, service_id, bob) == 403
-    assert delete(client, service_id, bob) == 403
-    assert grant(client, service_id, bob, "owner", as_user=bob) == 403
+    assert update(client, service_id, BOB) == 403
+    assert delete(client, service_id, BOB) == 403
+    assert grant(client, service_id, BOB, "owner", as_user=BOB) == 403
     response = client.get(
-        f"{BASE}/services/{service_id}/permissions", headers=headers(bob)
+        f"{BASE}/services/{service_id}/permissions", headers=headers(BOB)
     )
     assert response.status_code == 403
     assert client.get(f"{BASE}/services/{service_id}").status_code == 200
@@ -227,18 +119,17 @@ def test_others_forbidden(client):
 def test_admin(client):
     """Admins (via entitlement from user info) can modify anything."""
     service_id = register(client)
-    admin = "admin@lifescience-ri.eu"
-    assert update(client, service_id, admin) == 200
-    assert grant(client, service_id, "carol@lifescience-ri.eu", "owner", admin) == 200
-    assert delete(client, service_id, admin) == 200
+    assert update(client, service_id, ADMIN) == 200
+    assert grant(client, service_id, CAROL, "owner", ADMIN) == 200
+    assert delete(client, service_id, ADMIN) == 200
 
 
 def test_service_info_admin_only(client):
     """Only admins can set the service info."""
     for user, status in [
-        ("alice@lifescience-ri.eu", 403),
-        ("bob@lifescience-ri.eu", 403),
-        ("admin@lifescience-ri.eu", 201),
+        (ALICE, 403),
+        (BOB, 403),
+        (ADMIN, 201),
     ]:
         response = client.post(
             f"{BASE}/service-info", json=SERVICE_INFO_CONFIG, headers=headers(user)
@@ -249,73 +140,71 @@ def test_service_info_admin_only(client):
 def test_maintainer(client):
     """Maintainers can update, but not delete a service or manage access."""
     service_id = register(client)
-    bob = "bob@lifescience-ri.eu"
-    assert grant(client, service_id, bob, "maintainer") == 200
-    assert update(client, service_id, bob) == 200
-    assert delete(client, service_id, bob) == 403
-    assert grant(client, service_id, bob, "owner", as_user=bob) == 403
+    assert grant(client, service_id, BOB, "maintainer") == 200
+    assert update(client, service_id, BOB) == 200
+    assert delete(client, service_id, BOB) == 403
+    assert grant(client, service_id, BOB, "owner", as_user=BOB) == 403
     # updating does not make maintainers owners
     assert permissions(client, service_id) == [
-        ("alice@lifescience-ri.eu", "owner"),
-        (bob, "maintainer"),
+        (ALICE, "owner"),
+        (BOB, "maintainer"),
     ]
 
 
 def test_owners_manage_permissions(client):
     """Owners can grant, change and revoke roles of other users."""
     service_id = register(client)
-    bob, carol = "bob@lifescience-ri.eu", "carol@lifescience-ri.eu"
-    assert grant(client, service_id, carol, "owner") == 200
-    assert grant(client, service_id, bob, "maintainer", as_user=carol) == 200
+    assert grant(client, service_id, CAROL, "owner") == 200
+    assert grant(client, service_id, BOB, "maintainer", as_user=CAROL) == 200
     # granting a role replaces other roles
-    assert grant(client, service_id, bob, "owner") == 200
-    assert permissions(client, service_id, user=carol) == [
-        ("alice@lifescience-ri.eu", "owner"),
-        (bob, "owner"),
-        (carol, "owner"),
+    assert grant(client, service_id, BOB, "owner") == 200
+    assert permissions(client, service_id, user=CAROL) == [
+        (ALICE, "owner"),
+        (BOB, "owner"),
+        (CAROL, "owner"),
     ]
     response = client.delete(
-        f"{BASE}/services/{service_id}/permissions/{bob}",
-        headers=headers("alice@lifescience-ri.eu"),
+        f"{BASE}/services/{service_id}/permissions/{BOB}",
+        headers=headers(ALICE),
     )
     assert response.status_code == 200
-    assert update(client, service_id, bob) == 403
-    assert delete(client, service_id, carol) == 200
+    assert update(client, service_id, BOB) == 403
+    assert delete(client, service_id, CAROL) == 200
 
 
 def test_invalid_permissions(client):
     """Invalid roles, unknown services and missing roles are rejected."""
     service_id = register(client)
-    admin = "admin@lifescience-ri.eu"
-    assert grant(client, service_id, "bob@lifescience-ri.eu", "admin") == 400
+    assert grant(client, service_id, BOB, "admin") == 400
     assert grant(client, service_id, "bob,x", "owner") == 400
-    assert grant(client, "UNKNWN", "bob@lifescience-ri.eu", "owner", admin) == 404
+    assert grant(client, "UNKNWN", BOB, "owner", ADMIN) == 404
+    assert revoke(client, "UNKNWN", BOB, as_user=ADMIN) == 404
     response = client.delete(
-        f"{BASE}/services/{service_id}/permissions/bob@lifescience-ri.eu",
-        headers=headers("alice@lifescience-ri.eu"),
+        f"{BASE}/services/{service_id}/permissions/{BOB}",
+        headers=headers(ALICE),
     )
     assert response.status_code == 404
 
 
 def test_put_create(client):
     """Only admins can register services with chosen identifiers."""
-    assert update(client, "MYSERV", "alice@lifescience-ri.eu") == 403
-    assert update(client, "MYSERV", "admin@lifescience-ri.eu") == 200
-    assert permissions(client, "MYSERV") == [("admin@lifescience-ri.eu", "owner")]
+    assert update(client, "MYSERV", ALICE) == 403
+    assert update(client, "MYSERV", ADMIN) == 200
+    assert permissions(client, "MYSERV") == [(ADMIN, "owner")]
 
 
 def test_permissions_removed_with_service(client):
     """Roles on a service are revoked when it is deleted."""
     service_id = register(client)
-    assert grant(client, service_id, "bob@lifescience-ri.eu", "maintainer") == 200
-    assert delete(client, service_id, "alice@lifescience-ri.eu") == 200
+    assert grant(client, service_id, BOB, "maintainer") == 200
+    assert delete(client, service_id, ALICE) == 200
     # a new service with the same identifier has none of the old roles
-    assert update(client, service_id, "admin@lifescience-ri.eu") == 200
-    assert permissions(client, service_id) == [("admin@lifescience-ri.eu", "owner")]
-    assert update(client, service_id, "bob@lifescience-ri.eu") == 403
+    assert update(client, service_id, ADMIN) == 200
+    assert permissions(client, service_id) == [(ADMIN, "owner")]
+    assert update(client, service_id, BOB) == 403
 
 
-def revoke(client, service_id, user, as_user="alice@lifescience-ri.eu"):
+def revoke(client, service_id, user, as_user=ALICE):
     return client.delete(
         f"{BASE}/services/{service_id}/permissions/{user}", headers=headers(as_user)
     ).status_code
@@ -329,11 +218,10 @@ def me(client, user):
 
 def test_me(client):
     """Users get their identifier, admin status and roles on services."""
-    alice, bob = "alice@lifescience-ri.eu", "bob@lifescience-ri.eu"
     first, second = register(client), register(client)
-    assert grant(client, first, bob, "maintainer") == 200
-    assert me(client, alice) == {
-        "user_id": alice,
+    assert grant(client, first, BOB, "maintainer") == 200
+    assert me(client, ALICE) == {
+        "user_id": ALICE,
         "admin": False,
         "services": sorted(
             [
@@ -343,37 +231,39 @@ def test_me(client):
             key=lambda service: service["service_id"],
         ),
     }
-    assert me(client, bob)["services"] == [{"service_id": first, "role": "maintainer"}]
-    assert me(client, "carol@lifescience-ri.eu")["services"] == []
-    admin = me(client, "admin@lifescience-ri.eu")
+    assert me(client, BOB)["services"] == [{"service_id": first, "role": "maintainer"}]
+    assert me(client, CAROL)["services"] == []
+    admin = me(client, ADMIN)
     assert (admin["admin"], admin["services"]) == (True, [])
-    assert delete(client, first, alice) == 200
-    assert me(client, bob)["services"] == []
+    assert delete(client, first, ALICE) == 200
+    assert me(client, BOB)["services"] == []
 
 
 def _names(client, service_id):
     response = client.get(
         f"{BASE}/services/{service_id}/permissions",
-        headers=headers("admin@lifescience-ri.eu"),
+        headers=headers(ADMIN),
     )
     return {p["user_id"]: p.get("name") for p in response.json}
 
 
 def test_permission_names(client):
     """Display names are shown once users have used the registry."""
-    alice, bob = "alice@lifescience-ri.eu", "bob@lifescience-ri.eu"
-    carol = "carol@lifescience-ri.eu"
     service_id = register(client)
-    assert grant(client, service_id, bob, "maintainer") == 200
-    assert grant(client, service_id, carol, "maintainer") == 200
+    assert grant(client, service_id, BOB, "maintainer") == 200
+    assert grant(client, service_id, CAROL, "maintainer") == 200
+    assert grant(client, service_id, DAVE, "maintainer") == 200
     # registering stores the owner's name; others are unknown so far
-    assert _names(client, service_id) == {alice: NAMES[alice], bob: None, carol: None}
-    me(client, bob)
-    me(client, carol)  # the identity provider reports no name
+    unknown = {BOB: None, CAROL: None, DAVE: None}
+    assert _names(client, service_id) == {ALICE: NAMES[ALICE], **unknown}
+    me(client, BOB)
+    me(client, CAROL)  # the identity provider reports no name
+    me(client, DAVE)
     assert _names(client, service_id) == {
-        alice: NAMES[alice],
-        bob: NAMES[bob],
-        carol: None,
+        ALICE: NAMES[ALICE],
+        BOB: NAMES[BOB],
+        CAROL: None,
+        DAVE: None,
     }
 
 
@@ -381,17 +271,45 @@ def test_last_owner(client):
     """The last owner of a service cannot be removed or downgraded, not even
     by admins.
     """
-    alice, carol = "alice@lifescience-ri.eu", "carol@lifescience-ri.eu"
-    admin = "admin@lifescience-ri.eu"
     service_id = register(client)
-    assert revoke(client, service_id, alice) == 409
-    assert grant(client, service_id, alice, "maintainer") == 409
-    assert revoke(client, service_id, alice, as_user=admin) == 409
-    assert grant(client, service_id, alice, "maintainer", as_user=admin) == 409
-    assert grant(client, service_id, alice, "owner") == 200
+    assert revoke(client, service_id, ALICE) == 409
+    assert grant(client, service_id, ALICE, "maintainer") == 409
+    assert revoke(client, service_id, ALICE, as_user=ADMIN) == 409
+    assert grant(client, service_id, ALICE, "maintainer", as_user=ADMIN) == 409
+    assert grant(client, service_id, ALICE, "owner") == 200
     # with another owner, the first owner can step down
-    assert grant(client, service_id, carol, "owner") == 200
-    assert grant(client, service_id, alice, "maintainer") == 200
-    assert revoke(client, service_id, alice, as_user=carol) == 200
-    assert revoke(client, service_id, carol, as_user=carol) == 409
-    assert permissions(client, service_id) == [(carol, "owner")]
+    assert grant(client, service_id, CAROL, "owner") == 200
+    assert grant(client, service_id, ALICE, "maintainer") == 200
+    assert revoke(client, service_id, ALICE, as_user=CAROL) == 200
+    assert revoke(client, service_id, CAROL, as_user=CAROL) == 409
+    assert permissions(client, service_id) == [(CAROL, "owner")]
+
+
+def test_names_per_service(client):
+    """Names are only shown for users who used the registry with their role
+    on the service, and are removed with the role.
+    """
+    me(client, BOB)  # before being granted a role
+    service_id = register(client)
+    assert grant(client, service_id, BOB, "maintainer") == 200
+    assert _names(client, service_id)[BOB] is None
+    me(client, BOB)
+    assert _names(client, service_id)[BOB] == NAMES[BOB]
+    assert revoke(client, service_id, BOB) == 200
+    assert grant(client, service_id, BOB, "maintainer") == 200
+    assert _names(client, service_id)[BOB] is None
+
+
+@pytest.mark.parametrize("change", ["revoke", "downgrade"])
+def test_last_owner_restored(client, monkeypatch, change):
+    """If concurrent changes removed all owners, the removed owner is
+    restored.
+    """
+    service_id = register(client)
+    # as if another request removed the other owner after the check passed
+    monkeypatch.setattr(permissions_module, "_check_other_owners", lambda *args: None)
+    if change == "revoke":
+        assert revoke(client, service_id, ALICE) == 409
+    else:
+        assert grant(client, service_id, ALICE, "maintainer") == 409
+    assert permissions(client, service_id) == [(ALICE, "owner")]

@@ -41,8 +41,21 @@ ADMIN = "admin@example.org"
 ADMIN_GROUP = (
     "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN:ADMIN#aai.lifescience-ri.eu"
 )
-# Group memberships the identity provider returns as user info
-ENTITLEMENTS = {ADMIN: [ADMIN_GROUP]}
+# Group memberships and display names the identity provider returns as user
+# info, like LS Login (not in access tokens)
+ENTITLEMENTS = {
+    ADMIN: [ADMIN_GROUP],
+    "bob@example.org": [
+        "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN#aai.lifescience-ri.eu"
+    ],
+}
+NAMES = {
+    USER: "Alice Example",
+    ADMIN: "Admin Example",
+    "bob@example.org": "Bob Example",
+    # blank names are not stored
+    "dave@example.org": " ",
+}
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 
@@ -87,9 +100,10 @@ def mock_get(url, headers=None, **kwargs):
         except jwt.InvalidTokenError:
             return MockResponse({"error": "invalid_token"}, status_code=401)
         sub = claims["sub"]
-        return MockResponse(
-            {"sub": sub, "eduperson_entitlement": ENTITLEMENTS.get(sub, [])}
-        )
+        userinfo = {"sub": sub, "eduperson_entitlement": ENTITLEMENTS.get(sub, [])}
+        if sub in NAMES:
+            userinfo["name"] = NAMES[sub]
+        return MockResponse(userinfo)
     raise auth.requests.ConnectionError(f"Unexpected request in tests: {url}")
 
 
@@ -100,13 +114,14 @@ def make_headers(user=USER, key=KEY):
         {
             "aud": AUDIENCE,
             "sub": user,
+            "scope": "openid eduperson_entitlement",
             "iss": ISSUER,
             "iat": now,
             "exp": now + 300,
         },
         key,
         algorithm="RS256",
-        headers={"kid": "rsa1"},
+        headers={"kid": "rsa1", "typ": "at+jwt"},
     )
     return {"Authorization": f"Bearer {token}"}
 

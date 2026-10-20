@@ -92,10 +92,11 @@ db:
                               id: 1
                           options:
                             'unique': True
-                # Display names of users with roles on services
-                users:
+                # Display names of users with roles on services, per service
+                user_names:
                     indexes:
                         - keys:
+                              service_id: 1
                               user_id: 1
                           options:
                             'unique': True

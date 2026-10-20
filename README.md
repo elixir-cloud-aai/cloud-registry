@@ -104,7 +104,8 @@ token issued by [LS Login][ls-login]:
   ```
 
   `GET /services/<id>/permissions` lists the roles granted on a service
-  (with the users' names, once they have used the registry), and
+  (with the users' names, once they have used the registry since being
+  granted the role; names are deleted with the role), and
   `DELETE /services/<id>/permissions/<user-id>` revokes them. The last owner
   of a service can't be removed or downgraded (`409 Conflict`); delete the
   service instead.
@@ -129,7 +130,7 @@ they are an admin, and their roles on services. Owners are not shown in the
 public service responses.
 
 Access control is implemented with [FOCA][foca-access-control]; see the
-`security` section of the [configuration][config-app].
+`security` section of the [configuration][config].
 
 ## Installation
 
@@ -279,6 +280,5 @@ etc.
 [schema-service]: <https://github.com/ga4gh-discovery/ga4gh-service-registry/blob/8c45be52940db92c2fa1cd821519c271c22b1c4c/service-registry.yaml#L158>
 [schema-endpoints]: <https://github.com/ga4gh-discovery/ga4gh-service-registry/blob/8c45be52940db92c2fa1cd821519c271c22b1c4c/service-registry.yaml#L16>
 [url-swagger]: <http://localhost:8080/ga4gh/registry/v1/ui>
-[config-app]: cloud_registry/config.yaml
 [foca-access-control]: https://foca.readthedocs.io/en/latest/access-control/
 [ls-login]: https://lifescience-ri.eu/ls-login/
