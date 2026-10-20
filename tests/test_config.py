@@ -1,8 +1,10 @@
 """Tests for the app config and the config overlay rendered by the Helm chart."""
 
+import fnmatch
 import os
 from pathlib import Path
 import subprocess
+import sys
 
 from foca.config.config_parser import ConfigParser
 from foca.models.config import Config
@@ -12,6 +14,11 @@ import yaml
 
 from tests.conftest import CONFIG_OVERLAY
 from tests.helm import ADMIN_GROUP, CHART, HELM, render
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # pytest depends on tomli on Python 3.10
+    import tomli as tomllib
 
 ROOT = Path(__file__).parents[1]
 CONFIG_FILE = ROOT / "cloud_registry" / "config.yaml"
@@ -193,3 +200,18 @@ class TestChartOverlay:
         volume = next(vol for vol in pod["volumes"] if vol["name"] == mount["name"])
         assert volume["configMap"]["name"] == configmap["metadata"]["name"]
         assert Path(env["FOCA_CONFIG_OVERLAY"]).name == "overlay.yaml"
+
+
+def test_package_data():
+    """Files that the base config references are installed with the package."""
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    patterns = pyproject["tool"]["setuptools"]["package-data"]["cloud_registry"]
+    config = yaml.safe_load(CONFIG_FILE.read_text())
+    files = [
+        config["security"]["access_control"]["model"],
+        *(path for spec in config["api"]["specs"] for path in spec["path"]),
+    ]
+    for path in ["config.yaml", *files]:
+        assert (ROOT / "cloud_registry" / path).is_file(), path
+        # setuptools matches the patterns from the package directory
+        assert any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns), path
