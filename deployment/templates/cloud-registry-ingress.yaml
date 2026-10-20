@@ -1,14 +1,29 @@
 {{ if .Values.cloud_registry.ingress.enabled }}
+{{- $ingress := .Values.cloud_registry.ingress -}}
+{{- /*
+Annotations from `ingress.annotations` take precedence over those requesting
+a certificate from cert-manager.
+*/ -}}
+{{- $annotations := dict -}}
+{{- if $ingress.https.enabled -}}
+{{- $_ := set $annotations "cert-manager.io/cluster-issuer" $ingress.https.issuer -}}
+{{- $_ := set $annotations "kubernetes.io/tls-acme" "true" -}}
+{{- end -}}
+{{- $annotations = mergeOverwrite $annotations (deepCopy ($ingress.annotations | default dict)) }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
+  {{- with $annotations }}
   annotations:
-    {{- if .Values.cloud_registry.ingress.https.enabled }}
-    cert-manager.io/cluster-issuer: {{ .Values.cloud_registry.ingress.https.issuer }}
-    kubernetes.io/tls-acme: "true"
-    {{- end }}
-  name: {{ .Values.cloud_registry.appName }}
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  name: {{ include "cloud-registry.fullname" . }}
+  labels:
+    {{- include "cloud-registry.labels" (dict "root" . "component" "app") | nindent 4 }}
 spec:
+  {{- with $ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
   rules:
   - host: {{ .Values.host_name }}
     http:
@@ -17,13 +32,13 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: {{ .Values.cloud_registry.appName }}
+            name: {{ include "cloud-registry.fullname" . }}
             port:
-              number: 8080
-{{- if .Values.cloud_registry.ingress.https.enabled }}
+              name: http
+{{- if $ingress.https.enabled }}
   tls:
   - hosts:
     - {{ .Values.host_name }}
-    secretName: {{ .Values.cloud_registry.appName }}-ingress-secret
+    secretName: {{ include "cloud-registry.fullname" . }}-ingress-secret
 {{- end }}
 {{ end }}

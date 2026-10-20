@@ -2,6 +2,13 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
+# Resource names are derived from the release name: `<release>-cloud-registry`
+# (or `<release>` if it contains `cloud-registry`) for the app and
+# `<that name>-mongodb` for MongoDB; `nameOverride` replaces the chart name,
+# `fullnameOverride` the derived app name
+nameOverride: ""
+fullnameOverride: ""
+
 # Public host name of the app; sets `custom.endpoints.service.external_host`
 # in the app config, with URL scheme `https` and port 443 (override them via
 # `config.custom.endpoints.service`)
@@ -38,16 +45,36 @@ config: {}
 
 cloud_registry:
   image: elixircloud/cloud-registry:20261020
-  appName: cloud-registry
   # Path of the app's startup, readiness and liveness probes; change it if
   # the config disables the Swagger UI
   probePath: /ga4gh/registry/v1/ui/
   # if ingress.enabled: false, it will deploy an OpenShift Route (https://docs.redhat.com/en/documentation/openshift_container_platform/4.19/html/network_apis/route-route-openshift-io-v1)
   ingress:
     enabled: true
+    # Ingress class (`spec.ingressClassName`); the cluster's default class if
+    # empty
+    className: ""
+    # Annotations of the Ingress, e.g., for the ingress controller; they take
+    # precedence over those set for `https`
+    annotations: {}
     https:
+      # Request a certificate from cert-manager (via `issuer`, a
+      # ClusterIssuer) and serve HTTPS
       enabled: false
       issuer: letsencrypt-prod
+  # Security contexts of the pod and the container; the image runs as user
+  # 1000, and with a read-only root file system, temporary files go to an
+  # `emptyDir` at `/tmp`. On OpenShift, `runAsUser`, `runAsGroup` and
+  # `fsGroup` are omitted, as OpenShift assigns them
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+    readOnlyRootFilesystem: true
   resources:
     limits:
       cpu: 100m
@@ -76,6 +103,23 @@ mongodb:
     # user, created with access to the app's database)
     existingSecret: ""
   volumeSize: 1Gi
+  # Security contexts of the pod and the container; the image starts as root
+  # and switches to user `mongodb` (999), so the user is set here, and
+  # `fsGroup` makes the data volume writable for it. On OpenShift,
+  # `runAsUser`, `runAsGroup` and `fsGroup` are omitted, as OpenShift assigns
+  # them
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 999
+    fsGroup: 999
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+    readOnlyRootFilesystem: true
   resources:
     limits:
       cpu: 200m

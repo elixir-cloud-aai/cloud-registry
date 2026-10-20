@@ -1,14 +1,16 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ .Values.cloud_registry.appName }}
+  name: {{ include "cloud-registry.fullname" . }}
+  labels:
+    {{- include "cloud-registry.labels" (dict "root" . "component" "app") | nindent 4 }}
 spec:
   ports:
-  - name: {{ .Values.cloud_registry.appName }}
+  - name: http
     port: 8080
     protocol: TCP
-    targetPort: 8080
+    targetPort: http
   selector:
-    app: {{ .Values.cloud_registry.appName }}
+    {{- include "cloud-registry.selectorLabels" (dict "root" . "component" "app") | nindent 4 }}
   sessionAffinity: None
   type: ClusterIP

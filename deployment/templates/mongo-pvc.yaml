@@ -1,7 +1,9 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: mongodb
+  name: {{ include "cloud-registry.mongodbFullname" . }}
+  labels:
+    {{- include "cloud-registry.labels" (dict "root" . "component" "mongodb") | nindent 4 }}
 spec:
   accessModes:
   - ReadWriteOnce
