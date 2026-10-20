@@ -2,6 +2,14 @@
   "$schema": "https://json-schema.org/draft-07/schema#",
   "type": "object",
   "properties": {
+    "nameOverride": {
+      "type": "string",
+      "description": "Replaces the chart name in resource names and labels; set at installation only"
+    },
+    "fullnameOverride": {
+      "type": "string",
+      "description": "Replaces the name of the app's resources (MongoDB's get the suffix -mongodb); set at installation only"
+    },
     "host_name": {
       "type": "string",
       "description": "Public host name of the app"
@@ -29,6 +37,14 @@
               "description": "Secret with the MongoDB credentials; required if authentication is enabled"
             }
           }
+        },
+        "podSecurityContext": {
+          "type": "object",
+          "description": "Security context of the pod (runAsUser, runAsGroup and fsGroup are omitted on OpenShift)"
+        },
+        "securityContext": {
+          "type": "object",
+          "description": "Security context of the container (runAsUser and runAsGroup are omitted on OpenShift)"
         }
       }
     },
@@ -49,6 +65,47 @@
           "type": "string",
           "pattern": "^/",
           "description": "Path of the app's probes"
+        },
+        "ingress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Create an Ingress; otherwise an OpenShift Route, if the cluster serves route.openshift.io/v1"
+            },
+            "className": {
+              "type": "string",
+              "description": "Ingress class; the cluster's default class if empty"
+            },
+            "annotations": {
+              "type": ["object", "null"],
+              "additionalProperties": {"type": "string"},
+              "description": "Annotations of the Ingress; take precedence over those set for https"
+            },
+            "https": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Request a certificate from cert-manager and serve HTTPS"
+                },
+                "issuer": {
+                  "type": "string",
+                  "description": "cert-manager ClusterIssuer"
+                }
+              }
+            }
+          }
+        },
+        "podSecurityContext": {
+          "type": "object",
+          "description": "Security context of the pod (runAsUser, runAsGroup and fsGroup are omitted on OpenShift)"
+        },
+        "securityContext": {
+          "type": "object",
+          "description": "Security context of the container (runAsUser and runAsGroup are omitted on OpenShift)"
         }
       }
     }

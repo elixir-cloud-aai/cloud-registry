@@ -254,6 +254,147 @@ paths:
           $ref: '#/components/responses/InternalServerError'
         default:
           $ref: '#/components/responses/Error'
+  "/services/{serviceId}/verification":
+    get:
+      summary: Get service verification.
+      description: |
+        Get the verification of a service, i.e., when an admin verified it
+        (e.g., checked that it accepts LS Login tokens). Unverified and
+        unknown services return `404`. The verification names the URL and
+        API type of the service; it is removed when the URL (in any way, as
+        written) or API type (`type.group`, `type.artifact`) of the service
+        changes.
+      operationId: getServiceVerification
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.verification
+      security: []
+      tags:
+        - cloud-registry
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+      responses:
+        '200':
+          description: The service is verified.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Verification'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      summary: Verify service.
+      description: |
+        Mark a service as verified by an admin, at the current time; verifying
+        a verified service renews its verification. Only for admins. Send
+        the URL and API type that were checked (recommended): the service is
+        only verified if it still has exactly that URL (as written) and the
+        same API type (`type.group`, `type.artifact`, case-insensitive; not
+        `type.version`), otherwise `409` is returned and nothing changes.
+        Invalid URLs in the body, and bodies that are neither JSON nor empty
+        (or `null`), return `400`. Without a body, the service is verified as
+        it is registered at the time of the request. The verification is kept when the service is
+        updated with the same URL and API type (e.g., a new version), and
+        removed when they change, including other spellings of the URL.
+      operationId: putServiceVerification
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.verification
+      tags:
+        - cloud-registry
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+      requestBody:
+        description: URL and API type of the service that were checked.
+        required: false
+        x-body-name: verification
+        content:
+          application/json:
+            schema:
+              # requests without a body are validated as `null`
+              nullable: true
+              $ref: '#/components/schemas/VerificationRegister'
+      responses:
+        '200':
+          description: The service is verified.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Verification'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            The service has another URL or API type than the one checked;
+            nothing was changed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      summary: Remove service verification.
+      description: |
+        Remove the verification of a service. Only for admins. Unverified and
+        unknown services return `404`.
+      operationId: deleteServiceVerification
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.verification
+      tags:
+        - cloud-registry
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+      responses:
+        '200':
+          description: The verification was removed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+  /verifications:
+    get:
+      summary: List verified services.
+      description: |
+        List the verified services, sorted by identifier, with their URL and
+        API type and the time of their verification. Clients that only use
+        verified services list the services (`GET /services`) and keep those
+        listed here with the same identifier, URL and API type.
+      operationId: getVerifications
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.verification
+      security: []
+      tags:
+        - cloud-registry
+      responses:
+        '200':
+          description: Verified services.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ServiceVerification'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
   /me:
     get:
       summary: Get the current user.
@@ -441,6 +582,66 @@ components:
           description: Identifier of the service.
         role:
           $ref: '#/components/schemas/Role'
+    VerificationRegister:
+      description: URL and API type of a service that an admin checked.
+      type: object
+      required:
+        - url
+        - type
+      additionalProperties: false
+      properties:
+        url:
+          type: string
+          format: uri
+          description: URL of the service, exactly as registered.
+          example: 'https://tes.example.org/ga4gh/tes/v1'
+        type:
+          $ref: '#/components/schemas/ServiceTypeRegister'
+    Verification:
+      description: |
+        Verification of a service by an admin, with the URL and API type of
+        the service.
+      type: object
+      required:
+        - url
+        - type
+        - verified_at
+      additionalProperties: false
+      properties:
+        url:
+          $ref: '#/components/schemas/VerifiedUrl'
+        type:
+          $ref: '#/components/schemas/ServiceType'
+        verified_at:
+          $ref: '#/components/schemas/VerifiedAt'
+    VerifiedUrl:
+      description: URL of the verified service, as registered.
+      type: string
+      example: 'https://tes.example.org/ga4gh/tes/v1'
+    VerifiedAt:
+      description: |
+        When an admin verified the service (RFC 3339 format, UTC).
+      type: string
+      format: date-time
+      example: '2026-10-20T12:34:56.789Z'
+    ServiceVerification:
+      description: Verification of a service, with its identifier.
+      type: object
+      required:
+        - service_id
+        - url
+        - type
+        - verified_at
+      additionalProperties: false
+      properties:
+        service_id:
+          $ref: '#/components/schemas/ServiceId'
+        url:
+          $ref: '#/components/schemas/VerifiedUrl'
+        type:
+          $ref: '#/components/schemas/ServiceType'
+        verified_at:
+          $ref: '#/components/schemas/VerifiedAt'
     Role:
       description: |
         Role on a service: `owner` (update and delete the service, manage

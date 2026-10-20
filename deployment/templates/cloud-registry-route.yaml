@@ -1,18 +1,20 @@
-{{ if (and (.Capabilities.APIVersions.Has "route.openshift.io/v1") (not .Values.cloud_registry.ingress.enabled)) }}
+{{ if include "cloud-registry.routeEnabled" . }}
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: {{ .Values.cloud_registry.appName }}
+  name: {{ include "cloud-registry.fullname" . | quote }}
+  labels:
+    {{- include "cloud-registry.labels" (dict "root" . "component" "app") | nindent 4 }}
 spec:
-  host: {{ .Values.host_name }}
+  host: {{ .Values.host_name | quote }}
   port:
-    targetPort: {{ .Values.cloud_registry.appName }}
+    targetPort: http
   tls:
     insecureEdgeTerminationPolicy: Redirect
     termination: edge
   to:
     kind: Service
-    name: {{ .Values.cloud_registry.appName }}
+    name: {{ include "cloud-registry.fullname" . | quote }}
     weight: 100
   wildcardPolicy: None
 {{ end }}

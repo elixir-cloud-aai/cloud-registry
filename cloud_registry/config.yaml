@@ -70,10 +70,14 @@ security:
             - [p, maintainer, "/ga4gh/registry/v1/services/:id", PUT]
             # any authenticated user may get their identifier and roles
             - [p, "*", /ga4gh/registry/v1/me, GET]
+            # no policy for `/services/:id/verification` (PUT, DELETE):
+            # only admins may verify services
 
 # Database configuration
 # Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.DBConfig
 db:
+    # MongoDB service of Docker Compose; the Helm chart sets the MongoDB
+    # Service of the release
     host: mongodb
     port: 27017
     dbs:

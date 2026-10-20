@@ -4,16 +4,18 @@
 
 The image contains the app's complete base config
 ([`cloud_registry/config.yaml`](../cloud_registry/config.yaml)). The chart
-renders a config overlay into the `<appName>-config` ConfigMap, which FOCA
-merges into the base config on startup (via `FOCA_CONFIG_OVERLAY`):
+renders a config overlay into the `<app>-config` ConfigMap (see
+[Names and labels](#names-and-labels)), which FOCA merges into the base
+config on startup (via `FOCA_CONFIG_OVERLAY`):
 
 - `host_name` sets the public URL of the app
   (`custom.endpoints.service`: `https://<host_name>:443`);
+- `db.host` is set to the release's MongoDB Service (`<app>-mongodb`);
 - `config` overrides keys of the base config; it takes precedence over the
-  values generated from `host_name`. Mappings are merged recursively, all
-  other values (including lists) replace those of the base config. Do not
-  change `server.port` and `db.host`: the chart's Services expect port 8080
-  and the `mongodb` host.
+  generated values. Mappings are merged recursively, all other values
+  (including lists) replace those of the base config. Do not change
+  `server.port` (the chart's Service expects port 8080) or `db.host` (unless
+  the app is to use another MongoDB).
 
 The overlay requires an image built with FOCA 0.14 or later (e.g.,
 `elixircloud/cloud-registry:20261020` or later, any `dev` or `sha-<commit>`
@@ -87,7 +89,89 @@ helm install cloud-registry . -n <namespace> -f values-prod.yaml
 ```
 
 `<namespace>` is the namespace to deploy to; `cloud-registry` is the name of
-the release, which is referenced when upgrading or uninstalling.
+the release, which is referenced when upgrading or uninstalling. Helm prints
+the app's URL and a test request after installing (`helm get notes
+cloud-registry -n <namespace>` shows them again).
+
+## Names and labels
+
+Resource names are derived from the release name, so that several releases
+can be installed in one namespace:
+
+- **App** (Deployment, Service, Ingress or Route; ConfigMap `<app>-config`):
+  `<app>` is `<release>-cloud-registry`, or the release name if it contains
+  `cloud-registry` (e.g., `cloud-registry` for the release `cloud-registry`,
+  `prod-cloud-registry` for the release `prod`);
+- **MongoDB** (Deployment, Service, PersistentVolumeClaim; ConfigMap
+  `<app>-mongodb-init-script`): `<app>-mongodb`; the app connects to this
+  Service.
+
+`nameOverride` replaces `cloud-registry` in the names and the
+`app.kubernetes.io/name` label, `fullnameOverride` replaces `<app>`
+(camelCase, as in other Helm charts). Set them when installing only:
+changing them later changes the pod selectors of the Deployments, which
+cannot be changed, so the upgrade fails. Names are truncated to 63
+characters. The examples in this document use the release `cloud-registry`.
+
+All resources have the
+[standard labels](https://helm.sh/docs/chart_best_practices/labels/)
+(`app.kubernetes.io/name`, `instance`, `version` and `managed-by`, and
+`helm.sh/chart`); pods are selected by name, instance and
+`app.kubernetes.io/component` (`app` or `mongodb`), e.g.:
+
+```bash
+kubectl get pods -n <namespace> -l app.kubernetes.io/instance=cloud-registry
+```
+
+## Ingress
+
+By default, the chart creates an Ingress for `host_name`
+(`cloud_registry.ingress`):
+
+- `className` sets the Ingress class (default: the cluster's default class);
+- `annotations` sets annotations, e.g., for the ingress controller;
+- `https.enabled` requests a certificate from cert-manager (via the
+  ClusterIssuer `https.issuer`, by annotations that `annotations` can
+  override) and serves HTTPS with it.
+
+With `enabled: false`, the chart creates an OpenShift Route with TLS
+termination at the router instead, if the cluster serves Routes
+(`route.openshift.io/v1`); otherwise the app is only reachable within the
+cluster, and Helm prints a warning after installing.
+
+## Security context
+
+Both containers run as non-root users, without privilege escalation or
+capabilities, with the runtime's default seccomp profile and a read-only root
+file system; they write to `emptyDir` volumes (`/tmp`; for MongoDB also
+`/data/configdb`) and MongoDB to its data volume. The app image runs as user
+1000; the MongoDB image starts as root and switches to user `mongodb` (999),
+so the chart sets that user and group (`runAsUser`, `runAsGroup`), and
+`fsGroup` makes the data volume writable for it (unless the storage ignores
+`fsGroup`).
+
+On OpenShift (detected by the API `security.openshift.io/v1`), the chart
+omits `runAsUser`, `runAsGroup` and `fsGroup`, as OpenShift assigns them from
+the namespace's range and its default security context constraints reject
+other IDs.
+
+The contexts are set in the values (`podSecurityContext` and
+`securityContext` of `cloud_registry` and `mongodb`); mappings are merged
+with the defaults, and `null` removes a default. Outside OpenShift, MongoDB
+needs `runAsUser`: without it, the image starts as root, which
+`runAsNonRoot` rejects (the pod fails with `CreateContainerConfigError`).
+To run it as another user, change the IDs together, e.g.:
+
+```yaml
+mongodb:
+  podSecurityContext:
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+```
+
+If the storage manages the permissions of the volume itself, `fsGroup: null`
+removes `fsGroup`.
 
 ## Upgrades
 
@@ -102,18 +186,109 @@ helm upgrade cloud-registry . -n <namespace> -f values-prod.yaml
 The app pods are replaced when the config changes. `helm ls -n <namespace>`
 lists the releases.
 
-Upgrading from chart version 2 removes the `configmap-job-<appName>` Job, its
-ServiceAccount and RoleBinding, and the `app-config` ConfigMap: move any
-changes made to the config there to `config` in the values file first.
+### From chart version 3 or 2
 
-Chart version 2 used `mongo:noble`, which resolves to the latest MongoDB
-version (e.g., 9.0), while chart version 3 defaults to `mongo:7.0`, which
-cannot read the data of newer versions. **Before upgrading from chart version
-2, check the running MongoDB version (see [Version](#version)) and set
-`mongodb.image` to its major and minor version (e.g.,
-`docker.io/library/mongo:9.0`).** Chart version 3 also enables MongoDB
-authentication by default: see [Authentication](#authentication) for existing
-databases.
+Chart version 4 renames the resources (see
+[Names and labels](#names-and-labels); e.g., `mongodb` becomes
+`cloud-registry-mongodb`) and changes the selectors of the Deployments,
+which cannot be changed in place, so **releases of earlier chart versions
+cannot be upgraded: uninstall them and install chart version 4.** An upgrade
+would delete the `mongodb` PersistentVolumeClaim, so `helm upgrade` fails
+for such releases (only when Helm can query the cluster: not in
+`helm template` or client-side dry runs). Uninstalling also deletes the
+claim and, usually, the data with it.
+
+To keep the data, dump it before uninstalling and restore it into the new
+release. The app is down from the first to the last step. The commands are
+for the release `cloud-registry` (in chart versions 2 and 3, the app
+Deployment is called after `cloud_registry.appName`, by default
+`cloud-registry`, and the MongoDB Deployment `mongodb`):
+
+1. Stop the app and wait until its pods are gone, so that the data does
+   not change during the dump (the pods of chart versions 2 and 3 have the
+   label `app=<appName>`):
+
+   ```bash
+   kubectl scale deploy/cloud-registry -n <namespace> --replicas=0
+   kubectl wait pod -l app=cloud-registry -n <namespace> --for=delete \
+     --timeout=120s
+   ```
+
+2. Dump the app's database to a local file, and check that MongoDB can read
+   the dump (a dry run of the restore); continue only if `Dump OK` is
+   printed:
+
+   ```bash
+   kubectl exec deploy/mongodb -n <namespace> -- sh -c 'mongodump --quiet \
+     -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" \
+     --authenticationDatabase admin --db serviceStore --archive' \
+     > serviceStore.archive \
+   && kubectl exec -i deploy/mongodb -n <namespace> -- sh -c 'mongorestore \
+     --dryRun -u "$MONGO_INITDB_ROOT_USERNAME" \
+     -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin \
+     --archive' < serviceStore.archive \
+   && echo "Dump OK"
+   ```
+
+   Without authentication (chart version 2, or `mongodb.auth.enabled:
+   false`), omit `-u`, `-p` and `--authenticationDatabase` (here and in step
+   7).
+
+3. Optionally, keep the old volume as a fallback: set the reclaim policy of
+   its PersistentVolume to `Retain`, so that it is kept (with the data) when
+   the claim is deleted:
+
+   ```bash
+   kubectl patch pv "$(kubectl get pvc mongodb -n <namespace> \
+     -o jsonpath='{.spec.volumeName}')" \
+     -p '{"spec": {"persistentVolumeReclaimPolicy": "Retain"}}'
+   ```
+
+   (Annotating the claim with `helm.sh/resource-policy=keep` does not keep
+   it: Helm reads that annotation from the chart's manifests, not from the
+   cluster.)
+
+4. Uninstall the release:
+
+   ```bash
+   helm uninstall cloud-registry -n <namespace>
+   ```
+
+5. Update the values file: remove `cloud_registry.appName` (rendering fails
+   while it is set; `fullnameOverride` sets the names instead). From chart
+   version 2, move any changes made to the `app-config` ConfigMap to
+   `config`, and create the Secret with the MongoDB credentials (see
+   [Authentication](#authentication)); from chart version 3, keep
+   `mongodb.auth.existingSecret`. MongoDB creates the users from the Secret
+   on its first start with the new, empty volume. Dumps of newer MongoDB
+   versions (e.g., `mongo:noble` of chart version 2) may not restore into
+   the chart's default version (see [Version](#version)); set
+   `mongodb.image` to the dumped version if needed.
+
+6. Install chart version 4 (see [Installation](#installation)), stop its
+   app again, so that it does not write during the restore, and wait for
+   MongoDB:
+
+   ```bash
+   kubectl scale deploy/cloud-registry -n <namespace> --replicas=0
+   kubectl wait pod -l app.kubernetes.io/instance=cloud-registry,app.kubernetes.io/component=app \
+     -n <namespace> --for=delete --timeout=120s
+   kubectl rollout status deploy/cloud-registry-mongodb -n <namespace>
+   ```
+
+7. Restore the dump, replacing the collections the app has created, then
+   start the app:
+
+   ```bash
+   kubectl exec -i deploy/cloud-registry-mongodb -n <namespace> -- sh -c \
+     'mongorestore --quiet --drop --archive \
+     -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" \
+     --authenticationDatabase admin' < serviceStore.archive
+   kubectl scale deploy/cloud-registry -n <namespace> --replicas=1
+   ```
+
+Once the new release works, delete a retained volume
+(`kubectl delete pv <name>`) and the local dump.
 
 Since app version 0.3.0 (the first release after 0.2.0), services are unique by
 URL and API type. Upgrade to it with the app scaled to 0 replicas (`kubectl
@@ -128,11 +303,12 @@ for credentials).
 ## Probes
 
 - **App:** ready once it serves its Swagger UI (`/ga4gh/registry/v1/ui/`;
-  all API endpoints require authentication; set `cloud_registry.probePath`
-  if the config disables the Swagger UI), checked every 10 seconds, so
-  `kubectl rollout status deploy/<appName> -n <namespace>` waits until it can
-  serve requests; up to 5 minutes are allowed for the start (startup probe);
-  restarted after failing for a minute afterwards (liveness probe).
+  it needs neither authentication nor the database; set
+  `cloud_registry.probePath` if the config disables the Swagger UI), checked
+  every 10 seconds, so `kubectl rollout status deploy/cloud-registry -n
+  <namespace>` waits until it can serve requests; up to 5 minutes are
+  allowed for the start (startup probe); restarted after failing for a
+  minute afterwards (liveness probe).
 - **MongoDB:** ready once it accepts connections; up to 30 minutes are
   allowed for the start (startup probe), as MongoDB only listens on localhost
   while it initializes an empty data directory, and recovery after an
@@ -152,12 +328,13 @@ existing database. With authentication (the default), the command uses the
 root user's credentials from the container's environment:
 
 ```bash
-kubectl exec deploy/mongodb -n <namespace> -- sh -c 'mongosh --quiet \
+kubectl exec deploy/cloud-registry-mongodb -n <namespace> -- sh -c 'mongosh --quiet \
   -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" \
   --authenticationDatabase admin --eval "printjson({version: db.version(), fcv: db.adminCommand({getParameter: 1, featureCompatibilityVersion: 1}).featureCompatibilityVersion})"'
 ```
 
-Without authentication (e.g., chart version 2), omit `-u`, `-p` and
+Without authentication (e.g., `mongodb.auth.enabled: false`, or chart version
+2, where the Deployment is called `mongodb`), omit `-u`, `-p` and
 `--authenticationDatabase`.
 
 - **Upgrades** go one major version at a time (e.g., 6.0 → 7.0 → 8.0): set
@@ -182,7 +359,7 @@ create a Secret with the credentials of the MongoDB root user and the app
 user:
 
 ```bash
-kubectl create secret generic cloud-registry-mongodb -n <namespace> \
+kubectl create secret generic cloud-registry-mongodb-credentials -n <namespace> \
   --from-literal=root-username=root \
   --from-literal=root-password="$(openssl rand -hex 24)" \
   --from-literal=username=cloud-registry \
@@ -194,7 +371,7 @@ and set its name in the values file:
 ```yaml
 mongodb:
   auth:
-    existingSecret: cloud-registry-mongodb
+    existingSecret: cloud-registry-mongodb-credentials
 ```
 
 Without a Secret name, rendering the chart fails. To run MongoDB without
@@ -208,35 +385,29 @@ set in the init script, `templates/mongo-init-script.yaml`); the app connects
 as the app user. Credentials never appear in values files or
 ConfigMaps.
 
-Commands that need privileges, e.g., to check the version, can use the root
-user's credentials from the container's environment:
-
-```bash
-kubectl exec deploy/mongodb -n <namespace> -- sh -c 'mongosh --quiet \
-  -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" \
-  --authenticationDatabase admin --eval "db.version()"'
-```
+Commands that need privileges can use the root user's credentials from the
+container's environment, as in [Version](#version).
 
 Changing the Secret does not change the users: to change a password, first
 change it in MongoDB (e.g.,
 `db.getSiblingDB("serviceStore").changeUserPassword("cloud-registry", "<new password>")`),
 then update the Secret and restart the app (`kubectl rollout restart
-deploy/<appName> -n <namespace>`). Until the app has restarted, its
+deploy/cloud-registry -n <namespace>`). Until the app has restarted, its
 requests to the database fail, so change passwords when a short outage is
-acceptable.
+acceptable. Helm does not restart pods when the Secret changes (only when the
+config changes), as the chart does not manage the Secret.
 
-For an existing database without authentication (e.g., from chart version
-2), MongoDB enforces authentication as soon as the chart enables it, but
-does not create the users. Create them first, while authentication is still
+For an existing database without authentication (deployed with
+`mongodb.auth.enabled: false`), MongoDB enforces authentication as soon as
+the chart enables it, but does not create the users. Create them first, while authentication is still
 off:
 
 1. Create the Secret (see above).
-2. In the running MongoDB (e.g., still deployed with chart version 2, or
-   with `mongodb.auth.enabled: false`), create the users with the
-   credentials from the Secret:
+2. In the running MongoDB, create the users with the credentials from the
+   Secret:
 
    ```bash
-   kubectl exec -it deploy/mongodb -n <namespace> -- mongosh
+   kubectl exec -it deploy/cloud-registry-mongodb -n <namespace> -- mongosh
    ```
 
    ```javascript
@@ -244,14 +415,14 @@ off:
    db.getSiblingDB("serviceStore").createUser({user: "cloud-registry", pwd: "<password>", roles: [{role: "readWrite", db: "serviceStore"}]})
    ```
 
-3. Upgrade (or install) the chart with authentication enabled and
+3. Upgrade the release with authentication enabled and
    `mongodb.auth.existingSecret` set.
 
 If the root user exists but the app user is missing (e.g., because the first
 start was interrupted), log in as the root user and create only the app user:
 
 ```bash
-kubectl exec -it deploy/mongodb -n <namespace> -- sh -c 'mongosh \
+kubectl exec -it deploy/cloud-registry-mongodb -n <namespace> -- sh -c 'mongosh \
   -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" \
   --authenticationDatabase admin'
 ```

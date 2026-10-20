@@ -196,7 +196,23 @@ class TestChartOverlay:
         assert "host_name must be set" in exc.value.stderr
 
     @pytest.mark.parametrize(
-        "value", ["config=foo", "host_name=1"], ids=["config", "host_name"]
+        "value",
+        [
+            "config=foo",
+            "host_name=1",
+            "cloud_registry.ingress.className=1",
+            "cloud_registry.ingress.annotations.a=1",
+            "cloud_registry.ingress.class=nginx",
+            "cloud_registry.ingress.https.secret=tls",
+        ],
+        ids=[
+            "config",
+            "host_name",
+            "ingress_class_name",
+            "ingress_annotation",
+            "ingress_unknown",
+            "ingress_https_unknown",
+        ],
     )
     def test_values_schema(self, value):
         """Values of the wrong type are rejected."""
