@@ -1,6 +1,8 @@
 """Tests for getting/setting service info."""
 
 from copy import deepcopy
+import re
+
 import pytest
 
 from tests.mock_data import (
@@ -93,3 +95,119 @@ class TestRegisterServiceInfo:
         with unit_app.app_context():
             headers = RegisterServiceInfo()._get_headers()
             assert headers == HEADERS_SERVICE_INFO
+
+
+class TestServiceInfoTimestamps:
+    """Tests for timestamps of service info registered from a config without
+    `createdAt` and `updatedAt`.
+    """
+
+    @pytest.fixture
+    def app(self, unit_app, monkeypatch):
+        """App whose service info config has no timestamps, with a fake clock."""
+        conf = unit_app.config.foca.custom.endpoints.service_info
+        conf.createdAt = None
+        conf.updatedAt = None
+        self.now = "2026-01-01T00:00:00Z"
+        monkeypatch.setattr(
+            RegisterServiceInfo, "_current_timestamp", staticmethod(lambda: self.now)
+        )
+        return unit_app
+
+    def _register(self, app):
+        with app.app_context():
+            register = RegisterServiceInfo()
+            register.set_service_info_from_config()
+            return register.get_service_info()
+
+    def test_first_registration(self, app):
+        """Both timestamps are set to the current time."""
+        info = self._register(app)
+        assert info["createdAt"] == info["updatedAt"] == self.now
+
+    def test_unchanged_config(self, app, service_info):
+        """Restarting with an unchanged config keeps the timestamps."""
+        first = self._register(app)
+        self.now = "2026-02-01T00:00:00Z"
+        assert self._register(app) == first
+        assert service_info.count_documents({}) == 1
+
+    def test_changed_config(self, app, service_info):
+        """A changed config updates `updatedAt` but keeps `createdAt`."""
+        self._register(app)
+        app.config.foca.custom.endpoints.service_info.description = "new"
+        self.now = "2026-02-01T00:00:00Z"
+        info = self._register(app)
+        assert info["description"] == "new"
+        assert info["createdAt"] == "2026-01-01T00:00:00Z"
+        assert info["updatedAt"] == self.now
+        assert service_info.count_documents({}) == 1
+
+    def test_stored_without_timestamps(self, app, service_info):
+        """Service info stored without timestamps gets them."""
+        data = deepcopy(SERVICE_INFO_CONFIG)
+        del data["createdAt"]
+        del data["updatedAt"]
+        service_info.insert_one(data)
+        info = self._register(app)
+        assert info["createdAt"] == info["updatedAt"] == self.now
+
+    def test_other_service_info_stored(self, app, service_info):
+        """Timestamps are not taken from stored service info with another
+        identifier, even if it was stored later.
+        """
+        self._register(app)
+        other = {**SERVICE_INFO_CONFIG, "id": "other"}
+        other["createdAt"] = "2000-01-01T00:00:00Z"
+        service_info.insert_one(other)
+        self.now = "2026-02-01T00:00:00Z"
+        self._register(app)
+        own = service_info.find_one({"id": SERVICE_INFO_CONFIG["id"]})
+        assert own["createdAt"] == own["updatedAt"] == "2026-01-01T00:00:00Z"
+
+    def test_configured_timestamp(self, app, service_info):
+        """A configured timestamp is used as is; the other one is managed."""
+        conf = app.config.foca.custom.endpoints.service_info
+        conf.createdAt = "2020-01-01T00:00:00Z"
+        info = self._register(app)
+        assert info["createdAt"] == "2020-01-01T00:00:00Z"
+        assert info["updatedAt"] == self.now
+
+        conf.createdAt = "2021-01-01T00:00:00Z"
+        self.now = "2026-02-01T00:00:00Z"
+        info = self._register(app)
+        assert info["createdAt"] == "2021-01-01T00:00:00Z"
+        assert info["updatedAt"] == self.now
+
+    def test_set_from_app_context(self, app):
+        """Service info set without timestamps keeps `createdAt` of the stored
+        service info with the same identifier and gets a new `updatedAt`.
+        """
+        self._register(app)
+        data = deepcopy(SERVICE_INFO_CONFIG)
+        del data["createdAt"]
+        del data["updatedAt"]
+        self.now = "2026-02-01T00:00:00Z"
+        with app.app_context():
+            register = RegisterServiceInfo()
+            register.set_service_info_from_app_context(data=data)
+            info = register.get_service_info()
+        assert info["createdAt"] == "2026-01-01T00:00:00Z"
+        assert info["updatedAt"] == self.now
+        assert "createdAt" not in data
+
+    def test_set_from_app_context_new(self, app):
+        """New service info set without timestamps gets both."""
+        data = {**SERVICE_INFO_CONFIG, "id": "other"}
+        del data["createdAt"]
+        del data["updatedAt"]
+        with app.app_context():
+            register = RegisterServiceInfo()
+            register.set_service_info_from_app_context(data=data)
+            info = register.get_service_info()
+        assert info["createdAt"] == info["updatedAt"] == self.now
+
+    def test_current_timestamp(self):
+        """The current time is formatted as an RFC 3339 UTC timestamp."""
+        timestamp = RegisterServiceInfo._current_timestamp()
+        assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", timestamp)

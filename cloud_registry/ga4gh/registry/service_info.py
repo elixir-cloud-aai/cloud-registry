@@ -1,13 +1,15 @@
 """Controller for service info endpoint."""
 
 import logging
-from typing import Dict
+from datetime import datetime, timezone
+from typing import Dict, Optional
 
 from flask import current_app
 
 from cloud_registry.exceptions import NotFound
 
 logger = logging.getLogger(__name__)
+TIMESTAMP_FIELDS = ("createdAt", "updatedAt")
 
 
 class RegisterServiceInfo:
@@ -34,7 +36,7 @@ class RegisterServiceInfo:
         self.host_name = endpoint_conf.service.external_host
         self.external_port = endpoint_conf.service.external_port
         self.api_path = endpoint_conf.service.api_path
-        self.conf_info = endpoint_conf.service_info.dict()
+        self.conf_info = endpoint_conf.service_info.dict(exclude_none=True)
         self.collection = (
             foca_conf.db.dbs["serviceStore"].collections["service_info"].client
         )
@@ -67,23 +69,29 @@ class RegisterServiceInfo:
             cloud_registry.exceptions.ValidationError: Service info
                 configuration does not conform to API specification.
         """
-        add = False
-        try:
-            db_info = self.get_service_info()
-        except NotFound:
-            db_info = {}
-        add = False if db_info == self.conf_info else True
-        if add:
-            self._upsert_service_info(data=self.conf_info)
-            logger.info("Service info registered.")
-        else:
+        stored = self._get_stored_service_info(id=self.conf_info["id"])
+        managed = [field for field in TIMESTAMP_FIELDS if field not in self.conf_info]
+        if (
+            stored is not None
+            and all(stored.get(field) for field in managed)
+            and {k: v for k, v in stored.items() if k not in managed} == self.conf_info
+        ):
             logger.info("Using available service info.")
+            return
+        self._upsert_service_info(
+            data=self._add_timestamps(data=self.conf_info, stored=stored)
+        )
+        logger.info("Service info registered.")
 
     def set_service_info_from_app_context(
         self,
         data: Dict,
     ) -> Dict:
-        """Return service info.
+        """Create or update service info from a request.
+
+        Missing timestamps are added: `createdAt` is kept from stored service
+        info with the same identifier (or set to the current time), and
+        `updatedAt` is set to the current time.
 
         Arguments:
             data: Service info according to API specification.
@@ -91,7 +99,8 @@ class RegisterServiceInfo:
         Returns:
             Response headers.
         """
-        self._upsert_service_info(data=data)
+        stored = self._get_stored_service_info(id=data["id"])
+        self._upsert_service_info(data=self._add_timestamps(data=data, stored=stored))
         return self._get_headers()
 
     def _upsert_service_info(
@@ -119,3 +128,39 @@ class RegisterServiceInfo:
             f"{self.api_path}/service-info"
         )
         return headers
+
+    def _get_stored_service_info(self, id: str) -> Optional[Dict]:
+        """Get stored service info with a given identifier.
+
+        Arguments:
+            id: Service info identifier.
+
+        Returns:
+            Stored service info, or `None` if there is none.
+        """
+        return self.collection.find_one({"id": id}, {"_id": False})
+
+    def _add_timestamps(self, data: Dict, stored: Optional[Dict]) -> Dict:
+        """Add missing timestamps to service info.
+
+        Arguments:
+            data: Service info.
+            stored: Stored service info with the same identifier, if any.
+
+        Returns:
+            Copy of `data`, with `createdAt` taken from `stored` (or the current
+            time) and `updatedAt` set to the current time, unless provided.
+        """
+        now = self._current_timestamp()
+        created_at = (stored or {}).get("createdAt") or now
+        return {"createdAt": created_at, "updatedAt": now, **data}
+
+    @staticmethod
+    def _current_timestamp() -> str:
+        """Return the current UTC timestamp in RFC 3339 format."""
+        return (
+            datetime.now(timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
