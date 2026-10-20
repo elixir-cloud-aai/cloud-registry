@@ -52,12 +52,14 @@ jobs:
         run: |
           coverage run --source cloud_registry -m pytest -W ignore::DeprecationWarning
           coverage xml
+      # Upload errors fail the workflow only on pushes, because pull requests
+      # from forks and Dependabot get no access to the Codecov token
       - name: Submit Report to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.xml
-          fail_ci_if_error: true
+          fail_ci_if_error: ${{ github.event_name == 'push' }}
           verbose: true
       - name: Set up Docker Compose
         uses: docker/setup-compose-action@v1.2.0
