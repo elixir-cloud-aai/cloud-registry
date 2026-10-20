@@ -3,6 +3,7 @@
 """
 
 from copy import deepcopy
+from itertools import count
 
 import pytest
 
@@ -30,9 +31,14 @@ def headers(user=None):
     return {} if user is None else make_headers(user)
 
 
+# Numbers for the URLs of registered services, which must be unique
+URLS = count()
+
+
 def register(client, user=ALICE):
-    """Register a service as a user; return its identifier."""
-    response = client.post(f"{BASE}/services", json=_service(), headers=headers(user))
+    """Register a service (with a new URL) as a user; return its identifier."""
+    service = {**_service(), "url": f"https://tes{next(URLS)}.example.org"}
+    response = client.post(f"{BASE}/services", json=service, headers=headers(user))
     assert response.status_code == 200, response.json
     return response.json
 

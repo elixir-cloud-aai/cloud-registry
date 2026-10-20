@@ -26,7 +26,10 @@ paths:
       security: []
     post:
       summary: Register service.
-      description: Create a service resource.
+      description: |
+        Create a service resource. Services are unique by URL and API type:
+        registering a service again returns `409`. Invalid URLs, URLs
+        without scheme or host, and URLs with user info return `400`.
       operationId: postService
       tags:
         - cloud-registry
@@ -52,6 +55,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/DuplicateService'
         '500':
           $ref: '#/components/responses/InternalServerError'
         default:
@@ -97,7 +102,11 @@ paths:
           $ref: '#/components/responses/Error'
     put:
       summary: Register or update service.
-      description: Create or update a service resource.
+      description: |
+        Create or update a service resource. Services are unique by URL and
+        API type: changing them to those of another service returns `409`.
+        Invalid URLs, URLs without scheme or host, and URLs with user info
+        return `400`.
       operationId: putService
       tags:
         - cloud-registry
@@ -130,6 +139,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/DuplicateService'
         '500':
           $ref: '#/components/responses/InternalServerError'
         default:
@@ -322,6 +333,26 @@ components:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Error'
+    DuplicateService:
+      description: |
+        A service with the same URL and API type (`type.group` and
+        `type.artifact`, case-insensitive) is registered. URLs are compared
+        after normalizing common spellings (e.g., case of schemes and hosts,
+        default ports, trailing slashes, queries and fragments; see the
+        README). `serviceId` names the registered service; contact its owner
+        or an admin.
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Error'
+              - type: object
+                required:
+                  - serviceId
+                properties:
+                  serviceId:
+                    type: string
+                    description: Identifier of the registered service.
     InternalServerError:
       content:
         application/problem+json:

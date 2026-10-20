@@ -65,4 +65,5 @@ MOCK_SERVICE = {
     "type": MOCK_TYPE,
     "organization": "organization",
     "version": "version",
+    "url": "https://beacon.example.org/api",
 }
