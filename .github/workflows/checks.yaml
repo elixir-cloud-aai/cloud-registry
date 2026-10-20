@@ -135,7 +135,7 @@ jobs:
       - name: Test chart
         run: |
           helm version
-          pytest tests/test_config.py
+          pytest tests/test_config.py tests/test_chart.py
   smoke_test:
     name: Run app with Docker Compose
     runs-on: ubuntu-latest

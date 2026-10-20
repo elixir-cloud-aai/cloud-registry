@@ -29,9 +29,36 @@ spec:
         env:
         - name: FOCA_CONFIG_OVERLAY
           value: /etc/cloud-registry/overlay.yaml
+        {{- if .Values.mongodb.auth.enabled }}
+        - name: MONGO_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "cloud-registry.mongodbSecret" . }}
+              key: username
+        - name: MONGO_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "cloud-registry.mongodbSecret" . }}
+              key: password
+        {{- end }}
         ports:
         - containerPort: 8080
           protocol: TCP
+        # All API endpoints require authentication, so probe the Swagger UI
+        readinessProbe:
+          httpGet:
+            path: /ga4gh/registry/v1/ui/
+            port: 8080
+          periodSeconds: 10
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /ga4gh/registry/v1/ui/
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
         resources: {{- toYaml .Values.cloud_registry.resources | nindent 10 }}
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File

@@ -9,11 +9,9 @@ spec:
   selector:
     matchLabels:
       app: mongodb
+  # The data volume can only be used by one pod at a time
   strategy:
-    rollingUpdate:
-      maxSurge: 25%
-      maxUnavailable: 25%
-    type: RollingUpdate
+    type: Recreate
   template:
     metadata:
       creationTimestamp: null
@@ -24,6 +22,39 @@ spec:
       - image: {{ .Values.mongodb.image }}
         imagePullPolicy: Always
         name: mongodb
+        {{- if .Values.mongodb.auth.enabled }}
+        env:
+        - name: MONGO_INITDB_ROOT_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "cloud-registry.mongodbSecret" . }}
+              key: root-username
+        - name: MONGO_INITDB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "cloud-registry.mongodbSecret" . }}
+              key: root-password
+        - name: MONGO_APP_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "cloud-registry.mongodbSecret" . }}
+              key: username
+        - name: MONGO_APP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "cloud-registry.mongodbSecret" . }}
+              key: password
+        {{- end }}
+        # TCP checks are cheaper than starting `mongosh` within the CPU limit
+        readinessProbe:
+          tcpSocket:
+            port: 27017
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: 27017
+          initialDelaySeconds: 30
+          periodSeconds: 20
         ports:
         - containerPort: 27017
           protocol: TCP
@@ -33,9 +64,11 @@ spec:
         volumeMounts:
         - mountPath: /data/db/
           name: mongodb
+        {{- if .Values.mongodb.auth.enabled }}
         - name: init-script
-          mountPath: /docker-entrypoint-initdb.d/init-script.js
-          subPath: init-script.js
+          mountPath: /docker-entrypoint-initdb.d
+          readOnly: true
+        {{- end }}
       dnsPolicy: ClusterFirst
       restartPolicy: Always
       schedulerName: default-scheduler
@@ -45,6 +78,8 @@ spec:
       - name: mongodb
         persistentVolumeClaim:
           claimName: mongodb
+      {{- if .Values.mongodb.auth.enabled }}
       - name: init-script
         configMap:
           name: mongo-init-script
+      {{- end }}

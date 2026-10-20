@@ -47,7 +47,18 @@ cloud_registry:
       memory: 128Mi
 
 mongodb:
-  image: docker.io/library/mongo:noble
+  # MongoDB 8.0 refuses to start on Linux kernels 6.19 to 7.0.13
+  # (https://jira.mongodb.org/browse/SERVER-121912); see the deployment docs
+  # before changing the major version of an existing database
+  image: docker.io/library/mongo:7.0
+  auth:
+    # Require credentials; only applied when MongoDB starts with an empty
+    # data directory (see the deployment docs for existing databases)
+    enabled: false
+    # Name of an existing Secret with keys `root-username` and
+    # `root-password` (MongoDB root user) and `username` and `password` (app
+    # user, created with access to the app's database)
+    existingSecret: ""
   volumeSize: 1Gi
   resources:
     limits:
