@@ -20,10 +20,9 @@ def test_get_custom_config_missing(unit_app):
         get_custom_config()
 
 
-def test_get_collection(unit_app, services, service_info):
+def test_get_collection(unit_app, services):
     """Configured collections of the service store are returned."""
     with unit_app.app_context():
         assert get_collection("services") is services
-        assert get_collection("service_info") is service_info
         with pytest.raises(KeyError):
             get_collection("unknown")

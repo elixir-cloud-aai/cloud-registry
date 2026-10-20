@@ -13,7 +13,6 @@ from cloud_registry.ga4gh.registry.server import (
     getServices,
     getServiceTypes,
     postService,
-    postServiceInfo,
     putService,
 )
 from tests.mock_data import (
@@ -126,10 +125,8 @@ def test_getServiceTypes_sort_order(unit_app, services):
 
 
 # GET /service-info
-def test_getServiceInfo(unit_app, service_info):
+def test_getServiceInfo(unit_app):
     """Test for getting service info."""
-    service_info.insert_one(deepcopy(SERVICE_INFO_CONFIG))
-
     with unit_app.app_context():
         res = getServiceInfo.__wrapped__()
         assert res == SERVICE_INFO_CONFIG
@@ -197,19 +194,3 @@ def test_putService_invalid_payload(unit_app, services):
     with pytest.raises(BadRequest):
         with unit_app.test_request_context(json=""):
             putService.__wrapped__(serviceId=MOCK_ID)
-
-
-# POST /service-info
-def test_postServiceInfo(unit_app, service_info):
-    """Test for creating service info."""
-    with unit_app.test_request_context(json=deepcopy(SERVICE_INFO_CONFIG)):
-        postServiceInfo.__wrapped__()
-        res = getServiceInfo.__wrapped__()
-        assert res == SERVICE_INFO_CONFIG
-
-
-def test_postServiceInfo_invalid_payload(unit_app, service_info):
-    """Test for creating service info, given invalid payload."""
-    with pytest.raises(BadRequest):
-        with unit_app.test_request_context(json=""):
-            postServiceInfo.__wrapped__()

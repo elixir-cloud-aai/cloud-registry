@@ -2,13 +2,13 @@
 
 import logging
 
-from flask import Response, request
+from flask import request
 from foca.utils.logging import log_traffic
 
 from cloud_registry.exceptions import BadRequest, NotFound
 from cloud_registry.ga4gh.registry.permissions import add_owner, remove_permissions
 from cloud_registry.ga4gh.registry.service import RegisterService
-from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
+from cloud_registry.ga4gh.registry.service_info import get_service_info
 from cloud_registry.utils import get_collection
 
 logger = logging.getLogger(__name__)
@@ -74,8 +74,7 @@ def getServiceInfo(**kwargs) -> dict:
     Returns:
         Service info object.
     """
-    service_info = RegisterServiceInfo()
-    return service_info.get_service_info()
+    return get_service_info()
 
 
 # POST /services
@@ -120,22 +119,6 @@ def putService(serviceId: str, **kwargs) -> str:
         Identifier of registered/updated service.
     """
     return _register_service(service_id=serviceId)
-
-
-# POST /service-info
-@log_traffic
-def postServiceInfo(**kwargs) -> Response:
-    """Set information about this service.
-
-    Returns:
-        An empty 201 response with a `Location` header.
-    """
-    service_info = RegisterServiceInfo()
-    headers = service_info.set_service_info_from_app_context(data=_get_request_object())
-    response = Response(status=201, headers=headers)
-    # The body is empty, so it has no media type (Flask sets a default one)
-    del response.headers["Content-Type"]
-    return response
 
 
 def _get_request_object() -> dict:

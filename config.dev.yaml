@@ -8,5 +8,5 @@ security:
 custom:
     access_control:
         # Start without admin groups (nobody can manage services they don't
-        # own or set the service info)
+        # own)
         require_admin: False

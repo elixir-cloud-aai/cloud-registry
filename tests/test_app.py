@@ -1,7 +1,7 @@
 """Tests for the app, with requests going through the API."""
 
 from copy import deepcopy
-import re
+from importlib.metadata import version
 import string
 
 import connexion
@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 import cloud_registry.app
-from cloud_registry.ga4gh.registry.service_info import RegisterServiceInfo
+from cloud_registry.ga4gh.registry.service_info import InvalidServiceInfo
 from tests.conftest import ADMIN_GROUP, APP_DIR, make_headers
 
 BASE = "/ga4gh/registry/v1"
@@ -69,7 +69,6 @@ def test_public_read(client, method, path, status):
         ("post", "/services"),
         ("put", "/services/abc"),
         ("delete", "/services/abc"),
-        ("post", "/service-info"),
     ],
 )
 def test_no_token(client, method, path):
@@ -183,102 +182,31 @@ def test_get_service_types(client, headers):
         assert response.json == [SERVICE["type"], wes]
 
 
-def test_service_info(app, client, admin_headers):
-    """Service info is registered from the config, with timestamps set on
-    registration, and can be replaced.
+def test_service_info(app, client):
+    """Service info is served from the config, with the package version and
+    without timestamps that aren't configured.
     """
-    config = app.app.config.foca.custom.endpoints.service_info.model_dump(
-        exclude_none=True
-    )
-    response = client.get(f"{BASE}/service-info", headers=admin_headers)
+    config = app.app.config.foca.custom.endpoints.service_info
+    response = client.get(f"{BASE}/service-info")
     assert response.status_code == 200
-    info = response.json
-    assert {k: v for k, v in info.items() if k not in TIMESTAMPS} == config
-    assert info["createdAt"] == info["updatedAt"]
-    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", info["createdAt"])
-
-    new = {**info, "name": "New name"}
-    response = client.post(f"{BASE}/service-info", json=new, headers=admin_headers)
-    assert response.status_code == 201
-    assert client.get(f"{BASE}/service-info", headers=admin_headers).json == new
+    assert response.json == {**config, "version": version("cloud-registry")}
+    assert not TIMESTAMPS & response.json.keys()
 
 
-def test_service_info_invalid(client, headers):
-    """Service info that does not match the schema is rejected."""
-    response = client.post(f"{BASE}/service-info", json={}, headers=headers)
-    _assert_error(response, 400)
+def test_service_info_configured(app, client):
+    """Configured versions and timestamps are served."""
+    config = app.app.config.foca.custom.endpoints.service_info
+    configured = {"version": "1.2.3", "createdAt": "2020-11-08T00:00:00Z"}
+    config.update(configured)
+    assert client.get(f"{BASE}/service-info").json.items() >= configured.items()
 
 
-def _register_config_service_info(app):
-    """Register service info from the config, as on startup."""
-    with app.app.app_context():
-        RegisterServiceInfo().set_service_info_from_config()
-
-
-def test_service_info_no_id(client, headers):
-    """Service info without an identifier is rejected."""
-    info = client.get(f"{BASE}/service-info", headers=headers).json
-    del info["id"]
-    response = client.post(f"{BASE}/service-info", json=info, headers=headers)
-    _assert_error(response, 400)
-    assert response.mimetype == "application/problem+json"
-
-
-def test_service_info_response(client, admin_headers):
-    """Registering service info returns the URL of the service info endpoint
-    and no body.
-    """
-    info = client.get(f"{BASE}/service-info", headers=admin_headers).json
-    response = client.post(f"{BASE}/service-info", json=info, headers=admin_headers)
-    assert response.status_code == 201
-    assert response.data == b""
-    assert "Content-Type" not in response.headers
-    assert response.headers["Location"] == (f"https://0.0.0.0:8080{BASE}/service-info")
-
+def test_service_info_read_only(client, admin_headers):
+    """Service info can't be set via the API."""
+    response = client.post(f"{BASE}/service-info", json={}, headers=admin_headers)
+    assert response.status_code == 405
     spec = client.get(f"{BASE}/openapi.json").json
-    declared = spec["paths"]["/service-info"]["post"]["responses"]["201"]
-    assert "Location" in declared["headers"]
-
-
-def test_service_info_precedence(app, client, admin_headers):
-    """The most recently written service info is served: posted service info
-    is kept on restart, unless the service info in the config changed.
-    """
-    info = client.get(f"{BASE}/service-info", headers=admin_headers).json
-    posted = {**info, "id": "OTHER", "name": "Posted"}
-    response = client.post(f"{BASE}/service-info", json=posted, headers=admin_headers)
-    assert response.status_code == 201
-
-    _register_config_service_info(app)
-    response = client.get(f"{BASE}/service-info", headers=admin_headers)
-    assert response.json["id"] == "OTHER"
-
-    app.app.config.foca.custom.endpoints.service_info.name = "Changed"
-    _register_config_service_info(app)
-    response = client.get(f"{BASE}/service-info", headers=admin_headers)
-    assert (response.json["id"], response.json["name"]) == (info["id"], "Changed")
-
-
-def test_service_info_precedence_same_id(app, client, admin_headers):
-    """Posted service info with the identifier from the config is kept on
-    restart, unless the service info in the config changed.
-    """
-    info = client.get(f"{BASE}/service-info", headers=admin_headers).json
-    posted = {**info, "name": "Posted"}
-    response = client.post(f"{BASE}/service-info", json=posted, headers=admin_headers)
-    assert response.status_code == 201
-
-    _register_config_service_info(app)
-    response = client.get(f"{BASE}/service-info", headers=admin_headers)
-    assert response.json["name"] == "Posted"
-
-    app.app.config.foca.custom.endpoints.service_info.description = "Changed"
-    _register_config_service_info(app)
-    response = client.get(f"{BASE}/service-info", headers=admin_headers)
-    assert (response.json["name"], response.json["description"]) == (
-        info["name"],
-        "Changed",
-    )
+    assert list(spec["paths"]["/service-info"]) == ["get"]
 
 
 def test_error_media_type(client, headers):
@@ -336,20 +264,19 @@ def _set_overlay(monkeypatch, tmp_path, overlay: dict) -> None:
 
 
 def test_main(monkeypatch, mongo_client, app_env, capsys):
-    """`main()` creates the app, logs the admin groups, registers service info
-    and runs the app on the configured port.
+    """`main()` creates the app, logs the admin groups and service info, and
+    runs the app on the configured port.
     """
     ports = _mock_run(monkeypatch)
 
     cloud_registry.app.main()
 
     assert ports == [8080]
-    service_info = mongo_client["serviceStore"]["service_info"].find_one()
-    assert service_info["id"] == "ELIXIR_CLOUD_SERVICE_REGISTRY_1"
     # FOCA configures logging to stderr
-    assert (
-        f"Groups mapped to the role 'admin': {ADMIN_GROUP}" in capsys.readouterr().err
-    )
+    err = capsys.readouterr().err
+    assert f"Groups mapped to the role 'admin': {ADMIN_GROUP}" in err
+    assert "Serving service info 'ELIXIR_CLOUD_SERVICE_REGISTRY_1'" in err
+    assert "service_info" not in mongo_client["serviceStore"].list_collection_names()
 
 
 def test_main_requires_admin(monkeypatch, tmp_path, app_env):
@@ -375,6 +302,27 @@ def test_main_admin_optional(monkeypatch, tmp_path, app_env, capsys):
     cloud_registry.app.main()
     assert ports == [8080]
     assert "No group is mapped to the role 'admin'" in capsys.readouterr().err
+
+
+def test_main_invalid_service_info(monkeypatch, tmp_path, app_env):
+    """`main()` fails if the service info is invalid, naming the field."""
+    _set_overlay(
+        monkeypatch,
+        tmp_path,
+        {
+            "security": {"auth": {"audience": ["a"]}},
+            "custom": {
+                "access_control": {"require_admin": False},
+                "endpoints": {"service_info": {"contactUrl": "support"}},
+            },
+        },
+    )
+    ports = _mock_run(monkeypatch)
+    with pytest.raises(
+        InvalidServiceInfo, match=r"`custom\.endpoints\.service_info\.contactUrl`"
+    ):
+        cloud_registry.app.main()
+    assert ports == []
 
 
 def test_main_config_missing(monkeypatch, tmp_path):

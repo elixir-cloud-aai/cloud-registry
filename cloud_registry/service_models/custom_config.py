@@ -1,5 +1,7 @@
 """Cloud Registry custom config models."""
 
+from typing import Any
+
 from foca.models.config import FOCABaseConfig
 from foca.utils.misc import generate_id
 from pydantic import Field, PositiveInt, field_validator
@@ -41,168 +43,6 @@ rt=8080, api_path='')
     external_host: str
     external_port: int
     api_path: str
-
-
-class TypeConfig(FOCABaseConfig):
-    """Model for deifining the type of GA4GH Service.
-
-    Args:
-        group: Namespace in reverse domain name format.
-        artifact: Name of the API or GA4GH specification implemented.
-        version: Version of the API or specification.
-
-    Attributes:
-        group: Namespace in reverse domain name format.
-        artifact: Name of the API or GA4GH specification implemented.
-        version: Version of the API or specification.
-
-    Raises:
-        pydantic.ValidationError: The class was instantianted with an illegal
-            data type.
-
-    Example:
-        >>> TypeConfig(
-        ...     group='service.group',
-        ...     artifact='service_artifact',
-        ...     version='1.0.0'
-        ... )
-        TypeConfig(group='service.group', artifact='service_artifact', version\
-='1.0.0')
-    """
-
-    group: str
-    artifact: str
-    version: str
-
-
-class OrganizationConfig(FOCABaseConfig):
-    """Model for organization providing the service.
-
-    Args:
-        name: Name of the organization responsible for the service.
-        url: URL of the website of the organization (RFC 3986 format).
-
-    Attributes:
-        name: Name of the organization responsible for the service.
-        url: URL of the website of the organization (RFC 3986 format).
-
-    Raises:
-        pydantic.ValidationError: The class was instantianted with an illegal
-            data type.
-
-    Example:
-        >>> OrganizationConfig(
-        ...     name='organization_name',
-        ...     url='organization_url'
-        ... )
-        OrganizationConfig(name='organization_name', url='organization_url')
-    """
-
-    name: str
-    url: str
-
-
-class ServiceInfoConfig(FOCABaseConfig):
-    """Model for service information parameters.
-
-    Args:
-        id: Unique identifier of this service.
-        name: Service name.
-        type: Type of GA4GH service.
-        description: Service description.
-        organization: Organization providing the service.
-        contactUrl: URL of the contact for the provider of the service, e.g. a
-            link to a contact form (RFC 3986 format), or an email (RFC 2368
-            format).
-        documentationUrl: URL of the documentation of the service (RFC 3986
-            format). This should help someone learn how to use your service,
-            including any specifics required to access data, e.g.
-            authentication.
-        createdAt: Timestamp describing when the service was first deployed and
-            available (RFC 3339 format). If not set, the time the service info
-            was first registered.
-        updatedAt: Timestamp describing when the service was last updated (RFC
-            3339 format). If not set, the time the service info was last
-            changed.
-        environment: Environment the service is running in. Use this to
-            distinguish between production, development and testing/staging
-            deployments. Suggested values are prod, test, dev, staging.
-        version: Version of the service being described. Semantic versioning
-            is recommended, but other identifiers, such as dates or commit
-            hashes, are also allowed. The version should be changed whenever
-            the service is updated.
-
-    Attributes:
-        id: Unique identifier of this service.
-        name: Service name.
-        type: Type of GA4GH service.
-        description: Service description.
-        organization: Organization providing the service.
-        contactUrl: URL of the contact for the provider of the service, e.g. a
-            link to a contact form (RFC 3986 format), or an email (RFC 2368
-            format).
-        documentationUrl: URL of the documentation of the service (RFC 3986
-            format). This should help someone learn how to use your service,
-            including any specifics required to access data, e.g.
-            authentication.
-        createdAt: Timestamp describing when the service was first deployed and
-            available (RFC 3339 format). If not set, the time the service info
-            was first registered.
-        updatedAt: Timestamp describing when the service was last updated (RFC
-            3339 format). If not set, the time the service info was last
-            changed.
-        environment: Environment the service is running in. Use this to
-            distinguish between production, development and testing/staging
-            deployments. Suggested values are prod, test, dev, staging.
-        version: Version of the service being described. Semantic versioning
-            is recommended, but other identifiers, such as dates or commit
-            hashes, are also allowed. The version should be changed whenever
-            the service is updated.
-
-    Raises:
-        pydantic.ValidationError: The class was instantianted with an illegal
-            data type.
-
-    Example:
-        >>> ServiceInfoConfig(
-        ...     id='service_id',
-        ...     name='service_name',
-        ...     type=TypeConfig(
-        ...         group='service.group',
-        ...         artifact='service_artifact',
-        ...         version='1.0.0'
-        ...     ),
-        ...     description='Service description.',
-        ...     organization=OrganizationConfig(
-        ...         name='organization_name',
-        ...         url='organization_url'
-        ...     ),
-        ...     contactUrl='service_contact_url',
-        ...     documentationUrl='service_document_url',
-        ...     createdAt='2020-11-04T12:58:19Z',
-        ...     updatedAt='2020-11-04T12:58:19Z',
-        ...     environment='dev',
-        ...     version='1.0.0-dev-XXXXXX'
-        ... )
-        ServiceInfoConfig(id='service_id', name='service_name', type=TypeConfi\
-g(group='service.group', artifact='service_artifact', version='1.0.0'), descri\
-ption='Service description.', organization=OrganizationConfig(name='organizati\
-on_name', url='organization_url'), contactUrl='service_contact_url', documenta\
-tionUrl='service_document_url', createdAt='2020-11-04T12:58:19Z', updatedAt='2\
-020-11-04T12:58:19Z', environment='dev', version='1.0.0-dev-XXXXXX')
-    """
-
-    id: str
-    name: str
-    type: TypeConfig
-    description: str
-    organization: OrganizationConfig
-    contactUrl: str
-    documentationUrl: str
-    createdAt: str | None = None
-    updatedAt: str | None = None
-    environment: str
-    version: str
 
 
 class IdConfig(FOCABaseConfig):
@@ -277,12 +117,14 @@ class EndpointsConfig(FOCABaseConfig):
 
     Args:
         service: Service run parameters.
-        service_info: Service info parameters.
+        service_info: Service info, according to the GA4GH `Service` schema
+            (checked on startup); `version` defaults to the package version.
         services: Cloud registry service store parameters.
 
     Attributes:
         service: Service run parameters.
-        service_info: Service info parameters.
+        service_info: Service info, according to the GA4GH `Service` schema
+            (checked on startup); `version` defaults to the package version.
         services: Cloud registry service store parameters.
 
     Raises:
@@ -297,26 +139,19 @@ class EndpointsConfig(FOCABaseConfig):
         ...         external_port=8080,
         ...         api_path=''
         ...     ),
-        ...     service_info=ServiceInfoConfig(
-        ...         id='',
-        ...         name='service_name',
-        ...         type=TypeConfig(
-        ...             group='service.group',
-        ...             artifact='service_artifact',
-        ...             version='1.0.0'
-        ...         ),
-        ...         description='Service description.',
-        ...         organization=OrganizationConfig(
-        ...             name='organization_name',
-        ...             url='organization_url'
-        ...         ),
-        ...         contactUrl='service_contact_url',
-        ...         documentationUrl='service_document_url',
-        ...         createdAt='2020-11-04T12:58:19Z',
-        ...         updatedAt='2020-11-04T12:58:19Z',
-        ...         environment='dev',
-        ...         version='1.0.0-dev-XXXXXX'
-        ...     ),
+        ...     service_info={
+        ...         'id': 'org.example.registry',
+        ...         'name': 'Registry',
+        ...         'type': {
+        ...             'group': 'org.ga4gh',
+        ...             'artifact': 'service-registry',
+        ...             'version': '1.0.0'
+        ...         },
+        ...         'organization': {
+        ...             'name': 'Example',
+        ...             'url': 'https://example.org'
+        ...         }
+        ...     },
         ...     services=ServicesConfig(
         ...         id=IdConfig(
         ...             charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
@@ -324,19 +159,16 @@ class EndpointsConfig(FOCABaseConfig):
         ...         )
         ...     )
         ... )
-        EndpointsConfig(service=ServiceConfig(url_prefix='https',external_host\
-='0.0.0.0',external_port=8080,api_path=''),service_info=ServiceInfoConfig(id='\
-',name='service_name',type=TypeConfig(group='service.group',artifact='service_\
-artifact',version='1.0.0'),description='Service description.',organization=Org\
-anizationConfig(name='organization_name',url='organization_url'),contactUrl='s\
-ervice_contact_url',documentationUrl='service_document_url',createdAt='2020-11\
--04T12:58:19Z',updatedAt='2020-11-04T12:58:19Z',environment='dev',version='1.0\
-.0-dev-XXXXXX'),services=ServicesConfig(id=IdConfig(charset='ABCDEFGHIJKLMNOPQ\
-RSTUVWXYZ0123456789',length=6)))
+        EndpointsConfig(service=ServiceConfig(url_prefix='https', external_hos\
+t='0.0.0.0', external_port=8080, api_path=''), service_info={'id': 'org.exampl\
+e.registry', 'name': 'Registry', 'type': {'group': 'org.ga4gh', 'artifact': 's\
+ervice-registry', 'version': '1.0.0'}, 'organization': {'name': 'Example', 'ur\
+l': 'https://example.org'}}, services=ServicesConfig(id=IdConfig(charset='ABCD\
+EFGHIJKLMNOPQRSTUVWXYZ0123456789', length=6)))
     """
 
     service: ServiceConfig
-    service_info: ServiceInfoConfig
+    service_info: dict[str, Any]
     services: ServicesConfig
 
 
@@ -389,26 +221,19 @@ class CustomConfig(FOCABaseConfig):
         ...             external_port=8080,
         ...             api_path=''
         ...         ),
-        ...         service_info=ServiceInfoConfig(
-        ...             id='',
-        ...             name='service_name',
-        ...             type=TypeConfig(
-        ...                 group='service.group',
-        ...                 artifact='service_artifact',
-        ...                 version='1.0.0'
-        ...             ),
-        ...             description='Service description.',
-        ...             organization=OrganizationConfig(
-        ...                 name='organization_name',
-        ...                 url='organization_url'
-        ...             ),
-        ...             contactUrl='service_contact_url',
-        ...             documentationUrl='service_document_url',
-        ...             createdAt='2020-11-04T12:58:19Z',
-        ...             updatedAt='2020-11-04T12:58:19Z',
-        ...             environment='dev',
-        ...             version='1.0.0-dev-XXXXXX'
-        ...         ),
+        ...         service_info={
+        ...             'id': 'org.example.registry',
+        ...             'name': 'Registry',
+        ...             'type': {
+        ...                 'group': 'org.ga4gh',
+        ...                 'artifact': 'service-registry',
+        ...                 'version': '1.0.0'
+        ...             },
+        ...             'organization': {
+        ...                 'name': 'Example',
+        ...                 'url': 'https://example.org'
+        ...             }
+        ...         },
         ...         services=ServicesConfig(
         ...             id=IdConfig(
         ...                 charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
@@ -418,15 +243,12 @@ class CustomConfig(FOCABaseConfig):
         ...     )
         ... )
         CustomConfig(endpoints=EndpointsConfig(service=ServiceConfig(url_prefi\
-x='https',external_host='0.0.0.0',external_port=8080,api_path=''),service_info\
-=ServiceInfoConfig(id='',name='service_name',type=TypeConfig(group='service.gr\
-oup',artifact='service_artifact',version='1.0.0'),description='Service descrip\
-tion.',organization=OrganizationConfig(name='organization_name',url='organizat\
-ion_url'),contactUrl='service_contact_url',documentationUrl='service_document_\
-url',createdAt='2020-11-04T12:58:19Z',updatedAt='2020-11-04T12:58:19Z',environ\
-ment='dev',version='1.0.0-dev-XXXXXX'),services=ServicesConfig(id=IdConfig(cha\
-rset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',length=6))),access_control=Acces\
-sControlConfig(require_admin=True))
+x='https', external_host='0.0.0.0', external_port=8080, api_path=''), service_\
+info={'id': 'org.example.registry', 'name': 'Registry', 'type': {'group': 'org\
+.ga4gh', 'artifact': 'service-registry', 'version': '1.0.0'}, 'organization': \
+{'name': 'Example', 'url': 'https://example.org'}}, services=ServicesConfig(id\
+=IdConfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', length=6))), access_\
+control=AccessControlConfig(require_admin=True))
     """
 
     endpoints: EndpointsConfig

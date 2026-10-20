@@ -142,6 +142,19 @@ class TestChartOverlay:
         assert config.custom.endpoints.service.external_port == 8443
         assert config.security.auth.audience == ["test-client"]
 
+    def test_service_info(self, tmp_path, monkeypatch):
+        """Service info set via `config` is merged into the base config."""
+        overlay = _render_overlay(
+            "-f",
+            str(CHART / "ci" / "test-values.yaml"),
+            "--set",
+            "config.custom.endpoints.service_info.environment=prod",
+        )
+        config = _load_config(tmp_path, monkeypatch, overlay)
+        info = config.custom.endpoints.service_info
+        assert info["environment"] == "prod"
+        assert info["id"] == "ELIXIR_CLOUD_SERVICE_REGISTRY_1"
+
     def test_admin_group_required(self):
         """Rendering fails without a group mapped to the role `admin`."""
         with pytest.raises(subprocess.CalledProcessError) as exc:

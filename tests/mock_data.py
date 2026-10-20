@@ -10,7 +10,6 @@ COLLECTION_CONFIG = {
 }
 DB_CONFIG = {
     "collections": {
-        "service_info": COLLECTION_CONFIG,
         "services": COLLECTION_CONFIG,
     },
 }
@@ -60,10 +59,6 @@ ENDPOINT_CONFIG = {
     "services": SERVICES_CONFIG,
 }
 CUSTOM_CONFIG = {"endpoints": ENDPOINT_CONFIG}
-SERVICE_INFO_PATH = "/ga4gh/registry/v1/service-info"
-HEADERS_SERVICE_INFO = {
-    "Location": "http://1.2.3.4:80/registry/ga4gh/registry/v1/service-info",
-}
 MOCK_TYPE = {"group": "org.ga4gh", "artifact": "beacon", "version": "1.0.0"}
 MOCK_SERVICE = {
     "name": "name",
