@@ -1,17 +1,16 @@
 {{- $fullname := include "cloud-registry.fullname" . -}}
-{{- $ingress := .Values.cloud_registry.ingress -}}
-{{- $route := and (not $ingress.enabled) (.Capabilities.APIVersions.Has "route.openshift.io/v1") -}}
-{{- $url := "" -}}
-{{- if $ingress.enabled -}}
-{{- $url = printf "%s://%s" (ternary "https" "http" $ingress.https.enabled) .Values.host_name -}}
-{{- else if $route -}}
+{{- $exposed := or .Values.cloud_registry.ingress.enabled (include "cloud-registry.routeEnabled" .) -}}
+{{- /*
+HTTPS, as advertised by the app (see the ConfigMap template): TLS is
+terminated by the ingress, the route or a proxy in front of the cluster.
+*/ -}}
+{{- $url := "http://localhost:8080" -}}
+{{- if $exposed -}}
 {{- $url = printf "https://%s" .Values.host_name -}}
-{{- else -}}
-{{- $url = "http://localhost:8080" -}}
 {{- end -}}
 Elixir Cloud Service Registry is being deployed as release {{ .Release.Name }}
 in namespace {{ .Release.Namespace }}!
-{{- if not (or $ingress.enabled $route) }}
+{{- if not $exposed }}
 
 WARNING: Neither an Ingress (cloud_registry.ingress.enabled is false) nor an
 OpenShift Route (the cluster does not serve route.openshift.io/v1) was

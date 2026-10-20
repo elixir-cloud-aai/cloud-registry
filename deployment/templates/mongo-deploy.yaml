@@ -61,7 +61,7 @@ spec:
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
         volumeMounts:
-        - mountPath: /data/db/
+        - mountPath: /data/db
           name: mongodb
         # Writable, as the root file system is read-only by default: the
         # socket and the files of the entrypoint's first start (`/tmp`) and

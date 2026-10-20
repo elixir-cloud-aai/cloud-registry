@@ -74,19 +74,31 @@ def render(
     return [doc for doc in yaml.safe_load_all(rendered) if doc]
 
 
-def render_notes(*args: str, **kwargs) -> str:
-    """Render the chart's notes (`templates/NOTES.txt`).
+def render_with(templates: dict[str, str], *args: str, **kwargs) -> list[dict]:
+    """Render a copy of the chart with additional templates.
 
     Args:
+        templates: Contents of the additional templates, by file name.
         args: Arguments of `helm template`.
         kwargs: Keyword arguments of `render()`, except `chart`.
     """
     with tempfile.TemporaryDirectory() as tmp_dir:
         chart = Path(tmp_dir) / "chart"
         shutil.copytree(CHART, chart)
-        notes = (CHART / "templates" / "NOTES.txt").read_text()
-        (chart / "templates" / "_notes-test.tpl").write_text(NOTES_HELPER % notes)
-        (chart / "templates" / "notes-test.yaml").write_text(NOTES_CONFIGMAP)
-        docs = render(*args, chart=chart, **kwargs)
+        for name, template in templates.items():
+            (chart / "templates" / name).write_text(template)
+        return render(*args, chart=chart, **kwargs)
+
+
+def render_notes(*args: str, **kwargs) -> str:
+    """Render the chart's notes (`templates/NOTES.txt`); takes the arguments
+    of `render_with()`, except `templates`.
+    """
+    notes = (CHART / "templates" / "NOTES.txt").read_text()
+    templates = {
+        "_notes-test.tpl": NOTES_HELPER % notes,
+        "notes-test.yaml": NOTES_CONFIGMAP,
+    }
+    docs = render_with(templates, *args, **kwargs)
     (configmap,) = [doc for doc in docs if doc["metadata"]["name"] == "notes-test"]
     return configmap["data"]["notes"]

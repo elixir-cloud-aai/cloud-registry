@@ -1,15 +1,28 @@
 """Tests for the resources of the Helm chart."""
 
+import json
 import re
 import subprocess
 
 import pytest
 import yaml
 
-from tests.helm import APP, CHART, HELM, MONGODB, MONGODB_SECRET, render, render_notes
+from tests.helm import (
+    APP,
+    CHART,
+    HELM,
+    MONGODB,
+    MONGODB_SECRET,
+    render,
+    render_notes,
+    render_with,
+)
 from tests.test_config import CONFIG_FILE
 
 NO_AUTH = ("--set", "mongodb.auth.enabled=false")
+NO_INGRESS = ("--set", "cloud_registry.ingress.enabled=false")
+# The cluster serves OpenShift Routes
+ROUTE_API = ("--api-versions", "route.openshift.io/v1")
 INIT_SCRIPT = f"{MONGODB}-init-script"
 # Mount path of the containers' temporary directory
 TMP = "/tmp"  # noqa: S108 (a path in the container)
@@ -54,6 +67,28 @@ def _startup_window(container: dict) -> int:
     return probe.get("initialDelaySeconds", 0) + (
         probe["periodSeconds"] * probe["failureThreshold"]
     )
+
+
+def _init_script_volumes(docs: dict) -> tuple[list, list]:
+    """Get the init script volumes and mounts of the MongoDB Deployment."""
+    pod = docs[("Deployment", MONGODB)]["spec"]["template"]["spec"]
+    volumes = [vol for vol in pod["volumes"] if vol["name"] == "init-script"]
+    mounts = [
+        mount
+        for mount in pod["containers"][0]["volumeMounts"]
+        if mount["name"] == "init-script"
+    ]
+    return volumes, mounts
+
+
+def _pod(docs: dict, name: str) -> dict:
+    """Get the pod spec of a Deployment."""
+    return docs[("Deployment", name)]["spec"]["template"]["spec"]
+
+
+def _overlay(docs: dict, app: str = APP) -> dict:
+    """Get the config overlay of the app."""
+    return yaml.safe_load(docs[("ConfigMap", f"{app}-config")]["data"]["overlay.yaml"])
 
 
 def test_config_change_restarts_app():
@@ -115,18 +150,6 @@ def test_probe_path_invalid(path):
     assert "probePath" in exc.value.stderr
 
 
-def _init_script_volumes(docs: dict) -> tuple[list, list]:
-    """Get the init script volumes and mounts of the MongoDB Deployment."""
-    pod = docs[("Deployment", MONGODB)]["spec"]["template"]["spec"]
-    volumes = [vol for vol in pod["volumes"] if vol["name"] == "init-script"]
-    mounts = [
-        mount
-        for mount in pod["containers"][0]["volumeMounts"]
-        if mount["name"] == "init-script"
-    ]
-    return volumes, mounts
-
-
 def test_auth_disabled():
     """Without authentication, no Secret, credentials or init script are
     needed.
@@ -178,16 +201,6 @@ def test_auth_requires_secret(args):
     assert "mongodb.auth.existingSecret must be set" in exc.value.stderr
 
 
-def _pod(docs: dict, name: str) -> dict:
-    """Get the pod spec of a Deployment."""
-    return docs[("Deployment", name)]["spec"]["template"]["spec"]
-
-
-def _overlay(docs: dict) -> dict:
-    """Get the config overlay of the app."""
-    return yaml.safe_load(docs[("ConfigMap", f"{APP}-config")]["data"]["overlay.yaml"])
-
-
 @pytest.mark.parametrize(
     ("release", "app"),
     [
@@ -212,7 +225,19 @@ def test_names(release, app):
     }
 
 
-def test_names_override():
+@pytest.mark.parametrize(
+    ("release", "app"), [("prod", "prod-foo"), ("foo-prod", "foo-prod")]
+)
+def test_name_override(release, app):
+    """`nameOverride` replaces the chart name in names and labels."""
+    docs = _render("--set", "nameOverride=foo", release=release)
+    assert ("Deployment", app) in docs
+    assert ("Deployment", f"{app}-mongodb") in docs
+    for doc in docs.values():
+        assert doc["metadata"]["labels"]["app.kubernetes.io/name"] == "foo"
+
+
+def test_fullname_override():
     """`fullnameOverride` sets the names; long names are truncated, so that
     Service names are DNS labels, without collisions.
     """
@@ -221,6 +246,16 @@ def test_names_override():
     docs = _render("--set", f"fullnameOverride={'x' * 70}")
     names = {name for kind, name in docs if kind == "Service"}
     assert names == {"x" * 63, "x" * 55 + "-mongodb"}
+
+
+def test_fullname_override_collision():
+    """Names under which app and MongoDB resources would collide are
+    rejected.
+    """
+    name = "x" * 55 + "-mongodb"
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render("--set", f"fullnameOverride={name}")
+    assert f"would both be named {name}" in exc.value.stderr
 
 
 def test_releases_disjoint():
@@ -246,11 +281,56 @@ def test_app_name_removed():
     assert "fullnameOverride" in exc.value.stderr
 
 
-@pytest.mark.parametrize(("name", "component"), [(APP, "app"), (MONGODB, "mongodb")])
+def test_upgrade():
+    """Upgrades render (the cluster is not looked up by `helm template`)."""
+    assert ("Deployment", APP) in _render("--is-upgrade")
+
+
+@pytest.mark.parametrize(
+    ("owner", "labels", "fails"),
+    [
+        ("cloud-registry", {}, True),
+        ("cloud-registry", {"app": "mongodb"}, True),
+        ("other", {}, False),
+        ("", {}, False),
+        ("cloud-registry", {"app.kubernetes.io/managed-by": "Helm"}, False),
+    ],
+    ids=["legacy", "legacy-labels", "other-release", "unmanaged", "chart-4"],
+)
+def test_upgrade_legacy(owner, labels, fails):
+    """Upgrades fail if the release has MongoDB resources of chart version 3
+    or earlier, which the upgrade would delete; checked with a resource as
+    returned by `lookup`, which finds nothing in `helm template`.
+    """
+    resource = {
+        "metadata": {
+            "name": "mongodb",
+            "annotations": {"meta.helm.sh/release-name": owner} if owner else {},
+            "labels": labels,
+        }
+    }
+    # A template string literal (JSON-quoted) with the resource as JSON
+    literal = json.dumps(json.dumps(resource))
+    template = (
+        '{{- include "cloud-registry.failIfLegacy" (dict "root" . "kind"'
+        f' "PersistentVolumeClaim" "resource" (fromJson {literal})) }}}}'
+    )
+    try:
+        render_with({"legacy-test.yaml": template}, "--set", "host_name=x")
+    except subprocess.CalledProcessError as exc:
+        assert fails
+        assert "chart version 3 or earlier" in exc.stderr
+    else:
+        assert not fails
+
+
+@pytest.mark.parametrize(
+    ("name", "component"),
+    [("prod-cloud-registry", "app"), ("prod-cloud-registry-mongodb", "mongodb")],
+)
 def test_labels(name, component):
     """Deployments and Services select the pods by the standard labels."""
     docs = _render(release="prod")
-    name = name.replace("cloud-registry", "prod-cloud-registry", 1)
     selector = {
         "app.kubernetes.io/name": "cloud-registry",
         "app.kubernetes.io/instance": "prod",
@@ -278,7 +358,7 @@ def test_labels_all():
 
 @pytest.mark.parametrize(
     ("name", "writable"),
-    [(APP, {TMP}), (MONGODB, {TMP, "/data/configdb", "/data/db/"})],
+    [(APP, {TMP}), (MONGODB, {TMP, "/data/configdb", "/data/db"})],
 )
 def test_security_context(name, writable):
     """Containers run as non-root, without privileges and with a read-only
@@ -299,23 +379,37 @@ def test_security_context(name, writable):
         if not mount.get("readOnly")
     }
     assert set(mounts) == writable
-    for path, volume in mounts.items():
-        if path != "/data/db/":
-            assert volume["emptyDir"] == {}
+    data = mounts.pop("/data/db", None)
+    if name == MONGODB:
+        assert data["persistentVolumeClaim"] == {"claimName": MONGODB}
+    for volume in mounts.values():
+        assert volume["emptyDir"] == {}
 
 
 def test_security_context_user_ids():
     """MongoDB runs as the image's user `mongodb`, except on OpenShift, which
-    assigns user and group IDs.
+    assigns user and group IDs, also if they are set in the values.
     """
     ids = {"runAsUser": 999, "runAsGroup": 999, "fsGroup": 999}
     context = _pod(_render(), MONGODB)["securityContext"]
     assert ids.items() <= context.items()
-    docs = _render("--api-versions", "security.openshift.io/v1")
+    docs = _render(
+        "--api-versions",
+        "security.openshift.io/v1",
+        "--set",
+        "cloud_registry.podSecurityContext.runAsUser=1000",
+        "--set",
+        "cloud_registry.securityContext.runAsUser=1000",
+        "--set",
+        "mongodb.securityContext.runAsGroup=999",
+    )
     for name in (APP, MONGODB):
-        context = _pod(docs, name)["securityContext"]
+        pod = _pod(docs, name)
+        assert not set(ids) & set(pod["securityContext"])
+        assert pod["securityContext"]["runAsNonRoot"] is True
+        context = pod["containers"][0]["securityContext"]
         assert not set(ids) & set(context)
-        assert context["runAsNonRoot"] is True
+        assert context["readOnlyRootFilesystem"] is True
 
 
 def test_security_context_values():
@@ -324,32 +418,24 @@ def test_security_context_values():
         "--set",
         "cloud_registry.securityContext.readOnlyRootFilesystem=false",
         "--set",
-        "mongodb.podSecurityContext.runAsUser=null",
+        "mongodb.podSecurityContext.fsGroup=null",
     )
     app = _container(docs, APP)["securityContext"]
     assert app["readOnlyRootFilesystem"] is False
     assert app["allowPrivilegeEscalation"] is False
-    assert "runAsUser" not in _pod(docs, MONGODB)["securityContext"]
+    assert "fsGroup" not in _pod(docs, MONGODB)["securityContext"]
 
 
-@pytest.mark.parametrize("release", ["cloud-registry", "prod"])
-def test_db_host(release):
+@pytest.mark.parametrize(
+    ("release", "app"), [("cloud-registry", APP), ("prod", "prod-cloud-registry")]
+)
+def test_db_host(release, app):
     """The app connects to the MongoDB Service of its release, unless the
     config sets another host.
     """
-    docs = render("--set", "host_name=x", release=release)
-    (overlay,) = [
-        yaml.safe_load(doc["data"]["overlay.yaml"])
-        for doc in docs
-        if doc["kind"] == "ConfigMap" and "overlay.yaml" in doc["data"]
-    ]
-    (service,) = [
-        doc["metadata"]["name"]
-        for doc in docs
-        if doc["kind"] == "Service"
-        and doc["spec"]["selector"]["app.kubernetes.io/component"] == "mongodb"
-    ]
-    assert overlay["db"] == {"host": service}
+    docs = _render(release=release)
+    assert _overlay(docs, app)["db"] == {"host": f"{app}-mongodb"}
+    assert ("Service", f"{app}-mongodb") in docs
     overlay = _overlay(_render("--set", "config.db.host=external"))
     assert overlay["db"] == {"host": "external"}
 
@@ -396,40 +482,37 @@ def test_route():
     """Without an Ingress, an OpenShift Route is created if the cluster
     serves Routes.
     """
-    disabled = ("--set", "cloud_registry.ingress.enabled=false")
-    assert not [kind for kind, _ in _render(*disabled) if kind in ("Ingress", "Route")]
-    docs = _render(*disabled, "--api-versions", "route.openshift.io/v1")
+    assert not [
+        kind for kind, _ in _render(*NO_INGRESS) if kind in ("Ingress", "Route")
+    ]
+    docs = _render(*NO_INGRESS, *ROUTE_API)
     route = docs[("Route", APP)]
     assert route["spec"]["to"]["name"] == APP
     assert route["spec"]["port"] == {"targetPort": "http"}
     assert ("Ingress", APP) not in docs
+    # The Ingress takes precedence
+    docs = _render(*ROUTE_API)
+    assert ("Ingress", APP) in docs
+    assert ("Route", APP) not in docs
 
 
 @pytest.mark.parametrize(
-    ("args", "url"),
+    ("args", "exposed"),
     [
-        ((), "http://x"),
-        (("--set", "cloud_registry.ingress.https.enabled=true"), "https://x"),
-        (
-            (
-                "--set",
-                "cloud_registry.ingress.enabled=false",
-                "--api-versions",
-                "route.openshift.io/v1",
-            ),
-            "https://x",
-        ),
-        (("--set", "cloud_registry.ingress.enabled=false"), "http://localhost:8080"),
+        ((), True),
+        (("--set", "cloud_registry.ingress.https.enabled=true"), True),
+        (ROUTE_API, True),
+        ((*NO_INGRESS, *ROUTE_API), True),
+        (NO_INGRESS, False),
     ],
-    ids=["ingress", "https", "route", "none"],
+    ids=["ingress", "ingress-https", "ingress-route-api", "route", "none"],
 )
-def test_notes(args, url):
-    """The notes show the URL of the app, with a request that needs no token,
-    and warn if the app is not exposed.
+def test_notes(args, exposed):
+    """The notes show the app's HTTPS URL (as advertised by the app) with a
+    request, or warn and show a port forward if the app is not exposed.
     """
     notes = render_notes("--set", "host_name=x", *args)
+    url = "https://x" if exposed else "http://localhost:8080"
     assert f'curl -X GET "{url}/ga4gh/registry/v1/service-info"' in notes
-    assert "token" in notes
-    exposed = url != "http://localhost:8080"
     assert ("WARNING" in notes) is not exposed
-    assert ("kubectl port-forward svc/cloud-registry 8080:8080" in notes) is not exposed
+    assert (f"kubectl port-forward svc/{APP} 8080:8080" in notes) is not exposed

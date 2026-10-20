@@ -4,21 +4,18 @@
   "properties": {
     "nameOverride": {
       "type": "string",
-      "description": "Replaces the chart name in resource names and labels"
+      "description": "Replaces the chart name in resource names and labels; set at installation only"
     },
     "fullnameOverride": {
       "type": "string",
-      "description": "Replaces the name of the app's resources (MongoDB's get the suffix -mongodb)"
+      "description": "Replaces the name of the app's resources (MongoDB's get the suffix -mongodb); set at installation only"
     },
     "host_name": {
       "type": "string",
       "description": "Public host name of the app"
     },
     "config": {
-      "type": [
-        "object",
-        "null"
-      ],
+      "type": ["object", "null"],
       "description": "App config overriding the base config in the image"
     },
     "mongodb": {
@@ -53,9 +50,7 @@
     },
     "cloud_registry": {
       "type": "object",
-      "required": [
-        "probePath"
-      ],
+      "required": ["probePath"],
       "properties": {
         "probePath": {
           "type": "string",
@@ -64,6 +59,7 @@
         },
         "ingress": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "enabled": {
               "type": "boolean",
@@ -74,17 +70,13 @@
               "description": "Ingress class; the cluster's default class if empty"
             },
             "annotations": {
-              "type": [
-                "object",
-                "null"
-              ],
-              "additionalProperties": {
-                "type": "string"
-              },
+              "type": ["object", "null"],
+              "additionalProperties": {"type": "string"},
               "description": "Annotations of the Ingress; take precedence over those set for https"
             },
             "https": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "enabled": {
                   "type": "boolean",

@@ -5,7 +5,9 @@
 # Resource names are derived from the release name: `<release>-cloud-registry`
 # (or `<release>` if it contains `cloud-registry`) for the app and
 # `<that name>-mongodb` for MongoDB; `nameOverride` replaces the chart name,
-# `fullnameOverride` the derived app name
+# `fullnameOverride` the derived app name (camelCase, as in other Helm
+# charts). Set them at installation only: changing them later changes the
+# pod selectors, which cannot be upgraded
 nameOverride: ""
 fullnameOverride: ""
 
@@ -48,7 +50,8 @@ cloud_registry:
   # Path of the app's startup, readiness and liveness probes; change it if
   # the config disables the Swagger UI
   probePath: /ga4gh/registry/v1/ui/
-  # if ingress.enabled: false, it will deploy an OpenShift Route (https://docs.redhat.com/en/documentation/openshift_container_platform/4.19/html/network_apis/route-route-openshift-io-v1)
+  # Ingress for `host_name`; if disabled, an OpenShift Route is created
+  # instead, if the cluster serves Routes (see deployment/README.md, Ingress)
   ingress:
     enabled: true
     # Ingress class (`spec.ingressClassName`); the cluster's default class if
