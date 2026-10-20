@@ -72,15 +72,20 @@ services:
 
 ### Service info
 
-On startup, the app registers the service info from `config.yaml`
-(`custom.endpoints.service_info`) unless it registered the same config before.
-Service info can also be replaced via `POST /service-info`, with the same or
-another `id`. The most recently written service info is served, so posted
-service info is kept on restarts unless the service info in the config
-changes.
+`GET /service-info` serves the service info from the config
+(`custom.endpoints.service_info`), without the database. On startup, the app
+checks it against the GA4GH `Service` schema and refuses to start if it is
+invalid, naming the invalid field. `version` defaults to the version of the
+installed app; `createdAt` and `updatedAt` are served only if set. To change
+the service info, change the config and restart the app (the Helm chart
+restarts it when the `config` value changes).
 
-Public URLs, e.g., in the `Location` header of `POST /service-info`
-responses, are built from `custom.endpoints.service` in `config.yaml`. Set
+Previously, service info could be set via `POST /service-info` and was stored
+in the database. That endpoint is gone, and stored service info is no longer
+served (the `service_info` collection can be dropped): put it in the config
+when upgrading.
+
+Public URLs, e.g., in `Location` headers, are built from `custom.endpoints.service` in `config.yaml`. Set
 `api_path` to the path prefix in front of the API base path when the app is
 served behind a reverse proxy under a subpath (e.g., `registry`), or leave it
 empty. Previously, `api_path` held the API base path itself (e.g.,
@@ -112,8 +117,8 @@ token issued by [LS Login][ls-login]:
 - **Maintainers** can update, but not delete a service.
 - Members of the groups that the deployment maps to the role `admin`
   (`security.access_control.group_mapping`) are **admins**: they can do
-  everything, including setting the service info (`POST /service-info`) and
-  registering services with chosen identifiers (`PUT` of a new service). For
+  everything, including registering services with chosen identifiers (`PUT`
+  of a new service). For
   ELIXIR, that is the LS Login group `ECP_CLN:ADMIN`:
 
   ```yaml
