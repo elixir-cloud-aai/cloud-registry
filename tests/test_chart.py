@@ -248,6 +248,37 @@ def test_fullname_override():
     assert names == {"x" * 63, "x" * 55 + "-mongodb"}
 
 
+def test_numeric_strings():
+    """Values that look like numbers or booleans are rendered as strings."""
+    docs = _render(
+        "--set-string",
+        "fullnameOverride=123,cloud_registry.ingress.className=true,host_name=1",
+        "--set-string",
+        "mongodb.auth.existingSecret=456",
+        mongodb_secret=None,
+        release="789",
+    )
+    deployment = docs[("Deployment", "123")]
+    assert deployment["metadata"]["labels"]["app.kubernetes.io/instance"] == "789"
+    assert (
+        docs[("Service", "123")]["spec"]["selector"]["app.kubernetes.io/instance"]
+        == "789"
+    )
+    ingress = docs[("Ingress", "123")]
+    assert ingress["spec"]["ingressClassName"] == "true"
+    assert ingress["spec"]["rules"][0]["host"] == "1"
+    assert (
+        ingress["spec"]["rules"][0]["http"]["paths"][0]["backend"]["service"]["name"]
+        == "123"
+    )
+    env = {
+        var["name"]: var["valueFrom"]["secretKeyRef"]["name"]
+        for var in _container(docs, "123")["env"]
+        if "valueFrom" in var
+    }
+    assert set(env.values()) == {"456"}
+
+
 def test_fullname_override_collision():
     """Names under which app and MongoDB resources would collide are
     rejected.
@@ -520,9 +551,11 @@ def test_notes(args, exposed, tls_note):
     request, noting if the Ingress has no TLS, or warn and show a port
     forward if the app is not exposed.
     """
-    notes = render_notes("--set", "host_name=x", *args)
+    notes = render_notes("--set", "host_name=x", "--namespace", "registry", *args)
     url = "https://x" if exposed else "http://localhost:8080"
     assert f'curl -X GET "{url}/ga4gh/registry/v1/service-info"' in notes
     assert ("WARNING" in notes) is not exposed
     assert ("TLS must be terminated in front" in notes) is tls_note
-    assert (f"kubectl port-forward svc/{APP} 8080:8080" in notes) is not exposed
+    forward = f"kubectl port-forward svc/{APP} 8080:8080 -n registry\n"
+    assert (forward in notes) is not exposed
+    assert f"kubectl rollout status deploy/{APP} -n registry" in notes

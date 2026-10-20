@@ -179,24 +179,35 @@ for the release `cloud-registry` (in chart versions 2 and 3, the app
 Deployment is called after `cloud_registry.appName`, by default
 `cloud-registry`, and the MongoDB Deployment `mongodb`):
 
-1. Stop the app, so that the data does not change during the dump:
+1. Stop the app and wait until its pods are gone, so that the data does
+   not change during the dump (the pods of chart versions 2 and 3 have the
+   label `app=<appName>`):
 
    ```bash
    kubectl scale deploy/cloud-registry -n <namespace> --replicas=0
+   kubectl wait pod -l app=cloud-registry -n <namespace> --for=delete \
+     --timeout=120s
    ```
 
-2. Dump the app's database to a local file and check that it is not empty:
+2. Dump the app's database to a local file, and check that MongoDB can read
+   the dump (a dry run of the restore); continue only if `Dump OK` is
+   printed:
 
    ```bash
    kubectl exec deploy/mongodb -n <namespace> -- sh -c 'mongodump --quiet \
      -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" \
      --authenticationDatabase admin --db serviceStore --archive' \
-     > serviceStore.archive
-   ls -l serviceStore.archive
+     > serviceStore.archive \
+   && kubectl exec -i deploy/mongodb -n <namespace> -- sh -c 'mongorestore \
+     --dryRun -u "$MONGO_INITDB_ROOT_USERNAME" \
+     -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin \
+     --archive' < serviceStore.archive \
+   && echo "Dump OK"
    ```
 
    Without authentication (chart version 2, or `mongodb.auth.enabled:
-   false`), omit `-u`, `-p` and `--authenticationDatabase`.
+   false`), omit `-u`, `-p` and `--authenticationDatabase` (here and in step
+   7).
 
 3. Optionally, keep the old volume as a fallback: set the reclaim policy of
    its PersistentVolume to `Retain`, so that it is kept (with the data) when
@@ -229,26 +240,27 @@ Deployment is called after `cloud_registry.appName`, by default
    the chart's default version (see [Version](#version)); set
    `mongodb.image` to the dumped version if needed.
 
-6. Install chart version 4 (see [Installation](#installation)) and wait for
+6. Install chart version 4 (see [Installation](#installation)), stop its
+   app again, so that it does not write during the restore, and wait for
    MongoDB:
 
    ```bash
+   kubectl scale deploy/cloud-registry -n <namespace> --replicas=0
+   kubectl wait pod -l app.kubernetes.io/instance=cloud-registry,app.kubernetes.io/component=app \
+     -n <namespace> --for=delete --timeout=120s
    kubectl rollout status deploy/cloud-registry-mongodb -n <namespace>
    ```
 
-7. Restore the dump, replacing the collections the app has created, and
-   restart the app:
+7. Restore the dump, replacing the collections the app has created, then
+   start the app:
 
    ```bash
    kubectl exec -i deploy/cloud-registry-mongodb -n <namespace> -- sh -c \
      'mongorestore --quiet --drop --archive \
      -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" \
      --authenticationDatabase admin' < serviceStore.archive
-   kubectl rollout restart deploy/cloud-registry -n <namespace>
+   kubectl scale deploy/cloud-registry -n <namespace> --replicas=1
    ```
-
-   With `mongodb.auth.enabled: false`, omit `-u`, `-p` and
-   `--authenticationDatabase`.
 
 Once the new release works, delete a retained volume
 (`kubectl delete pv <name>`) and the local dump.

@@ -17,28 +17,28 @@ metadata:
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
-  name: {{ include "cloud-registry.fullname" . }}
+  name: {{ include "cloud-registry.fullname" . | quote }}
   labels:
     {{- include "cloud-registry.labels" (dict "root" . "component" "app") | nindent 4 }}
 spec:
   {{- with $ingress.className }}
-  ingressClassName: {{ . }}
+  ingressClassName: {{ . | quote }}
   {{- end }}
   rules:
-  - host: {{ .Values.host_name }}
+  - host: {{ .Values.host_name | quote }}
     http:
       paths:
       - path: /
         pathType: Prefix
         backend:
           service:
-            name: {{ include "cloud-registry.fullname" . }}
+            name: {{ include "cloud-registry.fullname" . | quote }}
             port:
               name: http
 {{- if $ingress.https.enabled }}
   tls:
   - hosts:
-    - {{ .Values.host_name }}
-    secretName: {{ include "cloud-registry.fullname" . }}-ingress-secret
+    - {{ .Values.host_name | quote }}
+    secretName: {{ printf "%s-ingress-secret" (include "cloud-registry.fullname" .) | quote }}
 {{- end }}
 {{ end }}

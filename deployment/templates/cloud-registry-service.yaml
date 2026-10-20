@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "cloud-registry.fullname" . }}
+  name: {{ include "cloud-registry.fullname" . | quote }}
   labels:
     {{- include "cloud-registry.labels" (dict "root" . "component" "app") | nindent 4 }}
 spec:

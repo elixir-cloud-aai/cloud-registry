@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "cloud-registry.mongodbFullname" . }}
+  name: {{ include "cloud-registry.mongodbFullname" . | quote }}
   labels:
     {{- include "cloud-registry.labels" (dict "root" . "component" "mongodb") | nindent 4 }}
 spec:
@@ -84,7 +84,7 @@ spec:
       volumes:
       - name: mongodb
         persistentVolumeClaim:
-          claimName: {{ include "cloud-registry.mongodbFullname" . }}
+          claimName: {{ include "cloud-registry.mongodbFullname" . | quote }}
       - name: tmp
         emptyDir: {}
       - name: configdb
@@ -92,5 +92,5 @@ spec:
       {{- if .Values.mongodb.auth.enabled }}
       - name: init-script
         configMap:
-          name: {{ include "cloud-registry.mongodbFullname" . }}-init-script
+          name: {{ printf "%s-init-script" (include "cloud-registry.mongodbFullname" .) | quote }}
       {{- end }}

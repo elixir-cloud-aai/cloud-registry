@@ -2,11 +2,11 @@
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: {{ include "cloud-registry.fullname" . }}
+  name: {{ include "cloud-registry.fullname" . | quote }}
   labels:
     {{- include "cloud-registry.labels" (dict "root" . "component" "app") | nindent 4 }}
 spec:
-  host: {{ .Values.host_name }}
+  host: {{ .Values.host_name | quote }}
   port:
     targetPort: http
   tls:
@@ -14,7 +14,7 @@ spec:
     termination: edge
   to:
     kind: Service
-    name: {{ include "cloud-registry.fullname" . }}
+    name: {{ include "cloud-registry.fullname" . | quote }}
     weight: 100
   wildcardPolicy: None
 {{ end }}

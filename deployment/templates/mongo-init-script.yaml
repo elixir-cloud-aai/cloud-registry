@@ -6,7 +6,7 @@ user; FOCA creates the app's collections and indexes on startup.
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "cloud-registry.mongodbFullname" . }}-init-script
+  name: {{ printf "%s-init-script" (include "cloud-registry.mongodbFullname" .) | quote }}
   labels:
     {{- include "cloud-registry.labels" (dict "root" . "component" "mongodb") | nindent 4 }}
 data:

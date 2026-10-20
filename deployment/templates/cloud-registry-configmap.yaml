@@ -28,7 +28,7 @@ As the app on startup, refuse to render without a group mapped to the role
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "cloud-registry.fullname" . }}-config
+  name: {{ printf "%s-config" (include "cloud-registry.fullname" .) | quote }}
   labels:
     {{- include "cloud-registry.labels" (dict "root" . "component" "app") | nindent 4 }}
 data:

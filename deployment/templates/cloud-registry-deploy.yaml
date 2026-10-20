@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "cloud-registry.fullname" . }}
+  name: {{ include "cloud-registry.fullname" . | quote }}
   labels:
     {{- include "cloud-registry.labels" (dict "root" . "component" "app") | nindent 4 }}
 spec:
@@ -86,7 +86,7 @@ spec:
       terminationGracePeriodSeconds: 30
       volumes:
       - configMap:
-          name: {{ include "cloud-registry.fullname" . }}-config
+          name: {{ printf "%s-config" (include "cloud-registry.fullname" .) | quote }}
         name: config
       - emptyDir: {}
         name: tmp

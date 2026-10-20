@@ -90,9 +90,9 @@ Labels that select the pods of a component; call with a dict of the root
 context (`root`) and the component (`component`: `app` or `mongodb`).
 */}}
 {{- define "cloud-registry.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "cloud-registry.name" .root }}
-app.kubernetes.io/instance: {{ .root.Release.Name }}
-app.kubernetes.io/component: {{ .component }}
+app.kubernetes.io/name: {{ include "cloud-registry.name" .root | quote }}
+app.kubernetes.io/instance: {{ .root.Release.Name | quote }}
+app.kubernetes.io/component: {{ .component | quote }}
 {{- end -}}
 
 {{/*
@@ -139,7 +139,7 @@ alphabetical order.
 - name: {{ $name }}
   valueFrom:
     secretKeyRef:
-      name: {{ $secret }}
+      name: {{ $secret | quote }}
       key: {{ $key }}
 {{- end }}
 {{- end -}}
