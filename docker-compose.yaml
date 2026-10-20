@@ -1,14 +1,16 @@
-version: '3.6'
 services:
 
     cloud-registry:
-        image: elixircloud/cloud-registry:0.1.0
+        image: cloud-registry:local
+        # Always build locally instead of pulling an image of that name
+        pull_policy: build
         build:
             context: .
             dockerfile: Dockerfile
         restart: unless-stopped
-        links:
-            - mongodb
+        depends_on:
+            mongodb:
+                condition: service_healthy
         ports:
             - "8080:8080"
 
@@ -17,7 +19,17 @@ services:
         # (https://jira.mongodb.org/browse/SERVER-121912)
         image: mongo:7.0
         restart: unless-stopped
+        # Port 27017 is reachable from the app only; to connect from the
+        # host, add `ports: ["127.0.0.1:27017:27017"]` in a
+        # `docker-compose.override.yaml`
         volumes:
-            - ../data/cloud-registry/db:/data/db
-        ports:
-            - "27017:27017"
+            - mongodb-data:/data/db
+        healthcheck:
+            test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+            interval: 5s
+            timeout: 5s
+            retries: 12
+            start_period: 10s
+
+volumes:
+    mongodb-data:

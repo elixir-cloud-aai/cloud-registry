@@ -120,7 +120,8 @@ jobs:
         with:
           persist-credentials: false
       - name: Start app
-        run: docker compose up -d --build
+        # Waits until the containers are healthy (see their health checks)
+        run: docker compose up -d --build --wait --wait-timeout 300
       - name: Wait for app to respond
         run: |
           for _ in $(seq 1 60); do

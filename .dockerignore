@@ -1,15 +1,10 @@
-# Ignore Git- and GitHub-specific files and dirs
-.git
-.github
-.gitignore
+# Only send the files needed at runtime to the build context
+*
+!cloud_registry/
+!requirements.txt
+!update-config-map.sh
 
-# Remove all docs but README.md from root directory
-*.md
-!README*.md
-
-# Ignore build-specific files and dirs
+# Exclude caches and local files within the included paths
+**/__pycache__
+**/*.py[cod]
 **/*.egg-info
-src
-
-# Ignore CI-related files and dirs
-.travis.yml
