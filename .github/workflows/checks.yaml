@@ -44,6 +44,17 @@ jobs:
         run: mypy cloud_registry
       - name: Code formatting check with black
         run: black --check .
+      - name: Build distributions
+        run: python -m build
+      - name: Check wheel contents
+        run: |
+          unzip -Z1 dist/*.whl | tee wheel-contents.txt
+          if grep -Ev '^cloud_registry(/|-[^/]+\.dist-info/)' wheel-contents.txt; then
+            echo "::error::Unexpected files in wheel"
+            exit 1
+          fi
+          grep -qx 'cloud_registry/config.yaml' wheel-contents.txt
+          grep -q '^cloud_registry/api/.*\.yaml$' wheel-contents.txt
   test:
     name: Run tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
