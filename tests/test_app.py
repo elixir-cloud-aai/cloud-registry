@@ -174,7 +174,9 @@ def test_service_info(app, client, headers):
     """Service info is registered from the config, with timestamps set on
     registration, and can be replaced.
     """
-    config = app.app.config.foca.custom.endpoints.service_info.dict(exclude_none=True)
+    config = app.app.config.foca.custom.endpoints.service_info.model_dump(
+        exclude_none=True
+    )
     response = client.get(f"{BASE}/service-info", headers=headers)
     assert response.status_code == 200
     info = response.json
