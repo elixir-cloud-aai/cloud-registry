@@ -31,8 +31,9 @@ USER 1000
 WORKDIR /app
 ENV PYTHONPATH=/app
 
-## All API endpoints require authentication, so probe the Swagger UI instead
-## (requires `api.specs[].swagger_ui` in the config, enabled by default)
+## All API endpoints require authentication, so probe the Swagger UI instead;
+## assumes the default port, base path and Swagger UI setting of the config
+## (`server.port`, `api.specs[].connexion.options.swagger_ui`)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/ga4gh/registry/v1/ui/', timeout=4)"]
 

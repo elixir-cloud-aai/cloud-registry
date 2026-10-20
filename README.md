@@ -71,8 +71,9 @@ The following software needs to be available on your system:
 - [`git 2.17.1`][git]
 - [`docker`][docker], with the [Compose plugin][docker-compose] (version 2)
 
-> Versions used to test deployment are indicated. Other versions with the same
-> major version numbers will likely work as well, especially newer ones.
+> Where versions are indicated, they were used to test deployment. Other
+> versions with the same major version numbers will likely work as well,
+> especially newer ones.
 
 ### Deployment
 
@@ -90,7 +91,18 @@ docker compose up --build -d
 ```
 
 MongoDB is only reachable from the app container; its data is kept in the
-`mongodb-data` volume.
+Compose project's `mongodb-data` volume (e.g., `cloud-registry_mongodb-data`,
+see `docker volume ls`).
+
+> Earlier versions kept the data in `../data/cloud-registry/db`. To keep using
+> it, bind-mount it in a `docker-compose.override.yaml`:
+>
+> ```yaml
+> services:
+>     mongodb:
+>         volumes:
+>             - ../data/cloud-registry/db:/data/db
+> ```
 
 _**That't it!**_
 
