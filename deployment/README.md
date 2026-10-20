@@ -90,10 +90,14 @@ cannot read the data of newer versions. **Before upgrading from chart version
 authentication by default: see [Authentication](#authentication) for existing
 databases.
 
-Since version 0.3.0, services are unique by URL and API type. On the first
-start after upgrading, the app refuses to start if stored services have the
-same URL and API type, and names them (see "Duplicate services" in the
-[README](../README.md#duplicate-services)).
+Since app version 0.3.0, services are unique by URL and API type. Upgrade to
+it with the app scaled to 0 replicas (`kubectl scale deploy/<appName>
+--replicas=0 -n <namespace>`, then `helm upgrade`), so that no pod of the old
+version registers services while the new one adds keys to the stored ones. If
+stored services have invalid URLs or the same URL and API type, the new
+version refuses to start and names them: fix or delete them in MongoDB (see
+"Duplicate services" in the [README](../README.md#duplicate-services) and
+[Authentication](#authentication) for credentials).
 
 ## Probes
 

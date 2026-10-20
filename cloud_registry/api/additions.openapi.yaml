@@ -28,7 +28,8 @@ paths:
       summary: Register service.
       description: |
         Create a service resource. Services are unique by URL and API type:
-        registering a service again returns `409`.
+        registering a service again returns `409`. Invalid URLs, URLs
+        without scheme or host, and URLs with user info return `400`.
       operationId: postService
       tags:
         - cloud-registry
@@ -104,6 +105,8 @@ paths:
       description: |
         Create or update a service resource. Services are unique by URL and
         API type: changing them to those of another service returns `409`.
+        Invalid URLs, URLs without scheme or host, and URLs with user info
+        return `400`.
       operationId: putService
       tags:
         - cloud-registry
@@ -334,9 +337,11 @@ components:
       description: |
         A service with the same URL and API type (`type.group` and
         `type.artifact`, case-insensitive) is registered. URLs are compared
-        with lowercase schemes and hosts, and without default ports, trailing
-        slashes, queries and fragments. `serviceId` names the registered
-        service; contact its owner or an admin.
+        with lowercase schemes and hosts and encoded international host
+        names, and without trailing dots of hosts, default ports, dot
+        segments, repeated and trailing slashes, needless percent-encoding,
+        queries and fragments. `serviceId` names the registered service;
+        contact its owner or an admin.
       content:
         application/problem+json:
           schema:

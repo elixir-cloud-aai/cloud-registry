@@ -10,9 +10,7 @@ from cloud_registry.ga4gh.registry.service_info import check_service_info
 
 
 def main():
-    """Create the app, check admin groups and service info, add missing
-    service keys, and run the app.
-    """
+    """Create the app, prepare it (cf. comment below), and run it."""
     foca = Foca(
         config_file=Path(__file__).parent / "config.yaml",
         custom_config_model="cloud_registry.service_models.custom_config.CustomConfig",

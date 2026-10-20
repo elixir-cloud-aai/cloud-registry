@@ -146,26 +146,39 @@ Access control is implemented with [FOCA][foca-access-control]; see the
 A service is identified by its base URL (`url`) and its API type
 (`type.group` and `type.artifact`, case-insensitive, but not `type.version`,
 so that upgrading a service to a new API version updates its entry). URLs are
-compared with lowercase schemes and hosts, and without default ports, trailing
-slashes, queries and fragments; URLs with user info (`user:password@`) are
-rejected. Registering a service again (`POST /services`), or changing a
-service to the URL and API type of another one (`PUT`), returns
-`409 Conflict`, with the identifier of the registered service in `serviceId`
-(and in `detail`), so that users can contact its owner or an admin.
+compared with lowercase schemes and hosts and encoded international host
+names, and without trailing dots of hosts, default ports, dot segments
+(`/./`, `/../`), repeated and trailing slashes, needless percent-encoding,
+queries and fragments. URLs with other schemes (e.g., `http` and `https`) are
+different services. Invalid URLs, URLs without scheme or host, and URLs with
+user info (`user:password@`) are rejected (`400 Bad Request`, saying why).
+
+Registering a service again (`POST /services`), or changing a service to the
+URL and API type of another one (`PUT`), returns `409 Conflict`, with the
+identifier of the registered service in `serviceId`, so that users can
+contact its owner or an admin.
 
 As anyone logged in can register a URL first, including one of a deployment
 they don't operate, a squatter could block the real operator of a service.
 Admins resolve such cases: they can delete the entry, or grant the real
 operator the role `owner` on it and revoke the squatter's role. Consumers that
 need trustworthy entries should rely on entries checked by admins (a
-"verified" flag for them is planned, #64). Proving
-control of a URL (e.g., by fetching `{url}/service-info` on registration) was
-rejected: the identifier in service info is self-declared, and fetching
-user-supplied URLs would allow server-side request forgery.
+"verified" flag is planned, see [#64][issue-verified]). Proving control of a
+URL (e.g., by fetching `{url}/service-info` on registration) was rejected:
+the identifier in service info is self-declared, and fetching user-supplied
+URLs would allow server-side request forgery.
 
 Services stored before this check get their key on startup. If some of them
-have the same URL and API type, the app refuses to start and names them:
-delete one of each pair (or change its URL), then restart.
+have invalid URLs, or the same URL and API type as another one, the app
+refuses to start and names all of them. Fix or delete them in the database,
+e.g., with `mongosh` (see the [deployment instructions][deployment-instructions]
+for access to the database of a Helm deployment):
+
+```javascript
+db.getSiblingDB("serviceStore").services.deleteOne({id: "<id>"})
+```
+
+Then start the app again.
 
 ## Installation
 
@@ -317,3 +330,4 @@ etc.
 [url-swagger]: <http://localhost:8080/ga4gh/registry/v1/ui>
 [foca-access-control]: https://foca.readthedocs.io/en/latest/access-control/
 [ls-login]: https://lifescience-ri.eu/ls-login/
+[issue-verified]: https://github.com/elixir-cloud-aai/cloud-registry/issues/64

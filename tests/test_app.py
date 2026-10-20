@@ -148,6 +148,9 @@ def test_get_service_not_found(client, headers):
 
 
 def _assert_duplicate(response, existing_id):
+    """Assert that a response names the registered service with the same URL
+    and API type.
+    """
     assert response.status_code == 409
     assert response.mimetype == "application/problem+json"
     assert response.json["serviceId"] == existing_id
@@ -197,10 +200,12 @@ def test_put_duplicate(client, admin_headers):
 
 
 def test_service_url_with_user_info(client, headers):
-    """Service URLs with user info are rejected."""
+    """Service URLs with user info are rejected, saying why."""
     service = _service(url="https://user:secret@tes.example.org")
     response = client.post(f"{BASE}/services", json=service, headers=headers)
     _assert_error(response, 400)
+    assert response.mimetype == "application/problem+json"
+    assert response.json["detail"] == "Service URLs must not contain user info."
 
 
 def test_put_service(client, admin_headers):

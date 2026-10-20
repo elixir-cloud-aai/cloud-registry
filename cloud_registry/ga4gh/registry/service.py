@@ -2,6 +2,8 @@
 
 from copy import deepcopy
 import logging
+import re
+import string
 from urllib.parse import urlsplit, urlunsplit
 
 from foca.utils.misc import generate_id
@@ -17,6 +19,9 @@ KEY = "_serviceKey"
 # Projection excluding internal fields
 PROJECTION = {"_id": False, KEY: False}
 DEFAULT_PORTS = {"http": 80, "https": 443}
+PERCENT_ENCODED = re.compile(r"%([0-9A-Fa-f]{2})")
+# RFC 3986, section 2.3
+UNRESERVED = frozenset(string.ascii_letters + string.digits + "-._~")
 
 
 class DuplicateService(Conflict):
@@ -33,11 +38,17 @@ class DuplicateService(Conflict):
         self.existing_id = existing_id
 
 
+class InvalidService(BadRequest):
+    """The URL or API type of a service is missing or invalid."""
+
+
 def normalize_url(url: str) -> str:
     """Normalize a service URL for comparisons.
 
-    Lowercases the scheme and host, and removes default ports, trailing
-    slashes, queries and fragments.
+    Lowercases the scheme and host, encodes international host names
+    (IDNA), and removes trailing dots of hosts, default ports, dot segments,
+    repeated and trailing slashes, needless percent-encoding, queries and
+    fragments. Other schemes (e.g., `http` and `https`) give other URLs.
 
     Args:
         url: Service URL.
@@ -46,25 +57,58 @@ def normalize_url(url: str) -> str:
         Normalized URL.
 
     Raises:
-        cloud_registry.exceptions.BadRequest: The URL has no scheme or host,
-            an invalid port, or user info.
+        InvalidService: The URL is invalid, has no scheme or host, or has
+            user info.
     """
-    parts = urlsplit(url.strip())
     try:
+        parts = urlsplit(url.strip())
         port = parts.port
     except ValueError as exc:
-        raise BadRequest(f"Invalid port in service URL '{url}'.") from exc
+        raise InvalidService(f"Invalid service URL: {exc}.") from exc
     if not parts.scheme or not parts.hostname:
-        raise BadRequest(f"Service URL '{url}' has no scheme or host.")
+        raise InvalidService("Service URLs need a scheme and a host.")
     if parts.username is not None or parts.password is not None:
-        raise BadRequest("Service URLs must not contain user info.")
+        raise InvalidService("Service URLs must not contain user info.")
     scheme = parts.scheme.lower()
-    host = parts.hostname  # lowercased, without brackets for IPv6
+    host = parts.hostname.rstrip(".")  # lowercased, without IPv6 brackets
     if ":" in host:
         host = f"[{host}]"
+    else:
+        try:
+            host = host.encode("idna").decode("ascii")
+        except UnicodeError as exc:
+            raise InvalidService(f"Invalid host in service URL: {exc}.") from exc
     if port is not None and port != DEFAULT_PORTS.get(scheme):
         host = f"{host}:{port}"
-    return urlunsplit((scheme, host, parts.path.rstrip("/"), "", ""))
+    return urlunsplit((scheme, host, _normalize_path(parts.path), "", ""))
+
+
+def _normalize_path(path: str) -> str:
+    """Normalize the path of a URL (cf. RFC 3986, section 6.2.2).
+
+    Args:
+        path: URL path.
+
+    Returns:
+        Path with unreserved characters decoded, other percent-encodings in
+        uppercase, dot segments resolved, and without repeated and trailing
+        slashes.
+    """
+    path = PERCENT_ENCODED.sub(_decode_unreserved, path)
+    segments: list[str] = []
+    for segment in path.split("/"):
+        if segment == "..":
+            if segments:
+                segments.pop()
+        elif segment not in ("", "."):
+            segments.append(segment)
+    return "".join(f"/{segment}" for segment in segments)
+
+
+def _decode_unreserved(match: re.Match) -> str:
+    """Decode a percent-encoded character if it is unreserved."""
+    char = chr(int(match.group(1), 16))
+    return char if char in UNRESERVED else match.group(0).upper()
 
 
 def service_key(data: dict) -> str:
@@ -74,13 +118,13 @@ def service_key(data: dict) -> str:
         data: Service metadata, with `url` and `type`.
 
     Returns:
-        Key from the normalized URL and the case-insensitive API type
-        (`type.group`, `type.artifact`), but not its version, so that
-        upgrading a service to a new API version updates its entry.
+        Key from the normalized URL and the API type (`type.group`,
+        `type.artifact`, case-insensitive and without surrounding
+        whitespace), but not its version, so that upgrading a service to a
+        new API version updates its entry.
 
     Raises:
-        cloud_registry.exceptions.BadRequest: The URL or type is missing or
-            invalid.
+        InvalidService: The URL or type is missing or invalid.
     """
     try:
         url, group, artifact = (
@@ -89,8 +133,12 @@ def service_key(data: dict) -> str:
             data["type"]["artifact"],
         )
     except (KeyError, TypeError) as exc:
-        raise BadRequest("Services need a URL and a type.") from exc
-    return " ".join((group.lower(), artifact.lower(), normalize_url(url)))
+        raise InvalidService("Services need a URL and a type.") from exc
+    if not all(isinstance(value, str) for value in (url, group, artifact)):
+        raise InvalidService("Service URLs and types must be strings.")
+    return " ".join(
+        (group.strip().lower(), artifact.strip().lower(), normalize_url(url))
+    )
 
 
 def service_exists(id: str) -> bool:
@@ -155,14 +203,13 @@ class RegisterService:
         """
         key = service_key(self.data)
         self._check_duplicate(key=key)
-        document = {**self.data, KEY: key}
 
         # replace or insert service with provided ID (PUT)
         if self.replace:
             try:
                 result = self.db_coll.replace_one(
                     filter={"id": self.data["id"]},
-                    replacement=document,
+                    replacement={**self.data, KEY: key},
                     upsert=True,
                 )
             except DuplicateKeyError:
@@ -178,10 +225,8 @@ class RegisterService:
                     charset=self.id_charset, length=self.id_length
                 )
                 try:
-                    # insert a copy, as `insert_one()` adds an `_id` field
-                    self.db_coll.insert_one(
-                        document={**document, "id": self.data["id"]}
-                    )
+                    # insert a new dict, as `insert_one()` adds an `_id` field
+                    self.db_coll.insert_one(document={**self.data, KEY: key})
                 except DuplicateKeyError:
                     # the key may have been registered concurrently
                     self._check_duplicate(key=key)
@@ -219,24 +264,26 @@ def add_service_keys() -> None:
 
     Raises:
         RuntimeError: Services have invalid URLs or types, or the same URL
-            and API type; the message names them.
+            and API type; the message names all of them.
     """
     collection = get_collection("services")
+    problems = []
     for service in collection.find({KEY: {"$exists": False}}, {"_id": False}):
         try:
             key = service_key(service)
-        except BadRequest as exc:
-            raise RuntimeError(
-                f"Service '{service['id']}' has an invalid URL or type "
-                f"({exc.description}); fix or delete it."
-            ) from exc
-        try:
-            collection.update_one({"id": service["id"]}, {"$set": {KEY: key}})
-        except DuplicateKeyError as exc:
-            existing = collection.find_one({KEY: key}, {"_id": False, "id": True})
-            raise RuntimeError(
-                f"Services '{service['id']}' and "
-                f"'{(existing or {}).get('id')}' have the same URL and API "
-                "type; delete one of them."
-            ) from exc
+        except InvalidService as exc:
+            problems.append(f"'{service['id']}': {exc.description}")
+            continue
+        existing = collection.find_one({KEY: key}, {"_id": False, "id": True})
+        if existing is not None:
+            problems.append(
+                f"'{service['id']}': same URL and API type as '{existing['id']}'"
+            )
+            continue
+        collection.update_one({"id": service["id"]}, {"$set": {KEY: key}})
         logger.info("Added key to service '%s'.", service["id"])
+    if problems:
+        raise RuntimeError(
+            "Fix or delete these services (cf. 'Duplicate services' in the "
+            f"README): {'; '.join(problems)}"
+        )

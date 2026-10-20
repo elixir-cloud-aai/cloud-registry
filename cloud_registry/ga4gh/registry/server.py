@@ -1,16 +1,19 @@
 """Controllers for service endpoints."""
 
+from http import HTTPStatus
 from json import dumps
 import logging
 
 from flask import Response, request
 from foca.utils.logging import log_traffic
+from werkzeug.exceptions import HTTPException
 
 from cloud_registry.exceptions import BadRequest, NotFound
 from cloud_registry.ga4gh.registry.permissions import add_owner, remove_permissions
 from cloud_registry.ga4gh.registry.service import (
     PROJECTION,
     DuplicateService,
+    InvalidService,
     RegisterService,
 )
 from cloud_registry.ga4gh.registry.service_info import get_service_info
@@ -149,15 +152,19 @@ def _register_service(service_id: str | None = None) -> str | Response:
         service_id: Identifier of the service; generated if not provided.
 
     Returns:
-        Identifier of registered service, or a `409 Conflict` response naming
-        the registered service with the same URL and API type.
+        Identifier of registered service, or an error response: `400` for
+        invalid URLs, `409` naming the registered service with the same URL
+        and API type.
     """
     service = RegisterService(data=_get_request_object(), id=service_id)
     try:
         service.register_metadata()
+    except InvalidService as exc:
+        logger.info("Service not registered: %s", exc.description)
+        return _problem(exc)
     except DuplicateService as exc:
         logger.info("Service not registered: %s", exc.description)
-        return _conflict(exc)
+        return _problem(exc, serviceId=exc.existing_id)
     if service.was_created:
         try:
             # Roles left on the identifier by a deleted service (e.g., if
@@ -176,26 +183,27 @@ def _register_service(service_id: str | None = None) -> str | Response:
     return service.data["id"]
 
 
-def _conflict(exc: DuplicateService) -> Response:
-    """Build a `409 Conflict` response for a duplicate service.
+def _problem(exc: HTTPException, **extensions: str) -> Response:
+    """Build a problem details response with the description of an exception.
 
-    FOCA's problem details are fixed per exception class, so the response is
-    built here, with the identifier of the registered service in `detail` and
-    in the extension member `serviceId`.
+    FOCA's problem details are fixed per exception class, so responses with
+    details specific to a request are built here.
 
     Args:
-        exc: Exception naming the registered service.
+        exc: Exception with status code and description.
+        extensions: Extension members of the problem details.
 
     Returns:
         Problem details response.
     """
+    status = exc.code or 500
     problem = {
-        "title": "Conflict",
-        "status": 409,
+        "title": HTTPStatus(status).phrase,
+        "status": status,
         "detail": exc.description,
-        "serviceId": exc.existing_id,
+        **extensions,
     }
-    return Response(dumps(problem), status=409, mimetype="application/problem+json")
+    return Response(dumps(problem), status=status, mimetype="application/problem+json")
 
 
 def _unregister_service(service: RegisterService) -> None:

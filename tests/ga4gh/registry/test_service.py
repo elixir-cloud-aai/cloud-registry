@@ -5,10 +5,11 @@ from copy import deepcopy
 from pymongo.errors import DuplicateKeyError
 import pytest
 
-from cloud_registry.exceptions import BadRequest, InternalServerError
+from cloud_registry.exceptions import InternalServerError
 from cloud_registry.ga4gh.registry.service import (
     KEY,
     DuplicateService,
+    InvalidService,
     RegisterService,
     add_service_keys,
     normalize_url,
@@ -144,11 +145,22 @@ class TestRegisterService:
         ("https://[::1]:443/v1", "https://[::1]/v1"),
         ("https://[::1]:8443/v1", "https://[::1]:8443/v1"),
         (" https://tes.example.org ", "https://tes.example.org"),
+        ("https://tes.example.org./v1", "https://tes.example.org/v1"),
+        (
+            "https://tes.example.org//ga4gh/./tes/x/../v1",
+            "https://tes.example.org/ga4gh/tes/v1",
+        ),
+        ("https://tes.example.org/../v1", "https://tes.example.org/v1"),
+        ("https://tes.example.org/%74es/a%2fb", "https://tes.example.org/tes/a%2Fb"),
+        ("https://bücher.example.org", "https://xn--bcher-kva.example.org"),
+        ("http://tes.example.org:443", "http://tes.example.org:443"),
     ],
 )
 def test_normalize_url(url, normalized):
-    """URLs are compared with lowercase schemes and hosts, and without
-    default ports, trailing slashes, queries and fragments.
+    """URLs are compared with lowercase schemes and hosts, encoded host
+    names, and without trailing dots of hosts, default ports, dot segments,
+    repeated and trailing slashes, needless percent-encoding, queries and
+    fragments.
     """
     assert normalize_url(url) == normalized
 
@@ -162,21 +174,25 @@ def test_normalize_url(url, normalized):
         "https://user@tes.example.org",
         "https://tes.example.org:99999",
         "https://tes.example.org:port",
+        "http://[::1/v1",
+        f"https://{'a' * 64}.example.org",
     ],
 )
 def test_normalize_url_invalid(url):
-    """URLs without scheme or host, with user info or invalid ports are
-    rejected.
+    """Invalid URLs, URLs without scheme or host, with user info or invalid
+    ports or hosts are rejected.
     """
-    with pytest.raises(BadRequest):
+    with pytest.raises(InvalidService):
         normalize_url(url)
 
 
 def test_service_key():
-    """Keys ignore the case of the type and its version."""
+    """Keys ignore the case of the type, surrounding whitespace and its
+    version.
+    """
     other = {
         **MOCK_SERVICE,
-        "type": {"group": "ORG.GA4GH", "artifact": "Beacon", "version": "2.0.0"},
+        "type": {"group": "ORG.GA4GH ", "artifact": "Beacon", "version": "2.0.0"},
         "url": "https://BEACON.example.org/api/",
     }
     assert service_key(other) == service_key(MOCK_SERVICE)
@@ -190,11 +206,13 @@ def test_service_key():
         {"type": MOCK_TYPE},
         {"url": "https://tes.example.org"},
         {"url": "https://tes.example.org", "type": "tes"},
+        {"url": 1, "type": MOCK_TYPE},
+        {"url": "https://tes.example.org", "type": {**MOCK_TYPE, "group": 1}},
     ],
 )
-def test_service_key_missing(data):
-    """Services need a URL and a type."""
-    with pytest.raises(BadRequest):
+def test_service_key_invalid(data):
+    """Services need a URL and a type, as strings."""
+    with pytest.raises(InvalidService):
         service_key(data)
 
 
@@ -218,15 +236,19 @@ class TestDuplicates:
         assert services.count_documents({}) == 1
 
     def test_put(self, unit_app, services):
-        """Services can't be changed to the URL and type of another one, but
-        can be replaced with an unchanged URL and type.
-        """
-        existing = self._register(unit_app)
+        """Services can't be changed to the URL and type of another one."""
+        self._register(unit_app)
         other = {**MOCK_SERVICE, "url": "https://other.example.org"}
         self._register(unit_app, data=other, id=MOCK_ID)
         with pytest.raises(DuplicateService):
             self._register(unit_app, id=MOCK_ID)
         assert services.find_one({"id": MOCK_ID})["url"] == other["url"]
+
+    def test_put_same_service(self, unit_app):
+        """Services can be replaced with the same URL and type, also with a
+        new API version.
+        """
+        existing = self._register(unit_app)
         new_version = {**MOCK_SERVICE, "type": {**MOCK_TYPE, "version": "2.0.0"}}
         assert self._register(unit_app, data=new_version, id=existing) == existing
 
@@ -250,9 +272,10 @@ class TestDuplicates:
             self._register(unit_app, id=id)
         assert exc_info.value.existing_id == "OTHER"
 
-    def test_concurrent_id(self, monkeypatch, unit_app):
-        """Other duplicate key errors of a PUT are raised (e.g., if the same
-        identifier is registered concurrently).
+    def test_put_other_duplicate_key_error(self, monkeypatch, unit_app):
+        """Duplicate key errors of a PUT not caused by another service with
+        the same key are raised (e.g., if the same identifier is registered
+        concurrently).
         """
 
         def fail(*args, **kwargs):
@@ -278,18 +301,18 @@ class TestAddServiceKeys:
         assert services.find_one({"id": "OLD"})[KEY] == service_key(MOCK_SERVICE)
         assert services.find_one({"id": "NEW"})[KEY] == "kept"
 
-    def test_duplicates(self, unit_app, services):
-        """Services with the same URL and API type are named."""
-        services.insert_one({**MOCK_SERVICE, "id": "FIRST"})
-        services.insert_one({**MOCK_SERVICE, "id": "SECOND"})
-        with (
-            unit_app.app_context(),
-            pytest.raises(RuntimeError, match="'SECOND' and 'FIRST'"),
-        ):
-            add_service_keys()
-
-    def test_invalid(self, unit_app, services):
-        """Services with invalid URLs are named."""
+    def test_problems(self, unit_app, services):
+        """All services with the same URL and API type as another one, or
+        with invalid URLs, are named.
+        """
+        other = {**MOCK_SERVICE, "url": "https://other.example.org"}
+        for id, data in [("A", MOCK_SERVICE), ("B", MOCK_SERVICE), ("C", other)]:
+            services.insert_one({**data, "id": id})
+        services.insert_one({**other, "id": "D"})
         services.insert_one({**MOCK_SERVICE, "id": "BAD", "url": "bad"})
-        with unit_app.app_context(), pytest.raises(RuntimeError, match="'BAD'"):
+        with unit_app.app_context(), pytest.raises(RuntimeError) as exc_info:
             add_service_keys()
+        message = str(exc_info.value)
+        assert "'B': same URL and API type as 'A'" in message
+        assert "'D': same URL and API type as 'C'" in message
+        assert "'BAD': Service URLs need a scheme and a host." in message
