@@ -17,13 +17,11 @@ from cloud_registry.ga4gh.registry.server import (
 )
 from tests.mock_data import (
     MOCK_ID,
+    MOCK_PUBLIC_URL,
     MOCK_SERVICE,
     MOCK_TYPE,
     SERVICE_INFO_CONFIG,
 )
-
-# Public URL of the unit test app (cf. `tests.mock_data.SERVICE_CONFIG`)
-PUBLIC_URL = "http://1.2.3.4:80/registry"
 
 
 @pytest.fixture(autouse=True)
@@ -143,11 +141,20 @@ def test_postService(unit_app, services, ownership):
     with unit_app.test_request_context("/services", json=data):
         service_id, status, headers = postService.__wrapped__()
     assert status == 201
-    assert headers == {"Location": f"{PUBLIC_URL}/services/{service_id}"}
+    assert headers == {"Location": f"{MOCK_PUBLIC_URL}/services/{service_id}"}
     assert ownership == [
         ("remove_permissions", service_id),
         ("add_owner", service_id),
     ]
+
+
+def test_postService_trailing_slash(unit_app, services):
+    """Locations of services posted to the collection URL with a trailing
+    slash have no empty path segment.
+    """
+    with unit_app.test_request_context("/services/", json=deepcopy(MOCK_SERVICE)):
+        service_id, _, headers = postService.__wrapped__()
+    assert headers == {"Location": f"{MOCK_PUBLIC_URL}/services/{service_id}"}
 
 
 def test_postService_invalid_payload(unit_app, services):
@@ -188,7 +195,7 @@ def test_putService(unit_app, services, ownership):
     path = f"/services/{MOCK_ID}"
     with unit_app.test_request_context(path, json=data):
         res = putService.__wrapped__(serviceId=MOCK_ID)
-        assert res == (MOCK_ID, 201, {"Location": f"{PUBLIC_URL}{path}"})
+        assert res == (MOCK_ID, 201, {"Location": f"{MOCK_PUBLIC_URL}{path}"})
     # only new services get an owner (and a location)
     with unit_app.test_request_context(path, json=data):
         assert putService.__wrapped__(serviceId=MOCK_ID) == MOCK_ID

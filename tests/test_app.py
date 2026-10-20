@@ -100,16 +100,13 @@ def test_empty_database(client, headers, path):
 
 def test_post_service(client, headers):
     """A posted service gets a generated identifier and can be retrieved at
-    its location.
+    its location (cf. `_post`).
     """
-    response = client.post(f"{BASE}/services", json=_service(), headers=headers)
-    assert response.status_code == 201
-    service_id = response.json
+    service_id = _post(client, headers)
     assert len(service_id) == 6
     assert set(service_id) <= set(string.ascii_uppercase + string.digits)
 
-    location = response.location.removeprefix(PUBLIC_URL)
-    response = client.get(location, headers=headers)
+    response = client.get(f"{BASE}/services/{service_id}", headers=headers)
     assert response.status_code == 200
     assert response.json == _service(id=service_id)
 
@@ -201,6 +198,7 @@ def test_put_duplicate(client, admin_headers):
         f"{BASE}/services/OTHER", json=_service(), headers=admin_headers
     )
     _assert_duplicate(response, existing)
+    assert "Location" not in response.headers
     response = client.put(
         f"{BASE}/services/{existing}", json=_service(name="New"), headers=admin_headers
     )
@@ -225,6 +223,7 @@ def test_service_url_invalid(client, admin_headers, method, path, url, detail):
     assert response.mimetype == "application/problem+json"
     assert response.json["title"] == "Bad request"
     assert detail in response.json["detail"]
+    assert "Location" not in response.headers
 
 
 def test_put_service(client, admin_headers):
@@ -248,22 +247,71 @@ def test_put_service(client, admin_headers):
     assert len(client.get(f"{BASE}/services", headers=admin_headers).json) == 1
 
 
-@pytest.mark.parametrize("method", ["post", "put"])
-def test_location_proxy_path(app, client, admin_headers, method):
+@pytest.fixture
+def proxy_app(app):
+    """App served behind a reverse proxy under a subpath, with one possible
+    generated service identifier (`A`).
+    """
+    endpoints = app.app.config.foca.custom.endpoints
+    endpoints.service.api_path = "/proxy/registry/"
+    endpoints.services.id.charset = "A"
+    endpoints.services.id.length = 1
+    return app
+
+
+@pytest.mark.parametrize(
+    "method, path, location",
+    [
+        (
+            "POST",
+            "/services",
+            "https://0.0.0.0:8080/proxy/registry/ga4gh/registry/v1/services/A",
+        ),
+        (
+            "PUT",
+            "/services/my-tes",
+            "https://0.0.0.0:8080/proxy/registry/ga4gh/registry/v1/services/my-tes",
+        ),
+        (
+            "PUT",
+            "/services/my%20tes",
+            "https://0.0.0.0:8080/proxy/registry/ga4gh/registry/v1/services/my%20tes",
+        ),
+    ],
+)
+def test_location_proxy_path(proxy_app, admin_headers, method, path, location):
     """Locations of new services start with the configured path prefix and
     are percent-encoded.
     """
-    app.app.config.foca.custom.endpoints.service.api_path = "/proxy/registry/"
-    response = getattr(client, method)(
-        f"{BASE}/services{'/a%20b' if method == 'put' else ''}",
-        json=_service(),
-        headers=admin_headers,
+    client = proxy_app.app.test_client()
+    response = client.open(
+        f"{BASE}{path}", method=method, json=_service(), headers=admin_headers
     )
     assert response.status_code == 201
-    service_id = response.json.replace(" ", "%20")
-    assert response.location == (
-        f"{PUBLIC_URL}/proxy/registry{BASE}/services/{service_id}"
+    assert response.location == location
+
+
+@pytest.mark.parametrize("service_id", [".", "..", "%2E", "%2E%2E"])
+def test_put_dot_segment_id(client, admin_headers, service_id):
+    """Identifiers that are dot segments are rejected, as clients would
+    resolve their URLs to other ones.
+    """
+    response = client.put(
+        f"{BASE}/services/{service_id}", json=_service(), headers=admin_headers
     )
+    _assert_error(response, 400)
+    assert "Location" not in response.headers
+    assert client.get(f"{BASE}/services").json == []
+
+
+@pytest.mark.parametrize("service_id", ["...", ".a", "a."])
+def test_put_dotted_id(client, admin_headers, service_id):
+    """Identifiers with dots that aren't dot segments are accepted."""
+    response = client.put(
+        f"{BASE}/services/{service_id}", json=_service(), headers=admin_headers
+    )
+    assert response.status_code == 201
+    assert response.location == f"{PUBLIC_URL}{BASE}/services/{service_id}"
 
 
 def test_delete_service(client, headers, admin_headers):

@@ -1,6 +1,4 @@
-"""Typed access to the configuration, collections and public URLs of the
-app.
-"""
+"""Typed access to the configuration and collections of the app."""
 
 from urllib.parse import quote
 
@@ -44,16 +42,22 @@ def get_public_url(path: str) -> str:
 
     Args:
         path: Path below the root path of the app (e.g., the request path),
-            not percent-encoded.
+            not percent-encoded; empty for the root path.
 
     Returns:
-        Public URL, with the root path of the app and the path percent-encoded.
+        Public URL, with the root path of the app and the path percent-encoded,
+        and without trailing slash, unless it is the URL of the host's root
+        (e.g., for an empty path, `api_path` and root path of the app).
     """
     conf = get_custom_config().endpoints.service
+    # IPv6 addresses are bracketed in URLs
+    host = conf.external_host
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
     # `api_path` is configured as it appears in URLs, so it isn't encoded
     parts = (conf.api_path, quote(request.script_root + path))
-    url_path = "/".join(part.strip("/") for part in parts if part.strip("/"))
-    return f"{conf.url_prefix}://{conf.external_host}:{conf.external_port}/{url_path}"
+    url_path = "/".join(filter(None, (part.strip("/") for part in parts)))
+    return f"{conf.url_prefix}://{host}:{conf.external_port}/{url_path}"
 
 
 def get_collection(name: str) -> Collection:

@@ -17,9 +17,11 @@ from cloud_registry.ga4gh.registry.service import (
 from cloud_registry.ga4gh.registry.service_info import get_service_info
 from cloud_registry.utils import get_collection, get_public_url
 
+# Response for a registered service: its identifier, status `201` and its URL
+# as `Location` header
+CreatedResponse = tuple[str, int, dict[str, str]]
+
 logger = logging.getLogger(__name__)
-# Response of a created service: identifier, status and headers
-Created = tuple[str, int, dict[str, str]]
 
 
 # GET /services
@@ -87,14 +89,14 @@ def getServiceInfo(**kwargs) -> dict:
 
 # POST /services
 @log_traffic
-def postService(**kwargs) -> str | Created | Response:
+def postService(**kwargs) -> str | CreatedResponse | Response:
     """Add service with an auto-generated identifier.
 
     Returns:
         Identifier of registered service, with status `201` and its URL as
         `Location`.
     """
-    return _register_service()
+    return _register_service(collection_path=request.path)
 
 
 # DELETE /services/{serviceId}
@@ -118,7 +120,7 @@ def deleteService(serviceId: str, **kwargs) -> str:
 
 # PUT /services/{serviceId}
 @log_traffic
-def putService(serviceId: str, **kwargs) -> str | Created | Response:
+def putService(serviceId: str, **kwargs) -> str | CreatedResponse | Response:
     """Add/replace service with a user-supplied ID.
 
     Args:
@@ -128,7 +130,9 @@ def putService(serviceId: str, **kwargs) -> str | Created | Response:
         Identifier of registered/updated service; for registered services,
         with status `201` and their URL as `Location`.
     """
-    return _register_service(service_id=serviceId)
+    # the request path ends with the identifier, which can't contain a slash
+    collection_path = request.path.rsplit("/", 1)[0]
+    return _register_service(collection_path=collection_path, service_id=serviceId)
 
 
 def _get_request_object() -> dict:
@@ -147,10 +151,14 @@ def _get_request_object() -> dict:
     return request_json
 
 
-def _register_service(service_id: str | None = None) -> str | Created | Response:
+def _register_service(
+    collection_path: str, service_id: str | None = None
+) -> str | CreatedResponse | Response:
     """Register the service in the request body.
 
     Args:
+        collection_path: Path of the service collection (`/services`, with the
+            API base path), for the URL of new services.
         service_id: Identifier of the service; generated if not provided.
 
     Returns:
@@ -182,11 +190,7 @@ def _register_service(service_id: str | None = None) -> str | Created | Response
         except Exception:
             _unregister_service(service)
             raise
-        # PUT requests are made to the URL of the service, POST requests to
-        # that of the collection
-        path = request.path
-        if service_id is None:
-            path = f"{path}/{service.data['id']}"
+        path = f"{collection_path.rstrip('/')}/{service.data['id']}"
         return service.data["id"], 201, {"Location": get_public_url(path)}
     return service.data["id"]
 

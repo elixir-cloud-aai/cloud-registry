@@ -108,10 +108,13 @@ paths:
       parameters:
         - name: serviceId
           in: path
-          description: Identifier of service to register/update.
+          description: |
+            Identifier of service to register/update; `.` and `..` are not
+            allowed, as they are path segments of their own in URLs.
           required: true
           schema:
             type: string
+            pattern: '^(?!\.\.?$)'
       requestBody:
         description: Service metadata.
         required: true
@@ -126,8 +129,7 @@ paths:
           content:
             application/json:
               schema:
-                description: Service identifier.
-                type: string
+                $ref: '#/components/schemas/ServiceId'
         '201':
           $ref: '#/components/responses/ServiceCreated'
         '400':
@@ -298,20 +300,17 @@ components:
         type: string
   responses:
     ServiceCreated:
-      description: |
-        The service was successfully registered. `Location` is its URL
-        (`GET /services/{serviceId}`).
+      description: The service was successfully registered.
       headers:
         Location:
-          description: URL of the registered service.
+          description: URL of the registered service (`/services/{serviceId}`).
           schema:
             type: string
             format: uri
       content:
         application/json:
           schema:
-            description: Service identifier.
-            type: string
+            $ref: '#/components/schemas/ServiceId'
     # Errors are returned as `application/problem+json` (RFC 7807). The
     # entries below are merged into the error responses of the GA4GH
     # specification (cf. `api.specs` in `config.yaml`), adding that media type
@@ -376,6 +375,9 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    ServiceId:
+      description: Service identifier.
+      type: string
     PermissionRegister:
       description: Role to grant on a service.
       type: object
