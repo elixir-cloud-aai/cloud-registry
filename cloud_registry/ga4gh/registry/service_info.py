@@ -10,9 +10,12 @@ from cloud_registry.utils import get_collection, get_custom_config
 
 logger = logging.getLogger(__name__)
 TIMESTAMP_FIELDS = ("createdAt", "updatedAt")
-# Internal field with the time a service info document was last written; the
-# most recently written service info is served
+# Internal field with the time a service info document was last written (UTC,
+# with microseconds, so that the strings sort by time); the most recently
+# written service info is served. Documents written before the field was added
+# lack it and sort last. Assumes that the clocks of all app instances agree.
 WRITTEN_AT = "_writtenAt"
+# Projection excluding internal fields (MongoDB `_id` and `WRITTEN_AT`)
 PROJECTION = {"_id": False, WRITTEN_AT: False}
 
 
@@ -108,7 +111,7 @@ class RegisterServiceInfo:
         """Insert or update service info document, marking it as the most
         recently written one.
         """
-        written_at = datetime.now(timezone.utc).isoformat()
+        written_at = datetime.now(timezone.utc).isoformat(timespec="microseconds")
         self.collection.replace_one(
             filter={"id": data["id"]},
             replacement={**data, WRITTEN_AT: written_at},
@@ -117,6 +120,8 @@ class RegisterServiceInfo:
 
     def _get_headers(self) -> dict:
         """Build dictionary of response headers.
+
+        Must be called in a request context.
 
         Returns:
             Response headers, with the public URL of the service info

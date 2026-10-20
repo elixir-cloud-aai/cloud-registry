@@ -107,6 +107,10 @@ custom:
             external_host: 0.0.0.0
             external_port: 8080
             api_path: ''
+        # Service info registered on startup if there is none with this `id`
+        # or it differs from the stored one. The most recently written service
+        # info is served, so service info posted to `/service-info` is kept on
+        # restarts unless this config changes.
         service_info:
             id: "ELIXIR_CLOUD_SERVICE_REGISTRY_1"
             name: "ELIXIR_CLOUD"

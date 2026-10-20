@@ -91,6 +91,23 @@ class TestRegisterServiceInfo:
             assert register.get_service_info() != SERVICE_INFO_CONFIG
         assert service_info.count_documents({}) == 1
 
+    def test_legacy_documents(self, unit_app, service_info):
+        """Documents written before write times were tracked are served in
+        insertion order, and newly written service info takes precedence.
+        """
+        service_info.insert_one(deepcopy(SERVICE_INFO_CONFIG))
+        service_info.insert_one({**SERVICE_INFO_CONFIG, "id": "posted"})
+
+        with unit_app.app_context():
+            register = RegisterServiceInfo()
+            register.set_service_info_from_config()  # unchanged: not written
+            assert register.get_service_info()["id"] == "posted"
+
+            register.conf_info = {**register.conf_info, "name": "changed"}
+            register.set_service_info_from_config()
+            info = register.get_service_info()
+        assert (info["id"], info["name"]) == (SERVICE_INFO_CONFIG["id"], "changed")
+
     def test__get_headers(self, unit_app):
         """Test for response headers getter."""
         with unit_app.test_request_context(SERVICE_INFO_PATH, method="POST"):

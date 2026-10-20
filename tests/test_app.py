@@ -208,6 +208,7 @@ def test_service_info_no_id(client, headers):
     del info["id"]
     response = client.post(f"{BASE}/service-info", json=info, headers=headers)
     _assert_error(response, 400)
+    assert response.mimetype == "application/problem+json"
 
 
 def test_service_info_response(client, headers):

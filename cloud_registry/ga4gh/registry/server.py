@@ -131,7 +131,7 @@ def postServiceInfo(**kwargs) -> Response:
     service_info = RegisterServiceInfo()
     headers = service_info.set_service_info_from_app_context(data=_get_request_object())
     response = Response(status=201, headers=headers)
-    # The body is empty, so it has no media type
+    # The body is empty, so it has no media type (Flask sets a default one)
     del response.headers["Content-Type"]
     return response
 

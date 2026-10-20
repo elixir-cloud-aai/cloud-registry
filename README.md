@@ -39,6 +39,14 @@ You can explore the service via the [Swagger UI][url-swagger].
 curl -X GET "http://localhost:8080/ga4gh/registry/v1/services" -H  "accept: application/json"
 ```
 
+### Service info
+
+On startup, the app registers the service info from `config.yaml`
+(`custom.endpoints.service_info`) unless the same service info is stored
+already. Service info can also be replaced via `POST /service-info`. The most
+recently written service info is served, so posted service info is kept on
+restarts unless the service info in the config changes.
+
 ## Installation
 
 To quickly install the service for development/testing purposes, we recommend
