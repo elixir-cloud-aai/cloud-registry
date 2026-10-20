@@ -166,5 +166,18 @@ def _register_service(service_id: str | None = None) -> str:
     service = RegisterService(data=_get_request_object(), id=service_id)
     service.register_metadata()
     if service.was_created:
-        add_owner(service.data["id"])
+        try:
+            # Roles left on the identifier by a deleted service (e.g., if
+            # revoking them failed) don't apply to the new one
+            remove_permissions(service.data["id"])
+            add_owner(service.data["id"])
+        except Exception as exc:
+            # Without an owner, only admins could manage the new service
+            service.db_coll.delete_one({"id": service.data["id"]})
+            if isinstance(exc, ValueError):
+                # FOCA rejects values that can't be stored in policy rules
+                # (e.g., identifiers with commas)
+                logger.info("Invalid service identifier: %s", exc)
+                raise BadRequest from exc
+            raise
     return service.data["id"]

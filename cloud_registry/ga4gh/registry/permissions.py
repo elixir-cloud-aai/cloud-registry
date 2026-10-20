@@ -268,25 +268,29 @@ def putServicePermission(serviceId: str, userId: str, **kwargs) -> dict:
     if not service_exists(serviceId):
         raise NotFound
     resource = service_path(serviceId)
-    was_owner = _is_owner(resource, userId)
+    roles = [other for user, other in list_resource_roles(resource) if user == userId]
     if role != "owner":
         _check_other_owners(resource, userId)
+    # Other roles are revoked before the role is granted, so that a failure
+    # leaves the user with fewer rights, not more
     try:
+        for other_role in ROLES:
+            if other_role != role:
+                remove_resource_role(subject=userId, role=other_role, resource=resource)
+        if "owner" in roles and role != "owner":
+            _restore_owner_if_none(serviceId, resource, userId)
+        if not roles:
+            # Names are only shown once the user has used the registry with
+            # this grant (cf. `remember_current_user()`)
+            get_collection(USER_NAMES).delete_many(
+                {"service_id": serviceId, "user_id": userId}
+            )
         add_resource_role(subject=userId, role=role, resource=resource)
     # FOCA rejects values that can't be stored in policy rules (e.g., user
     # identifiers with commas)
     except ValueError as exc:
         logger.info("Invalid permission: %s", exc)
         raise BadRequest from exc
-    for other_role in ROLES:
-        if other_role != role:
-            remove_resource_role(subject=userId, role=other_role, resource=resource)
-    if was_owner and role != "owner":
-        try:
-            _restore_owner_if_none(serviceId, resource, userId)
-        except Conflict:
-            remove_resource_role(subject=userId, role=role, resource=resource)
-            raise
     return {"user_id": userId, "role": role}
 
 

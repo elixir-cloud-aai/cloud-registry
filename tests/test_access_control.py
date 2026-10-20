@@ -7,6 +7,8 @@ from copy import deepcopy
 import pytest
 
 from cloud_registry.ga4gh.registry import permissions as permissions_module
+from cloud_registry.ga4gh.registry import server as server_module
+from cloud_registry.utils import get_collection
 from tests.conftest import ADMIN, NAMES, USER, make_headers
 from tests.mock_data import SERVICE_INFO_CONFIG
 
@@ -315,3 +317,37 @@ def test_last_owner_restored(client, monkeypatch, change):
     else:
         assert grant(client, service_id, ALICE, "maintainer") == 409
     assert permissions(client, service_id) == [(ALICE, "owner")]
+
+
+def test_stale_roles_cleared(client, monkeypatch):
+    """Roles left on the identifier of a deleted service don't apply to a new
+    service with that identifier.
+    """
+    service_id = register(client)
+    assert grant(client, service_id, BOB, "owner") == 200
+    # as if revoking the roles of the deleted service had failed
+    with monkeypatch.context() as patch:
+        patch.setattr(server_module, "remove_permissions", lambda serviceId: None)
+        assert delete(client, service_id, ALICE) == 200
+    assert update(client, service_id, ADMIN) == 200
+    assert permissions(client, service_id) == [(ADMIN, "owner")]
+
+
+def test_invalid_identifier_rolled_back(client):
+    """Services whose owner can't be stored are not registered."""
+    response = client.put(
+        f"{BASE}/services/a,b", json=_service(), headers=headers(ADMIN)
+    )
+    assert response.status_code == 400
+    assert client.get(f"{BASE}/services/a,b").status_code == 404
+
+
+def test_stale_name_not_shown(app, client):
+    """A name stored before a role is granted is not shown with the role."""
+    service_id = register(client)
+    with app.app.app_context():
+        get_collection("user_names").insert_one(
+            {"service_id": service_id, "user_id": BOB, "name": "Stale"}
+        )
+    assert grant(client, service_id, BOB, "maintainer") == 200
+    assert _names(client, service_id)[BOB] is None

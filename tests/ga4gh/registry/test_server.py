@@ -143,7 +143,7 @@ def test_postService(unit_app, services, ownership):
     with unit_app.test_request_context(json=data):
         res = postService.__wrapped__()
         assert isinstance(res, str)
-    assert ownership == [("add_owner", res)]
+    assert ownership == [("remove_permissions", res), ("add_owner", res)]
 
 
 def test_postService_invalid_payload(unit_app, services):
@@ -187,7 +187,7 @@ def test_putService(unit_app, services, ownership):
     # only new services get an owner
     with unit_app.test_request_context(json=data):
         putService.__wrapped__(serviceId=MOCK_ID)
-    assert ownership == [("add_owner", MOCK_ID)]
+    assert ownership == [("remove_permissions", MOCK_ID), ("add_owner", MOCK_ID)]
 
 
 def test_putService_invalid_payload(unit_app, services):
