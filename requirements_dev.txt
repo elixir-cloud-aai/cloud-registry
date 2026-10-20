@@ -1,3 +1,4 @@
+ast-grep-cli==0.51.0
 build==1.6.1
 coverage==7.16.2
 mongomock==4.3.0

@@ -33,27 +33,30 @@ repos:
   - repo: https://github.com/gitleaks/gitleaks
     rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e  # frozen: v8.30.1
     hooks:
+      # Staged changes on commit
       - id: gitleaks
-        # Scan the working tree, not only staged changes, so that the hook
-        # also checks all files in CI
+      # The whole checkout, in CI (`--hook-stage manual`); also scans
+      # untracked and ignored files when run locally
+      - id: gitleaks
+        alias: gitleaks-all
+        name: Detect hardcoded secrets (all files)
         entry: gitleaks dir --redact --verbose
+        stages: [manual]
   - repo: local
     hooks:
+      # Local hooks use the installed dev dependencies
+      # (`requirements_dev.txt`); mypy needs them to check imported packages
       - id: ast-grep
         name: ast-grep
         entry: ast-grep scan
-        language: python
-        additional_dependencies: [ast-grep-cli==0.51.0]
+        language: system
         types: [python]
       - id: ast-grep-test
         name: ast-grep rule tests
         entry: ast-grep test --skip-snapshot-tests
-        language: python
-        additional_dependencies: [ast-grep-cli==0.51.0]
+        language: system
         files: ^(sgconfig\.yml|\.ast-grep/)
         pass_filenames: false
-      # Uses the installed dependencies (`requirements_dev.txt`), so that
-      # imported packages are type checked
       - id: mypy
         name: mypy
         entry: mypy

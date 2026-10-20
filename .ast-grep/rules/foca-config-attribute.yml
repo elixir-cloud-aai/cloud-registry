@@ -4,8 +4,9 @@ severity: error
 message: Untyped access to the FOCA config
 note: |
   Use `get_custom_config()` and `get_collection()` from
-  `cloud_registry.utils` (or `foca.get_config()`).
-# Tests may access and change the config of test apps directly
+  `cloud_registry.utils` (or `foca.get_config()`). Only direct attribute
+  access is detected.
+# Scoped to app code: tests may access and change the config of test apps
 files:
   - cloud_registry/**
 rule:

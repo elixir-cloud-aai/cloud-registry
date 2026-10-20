@@ -26,3 +26,11 @@ updates:
     groups:
       docker:
         patterns: ["*"]
+  # Hook revisions in `.pre-commit-config.yaml`
+  - package-ecosystem: pre-commit
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      pre-commit:
+        patterns: ["*"]
