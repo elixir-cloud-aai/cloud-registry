@@ -65,10 +65,9 @@ def test_get_service_info_runtime_fields(unit_app):
 
 def test_get_service_info_copy(unit_app):
     """Changing the returned service info doesn't change the config."""
-    _update(unit_app, **{"x-links": [{"url": "https://example.org", "x": None}]})
+    _update(unit_app, **{"x-links": [{"url": "https://example.org"}]})
     with unit_app.app_context():
         info = get_service_info()
-        assert info["x-links"] == [{"url": "https://example.org"}]
         info["organization"]["name"] = "changed"
         info["x-links"].append({})
         assert get_service_info() == {
@@ -78,14 +77,15 @@ def test_get_service_info_copy(unit_app):
 
 
 def test_get_service_info_nulls(unit_app):
-    """Fields set to `null` are removed, also in nested mappings."""
+    """Fields and list items set to `null` are removed, also nested."""
     organization = {**SERVICE_INFO_CONFIG["organization"], "x-logo": None}
-    _update(unit_app, contactUrl=None, organization=organization)
+    links = [None, {"url": "https://example.org", "title": None}]
+    _update(unit_app, contactUrl=None, organization=organization, **{"x-links": links})
     with unit_app.app_context():
         info = get_service_info()
         check_service_info()
     expected = {k: v for k, v in SERVICE_INFO_CONFIG.items() if k != "contactUrl"}
-    assert info == expected
+    assert info == {**expected, "x-links": [{"url": "https://example.org"}]}
 
 
 def test_null_runtime_field(unit_app):
@@ -146,6 +146,7 @@ def test_check_service_info_missing(unit_app, field):
         ({"updatedAt": "2021-02-29T00:00:00Z"}, "updatedAt"),
         ({"updatedAt": "2020-11-08T00:00:00+00:60"}, "updatedAt"),
         ({"updatedAt": "2020-11-08T00:00:00+24:00"}, "updatedAt"),
+        ({"updatedAt": "2020-11-08 00:00:00Z"}, "updatedAt"),
         ({"updatedAt": "２０２０-11-08T00:00:00Z"}, "updatedAt"),
         ({"type": {"group": "org.ga4gh", "artifact": "x"}}, "type"),
         ({"name": 1}, "name"),
@@ -169,7 +170,7 @@ def test_check_service_info_invalid(unit_app, fields, path):
         {"contactUrl": "mailto:support@example.com"},
         {"createdAt": "2020-11-08T10:20:30.123+01:00"},
         {"updatedAt": "2020-11-08t10:20:30z"},
-        {"updatedAt": "2020-02-29 10:20:30.1234567-05:30"},
+        {"updatedAt": "2020-02-29T10:20:30.1234567-05:30"},
         {"updatedAt": "2016-12-31T23:59:60Z"},
         {"x-custom": {"any": "value"}},
     ],

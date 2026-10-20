@@ -27,9 +27,10 @@ CONFIG_PATH = "custom.endpoints.service_info"
 FORMAT_CHECKER = FormatChecker(formats=())
 # RFC 3986: a scheme, followed by anything without whitespace
 URI = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:\S*")
-# RFC 3339, section 5.6 (ASCII digits only)
+# RFC 3339, section 5.6 (ASCII digits only; the RFC allows a space instead of
+# `T` in a note only)
 DATE_TIME = re.compile(
-    r"(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})[Tt ]"
+    r"(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})[Tt]"
     r"(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2})(\.\d+)?"
     r"([Zz]|[+-](?P<offset_hour>\d{2}):(?P<offset_minute>\d{2}))",
     re.ASCII,
@@ -93,8 +94,8 @@ def get_service_info(
 
     Returns:
         Copy of the service info from the config (`custom.endpoints.service_info`), with
-        the runtime fields it doesn't set, and without fields set to `null`
-        (config overlays can't remove fields otherwise).
+        the runtime fields it doesn't set, and without fields and list items
+        set to `null` (config overlays can't remove fields otherwise).
     """
     return _without_nulls(
         {**runtime_fields(), **get_custom_config().endpoints.service_info}
@@ -102,9 +103,7 @@ def get_service_info(
 
 
 def _without_nulls(data: Any) -> Any:
-    """Copy data without `None` values of mappings, recursively (also in
-    lists).
-    """
+    """Copy data without `None` values, recursively."""
     if isinstance(data, dict):
         return {
             key: _without_nulls(value)
@@ -112,7 +111,7 @@ def _without_nulls(data: Any) -> Any:
             if value is not None
         }
     if isinstance(data, list):
-        return [_without_nulls(item) for item in data]
+        return [_without_nulls(item) for item in data if item is not None]
     return data
 
 
