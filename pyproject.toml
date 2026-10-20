@@ -38,7 +38,7 @@ name ="cloud-registry"
 version="0.2.0"
 authors = [{name = "ELIXIR Cloud & AAI"}, {email = "alexander.kanitz@alumni.ethz.ch"}]
 keywords = [
-    "ga4gh", "service", "registry", "elixir", "cloud", "rest", "restful", 
+    "ga4gh", "service", "registry", "elixir", "cloud", "rest", "restful",
     "api", "app", "server", "openapi", "swagger", "mongodb", "python", "flask"
 ]
 classifiers = [

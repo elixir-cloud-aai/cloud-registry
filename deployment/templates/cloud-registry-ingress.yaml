@@ -10,14 +10,14 @@ metadata:
   name: {{ .Values.cloud_registry.appName }}
 spec:
   rules:
-  - host: {{ .Values.host_name }} 
+  - host: {{ .Values.host_name }}
     http:
       paths:
       - path: /
         pathType: Prefix
         backend:
           service:
-            name: {{ .Values.cloud_registry.appName }} 
+            name: {{ .Values.cloud_registry.appName }}
             port:
               number: 8080
 {{- if .Values.cloud_registry.ingress.https.enabled }}

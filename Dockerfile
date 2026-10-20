@@ -1,7 +1,7 @@
 ##### BASE IMAGE #####
 FROM elixircloud/foca:0.14.0-py3.12
 
-##### METADATA ##### 
+##### METADATA #####
 LABEL software="Cloud Registry"
 LABEL software.description="GA4GH Service Registry API implementation for the ELIXIR Cloud"
 LABEL software.website="https://github.com/elixir-cloud-aai/cloud-registry"
