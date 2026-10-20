@@ -130,7 +130,10 @@ jobs:
           pip install -e .
       # Helm is preinstalled on GitHub-hosted Ubuntu runners
       - name: Lint chart
-        run: helm lint deployment --strict -f deployment/ci/test-values.yaml
+        run: |
+          helm lint deployment --strict -f deployment/ci/test-values.yaml
+          helm lint deployment --strict -f deployment/ci/test-values.yaml \
+            --set mongodb.auth.enabled=true --set mongodb.auth.existingSecret=mongodb
       # Fails instead of skipping the chart tests if helm is missing
       - name: Test chart
         run: |

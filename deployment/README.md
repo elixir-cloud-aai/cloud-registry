@@ -65,11 +65,25 @@ ServiceAccount and RoleBinding, and the `app-config` ConfigMap: move any
 changes made to the config there to `config` in the values file first.
 
 Chart version 2 used `mongo:noble`, which resolves to the latest MongoDB
-version (e.g., 8.2), while chart version 3 defaults to `mongo:7.0`. **Before
-upgrading from chart version 2, check the MongoDB version and FCV (see
-[Version](#version)) and set `mongodb.image` to the running major and minor
-version (e.g., `docker.io/library/mongo:8.2`)**; downgrade afterwards if
-needed.
+version (e.g., 9.0), while chart version 3 defaults to `mongo:7.0`, which
+cannot read the data of newer versions. **Before upgrading from chart version
+2, check the running MongoDB version (see [Version](#version)) and set
+`mongodb.image` to its major and minor version (e.g.,
+`docker.io/library/mongo:9.0`).**
+
+## Probes
+
+The probes are fixed:
+
+- **App:** ready once it serves its Swagger UI (`/ga4gh/registry/v1/ui/`; all
+  API endpoints require authentication), checked every 10 seconds, so
+  `kubectl rollout status deploy/<appName> -n <namespace>` waits until it can
+  serve requests; restarted after failing for a minute (liveness probe, from
+  30 seconds after the start).
+- **MongoDB:** ready once it accepts connections; up to 5 minutes are allowed
+  for the first start (startup probe), as MongoDB only listens on localhost
+  while it initializes an empty data directory; restarted after failing for a
+  minute afterwards (liveness probe).
 
 ## MongoDB
 
@@ -80,12 +94,12 @@ refuses to start on Linux kernels 6.19 to 7.0.13, cf.
 [SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)). MongoDB
 only starts on data whose feature compatibility version (FCV) it supports,
 so check the running version and the FCV before changing the image of an
-existing database (with authentication enabled, the commands below need the
-root user's credentials, see [Authentication](#authentication)):
+existing database (with authentication enabled, the command needs the root
+user's credentials, see [Authentication](#authentication)):
 
 ```bash
 kubectl exec deploy/mongodb -n <namespace> -- mongosh --quiet --eval \
-  "db.version(); db.adminCommand({getParameter: 1, featureCompatibilityVersion: 1})"
+  "printjson({version: db.version(), fcv: db.adminCommand({getParameter: 1, featureCompatibilityVersion: 1}).featureCompatibilityVersion})"
 ```
 
 - **Upgrades** go one major version at a time (e.g., 6.0 → 7.0 → 8.0): set
@@ -93,9 +107,10 @@ kubectl exec deploy/mongodb -n <namespace> -- mongosh --quiet --eval \
   that version (e.g.,
   `db.adminCommand({setFeatureCompatibilityVersion: "7.0", confirm: true})`)
   before the next step.
-- **Downgrades** go the same steps in reverse, e.g., 8.2 → 8.0 → 7.0: while
-  the newer version runs, set the FCV to the next older version, then change
-  the image to that version, and repeat.
+- **Downgrades** of the MongoDB binary are not supported for MongoDB
+  Community Edition (which the `mongo` images contain). Keep the running
+  version instead, or dump the database (`mongodump`) and restore it
+  (`mongorestore`) into a new, empty volume with the older version.
 
 The MongoDB Deployment uses the `Recreate` strategy, as the data volume can
 only be used by one pod: changing the image stops MongoDB, and an image that
@@ -158,10 +173,3 @@ kubectl exec -it deploy/mongodb -n <namespace> -- mongosh
 db.getSiblingDB("admin").createUser({user: "root", pwd: "<root-password>", roles: ["root"]})
 db.getSiblingDB("serviceStore").createUser({user: "cloud-registry", pwd: "<password>", roles: [{role: "readWrite", db: "serviceStore"}]})
 ```
-
-### Probes
-
-The app is ready once it serves its Swagger UI (`/ga4gh/registry/v1/ui/`; all
-API endpoints require authentication), so `kubectl rollout status
-deploy/<appName> -n <namespace>` waits until it can serve requests. MongoDB is
-ready once it accepts connections.

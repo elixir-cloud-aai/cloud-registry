@@ -8,7 +8,8 @@ Name of the existing Secret with the MongoDB credentials.
 {{/*
 Environment variables taken from keys of the Secret with the MongoDB
 credentials; call with a dict of the root context (`root`) and a dict mapping
-variable names to Secret keys (`vars`).
+variable names to Secret keys (`vars`); variables are rendered in
+alphabetical order.
 */}}
 {{- define "cloud-registry.mongodbSecretEnv" -}}
 {{- $secret := include "cloud-registry.mongodbSecret" .root -}}

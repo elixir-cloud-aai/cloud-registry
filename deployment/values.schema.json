@@ -7,10 +7,7 @@
       "description": "Public host name of the app"
     },
     "config": {
-      "type": [
-        "object",
-        "null"
-      ],
+      "type": ["object", "null"],
       "description": "App config overriding the base config in the image"
     },
     "mongodb": {

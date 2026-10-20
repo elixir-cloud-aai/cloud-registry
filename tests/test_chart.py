@@ -1,10 +1,13 @@
 """Tests for the MongoDB deployment and the probes of the Helm chart."""
 
+import re
 import subprocess
 
 import pytest
+import yaml
 
-from tests.helm import HELM, render
+from tests.helm import CHART, HELM, render
+from tests.test_config import CONFIG_FILE
 
 CREDENTIALS = "mongodb-credentials"
 AUTH = (
@@ -43,9 +46,12 @@ def _secret_refs(container: dict) -> dict:
 
 
 def test_mongodb_pinned_and_recreated():
-    """MongoDB is pinned to a major version and replaced, not rolled."""
+    """MongoDB is pinned to a minor version and replaced, not rolled."""
     docs = _render()
-    assert _container(docs, "mongodb")["image"].endswith(":7.0")
+    image = _container(docs, "mongodb")["image"]
+    values = yaml.safe_load((CHART / "values.yaml").read_text())
+    assert image == values["mongodb"]["image"]
+    assert re.fullmatch(r".+:\d+\.\d+", image)
     assert docs[("Deployment", "mongodb")]["spec"]["strategy"] == {"type": "Recreate"}
 
 
@@ -96,6 +102,10 @@ def test_auth_enabled():
     }
     script = docs[("ConfigMap", "mongo-init-script")]["data"]["create-app-user.js"]
     assert "process.env.MONGO_APP_PASSWORD" in script
+    # The app user is created in the database the app authenticates against
+    config = yaml.safe_load(CONFIG_FILE.read_text())
+    (database,) = config["db"]["dbs"]
+    assert script.count(f"'{database}'") == 2
     volumes, mounts = _init_script_volumes(docs)
     assert [vol["configMap"]["name"] for vol in volumes] == ["mongo-init-script"]
     assert [mount["mountPath"] for mount in mounts] == ["/docker-entrypoint-initdb.d"]
