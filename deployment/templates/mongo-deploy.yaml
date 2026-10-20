@@ -3,7 +3,8 @@ kind: Deployment
 metadata:
   name: mongodb
 spec:
-  progressDeadlineSeconds: 600
+  # Longer than the startup window (see `startupProbe`)
+  progressDeadlineSeconds: 2400
   replicas: 1
   revisionHistoryLimit: 10
   selector:

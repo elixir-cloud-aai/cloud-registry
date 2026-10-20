@@ -175,17 +175,26 @@ then update the Secret and restart the app (`kubectl rollout restart
 deploy/<appName> -n <namespace>`).
 
 For an existing database without authentication (e.g., from chart version
-2), create the users before enabling authentication, with the credentials
-from the Secret:
+2), MongoDB enforces authentication as soon as the chart enables it, but
+does not create the users. Create them first, while authentication is still
+off:
 
-```bash
-kubectl exec -it deploy/mongodb -n <namespace> -- mongosh
-```
+1. Create the Secret (see above).
+2. In the running MongoDB (e.g., still deployed with chart version 2, or
+   with `mongodb.auth.enabled: false`), create the users with the
+   credentials from the Secret:
 
-```javascript
-db.getSiblingDB("admin").createUser({user: "root", pwd: "<root-password>", roles: ["root"]})
-db.getSiblingDB("serviceStore").createUser({user: "cloud-registry", pwd: "<password>", roles: [{role: "readWrite", db: "serviceStore"}]})
-```
+   ```bash
+   kubectl exec -it deploy/mongodb -n <namespace> -- mongosh
+   ```
+
+   ```javascript
+   db.getSiblingDB("admin").createUser({user: "root", pwd: "<root-password>", roles: ["root"]})
+   db.getSiblingDB("serviceStore").createUser({user: "cloud-registry", pwd: "<password>", roles: [{role: "readWrite", db: "serviceStore"}]})
+   ```
+
+3. Upgrade (or install) the chart with authentication enabled and
+   `mongodb.auth.existingSecret` set.
 
 If the root user exists but the app user is missing (e.g., because the first
 start was interrupted), log in as the root user and create only the app user:

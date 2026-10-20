@@ -45,6 +45,14 @@ def _literal_env(container: dict) -> set:
     return {var["name"] for var in container.get("env", []) if "valueFrom" not in var}
 
 
+def _startup_window(container: dict) -> int:
+    """Get the seconds a container may take to start before it is restarted."""
+    probe = container["startupProbe"]
+    return probe.get("initialDelaySeconds", 0) + (
+        probe["periodSeconds"] * probe["failureThreshold"]
+    )
+
+
 def test_mongodb_pinned_and_recreated():
     """MongoDB is pinned to a minor version and replaced, not rolled."""
     docs = _render()
@@ -66,18 +74,8 @@ def test_probes():
         assert mongodb[probe]["tcpSocket"] == {"port": 27017}
 
 
-def _startup_window(container: dict) -> int:
-    """Get the seconds a container may take to start before it is restarted."""
-    probe = container["startupProbe"]
-    return probe.get("initialDelaySeconds", 0) + (
-        probe["periodSeconds"] * probe["failureThreshold"]
-    )
-
-
 def test_startup_windows():
-    """The app may take 5 minutes to start, MongoDB 30 (e.g., for recovery);
-    liveness checks only start afterwards.
-    """
+    """App and MongoDB may take 5 and 30 minutes to start, respectively."""
     docs = _render()
     app = _container(docs, "cloud-registry")
     mongodb = _container(docs, "mongodb")
@@ -98,8 +96,9 @@ def test_probe_path():
 @pytest.mark.parametrize("path", ["health", "null"])
 def test_probe_path_invalid(path):
     """Probe paths must be set and absolute."""
-    with pytest.raises(subprocess.CalledProcessError):
+    with pytest.raises(subprocess.CalledProcessError) as exc:
         _render("--set", f"cloud_registry.probePath={path}")
+    assert "probePath" in exc.value.stderr
 
 
 def _init_script_volumes(docs: dict) -> tuple[list, list]:
