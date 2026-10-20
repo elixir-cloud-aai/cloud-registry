@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "host_name": {
+      "type": "string",
+      "description": "Public host name of the app"
+    },
+    "config": {
+      "type": ["object", "null"],
+      "description": "App config overriding the base config in the image"
+    }
+  }
+}

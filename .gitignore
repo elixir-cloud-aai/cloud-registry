@@ -222,3 +222,7 @@ tags
 .vscode/
 *.modified.yaml
 .idea/*
+
+# Local config overrides
+config.local.yaml
+docker-compose.override.yaml

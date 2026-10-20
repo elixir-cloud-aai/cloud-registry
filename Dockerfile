@@ -9,27 +9,20 @@ LABEL software.license="https://spdx.org/licenses/Apache-2.0"
 LABEL maintainer="alexander.kanitz@alumni.ethz.ch"
 LABEL maintainer.organisation="ELIXIR Cloud & AAI"
 
-## Install system packages and dependencies first, so that code changes do
-## not reinstall them; the FOCA image runs as non-root user and has no curl or
-## jq, which are needed by `update-config-map.sh` (as is yq; remove with #67)
+## Install dependencies first, so that code changes do not reinstall them;
+## the FOCA image runs as non-root user
 USER root
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends curl jq \
-  && rm -rf /var/lib/apt/lists/* \
-  && pip install --no-cache-dir yq==3.2.3
-COPY requirements.txt /app/
-RUN pip install --no-cache-dir -r /app/requirements.txt
+COPY requirements.txt /tmp/src/
+RUN pip install --no-cache-dir -r /tmp/src/requirements.txt
 
-## Copy app; it runs from `/app` rather than being installed, because the
-## Helm chart mounts the config at `/app/cloud_registry/config.yaml`
-COPY update-config-map.sh /app/
-COPY cloud_registry /app/cloud_registry
+## Install app (non-editable; the base config is installed with the package,
+## and deployments override it via `FOCA_CONFIG_OVERLAY`)
+## (`README.md` is the package's long description)
+COPY pyproject.toml README.md /tmp/src/
+COPY cloud_registry /tmp/src/cloud_registry
+RUN pip install --no-cache-dir --no-deps /tmp/src \
+  && rm -rf /tmp/src
 USER 1000
-
-## Make the package importable from any working directory, e.g., in
-## `docker exec`, as the editable install did before
-WORKDIR /app
-ENV PYTHONPATH=/app
 
 ## All API endpoints require authentication, so probe the Swagger UI instead;
 ## set `HEALTHCHECK_URL` if the config changes the port, the API base path or

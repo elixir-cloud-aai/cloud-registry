@@ -16,7 +16,9 @@ spec:
     type: RollingUpdate
   template:
     metadata:
-      creationTimestamp: null
+      annotations:
+        # Roll the pods when the config changes
+        checksum/config: {{ include (print $.Template.BasePath "/cloud-registry-configmap.yaml") . | sha256sum }}
       labels:
         app: {{ .Values.cloud_registry.appName }}
     spec:
@@ -24,6 +26,9 @@ spec:
       - image: {{ .Values.cloud_registry.image }}
         imagePullPolicy: Always
         name: {{ .Values.cloud_registry.appName }}
+        env:
+        - name: FOCA_CONFIG_OVERLAY
+          value: /etc/cloud-registry/overlay.yaml
         ports:
         - containerPort: 8080
           protocol: TCP
@@ -31,9 +36,9 @@ spec:
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
         volumeMounts:
-        - mountPath: /app/cloud_registry/config.yaml
-          name: config-yaml
-          subPath: config.yaml
+        - mountPath: /etc/cloud-registry
+          name: config
+          readOnly: true
       dnsPolicy: ClusterFirst
       restartPolicy: Always
       schedulerName: default-scheduler
@@ -41,9 +46,5 @@ spec:
       terminationGracePeriodSeconds: 30
       volumes:
       - configMap:
-          defaultMode: 420
-          items:
-            - key: config.yaml
-              path: config.yaml
-          name: app-config
-        name: config-yaml
+          name: {{ .Values.cloud_registry.appName }}-config
+        name: config

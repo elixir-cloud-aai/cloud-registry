@@ -1,8 +1,9 @@
 # Only send the files needed at runtime to the build context
 *
 !cloud_registry/
+!pyproject.toml
+!README.md
 !requirements.txt
-!update-config-map.sh
 
 # Exclude caches and local files within the included paths
 **/__pycache__
