@@ -1,7 +1,5 @@
 """Typed access to the configuration and collections of the app."""
 
-from typing import cast
-
 from foca import get_collection as get_foca_collection
 from foca import get_config
 from pymongo.collection import Collection
@@ -16,11 +14,15 @@ def get_custom_config() -> CustomConfig:
 
     Returns:
         Custom configuration.
+
+    Raises:
+        RuntimeError: The app has no custom configuration.
     """
-    # FOCA keeps the custom configuration as an untyped extra field, parsed
-    # with `CustomConfig` (imported by FOCA as `service_models.custom_config`,
-    # so `isinstance()` does not apply)
-    return cast(CustomConfig, (get_config().model_extra or {})["custom"])
+    # FOCA keeps the custom configuration as an untyped extra field
+    custom = (get_config().model_extra or {}).get("custom")
+    if not isinstance(custom, CustomConfig):
+        raise RuntimeError("No custom configuration available")
+    return custom
 
 
 def get_collection(name: str) -> Collection:

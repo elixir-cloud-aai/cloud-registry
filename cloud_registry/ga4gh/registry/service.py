@@ -32,8 +32,6 @@ class RegisterService:
             replace: Whether an existing service with the provided identifier
                 should be replaced. Set to `True` if an `id` is provided,
                 otherwise set to `False`.
-            was_replaced: Whether an existing service with the provided
-                identifier was replaced.
             id_charset: A string of allowed characters for generating service
                 identifiers.
             id_length: Length of generated service identifiers.
@@ -43,7 +41,6 @@ class RegisterService:
         self.data = deepcopy(data)
         self.data["id"] = id
         self.replace = id is not None
-        self.was_replaced = False
         self.id_charset: str = endpoint_conf.services.id.charset
         self.id_length = int(endpoint_conf.services.id.length)
         self.db_coll = get_collection("services")
@@ -59,13 +56,11 @@ class RegisterService:
         """
         # replace or insert service with provided ID (PUT)
         if self.replace:
-            result_object = self.db_coll.replace_one(
+            self.db_coll.replace_one(
                 filter={"id": self.data["id"]},
                 replacement=self.data,
                 upsert=True,
             )
-            if result_object.modified_count:
-                self.was_replaced = True
 
         # insert service with random ID (POST); new ID if key exists
         else:

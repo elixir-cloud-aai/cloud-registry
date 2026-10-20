@@ -52,10 +52,6 @@ SERVICES_CONFIG = {
         "charset": CHARSET,
         "length": 6,
     },
-    "meta_version": {
-        "init": 1,
-        "increment": 1,
-    },
 }
 ENDPOINT_CONFIG = {
     "service": SERVICE_CONFIG,

@@ -59,10 +59,6 @@ class RegisterServiceInfo:
 
         Will create service info if it does not exist or current
         configuration differs from available one.
-
-        Raises:
-            cloud_registry.exceptions.ValidationError: Service info
-                configuration does not conform to API specification.
         """
         stored = self._get_stored_service_info(id=self.conf_info["id"])
         managed = [field for field in TIMESTAMP_FIELDS if field not in self.conf_info]

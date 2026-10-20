@@ -58,7 +58,6 @@ class TestRegisterService:
             obj = RegisterService(data=deepcopy(MOCK_SERVICE), id=MOCK_ID)
             obj.register_metadata()
         assert obj.data["id"] == MOCK_ID
-        assert obj.was_replaced is False
         stored = _without_db_id(services.find_one({"id": MOCK_ID}))
         assert stored == {**MOCK_SERVICE, "id": MOCK_ID}
         assert services.count_documents({}) == 1
@@ -71,7 +70,6 @@ class TestRegisterService:
         with unit_app.app_context():
             obj = RegisterService(data=data, id=MOCK_ID)
             obj.register_metadata()
-        assert obj.was_replaced is True
         stored = _without_db_id(services.find_one({"id": MOCK_ID}))
         assert stored == {**data, "id": MOCK_ID}
         assert services.count_documents({}) == 1

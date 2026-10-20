@@ -61,8 +61,3 @@ exceptions = {
         "status": 500,
     },
 }
-
-
-# exceptions raised outside of app context
-class ValidationError(Exception):
-    """Value or object is not compatible with required type or schema."""

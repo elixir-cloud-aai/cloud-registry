@@ -63,9 +63,9 @@ api:
             - api/20201108.e0358db.openapi.yaml
             - api/additions.openapi.yaml
           add_operation_fields:
-              x-openapi-router-controller: ga4gh.registry.server
+              x-openapi-router-controller: cloud_registry.ga4gh.registry.server
           add_security_fields:
-              x-bearerInfoFunc: app.validate_token
+              x-bearerInfoFunc: foca.security.auth.validate_token
           disable_auth: False
           connexion:
               strict_validation: True
@@ -123,6 +123,3 @@ custom:
             id:
                 charset: ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
                 length: 6
-            meta_version:
-                init: 1
-                increment: 1

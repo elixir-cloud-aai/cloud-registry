@@ -41,10 +41,9 @@ def getServiceById(serviceId: str, **kwargs) -> dict:
         Service object.
     """
     db_collection_service = get_collection("services")
-    obj = db_collection_service.find_one({"id": serviceId})
+    obj = db_collection_service.find_one({"id": serviceId}, {"_id": False})
     if not obj:
         raise NotFound
-    del obj["_id"]
     return obj
 
 
@@ -54,13 +53,16 @@ def getServiceTypes(**kwargs) -> list:
     """List types of services.
 
     Returns:
-        List of distinct service types.
+        List of distinct service types, sorted by group, artifact and version.
     """
-    services = getServices.__wrapped__()  # type: ignore[attr-defined]
-    types = [s["type"] for s in services]
-    uniq_types = [dict(t) for t in {tuple(sorted(d.items())) for d in types}]
-
-    return uniq_types
+    fields = ("group", "artifact", "version")
+    records = get_collection("services").aggregate(
+        [
+            {"$group": {"_id": {field: f"$type.{field}" for field in fields}}},
+            {"$sort": {f"_id.{field}": 1 for field in fields}},
+        ]
+    )
+    return [record["_id"] for record in records]
 
 
 # GET /service-info
@@ -83,14 +85,7 @@ def postService(**kwargs) -> str:
     Returns:
         Identifier of registered service.
     """
-    request_json = request.json
-    if isinstance(request_json, dict):
-        service = RegisterService(data=request_json)
-        service.register_metadata()
-        return service.data["id"]
-    else:
-        logger.error("Invalid request payload.")
-        raise BadRequest
+    return _register_service()
 
 
 # DELETE /services/{serviceId}
@@ -99,7 +94,7 @@ def deleteService(serviceId: str, **kwargs) -> str:
     """Delete service.
 
     Args:
-        id: Identifier of service to be deleted.
+        serviceId: Identifier of service to be deleted.
 
     Returns:
         Identifier of deleted service.
@@ -117,22 +112,30 @@ def putService(serviceId: str, **kwargs) -> str:
     """Add/replace service with a user-supplied ID.
 
     Args:
-        id: Identifier of service to be registered/updated.
+        serviceId: Identifier of service to be registered/updated.
 
     Returns:
         Identifier of registered/updated service.
     """
+    return _register_service(id=serviceId)
+
+
+def _register_service(id: str | None = None) -> str:
+    """Register the service in the request body.
+
+    Args:
+        id: Identifier of the service; generated if not provided.
+
+    Returns:
+        Identifier of registered service.
+    """
     request_json = request.json
-    if isinstance(request_json, dict):
-        service = RegisterService(
-            data=request_json,
-            id=serviceId,
-        )
-        service.register_metadata()
-        return service.data["id"]
-    else:
+    if not isinstance(request_json, dict):
         logger.error("Invalid request payload.")
         raise BadRequest
+    service = RegisterService(data=request_json, id=id)
+    service.register_metadata()
+    return service.data["id"]
 
 
 # POST /service-info

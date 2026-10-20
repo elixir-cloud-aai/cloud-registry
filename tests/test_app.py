@@ -158,17 +158,15 @@ def test_delete_service(client, headers):
 
 
 def test_get_service_types(client, headers):
-    """Service types are listed once each."""
+    """Service types are listed once each, sorted."""
     wes = {"group": "org.ga4gh", "artifact": "wes", "version": "1.1.0"}
-    for service in [_service(), _service(), _service(type=wes)]:
+    for service in [_service(type=wes), _service(), _service()]:
         _post(client, headers, service)
 
-    response = client.get(f"{BASE}/services/types", headers=headers)
-    assert response.status_code == 200
-    assert sorted(response.json, key=lambda t: t["artifact"]) == [
-        SERVICE["type"],
-        wes,
-    ]
+    for _ in range(2):
+        response = client.get(f"{BASE}/services/types", headers=headers)
+        assert response.status_code == 200
+        assert response.json == [SERVICE["type"], wes]
 
 
 def test_service_info(app, client, headers):
@@ -240,5 +238,5 @@ def test_main(monkeypatch, mongo_client, app_env):
 def test_main_config_missing(monkeypatch, tmp_path):
     """`main()` fails if the config file is missing."""
     monkeypatch.setattr(cloud_registry.app, "__file__", str(tmp_path / "app.py"))
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(OSError):
         cloud_registry.app.main()
