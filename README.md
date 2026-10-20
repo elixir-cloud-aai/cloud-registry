@@ -58,7 +58,7 @@ empty. Previously, `api_path` held the API base path itself (e.g.,
 ## Installation
 
 To quickly install the service for development/testing purposes, we recommend
-deployment via [`docker-compose`][docker-compose], as described below. For
+deployment via [Docker Compose][docker-compose], as described below. For
 more durable deployments on cloud native infrastructure, we also provide a
 [Helm][helm] chart in the [`deployments/`][deployment] directory, together with
 [basic deployment instructions][deployment-instructions] (details may need to
@@ -69,11 +69,11 @@ be adapted for your specific infrastructure).
 The following software needs to be available on your system:
 
 - [`git 2.17.1`][git]
-- [`docker 18.09.6`][docker]
-- [`docker-compose 1.23.1`][docker-compose]
+- [`docker`][docker], with the [Compose plugin][docker-compose] (version 2)
 
-> Versions used to test deployment are indicated. Other versions with the same
-> major version numbers will likely work as well, especially newer ones.
+> Where versions are indicated, they were used to test deployment. Other
+> versions with the same major version numbers will likely work as well,
+> especially newer ones.
 
 ### Deployment
 
@@ -87,8 +87,22 @@ cd cloud-registry
 Then simply start up the service with:
 
 ```bash
-docker-compose up --build -d
+docker compose up --build -d
 ```
+
+MongoDB is only reachable from the app container; its data is kept in the
+Compose project's `mongodb-data` volume (e.g., `cloud-registry_mongodb-data`,
+see `docker volume ls`).
+
+> Earlier versions kept the data in `../data/cloud-registry/db`. To keep using
+> it, bind-mount it in a `docker-compose.override.yaml`:
+>
+> ```yaml
+> services:
+>     mongodb:
+>         volumes:
+>             - ../data/cloud-registry/db:/data/db
+> ```
 
 _**That't it!**_
 
@@ -100,13 +114,15 @@ the [usage section](#Usage).
 To shut down the service, run:
 
 ```bash
-docker-compose down
+docker compose down
 ```
+
+Add `--volumes` to also delete the database.
 
 If you need to inspect the logs, call:
 
 ```bash
-docker-compose logs
+docker compose logs
 ```
 
 ## Contributing
