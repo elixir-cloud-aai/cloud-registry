@@ -7,8 +7,9 @@ from cloud_registry.service_models.custom_config import IdConfig
 
 
 def test_id_config():
-    """A literal character set is accepted."""
-    assert IdConfig(charset="ABC123", length=6).charset == "ABC123"
+    """A literal character set and a positive length are accepted."""
+    config = IdConfig(charset="ABC123", length=6)
+    assert (config.charset, config.length) == ("ABC123", 6)
 
 
 @pytest.mark.parametrize(
@@ -20,3 +21,10 @@ def test_id_config_invalid_charset(charset):
     """
     with pytest.raises(ValidationError):
         IdConfig(charset=charset, length=6)
+
+
+@pytest.mark.parametrize("length", [0, -3])
+def test_id_config_invalid_length(length):
+    """Lengths that identifiers cannot be generated with are rejected."""
+    with pytest.raises(ValidationError):
+        IdConfig(charset="ABC123", length=length)

@@ -4,7 +4,7 @@ from typing import Optional
 
 from foca.models.config import FOCABaseConfig
 from foca.utils.misc import generate_id
-from pydantic import field_validator
+from pydantic import PositiveInt, field_validator
 
 
 class ServiceConfig(FOCABaseConfig):
@@ -230,7 +230,7 @@ class IdConfig(FOCABaseConfig):
     """
 
     charset: str
-    length: int
+    length: PositiveInt
 
     @field_validator("charset")
     @classmethod
