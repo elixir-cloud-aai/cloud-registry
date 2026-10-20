@@ -23,7 +23,10 @@ def get_custom_config() -> CustomConfig:
     # path (`cloud_registry.service_models.custom_config.CustomConfig`)
     custom = (get_config().model_extra or {}).get("custom")
     if not isinstance(custom, CustomConfig):
-        raise RuntimeError(f"No custom configuration of type {CustomConfig}")
+        raise RuntimeError(
+            f"No custom configuration of type {CustomConfig}; check that "
+            "`custom_config_model` is its full module path"
+        )
     return custom
 
 
