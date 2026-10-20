@@ -9,6 +9,7 @@ from connexion.exceptions import (
 )
 from werkzeug.exceptions import (
     BadRequest,
+    Conflict,
     InternalServerError,
     NotFound,
 )
@@ -54,6 +55,11 @@ exceptions = {
         "title": "Not found",
         "detail": "The requested resource wasn't found.",
         "status": 404,
+    },
+    Conflict: {
+        "title": "Conflict",
+        "detail": "The request conflicts with the current state of the resource.",
+        "status": 409,
     },
     InternalServerError: {
         "title": "Internal server error",

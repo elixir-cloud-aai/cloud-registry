@@ -49,6 +49,12 @@ ENTITLEMENTS = {
     "carol@lifescience-ri.eu": [],
     "admin@lifescience-ri.eu": [ADMIN_ENTITLEMENT],
 }
+# Display names of users (none for carol)
+NAMES = {
+    "alice@lifescience-ri.eu": "Alice Example",
+    "bob@lifescience-ri.eu": "Bob Example",
+    "admin@lifescience-ri.eu": "Admin Example",
+}
 
 
 class MockResponse:
@@ -82,7 +88,10 @@ def mock_get(url, headers=None, **kwargs):
     if url == USERINFO_URI:
         token = headers["Authorization"].removeprefix("Bearer ")
         sub = jwt.decode(token, options={"verify_signature": False})["sub"]
-        return MockResponse({"sub": sub, "eduperson_entitlement": ENTITLEMENTS[sub]})
+        userinfo = {"sub": sub, "eduperson_entitlement": ENTITLEMENTS[sub]}
+        if sub in NAMES:
+            userinfo["name"] = NAMES[sub]
+        return MockResponse(userinfo)
     return REQUESTS_GET(url, headers=headers, **kwargs)
 
 
@@ -190,6 +199,7 @@ def test_write_requires_authentication(client):
     assert response.status_code == 401
     response = client.get(f"{BASE}/services/{service_id}/permissions")
     assert response.status_code == 401
+    assert client.get(f"{BASE}/me").status_code == 401
 
 
 def test_creator_is_owner(client):
@@ -303,3 +313,85 @@ def test_permissions_removed_with_service(client):
     assert update(client, service_id, "admin@lifescience-ri.eu") == 200
     assert permissions(client, service_id) == [("admin@lifescience-ri.eu", "owner")]
     assert update(client, service_id, "bob@lifescience-ri.eu") == 403
+
+
+def revoke(client, service_id, user, as_user="alice@lifescience-ri.eu"):
+    return client.delete(
+        f"{BASE}/services/{service_id}/permissions/{user}", headers=headers(as_user)
+    ).status_code
+
+
+def me(client, user):
+    response = client.get(f"{BASE}/me", headers=headers(user))
+    assert response.status_code == 200, response.json
+    return response.json
+
+
+def test_me(client):
+    """Users get their identifier, admin status and roles on services."""
+    alice, bob = "alice@lifescience-ri.eu", "bob@lifescience-ri.eu"
+    first, second = register(client), register(client)
+    assert grant(client, first, bob, "maintainer") == 200
+    assert me(client, alice) == {
+        "user_id": alice,
+        "admin": False,
+        "services": sorted(
+            [
+                {"service_id": first, "role": "owner"},
+                {"service_id": second, "role": "owner"},
+            ],
+            key=lambda service: service["service_id"],
+        ),
+    }
+    assert me(client, bob)["services"] == [{"service_id": first, "role": "maintainer"}]
+    assert me(client, "carol@lifescience-ri.eu")["services"] == []
+    admin = me(client, "admin@lifescience-ri.eu")
+    assert (admin["admin"], admin["services"]) == (True, [])
+    assert delete(client, first, alice) == 200
+    assert me(client, bob)["services"] == []
+
+
+def _names(client, service_id):
+    response = client.get(
+        f"{BASE}/services/{service_id}/permissions",
+        headers=headers("admin@lifescience-ri.eu"),
+    )
+    return {p["user_id"]: p.get("name") for p in response.json}
+
+
+def test_permission_names(client):
+    """Display names are shown once users have used the registry."""
+    alice, bob = "alice@lifescience-ri.eu", "bob@lifescience-ri.eu"
+    carol = "carol@lifescience-ri.eu"
+    service_id = register(client)
+    assert grant(client, service_id, bob, "maintainer") == 200
+    assert grant(client, service_id, carol, "maintainer") == 200
+    # registering stores the owner's name; others are unknown so far
+    assert _names(client, service_id) == {alice: NAMES[alice], bob: None, carol: None}
+    me(client, bob)
+    me(client, carol)  # the identity provider reports no name
+    assert _names(client, service_id) == {
+        alice: NAMES[alice],
+        bob: NAMES[bob],
+        carol: None,
+    }
+
+
+def test_last_owner(client):
+    """The last owner of a service cannot be removed or downgraded, not even
+    by admins.
+    """
+    alice, carol = "alice@lifescience-ri.eu", "carol@lifescience-ri.eu"
+    admin = "admin@lifescience-ri.eu"
+    service_id = register(client)
+    assert revoke(client, service_id, alice) == 409
+    assert grant(client, service_id, alice, "maintainer") == 409
+    assert revoke(client, service_id, alice, as_user=admin) == 409
+    assert grant(client, service_id, alice, "maintainer", as_user=admin) == 409
+    assert grant(client, service_id, alice, "owner") == 200
+    # with another owner, the first owner can step down
+    assert grant(client, service_id, carol, "owner") == 200
+    assert grant(client, service_id, alice, "maintainer") == 200
+    assert revoke(client, service_id, alice, as_user=carol) == 200
+    assert revoke(client, service_id, carol, as_user=carol) == 409
+    assert permissions(client, service_id) == [(carol, "owner")]

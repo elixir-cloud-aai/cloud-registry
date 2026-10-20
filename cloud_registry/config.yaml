@@ -32,10 +32,12 @@ security:
         # e.g.:
         # audience:
         #   - <client ID>
-        # LS Login provides group memberships via user info only, not in
-        # access tokens; they are needed for the admin role (see below)
+        # LS Login provides group memberships and names via user info only,
+        # not in access tokens; group memberships are needed for the admin
+        # role (see below), names are shown to owners of services
         userinfo_claims:
           - eduperson_entitlement
+          - name
     # Access control: anyone may read, any authenticated user may register
     # services and becomes their owner; owners may update and delete their
     # services and grant other users the roles `owner` or `maintainer`
@@ -67,6 +69,8 @@ security:
             - [p, owner, "/ga4gh/registry/v1/services/:id/permissions", GET]
             - [p, owner, "/ga4gh/registry/v1/services/:id/permissions/:user", "(PUT)|(DELETE)"]
             - [p, maintainer, "/ga4gh/registry/v1/services/:id", PUT]
+            # any authenticated user may get their identifier and roles
+            - [p, "*", /ga4gh/registry/v1/me, GET]
 
 # Database configuration
 # Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.DBConfig
@@ -86,6 +90,13 @@ db:
                     indexes:
                         - keys:
                               id: 1
+                          options:
+                            'unique': True
+                # Display names of users with roles on services
+                users:
+                    indexes:
+                        - keys:
+                              user_id: 1
                           options:
                             'unique': True
 

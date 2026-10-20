@@ -205,7 +205,8 @@ paths:
         Grant a user a role on a service, replacing any other role of the
         user on the service: `owner` (update and delete the service, manage
         its permissions) or `maintainer` (update the service). Only for
-        owners of the service and admins.
+        owners of the service and admins. The last owner of a service cannot
+        be downgraded (`409`).
       operationId: putServicePermission
       x-openapi-router-controller: cloud_registry.ga4gh.registry.permissions
       tags:
@@ -236,6 +237,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '500':
           $ref: '#/components/responses/InternalServerError'
         default:
@@ -244,7 +247,8 @@ paths:
       summary: Revoke service permission.
       description: |
         Revoke the roles of a user on a service. Only for owners of the
-        service and admins.
+        service and admins. The last owner of a service cannot be removed
+        (`409`); delete the service instead.
       operationId: deleteServicePermission
       x-openapi-router-controller: cloud_registry.ga4gh.registry.permissions
       tags:
@@ -266,6 +270,33 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+  /me:
+    get:
+      summary: Get the current user.
+      description: |
+        Get the identifier of the current user, whether they are an admin,
+        and their roles on services.
+      operationId: getMe
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.permissions
+      tags:
+        - cloud-registry
+      responses:
+        '200':
+          description: The current user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/InternalServerError'
         default:
@@ -316,6 +347,12 @@ components:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Error'
+    Conflict:
+      description: The request conflicts with the current state of the resource.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Error'
     InternalServerError:
       content:
         application/problem+json:
@@ -347,6 +384,46 @@ components:
         user_id:
           type: string
           description: Identifier of the user.
+        name:
+          type: string
+          description: |
+            Display name of the user, if known, i.e., if the user has used
+            the registry since being granted a role.
+        role:
+          $ref: '#/components/schemas/Role'
+    Me:
+      description: The current user.
+      type: object
+      required:
+        - user_id
+        - admin
+        - services
+      additionalProperties: false
+      properties:
+        user_id:
+          type: string
+          description: |
+            Identifier of the user, i.e., the `sub` claim of their tokens; to
+            be granted roles, users give it to owners of services.
+        admin:
+          type: boolean
+          description: Whether the user is an admin.
+        services:
+          type: array
+          description: Roles of the user on services.
+          items:
+            $ref: '#/components/schemas/ServiceRole'
+    ServiceRole:
+      description: Role of the current user on a service.
+      type: object
+      required:
+        - service_id
+        - role
+      additionalProperties: false
+      properties:
+        service_id:
+          type: string
+          description: Identifier of the service.
         role:
           $ref: '#/components/schemas/Role'
     Role:
