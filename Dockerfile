@@ -32,9 +32,10 @@ WORKDIR /app
 ENV PYTHONPATH=/app
 
 ## All API endpoints require authentication, so probe the Swagger UI instead;
-## assumes the default port, base path and Swagger UI setting of the config
-## (`server.port`, `api.specs[].connexion.options.swagger_ui`)
+## set `HEALTHCHECK_URL` if the config changes the port, the API base path or
+## the Swagger UI setting (`server.port`, `api.specs[]`)
+ENV HEALTHCHECK_URL=http://localhost:8080/ga4gh/registry/v1/ui/
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/ga4gh/registry/v1/ui/', timeout=4)"]
+  CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen(os.environ['HEALTHCHECK_URL'], timeout=4)"]
 
 CMD ["python", "-m", "cloud_registry.app"]
