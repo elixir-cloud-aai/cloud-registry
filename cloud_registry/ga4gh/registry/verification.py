@@ -114,10 +114,13 @@ def _has_unparsed_body() -> bool:
         `null`, e.g., malformed JSON or another media type, which Connexion
         passes to controllers as no body.
     """
-    # form data is consumed when it is parsed, so it isn't in the raw body
-    if request.form or request.files:
-        return True
-    data = request.get_data().strip()
+    data = request.get_data()
+    if not data:
+        # form data is consumed when it is parsed (e.g., by Connexion, before
+        # the controller), so a body was sent if it has a length, even if it
+        # parsed to no fields (e.g., `&`)
+        return bool(request.content_length) or bool(request.form or request.files)
+    data = data.strip()
     return bool(data) and not (request.is_json and data == b"null")
 
 
@@ -172,10 +175,11 @@ def putServiceVerification(
         verification: URL and API type the admin checked; optional.
 
     Returns:
-        Verification of the service, at the current time; or a problem
-        details response: `400` if the body is neither JSON nor empty, or
-        the URL in it is invalid; `409` if the service has another URL or
-        API type than the one checked.
+        Verification of the service, at the current time (or the later time
+        of a previous verification); or a problem details response: `400`
+        if the body is neither JSON nor empty, or the URL in it is invalid;
+        `409` if the service has another URL or API type than the one
+        checked.
 
     Raises:
         cloud_registry.exceptions.NotFound: The service doesn't exist.
@@ -193,7 +197,9 @@ def putServiceVerification(
         )
     service = get_collection("services").find_one_and_update(
         query,
-        {"$set": {VERIFIED: _now()}},
+        # renewals never move the time back (e.g., if clocks of instances
+        # differ); the time stored is served
+        {"$max": {VERIFIED: _now()}},
         projection=VERIFICATION_PROJECTION,
         return_document=ReturnDocument.AFTER,
     )

@@ -8,6 +8,7 @@ from json import dumps
 
 import pytest
 
+from cloud_registry.ga4gh.registry import verification as verification_module
 from tests.conftest import ADMIN, USER, make_headers
 
 BASE = "/ga4gh/registry/v1"
@@ -198,6 +199,10 @@ def test_verify_checked_invalid_url(client, service, url, detail):
         (dumps(checked()), None),
         ('{"url": ', "application/json"),
         ("null", "text/plain"),
+        # form data without fields
+        ("&", "application/x-www-form-urlencoded"),
+        ("a=", "application/x-www-form-urlencoded"),
+        ("&", None),
     ],
 )
 def test_verify_unparsed_body(client, service, data, content_type):
@@ -236,13 +241,41 @@ def test_verify_empty_body(client, service, data, content_type):
     assert verified(client) == [service]
 
 
-def test_verify_again(client, service):
+def _set_clock(monkeypatch, *times):
+    """Let verifications happen at the given times, in this order."""
+    clock = iter(times)
+    monkeypatch.setattr(verification_module, "_now", lambda: next(clock))
+
+
+def test_verify_again(client, service, monkeypatch):
     """Verifying a verified service renews its verification."""
-    first = verify(client).json["verified_at"]
+    _set_clock(
+        monkeypatch,
+        datetime(2026, 10, 20, 12, tzinfo=timezone.utc),
+        datetime(2026, 10, 20, 13, tzinfo=timezone.utc),
+    )
+    assert verify(client).json["verified_at"] == "2026-10-20T12:00:00.000Z"
     second = verify(client)
     assert second.status_code == 200
-    assert second.json["verified_at"] >= first
+    assert second.json["verified_at"] == "2026-10-20T13:00:00.000Z"
+    assert verification(client).json == second.json
     assert verified(client) == [service]
+
+
+def test_verify_again_earlier(client, service, monkeypatch):
+    """Renewals at an earlier time (e.g., of an instance with a clock behind)
+    keep the later time, which is returned.
+    """
+    _set_clock(
+        monkeypatch,
+        datetime(2026, 10, 20, 13, tzinfo=timezone.utc),
+        datetime(2026, 10, 20, 12, tzinfo=timezone.utc),
+    )
+    first = verify(client).json
+    second = verify(client)
+    assert second.status_code == 200
+    assert second.json == first
+    assert verification(client).json == first
 
 
 def test_verification_not_served(client, service):

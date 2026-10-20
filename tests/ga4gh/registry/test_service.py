@@ -323,10 +323,35 @@ class TestDuplicates:
             self._register(unit_app, id=id)
         assert exc_info.value.existing_id == "OTHER"
 
-    def test_put_other_duplicate_key_error(self, monkeypatch, unit_app):
-        """Duplicate key errors of a PUT not caused by another service with
-        the same key are raised (e.g., if the same identifier is registered
-        concurrently).
+    def test_put_added_concurrently(self, monkeypatch, unit_app, services):
+        """Services added concurrently with the same identifier (duplicate
+        key errors not caused by another service with the same key) are read
+        again and replaced.
+        """
+        replace_one = services.replace_one
+        calls = []
+
+        def add_first(*args, **kwargs):
+            # the service is added concurrently before the first upsert
+            calls.append(kwargs["upsert"])
+            if len(calls) == 1:
+                services.insert_one({**MOCK_SERVICE, "id": MOCK_ID, "name": "old"})
+                raise DuplicateKeyError("id")
+            return replace_one(*args, **kwargs)
+
+        new = {**MOCK_SERVICE, "name": "new"}
+        with unit_app.app_context():
+            obj = RegisterService(data=deepcopy(new), id=MOCK_ID)
+            monkeypatch.setattr(obj.db_coll, "replace_one", add_first)
+            obj.register_metadata()
+        assert calls == [True, False]
+        assert not obj.was_created
+        assert services.find_one({"id": MOCK_ID})["name"] == "new"
+        assert services.count_documents({}) == 1
+
+    def test_put_duplicate_key_error_on_each_try(self, monkeypatch, unit_app):
+        """If duplicate key errors not caused by another service with the
+        same key persist, registering fails.
         """
 
         def fail(*args, **kwargs):
@@ -335,8 +360,8 @@ class TestDuplicates:
         with unit_app.app_context():
             obj = RegisterService(data=deepcopy(MOCK_SERVICE), id=MOCK_ID)
             monkeypatch.setattr(obj.db_coll, "replace_one", fail)
-            with pytest.raises(DuplicateKeyError):
-                obj.register_metadata()
+            with pytest.raises(InternalServerError):
+                obj.register_metadata(retries=2)
 
 
 class TestAddServiceKeys:

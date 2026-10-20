@@ -319,7 +319,7 @@ class RegisterService:
             DuplicateService: Another service with the same URL and API type
                 was registered concurrently.
             cloud_registry.exceptions.InternalServerError: The service
-                changed concurrently on each try.
+                changed or was added concurrently on each try.
         """
         for _ in range(retries + 1):
             stored = self.db_coll.find_one(
@@ -345,9 +345,12 @@ class RegisterService:
                     upsert=stored is None,
                 )
             except DuplicateKeyError:
-                # registered concurrently
+                # another service with the key was registered concurrently;
+                # otherwise, the service itself was (e.g., by a concurrent
+                # upsert with the identifier), so it is read again
                 self._check_duplicate(key=key)
-                raise
+                logger.debug("Service '%s' added concurrently.", self.data["id"])
+                continue
             if result.matched_count or result.upserted_id is not None:
                 self.was_created = result.upserted_id is not None
                 return
