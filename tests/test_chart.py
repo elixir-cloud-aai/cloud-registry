@@ -4,10 +4,15 @@ import subprocess
 
 import pytest
 
-from tests.test_config import HELM
-from tests.test_config import _render as _render_docs
+from tests.helm import HELM, render
 
-AUTH = ("--set", "mongodb.auth.enabled=true", "--set", "mongodb.auth.existingSecret=s")
+CREDENTIALS = "mongodb-credentials"
+AUTH = (
+    "--set",
+    "mongodb.auth.enabled=true",
+    "--set",
+    f"mongodb.auth.existingSecret={CREDENTIALS}",
+)
 
 pytestmark = pytest.mark.skipif(HELM is None, reason="helm not installed")
 
@@ -16,7 +21,7 @@ def _render(*args: str) -> dict:
     """Render the chart and index the documents by kind and name."""
     return {
         (doc["kind"], doc["metadata"]["name"]): doc
-        for doc in _render_docs("--set", "host_name=x", *args)
+        for doc in render("--set", "host_name=x", *args)
     }
 
 
@@ -45,11 +50,26 @@ def test_mongodb_pinned_and_recreated():
 
 
 def test_probes():
-    """App and MongoDB have readiness and liveness probes."""
+    """App and MongoDB have probes on their ports."""
     docs = _render()
-    for name in ("cloud-registry", "mongodb"):
-        container = _container(docs, name)
-        assert {"readinessProbe", "livenessProbe"} <= container.keys()
+    app = _container(docs, "cloud-registry")
+    for probe in ("readinessProbe", "livenessProbe"):
+        assert app[probe]["httpGet"] == {"path": "/ga4gh/registry/v1/ui/", "port": 8080}
+    mongodb = _container(docs, "mongodb")
+    for probe in ("startupProbe", "readinessProbe", "livenessProbe"):
+        assert mongodb[probe]["tcpSocket"] == {"port": 27017}
+
+
+def _init_script_volumes(docs: dict) -> tuple[list, list]:
+    """Get the init script volumes and mounts of the MongoDB Deployment."""
+    pod = docs[("Deployment", "mongodb")]["spec"]["template"]["spec"]
+    volumes = [vol for vol in pod["volumes"] if vol["name"] == "init-script"]
+    mounts = [
+        mount
+        for mount in pod["containers"][0]["volumeMounts"]
+        if mount["name"] == "init-script"
+    ]
+    return volumes, mounts
 
 
 def test_auth_disabled():
@@ -58,23 +78,27 @@ def test_auth_disabled():
     assert not _secret_refs(_container(docs, "cloud-registry"))
     assert not _secret_refs(_container(docs, "mongodb"))
     assert ("ConfigMap", "mongo-init-script") not in docs
+    assert _init_script_volumes(docs) == ([], [])
 
 
 def test_auth_enabled():
     """With authentication, credentials come from the existing Secret only."""
     docs = _render(*AUTH)
     assert _secret_refs(_container(docs, "cloud-registry")) == {
-        "MONGO_USERNAME": ("s", "username"),
-        "MONGO_PASSWORD": ("s", "password"),
+        "MONGO_USERNAME": (CREDENTIALS, "username"),
+        "MONGO_PASSWORD": (CREDENTIALS, "password"),
     }
     assert _secret_refs(_container(docs, "mongodb")) == {
-        "MONGO_INITDB_ROOT_USERNAME": ("s", "root-username"),
-        "MONGO_INITDB_ROOT_PASSWORD": ("s", "root-password"),
-        "MONGO_APP_USERNAME": ("s", "username"),
-        "MONGO_APP_PASSWORD": ("s", "password"),
+        "MONGO_INITDB_ROOT_USERNAME": (CREDENTIALS, "root-username"),
+        "MONGO_INITDB_ROOT_PASSWORD": (CREDENTIALS, "root-password"),
+        "MONGO_APP_USERNAME": (CREDENTIALS, "username"),
+        "MONGO_APP_PASSWORD": (CREDENTIALS, "password"),
     }
     script = docs[("ConfigMap", "mongo-init-script")]["data"]["create-app-user.js"]
     assert "process.env.MONGO_APP_PASSWORD" in script
+    volumes, mounts = _init_script_volumes(docs)
+    assert [vol["configMap"]["name"] for vol in volumes] == ["mongo-init-script"]
+    assert [mount["mountPath"] for mount in mounts] == ["/docker-entrypoint-initdb.d"]
     assert not [kind for kind, _ in docs if kind == "Secret"]
 
 

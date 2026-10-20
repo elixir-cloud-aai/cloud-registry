@@ -64,37 +64,43 @@ Upgrading from chart version 2 removes the `configmap-job-<appName>` Job, its
 ServiceAccount and RoleBinding, and the `app-config` ConfigMap: move any
 changes made to the config there to `config` in the values file first.
 
+Chart version 2 used `mongo:noble`, which resolves to the latest MongoDB
+version (e.g., 8.2), while chart version 3 defaults to `mongo:7.0`. **Before
+upgrading from chart version 2, check the MongoDB version and FCV (see
+[Version](#version)) and set `mongodb.image` to the running major and minor
+version (e.g., `docker.io/library/mongo:8.2`)**; downgrade afterwards if
+needed.
+
 ## MongoDB
 
 ### Version
 
-The chart pins MongoDB to a major version (`mongodb.image`, default
-`mongo:7.0`; MongoDB 8.0 refuses to start on Linux kernels 6.19 to 7.0.13,
-cf. [SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)).
-Chart versions before 3.0 used `mongo:noble`, which resolves to the
-latest MongoDB version (8.x at the time of writing). Before changing the
-major version of an existing database, check its feature compatibility
-version:
+The chart pins MongoDB (`mongodb.image`, default `mongo:7.0`; MongoDB 8.0
+refuses to start on Linux kernels 6.19 to 7.0.13, cf.
+[SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)). MongoDB
+only starts on data whose feature compatibility version (FCV) it supports,
+so check the running version and the FCV before changing the image of an
+existing database (with authentication enabled, the commands below need the
+root user's credentials, see [Authentication](#authentication)):
 
 ```bash
 kubectl exec deploy/mongodb -n <namespace> -- mongosh --quiet --eval \
-  "db.adminCommand({getParameter: 1, featureCompatibilityVersion: 1})"
+  "db.version(); db.adminCommand({getParameter: 1, featureCompatibilityVersion: 1})"
 ```
 
 - **Upgrades** go one major version at a time (e.g., 6.0 → 7.0 → 8.0): set
-  the image of the next major version, wait for the rollout, then set the
-  feature compatibility version to that version (e.g.,
+  the image of the next version, wait for the rollout, then set the FCV to
+  that version (e.g.,
   `db.adminCommand({setFeatureCompatibilityVersion: "7.0", confirm: true})`)
   before the next step.
-- **Downgrades** (e.g., from `mongo:noble` with MongoDB 8.0 to the default
-  `mongo:7.0`): first set the feature compatibility version to the target
-  version while the newer version still runs, then change the image. If that
-  is not possible, keep the current major version by setting `mongodb.image`
-  (e.g., `docker.io/library/mongo:8.0`).
+- **Downgrades** go the same steps in reverse, e.g., 8.2 → 8.0 → 7.0: while
+  the newer version runs, set the FCV to the next older version, then change
+  the image to that version, and repeat.
 
-See the MongoDB release notes for details. The MongoDB Deployment uses the
-`Recreate` strategy, as the data volume can only be used by one pod: changing
-the image stops MongoDB briefly.
+The MongoDB Deployment uses the `Recreate` strategy, as the data volume can
+only be used by one pod: changing the image stops MongoDB, and an image that
+cannot read the data leaves it down until the image is changed back. See the
+MongoDB release notes for details.
 
 ### Authentication
 
@@ -120,12 +126,29 @@ mongodb:
 ```
 
 MongoDB creates both users when it starts with an empty data directory (the
-app user may only access the app's database, `serviceStore`); the app
-connects as the app user. Credentials never appear in values files or
+app user may only access the app's database, `serviceStore`, which is also
+set in the init script, `templates/mongo-init-script.yaml`); the app connects
+as the app user. Credentials never appear in values files or
 ConfigMaps.
 
-For an existing database, create the users before enabling authentication,
-with the credentials from the Secret:
+Commands that need privileges, e.g., to check the version, can use the root
+user's credentials from the container's environment:
+
+```bash
+kubectl exec deploy/mongodb -n <namespace> -- sh -c 'mongosh --quiet \
+  -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" \
+  --authenticationDatabase admin --eval "db.version()"'
+```
+
+Changing the Secret does not change the users: to change a password, first
+change it in MongoDB (e.g.,
+`db.getSiblingDB("serviceStore").changeUserPassword("cloud-registry", "<new password>")`),
+then update the Secret and restart the app (`kubectl rollout restart
+deploy/<appName> -n <namespace>`).
+
+For an existing database, or if the app user is missing (e.g., because the
+first start was interrupted), create the users before enabling
+authentication, with the credentials from the Secret:
 
 ```bash
 kubectl exec -it deploy/mongodb -n <namespace> -- mongosh

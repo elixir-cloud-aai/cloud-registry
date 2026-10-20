@@ -2,7 +2,6 @@
 
 import os
 from pathlib import Path
-import shutil
 import subprocess
 
 from foca.config.config_parser import ConfigParser
@@ -10,11 +9,11 @@ from foca.models.config import Config
 import pytest
 import yaml
 
+from tests.helm import CHART, HELM, render
+
 ROOT = Path(__file__).parents[1]
 CONFIG_FILE = ROOT / "cloud_registry" / "config.yaml"
-CHART = ROOT / "deployment"
 CUSTOM_CONFIG_MODEL = "cloud_registry.service_models.custom_config.CustomConfig"
-HELM = shutil.which("helm")
 
 
 def _parse_config() -> Config:
@@ -37,18 +36,6 @@ def _load_config(tmp_path: Path, monkeypatch, *overlays: dict) -> Config:
     return _parse_config()
 
 
-def _render(*args: str) -> list[dict]:
-    """Render the chart with `helm template` arguments."""
-    assert HELM is not None
-    rendered = subprocess.run(  # noqa: S603
-        [HELM, "template", "cloud-registry", str(CHART), *args],
-        capture_output=True,
-        check=True,
-        text=True,
-    ).stdout
-    return [doc for doc in yaml.safe_load_all(rendered) if doc]
-
-
 def _get_overlay_configmap(docs: list[dict]) -> dict:
     """Get the ConfigMap holding the config overlay from rendered docs."""
     configmaps = [
@@ -62,9 +49,7 @@ def _get_overlay_configmap(docs: list[dict]) -> dict:
 
 def _render_overlay(*args: str) -> dict:
     """Render the chart's config overlay with `helm template` arguments."""
-    return yaml.safe_load(
-        _get_overlay_configmap(_render(*args))["data"]["overlay.yaml"]
-    )
+    return yaml.safe_load(_get_overlay_configmap(render(*args))["data"]["overlay.yaml"])
 
 
 def test_config_overlay(tmp_path, monkeypatch):
@@ -147,7 +132,7 @@ class TestChartOverlay:
 
     def test_deployment_mounts_overlay(self):
         """The app reads the overlay from the mounted ConfigMap."""
-        docs = _render("--set", "host_name=example.org")
+        docs = render("--set", "host_name=example.org")
         configmap = _get_overlay_configmap(docs)
         pod = next(
             doc

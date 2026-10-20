@@ -49,7 +49,9 @@ cloud_registry:
 mongodb:
   # MongoDB 8.0 refuses to start on Linux kernels 6.19 to 7.0.13
   # (https://jira.mongodb.org/browse/SERVER-121912); see the deployment docs
-  # before changing the major version of an existing database
+  # before changing the version of an existing database, e.g., when upgrading
+  # from chart version 2 (`mongo:noble`)
+  # Pinned to a minor version; patch versions are updated on restarts
   image: docker.io/library/mongo:7.0
   auth:
     # Require credentials; only applied when MongoDB starts with an empty

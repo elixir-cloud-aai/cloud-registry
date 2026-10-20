@@ -30,16 +30,10 @@ spec:
         - name: FOCA_CONFIG_OVERLAY
           value: /etc/cloud-registry/overlay.yaml
         {{- if .Values.mongodb.auth.enabled }}
-        - name: MONGO_USERNAME
-          valueFrom:
-            secretKeyRef:
-              name: {{ include "cloud-registry.mongodbSecret" . }}
-              key: username
-        - name: MONGO_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: {{ include "cloud-registry.mongodbSecret" . }}
-              key: password
+        {{- include "cloud-registry.mongodbSecretEnv" (dict "root" . "vars" (dict
+          "MONGO_USERNAME" "username"
+          "MONGO_PASSWORD" "password"
+        )) | trim | nindent 8 }}
         {{- end }}
         ports:
         - containerPort: 8080
@@ -50,6 +44,7 @@ spec:
             path: /ga4gh/registry/v1/ui/
             port: 8080
           periodSeconds: 10
+          timeoutSeconds: 5
           failureThreshold: 3
         livenessProbe:
           httpGet:

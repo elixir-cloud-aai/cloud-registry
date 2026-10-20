@@ -24,28 +24,22 @@ spec:
         name: mongodb
         {{- if .Values.mongodb.auth.enabled }}
         env:
-        - name: MONGO_INITDB_ROOT_USERNAME
-          valueFrom:
-            secretKeyRef:
-              name: {{ include "cloud-registry.mongodbSecret" . }}
-              key: root-username
-        - name: MONGO_INITDB_ROOT_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: {{ include "cloud-registry.mongodbSecret" . }}
-              key: root-password
-        - name: MONGO_APP_USERNAME
-          valueFrom:
-            secretKeyRef:
-              name: {{ include "cloud-registry.mongodbSecret" . }}
-              key: username
-        - name: MONGO_APP_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: {{ include "cloud-registry.mongodbSecret" . }}
-              key: password
+        {{- include "cloud-registry.mongodbSecretEnv" (dict "root" . "vars" (dict
+          "MONGO_INITDB_ROOT_USERNAME" "root-username"
+          "MONGO_INITDB_ROOT_PASSWORD" "root-password"
+          "MONGO_APP_USERNAME" "username"
+          "MONGO_APP_PASSWORD" "password"
+        )) | trim | nindent 8 }}
         {{- end }}
-        # TCP checks are cheaper than starting `mongosh` within the CPU limit
+        # TCP checks are cheaper than starting `mongosh` within the CPU limit.
+        # MongoDB listens on localhost only while initializing an empty data
+        # directory, so allow up to 5 minutes before liveness checks start, as
+        # interrupting the initialization skips it on the next start
+        startupProbe:
+          tcpSocket:
+            port: 27017
+          periodSeconds: 10
+          failureThreshold: 30
         readinessProbe:
           tcpSocket:
             port: 27017
@@ -53,7 +47,6 @@ spec:
         livenessProbe:
           tcpSocket:
             port: 27017
-          initialDelaySeconds: 30
           periodSeconds: 20
         ports:
         - containerPort: 27017
