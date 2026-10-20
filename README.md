@@ -134,7 +134,7 @@ token issued by [LS Login][ls-login]:
 - Members of the groups that the deployment maps to the role `admin`
   (`security.access_control.group_mapping`) are **admins**: they can do
   everything, including registering services with chosen identifiers (`PUT`
-  of a new service). For
+  of a new service) and [verifying services](#verified-services). For
   ELIXIR, that is the LS Login group `ECP_CLN:ADMIN`:
 
   ```yaml
@@ -177,8 +177,8 @@ As anyone logged in can register a URL first, including one of a deployment
 they don't operate, a squatter could block the real operator of a service.
 Admins resolve such cases: they can delete the entry, or grant the real
 operator the role `owner` on it and revoke the squatter's role. Consumers that
-need trustworthy entries should rely on entries checked by admins (a
-"verified" flag is planned, see [#64][issue-verified]). Proving control of a
+need trustworthy entries should rely on entries checked by admins (see
+[Verified services](#verified-services)). Proving control of a
 URL (e.g., by fetching `{url}/service-info` on registration) was rejected:
 the identifier in service info is self-declared, and fetching user-supplied
 URLs would allow server-side request forgery.
@@ -195,6 +195,47 @@ db.getSiblingDB("serviceStore").services.updateOne({id: "<id>"}, {$set: {url: "<
 ```
 
 Then start the app again; it adds the missing keys.
+
+### Verified services
+
+Admins mark services as **verified** once they have checked them, e.g., that
+a service accepts LS Login tokens. What admins check is up to the
+deployment; the registry only records when a service was verified. Owners can't verify their own services.
+
+```bash
+curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/<id>/verification" \
+  -H "Authorization: Bearer <admin token>"
+```
+
+returns the verification, e.g., `{"verified_at": "2026-10-20T12:34:56.789Z"}`;
+verifying a service again renews it. `DELETE` on the same path removes it.
+Both are for admins only, and return `404 Not Found` for unknown services
+(`DELETE` also for unverified ones).
+
+Verifications can be read by anyone: `GET /services/<id>/verification`
+returns the verification of a service (`404 Not Found` if it is not
+verified), and `GET /verifications` lists all verified services, sorted by
+identifier:
+
+```json
+[{"service_id": "<id>", "verified_at": "2026-10-20T12:34:56.789Z"}]
+```
+
+The GA4GH endpoints are unchanged: `GET /services` and
+`GET /services/<id>` don't show verifications. Clients that should only use
+verified services (e.g., a [proTES][protes] gateway choosing TES instances)
+list the services (`GET /services`) and keep those whose identifiers are
+listed by `GET /verifications`.
+
+A verification applies to the URL and API type of the service at the time
+it is verified. It is removed when the service is changed to another URL or
+API type (`type.group` or `type.artifact`, compared as for
+[duplicates](#duplicate-services)), in the same write, as the checks may not
+hold for them; changing them back doesn't restore it. Other updates (e.g., of
+`version`, `type.version` or `name`) keep the verification. Replacements and
+verifications at the same time are ordered: a verification is never kept for
+another URL or API type, and replacements keeping both don't remove
+verifications made meanwhile. Deleting a service deletes its verification.
 
 ## Installation
 
@@ -346,4 +387,4 @@ etc.
 [url-swagger]: <http://localhost:8080/ga4gh/registry/v1/ui>
 [foca-access-control]: https://foca.readthedocs.io/en/latest/access-control/
 [ls-login]: https://lifescience-ri.eu/ls-login/
-[issue-verified]: https://github.com/elixir-cloud-aai/cloud-registry/issues/64
+[protes]: https://github.com/elixir-cloud-aai/proTES

@@ -19,8 +19,11 @@ logger = logging.getLogger(__name__)
 # Internal field identifying a service by its normalized URL and API type
 # (not version), with a unique index (cf. `config.yaml`); not served
 KEY = "_serviceKey"
+# Internal field with the time an admin verified a service (cf.
+# `verification.py`); removed when its key changes; not served
+VERIFIED = "_verifiedAt"
 # Projection excluding internal fields
-PROJECTION = {"_id": False, KEY: False}
+PROJECTION = {"_id": False, KEY: False, VERIFIED: False}
 DEFAULT_PORTS = {"http": 80, "https": 443}
 PERCENT_ENCODED = re.compile(r"%([0-9A-Fa-f]{2})")
 # Percent signs not starting a percent-encoding
@@ -259,17 +262,7 @@ class RegisterService:
 
         # replace or insert service with provided ID (PUT)
         if self.replace:
-            try:
-                result = self.db_coll.replace_one(
-                    filter={"id": self.data["id"]},
-                    replacement={**self.data, KEY: key},
-                    upsert=True,
-                )
-            except DuplicateKeyError:
-                # registered concurrently
-                self._check_duplicate(key=key)
-                raise
-            self.was_created = result.upserted_id is not None
+            self._replace(key=key, retries=retries)
 
         # insert service with random ID (POST); new ID if key exists
         else:
@@ -296,6 +289,59 @@ class RegisterService:
             "Entry in 'services' collection: %s",
             self.db_coll.find_one({"id": self.data["id"]}, PROJECTION),
         )
+
+    def _replace(self, key: str, retries: int) -> None:
+        """Replace the service with the provided identifier, or insert it.
+
+        The verification of the service (cf. `VERIFIED`) is kept if its key
+        is unchanged and removed otherwise, in the same write. To this end,
+        the stored service is read first, and only replaced if neither its
+        key nor its verification changed meanwhile (compare-and-swap);
+        otherwise, it is read again. So a verification is never kept for
+        another URL or API type, and verifications concurrent with a
+        replacement keeping the key are not lost. Only if the service is
+        inserted concurrently (after it was read as missing) is a
+        verification of the inserted service removed.
+
+        Args:
+            key: Key of the service (cf. `service_key()`).
+            retries: How many times the service is read again if it changed
+                concurrently.
+
+        Raises:
+            DuplicateService: Another service with the same URL and API type
+                was registered concurrently.
+            cloud_registry.exceptions.InternalServerError: The service
+                changed concurrently on each try.
+        """
+        for _ in range(retries + 1):
+            stored = self.db_coll.find_one(
+                {"id": self.data["id"]}, {"_id": False, KEY: True, VERIFIED: True}
+            )
+            replacement = {**self.data, KEY: key}
+            filter: dict = {"id": self.data["id"]}
+            if stored is not None:
+                # the fields as read; missing if they were (e.g., services
+                # without key, cf. `add_service_keys()`)
+                for field in (KEY, VERIFIED):
+                    filter[field] = stored.get(field, {"$exists": False})
+                if stored.get(KEY) == key and VERIFIED in stored:
+                    replacement[VERIFIED] = stored[VERIFIED]
+            try:
+                result = self.db_coll.replace_one(
+                    filter=filter,
+                    replacement=replacement,
+                    upsert=stored is None,
+                )
+            except DuplicateKeyError:
+                # registered concurrently
+                self._check_duplicate(key=key)
+                raise
+            if result.matched_count or result.upserted_id is not None:
+                self.was_created = result.upserted_id is not None
+                return
+            logger.debug("Service '%s' changed concurrently.", self.data["id"])
+        raise InternalServerError
 
     def _check_duplicate(self, key: str) -> None:
         """Check that no other service has the same key.
