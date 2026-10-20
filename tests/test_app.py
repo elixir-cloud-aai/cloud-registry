@@ -11,6 +11,7 @@ import cloud_registry.app
 from tests.conftest import make_headers
 
 BASE = "/ga4gh/registry/v1"
+TIMESTAMPS = {"createdAt", "updatedAt"}
 # Unlike `tests.mock_data.MOCK_SERVICE` (for unit tests, which bypass request
 # validation), this service is valid according to the API specification
 SERVICE = {
@@ -169,13 +170,17 @@ def test_get_service_types(client, headers):
 
 
 def test_service_info(app, client, headers):
-    """Service info is registered from the config and can be replaced."""
-    config = app.app.config.foca.custom.endpoints.service_info.dict()
+    """Service info is registered from the config, with timestamps set on
+    registration, and can be replaced.
+    """
+    config = app.app.config.foca.custom.endpoints.service_info.dict(exclude_none=True)
     response = client.get(f"{BASE}/service-info", headers=headers)
     assert response.status_code == 200
-    assert response.json == config
+    info = response.json
+    assert {k: v for k, v in info.items() if k not in TIMESTAMPS} == config
+    assert info["createdAt"] == info["updatedAt"]
 
-    new = {**config, "name": "New name"}
+    new = {**info, "name": "New name"}
     response = client.post(f"{BASE}/service-info", json=new, headers=headers)
     assert response.status_code == 201
     assert client.get(f"{BASE}/service-info", headers=headers).json == new
