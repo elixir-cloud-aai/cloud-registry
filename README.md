@@ -106,7 +106,8 @@ To set up a development environment and run the checks that CI runs:
 ```bash
 pip install -r requirements.txt -r requirements_dev.txt
 pre-commit install  # run the checks on every commit
-pre-commit run --all-files  # ruff, mypy, semgrep, ast-grep, gitleaks
+pre-commit run --all-files  # ruff, mypy, semgrep, ast-grep
+pre-commit run --all-files --hook-stage manual gitleaks-all  # secrets
 pytest
 ```
 

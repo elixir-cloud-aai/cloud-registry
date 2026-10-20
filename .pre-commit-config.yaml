@@ -1,5 +1,6 @@
-# Checks run on commit (`pre-commit install`) and in CI
-# (`pre-commit run --all-files`); hook versions are pinned to commits
+# Checks run on commit (`pre-commit install`) and in CI (`pre-commit run
+# --all-files`, plus the manual-stage `gitleaks-all` hook); hook versions are
+# pinned to commits
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0

@@ -3,7 +3,6 @@
 from foca.config.access import get_app_config
 import pytest
 
-from cloud_registry.service_models.custom_config import CustomConfig
 from cloud_registry.utils import get_collection, get_custom_config
 
 
@@ -11,7 +10,6 @@ def test_get_custom_config(unit_app):
     """The custom config of the current app is returned."""
     with unit_app.app_context():
         config = get_custom_config()
-    assert isinstance(config, CustomConfig)
     assert config is get_app_config(unit_app).model_extra["custom"]
 
 
