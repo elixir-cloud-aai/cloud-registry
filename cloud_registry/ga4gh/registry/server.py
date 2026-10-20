@@ -1,12 +1,11 @@
 """Controllers for service endpoints."""
 
-from json import dumps
 import logging
 
 from flask import Response, request
 from foca.utils.logging import log_traffic
 
-from cloud_registry.exceptions import BadRequest, NotFound, exceptions
+from cloud_registry.exceptions import BadRequest, NotFound, problem
 from cloud_registry.ga4gh.registry.permissions import add_owner, remove_permissions
 from cloud_registry.ga4gh.registry.service import (
     PROJECTION,
@@ -174,10 +173,10 @@ def _register_service(
         service.register_metadata()
     except InvalidService as exc:
         logger.info("Service not registered: %s", exc.description)
-        return _problem(exc)
+        return problem(exc)
     except DuplicateService as exc:
         logger.info("Service not registered: %s", exc.description)
-        return _problem(exc, serviceId=exc.existing_id)
+        return problem(exc, serviceId=exc.existing_id)
     if service.was_created:
         try:
             # Roles left on the identifier by a deleted service (e.g., if
@@ -196,34 +195,6 @@ def _register_service(
         path = f"{collection_path.rstrip('/')}/{service.data['id']}"
         return service.data["id"], 201, {"Location": get_public_url(path)}
     return service.data["id"]
-
-
-def _problem(exc: InvalidService | DuplicateService, **extensions: str) -> Response:
-    """Build a problem details response with the description of an exception.
-
-    FOCA's problem details are fixed per exception class, so responses with
-    details specific to a request are built here.
-
-    Args:
-        exc: Exception with a request-specific description.
-        extensions: Extension members of the problem details.
-
-    Returns:
-        Problem details response.
-    """
-    # title as for other errors, from the closest mapped exception class
-    title = next(
-        exceptions[cls]["title"] for cls in type(exc).__mro__ if cls in exceptions
-    )
-    problem = {
-        "title": title,
-        "status": exc.code,
-        "detail": exc.description,
-        **extensions,
-    }
-    return Response(
-        dumps(problem), status=exc.code, mimetype="application/problem+json"
-    )
 
 
 def _unregister_service(service: RegisterService) -> None:

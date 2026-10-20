@@ -1,6 +1,7 @@
 """Test cases for service registration."""
 
 from copy import deepcopy
+from datetime import datetime
 
 from pymongo.errors import DuplicateKeyError
 import pytest
@@ -8,6 +9,7 @@ import pytest
 from cloud_registry.exceptions import InternalServerError
 from cloud_registry.ga4gh.registry.service import (
     KEY,
+    VERIFIED,
     DuplicateService,
     InvalidService,
     RegisterService,
@@ -321,10 +323,35 @@ class TestDuplicates:
             self._register(unit_app, id=id)
         assert exc_info.value.existing_id == "OTHER"
 
-    def test_put_other_duplicate_key_error(self, monkeypatch, unit_app):
-        """Duplicate key errors of a PUT not caused by another service with
-        the same key are raised (e.g., if the same identifier is registered
-        concurrently).
+    def test_put_added_concurrently(self, monkeypatch, unit_app, services):
+        """Services added concurrently with the same identifier (duplicate
+        key errors not caused by another service with the same key) are read
+        again and replaced.
+        """
+        replace_one = services.replace_one
+        calls = []
+
+        def add_first(*args, **kwargs):
+            # the service is added concurrently before the first upsert
+            calls.append(kwargs["upsert"])
+            if len(calls) == 1:
+                services.insert_one({**MOCK_SERVICE, "id": MOCK_ID, "name": "old"})
+                raise DuplicateKeyError("id")
+            return replace_one(*args, **kwargs)
+
+        new = {**MOCK_SERVICE, "name": "new"}
+        with unit_app.app_context():
+            obj = RegisterService(data=deepcopy(new), id=MOCK_ID)
+            monkeypatch.setattr(obj.db_coll, "replace_one", add_first)
+            obj.register_metadata()
+        assert calls == [True, False]
+        assert not obj.was_created
+        assert services.find_one({"id": MOCK_ID})["name"] == "new"
+        assert services.count_documents({}) == 1
+
+    def test_put_duplicate_key_error_on_each_try(self, monkeypatch, unit_app):
+        """If duplicate key errors not caused by another service with the
+        same key persist, registering fails.
         """
 
         def fail(*args, **kwargs):
@@ -333,8 +360,8 @@ class TestDuplicates:
         with unit_app.app_context():
             obj = RegisterService(data=deepcopy(MOCK_SERVICE), id=MOCK_ID)
             monkeypatch.setattr(obj.db_coll, "replace_one", fail)
-            with pytest.raises(DuplicateKeyError):
-                obj.register_metadata()
+            with pytest.raises(InternalServerError):
+                obj.register_metadata(retries=2)
 
 
 class TestAddServiceKeys:
@@ -395,3 +422,139 @@ class TestAddServiceKeys:
         assert "'B': same URL and API type as 'A'" in message
         assert "'D': same URL and API type as 'C'" in message
         assert "'BAD': Service URLs need a scheme and a host." in message
+
+
+class TestVerificationReset:
+    """Tests for keeping and removing verifications on replacements."""
+
+    TIME = datetime(2026, 10, 20, 12, 0)
+
+    def _verified(self, services, data=MOCK_SERVICE):
+        services.insert_one(
+            {**data, "id": MOCK_ID, KEY: service_key(data), VERIFIED: self.TIME}
+        )
+
+    def _replace(self, unit_app, data):
+        with unit_app.app_context():
+            obj = RegisterService(data=deepcopy(data), id=MOCK_ID)
+            obj.register_metadata()
+        assert not obj.was_created
+
+    @pytest.mark.parametrize(
+        "change",
+        [
+            {"name": "new name", "version": "2.0.0"},
+            {"type": {**MOCK_TYPE, "version": "2.0.0"}},
+            {"type": {**MOCK_TYPE, "artifact": "BEACON"}},
+        ],
+    )
+    def test_kept(self, unit_app, services, change):
+        """Verifications are kept if the URL (as written) and the key are
+        unchanged.
+        """
+        self._verified(services)
+        data = {**MOCK_SERVICE, **change}
+        self._replace(unit_app, data)
+        stored = _without_db_id(services.find_one({"id": MOCK_ID}))
+        assert stored == {**_stored(data, MOCK_ID), VERIFIED: self.TIME}
+
+    @pytest.mark.parametrize(
+        "change",
+        [
+            {"url": "https://other.example.org/api"},
+            {"type": {**MOCK_TYPE, "artifact": "tes"}},
+            {"type": {**MOCK_TYPE, "group": "org.example"}},
+            # same key, but the URL is written differently
+            {"url": "HTTPS://beacon.example.org/api/"},
+            {"url": "https://beacon.example.org/api?redirect=evil"},
+            {"url": "https://beacon.example.org/api#evil"},
+        ],
+    )
+    def test_removed(self, unit_app, services, change):
+        """Verifications are removed if the URL (in any way) or the key
+        changes.
+        """
+        self._verified(services)
+        data = {**MOCK_SERVICE, **change}
+        self._replace(unit_app, data)
+        stored = _without_db_id(services.find_one({"id": MOCK_ID}))
+        assert stored == _stored(data, MOCK_ID)
+
+    def test_without_key(self, unit_app, services):
+        """Services without a key (cf. `add_service_keys()`) are replaced,
+        without their verification.
+        """
+        services.insert_one({**MOCK_SERVICE, "id": MOCK_ID, VERIFIED: self.TIME})
+        self._replace(unit_app, MOCK_SERVICE)
+        stored = _without_db_id(services.find_one({"id": MOCK_ID}))
+        assert stored == _stored(MOCK_SERVICE, MOCK_ID)
+
+    @pytest.mark.parametrize(
+        "concurrent, kept",
+        [
+            # the URL changes, and the service is verified again
+            (
+                {
+                    "$set": {
+                        "url": "https://other.example.org",
+                        KEY: "other",
+                        VERIFIED: datetime(2026, 10, 21),
+                    }
+                },
+                None,
+            ),
+            # the URL is written differently (same key)
+            ({"$set": {"url": "HTTPS://beacon.example.org/api/"}}, None),
+            # the verification is renewed, or removed
+            ({"$set": {VERIFIED: datetime(2026, 10, 21)}}, datetime(2026, 10, 21)),
+            ({"$unset": {VERIFIED: ""}}, None),
+        ],
+    )
+    def test_concurrent_change(self, monkeypatch, unit_app, services, concurrent, kept):
+        """Services changed after they were read are read again, so that the
+        verification as of the replacement is kept or removed.
+        """
+        self._verified(services)
+        find_one = services.find_one
+        reads = []
+
+        def change_after_first_read(filter, projection=None, *args, **kwargs):
+            # the service changes concurrently after it is first read for the
+            # replacement (not for the check for duplicates)
+            result = find_one(filter, projection, *args, **kwargs)
+            if projection is not None and VERIFIED in projection:
+                reads.append(result)
+                if len(reads) == 1:
+                    services.update_one({"id": MOCK_ID}, concurrent)
+            return result
+
+        new_version = {**MOCK_SERVICE, "version": "2.0.0"}
+        with unit_app.app_context():
+            obj = RegisterService(data=deepcopy(new_version), id=MOCK_ID)
+            monkeypatch.setattr(obj.db_coll, "find_one", change_after_first_read)
+            obj.register_metadata()
+        assert len(reads) >= 2
+        stored = find_one({"id": MOCK_ID})
+        assert stored["version"] == "2.0.0"
+        assert stored[KEY] == service_key(new_version)
+        assert stored.get(VERIFIED) == kept
+
+    def test_changed_on_each_try(self, monkeypatch, unit_app, services):
+        """If the service changes concurrently on each try, replacing it
+        fails.
+        """
+        self._verified(services)
+        find_one = services.find_one
+        renewals = iter(range(1, 10))
+
+        def change_after_read(*args, **kwargs):
+            result = find_one(*args, **kwargs)
+            time = datetime(2026, 10, 21, 0, 0, next(renewals))
+            services.update_one({"id": MOCK_ID}, {"$set": {VERIFIED: time}})
+            return result
+
+        with unit_app.app_context():
+            obj = RegisterService(data=deepcopy(MOCK_SERVICE), id=MOCK_ID)
+            monkeypatch.setattr(obj.db_coll, "find_one", change_after_read)
+            with pytest.raises(InternalServerError):
+                obj.register_metadata(retries=2)

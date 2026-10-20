@@ -19,8 +19,12 @@ logger = logging.getLogger(__name__)
 # Internal field identifying a service by its normalized URL and API type
 # (not version), with a unique index (cf. `config.yaml`); not served
 KEY = "_serviceKey"
+# Internal field with the time an admin verified a service (cf.
+# `verification.py`); removed when its URL (as written) or key changes; not
+# served
+VERIFIED = "_verifiedAt"
 # Projection excluding internal fields
-PROJECTION = {"_id": False, KEY: False}
+PROJECTION = {"_id": False, KEY: False, VERIFIED: False}
 DEFAULT_PORTS = {"http": 80, "https": 443}
 PERCENT_ENCODED = re.compile(r"%([0-9A-Fa-f]{2})")
 # Percent signs not starting a percent-encoding
@@ -245,31 +249,24 @@ class RegisterService:
         """Register service.
 
         Args:
-            retries: How many times should the generation of a random
-                identifier and insertion into the database be retried when
-                encountering `DuplicateKeyError`s if a service identifier was
-                not provided.
+            retries: Without a service identifier (POST), how many times
+                the generation of a random identifier and insertion into the
+                database are retried on `DuplicateKeyError`s. With an
+                identifier (PUT), how many times the stored service is read
+                again if it changed concurrently (cf. `_replace()`).
 
         Raises:
             DuplicateService: Another service with the same URL and API type
                 is registered.
+            InternalServerError: The service could not be registered within
+                the retries.
         """
         key = service_key(self.data)
         self._check_duplicate(key=key)
 
         # replace or insert service with provided ID (PUT)
         if self.replace:
-            try:
-                result = self.db_coll.replace_one(
-                    filter={"id": self.data["id"]},
-                    replacement={**self.data, KEY: key},
-                    upsert=True,
-                )
-            except DuplicateKeyError:
-                # registered concurrently
-                self._check_duplicate(key=key)
-                raise
-            self.was_created = result.upserted_id is not None
+            self._replace(key=key, retries=retries)
 
         # insert service with random ID (POST); new ID if key exists
         else:
@@ -297,6 +294,69 @@ class RegisterService:
             self.db_coll.find_one({"id": self.data["id"]}, PROJECTION),
         )
 
+    def _replace(self, key: str, retries: int) -> None:
+        """Replace the service with the provided identifier, or insert it.
+
+        The verification of the service (cf. `VERIFIED`) is kept if its URL
+        is unchanged, exactly as written, and so is its key (API type);
+        otherwise, it is removed in the same write. Other spellings of the
+        URL (e.g., with a query, which normalized URLs, and so keys, don't
+        have) remove it, too: the admin checked the URL as written. To this
+        end, the stored service is read first, and only replaced if neither
+        its URL, key nor verification changed meanwhile (compare-and-swap);
+        otherwise, it is read again. So a verification is never kept for
+        another URL or API type, and verifications concurrent with a
+        replacement keeping both are not lost. Only if the service is
+        inserted concurrently (after it was read as missing) is a
+        verification of the inserted service removed.
+
+        Args:
+            key: Key of the service (cf. `service_key()`).
+            retries: How many times the service is read again if it changed
+                concurrently.
+
+        Raises:
+            DuplicateService: Another service with the same URL and API type
+                was registered concurrently.
+            cloud_registry.exceptions.InternalServerError: The service
+                changed or was added concurrently on each try.
+        """
+        for _ in range(retries + 1):
+            stored = self.db_coll.find_one(
+                {"id": self.data["id"]},
+                {"_id": False, "url": True, KEY: True, VERIFIED: True},
+            )
+            replacement = {**self.data, KEY: key}
+            query: dict = {"id": self.data["id"]}
+            if stored is not None:
+                # the fields as read; missing if they were (e.g., services
+                # without key, cf. `add_service_keys()`)
+                for field in ("url", KEY, VERIFIED):
+                    query[field] = stored.get(field, {"$exists": False})
+                unchanged = (
+                    stored.get("url") == self.data["url"] and stored.get(KEY) == key
+                )
+                if unchanged and VERIFIED in stored:
+                    replacement[VERIFIED] = stored[VERIFIED]
+            try:
+                result = self.db_coll.replace_one(
+                    filter=query,
+                    replacement=replacement,
+                    upsert=stored is None,
+                )
+            except DuplicateKeyError:
+                # another service with the key was registered concurrently;
+                # otherwise, the service itself was (e.g., by a concurrent
+                # upsert with the identifier), so it is read again
+                self._check_duplicate(key=key)
+                logger.debug("Service '%s' added concurrently.", self.data["id"])
+                continue
+            if result.matched_count or result.upserted_id is not None:
+                self.was_created = result.upserted_id is not None
+                return
+            logger.debug("Service '%s' changed concurrently.", self.data["id"])
+        raise InternalServerError
+
     def _check_duplicate(self, key: str) -> None:
         """Check that no other service has the same key.
 
@@ -306,10 +366,10 @@ class RegisterService:
         Raises:
             DuplicateService: Another service has the key.
         """
-        filter: dict = {KEY: key}
+        query: dict = {KEY: key}
         if self.data["id"] is not None:
-            filter["id"] = {"$ne": self.data["id"]}
-        existing = self.db_coll.find_one(filter, {"_id": False, "id": True})
+            query["id"] = {"$ne": self.data["id"]}
+        existing = self.db_coll.find_one(query, {"_id": False, "id": True})
         if existing is not None:
             raise DuplicateService(existing_id=existing["id"])
 
