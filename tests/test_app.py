@@ -14,6 +14,8 @@ from cloud_registry.ga4gh.registry.service_info import InvalidServiceInfo
 from tests.conftest import ADMIN_GROUP, APP_DIR, make_headers
 
 BASE = "/ga4gh/registry/v1"
+# Public URL of the app, as configured in `config.yaml`
+PUBLIC_URL = "https://0.0.0.0:8080"
 TIMESTAMPS = {"createdAt", "updatedAt"}
 # Unlike `tests.mock_data.MOCK_SERVICE` (for unit tests, which bypass request
 # validation), this service is valid according to the API specification
@@ -44,7 +46,8 @@ def _post(client, headers, service=None):
         json=_service() if service is None else service,
         headers=headers,
     )
-    assert response.status_code == 200, response.json
+    assert response.status_code == 201, response.json
+    assert response.location == f"{PUBLIC_URL}{BASE}/services/{response.json}"
     return response.json
 
 
@@ -96,7 +99,9 @@ def test_empty_database(client, headers, path):
 
 
 def test_post_service(client, headers):
-    """A posted service gets a generated identifier and can be retrieved."""
+    """A posted service gets a generated identifier and can be retrieved at
+    its location (cf. `_post`).
+    """
     service_id = _post(client, headers)
     assert len(service_id) == 6
     assert set(service_id) <= set(string.ascii_uppercase + string.digits)
@@ -188,11 +193,12 @@ def test_put_duplicate(client, admin_headers):
     existing = _post(client, admin_headers)
     other = _service(url="https://other.example.org")
     response = client.put(f"{BASE}/services/OTHER", json=other, headers=admin_headers)
-    assert response.status_code == 200
+    assert response.status_code == 201
     response = client.put(
         f"{BASE}/services/OTHER", json=_service(), headers=admin_headers
     )
     _assert_duplicate(response, existing)
+    assert "Location" not in response.headers
     response = client.put(
         f"{BASE}/services/{existing}", json=_service(name="New"), headers=admin_headers
     )
@@ -217,22 +223,95 @@ def test_service_url_invalid(client, admin_headers, method, path, url, detail):
     assert response.mimetype == "application/problem+json"
     assert response.json["title"] == "Bad request"
     assert detail in response.json["detail"]
+    assert "Location" not in response.headers
 
 
 def test_put_service(client, admin_headers):
-    """PUT creates a service with the given identifier, then replaces it."""
+    """PUT creates a service with the given identifier (`201`, with its
+    location), then replaces it (`200`).
+    """
     url = f"{BASE}/services/my-tes"
     response = client.put(url, json=_service(), headers=admin_headers)
-    assert response.status_code == 200
+    assert response.status_code == 201
     assert response.json == "my-tes"
+    assert response.location == f"{PUBLIC_URL}{url}"
     assert client.get(url, headers=admin_headers).json == _service(id="my-tes")
 
     response = client.put(url, json=_service(name="Your TES"), headers=admin_headers)
     assert response.status_code == 200
+    assert response.json == "my-tes"
+    assert "Location" not in response.headers
     assert client.get(url, headers=admin_headers).json == _service(
         id="my-tes", name="Your TES"
     )
     assert len(client.get(f"{BASE}/services", headers=admin_headers).json) == 1
+
+
+@pytest.fixture
+def proxy_app(app):
+    """App served behind a reverse proxy under a subpath, with one possible
+    generated service identifier (`A`).
+    """
+    endpoints = app.app.config.foca.custom.endpoints
+    endpoints.service.api_path = "/proxy/registry/"
+    endpoints.services.id.charset = "A"
+    endpoints.services.id.length = 1
+    return app
+
+
+@pytest.mark.parametrize(
+    "method, path, location",
+    [
+        (
+            "POST",
+            "/services",
+            "https://0.0.0.0:8080/proxy/registry/ga4gh/registry/v1/services/A",
+        ),
+        (
+            "PUT",
+            "/services/my-tes",
+            "https://0.0.0.0:8080/proxy/registry/ga4gh/registry/v1/services/my-tes",
+        ),
+        (
+            "PUT",
+            "/services/my%20tes",
+            "https://0.0.0.0:8080/proxy/registry/ga4gh/registry/v1/services/my%20tes",
+        ),
+    ],
+)
+def test_location_proxy_path(proxy_app, admin_headers, method, path, location):
+    """Locations of new services start with the configured path prefix and
+    are percent-encoded.
+    """
+    client = proxy_app.app.test_client()
+    response = client.open(
+        f"{BASE}{path}", method=method, json=_service(), headers=admin_headers
+    )
+    assert response.status_code == 201
+    assert response.location == location
+
+
+@pytest.mark.parametrize("service_id", [".", "..", "%2E", "%2E%2E"])
+def test_put_dot_segment_id(client, admin_headers, service_id):
+    """Identifiers that are dot segments are rejected, as clients would
+    resolve their URLs to other ones.
+    """
+    response = client.put(
+        f"{BASE}/services/{service_id}", json=_service(), headers=admin_headers
+    )
+    _assert_error(response, 400)
+    assert "Location" not in response.headers
+    assert client.get(f"{BASE}/services").json == []
+
+
+@pytest.mark.parametrize("service_id", ["...", ".a", "a."])
+def test_put_dotted_id(client, admin_headers, service_id):
+    """Identifiers with dots that aren't dot segments are accepted."""
+    response = client.put(
+        f"{BASE}/services/{service_id}", json=_service(), headers=admin_headers
+    )
+    assert response.status_code == 201
+    assert response.location == f"{PUBLIC_URL}{BASE}/services/{service_id}"
 
 
 def test_delete_service(client, headers, admin_headers):

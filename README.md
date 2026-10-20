@@ -39,6 +39,14 @@ You can explore the service via the [Swagger UI][url-swagger].
 curl -X GET "http://localhost:8080/ga4gh/registry/v1/services" -H  "accept: application/json"
 ```
 
+Registering a service (`POST /services`, or `PUT /services/{serviceId}` with a
+new identifier) returns `201 Created`, with the identifier of the service in
+the body and its [public URL](#public-urls) in the `Location` header; both
+returned `200 OK` before. Updating a service (`PUT`) returns `200 OK`, as
+before. Identifiers `.` and `..` are rejected (`400 Bad Request`); services
+registered with them before can still be read and deleted, but must be
+registered again under other identifiers to be updated.
+
 ### Configuration
 
 The app is configured by [`cloud_registry/config.yaml`][config]. To override
@@ -70,6 +78,18 @@ services:
             - ./config.local.yaml:/etc/cloud-registry/config.local.yaml:ro
 ```
 
+#### Public URLs
+
+Public URLs, e.g., in `Location` headers, are built from
+`custom.endpoints.service` (scheme, host and port). The Helm chart sets them
+from its `host_name` value; other deployments must set them, as the defaults
+(`https://0.0.0.0:8080`) aren't reachable (the Docker Compose setup sets
+`http://localhost:8080` in [`config.dev.yaml`][config-dev]). Set `api_path` to
+the path prefix in front of the API base path when the app is served behind a
+reverse proxy under a subpath (e.g., `registry`), or leave it empty.
+Previously, `api_path` held the API base path itself (e.g.,
+`ga4gh/registry/v1`); remove that value when upgrading.
+
 ### Service info
 
 `GET /service-info` serves the service info from the config
@@ -85,13 +105,6 @@ the `config` value changes).
 Previously, service info could be set via `POST /service-info` and was stored
 in the database. That endpoint is gone, and stored service info is no longer
 served (the `service_info` collection can be dropped): put it in the config
-when upgrading.
-
-Public URLs, e.g., in `Location` headers, are built from
-`custom.endpoints.service` in `config.yaml`. Set `api_path` to the path prefix
-in front of the API base path when the app is served behind a reverse proxy
-under a subpath (e.g., `registry`), or leave it empty. Previously, `api_path`
-held the API base path itself (e.g., `ga4gh/registry/v1`); remove that value
 when upgrading.
 
 ### Access control

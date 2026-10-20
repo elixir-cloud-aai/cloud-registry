@@ -15,9 +15,15 @@ from cloud_registry.ga4gh.registry.service import (
     RegisterService,
 )
 from cloud_registry.ga4gh.registry.service_info import get_service_info
-from cloud_registry.utils import get_collection
+from cloud_registry.utils import get_collection, get_public_url
 
 logger = logging.getLogger(__name__)
+# Response for a registered service: its identifier, status `201` and its URL
+# as `Location` header
+CreatedResponse = tuple[str, int, dict[str, str]]
+# Response of a registration: the identifier of a replaced service, a
+# registered service, or an error
+RegisterResponse = str | CreatedResponse | Response
 
 
 # GET /services
@@ -85,13 +91,14 @@ def getServiceInfo(**kwargs) -> dict:
 
 # POST /services
 @log_traffic
-def postService(**kwargs) -> str | Response:
+def postService(**kwargs) -> RegisterResponse:
     """Add service with an auto-generated identifier.
 
     Returns:
-        Identifier of registered service.
+        Identifier of registered service, with status `201` and its URL as
+        `Location`.
     """
-    return _register_service()
+    return _register_service(collection_path=request.path)
 
 
 # DELETE /services/{serviceId}
@@ -115,16 +122,20 @@ def deleteService(serviceId: str, **kwargs) -> str:
 
 # PUT /services/{serviceId}
 @log_traffic
-def putService(serviceId: str, **kwargs) -> str | Response:
+def putService(serviceId: str, **kwargs) -> RegisterResponse:
     """Add/replace service with a user-supplied ID.
 
     Args:
         serviceId: Identifier of service to be registered/updated.
 
     Returns:
-        Identifier of registered/updated service.
+        Identifier of registered/updated service; for registered services,
+        with status `201` and their URL as `Location`.
     """
-    return _register_service(service_id=serviceId)
+    # the request path is the service's URL path: `/services/{serviceId}`,
+    # with the API base path and the identifier as routed (decoded)
+    collection_path = request.path.removesuffix(f"/{serviceId}")
+    return _register_service(collection_path=collection_path, service_id=serviceId)
 
 
 def _get_request_object() -> dict:
@@ -143,16 +154,20 @@ def _get_request_object() -> dict:
     return request_json
 
 
-def _register_service(service_id: str | None = None) -> str | Response:
+def _register_service(
+    collection_path: str, service_id: str | None = None
+) -> RegisterResponse:
     """Register the service in the request body.
 
     Args:
+        collection_path: Path of the service collection (`/services`, with the
+            API base path), for the URL of new services.
         service_id: Identifier of the service; generated if not provided.
 
     Returns:
-        Identifier of registered service, or an error response: `400` for
-        invalid URLs, `409` naming the registered service with the same URL
-        and API type.
+        Identifier of the service; if it is new, with status `201` and its URL
+        as `Location`. Or an error response: `400` for invalid URLs, `409`
+        naming the registered service with the same URL and API type.
     """
     service = RegisterService(data=_get_request_object(), id=service_id)
     try:
@@ -178,6 +193,8 @@ def _register_service(service_id: str | None = None) -> str | Response:
         except Exception:
             _unregister_service(service)
             raise
+        path = f"{collection_path.rstrip('/')}/{service.data['id']}"
+        return service.data["id"], 201, {"Location": get_public_url(path)}
     return service.data["id"]
 
 
