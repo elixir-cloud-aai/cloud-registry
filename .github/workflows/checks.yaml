@@ -145,6 +145,8 @@ jobs:
     timeout-minutes: 20
     env:
       PROBE_ENDPOINT: http://localhost:8080/ga4gh/registry/v1/ui/
+      # Passed to the image build by Docker Compose, as the workflows do
+      SETUPTOOLS_SCM_PRETEND_VERSION: 0.0.0+compose
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -157,6 +159,14 @@ jobs:
         run: |
           curl --fail --silent --show-error --output /dev/null \
             --header 'Accept: application/json' "${PROBE_ENDPOINT}"
+      - name: Check app version
+        run: |
+          actual="$(docker compose exec -T cloud-registry python -c \
+            "from importlib.metadata import version; print(version('cloud-registry'))")"
+          if [ "${actual}" != "${SETUPTOOLS_SCM_PRETEND_VERSION}" ]; then
+            echo "::error::App reports version '${actual}', expected '${SETUPTOOLS_SCM_PRETEND_VERSION}'"
+            exit 1
+          fi
       - name: Show app logs
         if: failure()
         run: docker compose logs
@@ -205,8 +215,10 @@ jobs:
       - name: Derive version
         if: steps.head.outputs.current == 'true'
         id: version
+        # Version pinned in `requirements_dev.txt` (as a constraint, so that
+        # only setuptools-scm is installed), where Dependabot updates it
         run: |
-          pip install setuptools-scm==10.3.4
+          pip install setuptools-scm -c requirements_dev.txt
           echo "version=$(python -m setuptools_scm)" >> "$GITHUB_OUTPUT"
       - name: Set up Docker Buildx
         if: steps.head.outputs.current == 'true'

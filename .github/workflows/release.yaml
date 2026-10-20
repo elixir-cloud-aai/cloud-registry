@@ -1,10 +1,11 @@
-# Release when a version tag (`vX.Y.Z`) is pushed: check the tag, package
-# the Helm chart, build and push the Docker image, and create the GitHub
+# Release when a version tag (`vX.Y.Z`, or `vX.Y.ZaN`, `vX.Y.ZbN`,
+# `vX.Y.ZrcN` for pre-releases) is pushed: check the tag, package the Helm
+# chart, build, check and push the Docker image, and create the GitHub
 # release with the chart attached. The tag is the only source of the version:
 # it is passed to the image build (the Docker build gets no Git metadata) and
 # set as the chart's `version` and `appVersion`. Publishing runs in the
-# `release` environment (required reviewer, Docker Hub secrets). See
-# "Versioning and releases" in README.md.
+# `release` environment (required reviewer, Docker Hub secrets). Release tags
+# are immutable (tag ruleset). See "Versioning and releases" in README.md.
 
 name: Release
 
@@ -15,10 +16,11 @@ on:
 permissions:
   contents: read
 
-# One release at a time, so that their images (`latest`) and GitHub releases
-# do not interfere
+# One run per tag, so that a run waiting for approval is not cancelled by
+# the run of another tag; `latest` is determined from the tags on `main` when
+# publishing, so concurrent releases agree on it
 concurrency:
-  group: ${{ github.workflow }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -28,14 +30,15 @@ jobs:
     timeout-minutes: 10
     outputs:
       version: ${{ steps.version.outputs.version }}
-      latest: ${{ steps.version.outputs.latest }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      sha: ${{ steps.version.outputs.sha }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           # Full history and all tags, to check that the release commit is on
-          # `main` and whether this is the highest release
+          # `main`
           fetch-depth: 0
       - name: Check release tag and commit
         id: version
@@ -45,10 +48,12 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "::error::Tag '${TAG}' is not a release version (vX.Y.Z)"
+          if [[ ! "${TAG}" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)((a|b|rc)[0-9]+)?$ ]]; then
+              echo "::error::Tag '${TAG}' is not a release version (e.g., v1.2.3 or v1.2.3rc1)"
               exit 1
           fi
+          base="${BASH_REMATCH[1]}"
+          pre="${BASH_REMATCH[2]}"
           # Signatures are not verified here (that needs the signer's key),
           # only that the tag is annotated and signed
           if [[ "$(git cat-file -t "refs/tags/${TAG}")" != "tag" ]] \
@@ -61,26 +66,28 @@ jobs:
               echo "::error::Release commit is not on 'main'"
               exit 1
           fi
-          echo "version=${TAG#v}" >> "${GITHUB_OUTPUT}"
-          # `latest` only for the highest release, e.g., not for a patch
-          # release of an older minor version
-          highest="$(git tag -l 'v*' --sort=-v:refname \
-              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)"
-          if [[ "${highest}" == "${TAG}" ]]; then
-              echo "latest=true" >> "${GITHUB_OUTPUT}"
-          else
-              echo "latest=false" >> "${GITHUB_OUTPUT}"
-          fi
-      # Helm is preinstalled on GitHub-hosted Ubuntu runners; chart and app
-      # versions are the same (`appVersion` is the default image tag)
+          {
+              echo "version=${TAG#v}"
+              echo "sha=$(git rev-parse HEAD)"
+              # Charts need SemVer: `1.2.3rc1` becomes `1.2.3-rc1`
+              echo "chart_version=${base}${pre:+-${pre}}"
+              if [[ -n "${pre}" ]]; then
+                  echo "prerelease=true"
+              else
+                  echo "prerelease=false"
+              fi
+          } >> "${GITHUB_OUTPUT}"
+      # Helm is preinstalled on GitHub-hosted Ubuntu runners; `appVersion`
+      # (the default image tag) is the release version
       - name: Package chart
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          CHART_VERSION: ${{ steps.version.outputs.chart_version }}
         run: |
           helm lint deployment --strict -f deployment/ci/test-values.yaml
           helm package deployment \
-              --version "${VERSION}" --app-version "${VERSION}" -d dist
-          ls "dist/cloud-registry-${VERSION}.tgz"
+              --version "${CHART_VERSION}" --app-version "${VERSION}" -d dist
+          ls "dist/cloud-registry-${CHART_VERSION}.tgz"
       - name: Upload chart
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -99,10 +106,31 @@ jobs:
     permissions:
       contents: write # create the GitHub release
     steps:
+      # The commit checked by `prepare`; release tags cannot be moved (tag
+      # ruleset)
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ needs.prepare.outputs.sha }}
+          # All tags and `main`, to determine the highest release
+          fetch-depth: 0
+      # Determined after approval rather than in `prepare`, so that a re-run
+      # of an older release does not move `latest` back
+      - name: Check whether this is the highest release
+        id: latest
+        env:
+          TAG: ${{ github.ref_name }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          # Stable releases on `main` only, so that stray tags are ignored
+          highest="$(git tag -l 'v*' --merged origin/main --sort=-v:refname \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
+          if [[ "${PRERELEASE}" == "false" && "${highest}" == "${TAG}" ]]; then
+              echo "latest=true" >> "${GITHUB_OUTPUT}"
+          else
+              echo "latest=false" >> "${GITHUB_OUTPUT}"
+          fi
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to Docker Hub
@@ -120,8 +148,27 @@ jobs:
           flavor: latest=false
           tags: |
             type=raw,value=${{ needs.prepare.outputs.version }}
-            type=raw,value=latest,enable=${{ needs.prepare.outputs.latest }}
-      - name: Build and push image
+            type=raw,value=latest,enable=${{ steps.latest.outputs.latest }}
+      # Built once and loaded, to check the app version before pushing; the
+      # push reuses the build cache
+      - name: Build image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          tags: cloud-registry:release-check
+          build-args: SETUPTOOLS_SCM_PRETEND_VERSION=${{ needs.prepare.outputs.version }}
+      - name: Check app version of image
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          actual="$(docker run --rm --entrypoint python cloud-registry:release-check \
+              -c "from importlib.metadata import version; print(version('cloud-registry'))")"
+          if [[ "${actual}" != "${VERSION}" ]]; then
+              echo "::error::Image reports version '${actual}', expected '${VERSION}'"
+              exit 1
+          fi
+      - name: Push image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -139,7 +186,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
-          LATEST: ${{ needs.prepare.outputs.latest }}
+          LATEST: ${{ steps.latest.outputs.latest }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
         run: |
           # On reruns, complete an existing release instead of failing
           if gh release view "${TAG}" > /dev/null 2>&1; then
@@ -150,4 +198,5 @@ jobs:
               --verify-tag \
               --title "${TAG}" \
               --generate-notes \
+              --prerelease="${PRERELEASE}" \
               --latest="${LATEST}"
