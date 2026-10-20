@@ -1,7 +1,7 @@
 """Service info, from the config."""
 
 from collections.abc import Callable
-from datetime import datetime
+from datetime import date
 from functools import cache
 from importlib.metadata import PackageNotFoundError, version
 import logging
@@ -27,9 +27,12 @@ CONFIG_PATH = "custom.endpoints.service_info"
 FORMAT_CHECKER = FormatChecker(formats=())
 # RFC 3986: a scheme, followed by anything without whitespace
 URI = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:\S*")
-# RFC 3339, section 5.6
+# RFC 3339, section 5.6 (ASCII digits only)
 DATE_TIME = re.compile(
-    r"\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})"
+    r"(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})[Tt ]"
+    r"(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2})(\.\d+)?"
+    r"([Zz]|[+-](?P<offset_hour>\d{2}):(?P<offset_minute>\d{2}))",
+    re.ASCII,
 )
 
 
@@ -44,20 +47,22 @@ def _is_date_time(value: object) -> bool:
     """Check whether a string is an RFC 3339 date-time (non-strings pass)."""
     if not isinstance(value, str):
         return True
-    if DATE_TIME.fullmatch(value) is None:
+    match = DATE_TIME.fullmatch(value)
+    if match is None:
         return False
-    # Check that the date and time exist; Python 3.10 doesn't parse `Z`
-    normalized = re.sub(r"[Zz]$", "+00:00", value[:10] + "T" + value[11:])
+    parts = {name: int(part or 0) for name, part in match.groupdict().items()}
     try:
-        datetime.fromisoformat(re.sub(r"\.(\d{1,6})\d*", _microseconds, normalized))
+        date(parts["year"], parts["month"], parts["day"])
     except ValueError:
         return False
-    return True
-
-
-def _microseconds(match: re.Match) -> str:
-    """Pad or cut fractional seconds to microseconds, as Python 3.10 parses."""
-    return "." + match.group(1).ljust(6, "0")
+    # Seconds may be 60 (leap seconds)
+    return (
+        parts["hour"] < 24
+        and parts["minute"] < 60
+        and parts["second"] <= 60
+        and parts["offset_hour"] < 24
+        and parts["offset_minute"] < 60
+    )
 
 
 class InvalidServiceInfo(ValueError):
@@ -76,8 +81,6 @@ def package_fields() -> dict[str, Any]:
         return {}
 
 
-# `runtime_fields` lets apps add fields that aren't known before runtime, so
-# that this module can move to FOCA (elixir-cloud-aai/foca#314)
 def get_service_info(
     runtime_fields: Callable[[], dict[str, Any]] = package_fields,
 ) -> dict[str, Any]:
@@ -85,10 +88,11 @@ def get_service_info(
 
     Args:
         runtime_fields: Function returning fields set at runtime; the config
-            takes precedence over them.
+            takes precedence over them. Generic, so that this module can move
+            to FOCA (elixir-cloud-aai/foca#314).
 
     Returns:
-        Service info from the config (`custom.endpoints.service_info`), with
+        Copy of the service info from the config (`custom.endpoints.service_info`), with
         the runtime fields it doesn't set, and without fields set to `null`
         (config overlays can't remove fields otherwise).
     """
@@ -97,13 +101,19 @@ def get_service_info(
     )
 
 
-def _without_nulls(data: dict[str, Any]) -> dict[str, Any]:
-    """Copy a mapping without `None` values, recursively."""
-    return {
-        key: _without_nulls(value) if isinstance(value, dict) else value
-        for key, value in data.items()
-        if value is not None
-    }
+def _without_nulls(data: Any) -> Any:
+    """Copy data without `None` values of mappings, recursively (also in
+    lists).
+    """
+    if isinstance(data, dict):
+        return {
+            key: _without_nulls(value)
+            for key, value in data.items()
+            if value is not None
+        }
+    if isinstance(data, list):
+        return [_without_nulls(item) for item in data]
+    return data
 
 
 def check_service_info(
@@ -129,7 +139,7 @@ def check_service_info(
     logger.info("Serving service info '%s', version '%s'.", info["id"], info["version"])
 
 
-@cache  # the bundled specification doesn't change
+@cache
 def _validator() -> Draft4Validator:
     """Get a validator for the `Service` schema of the bundled specification.
 
