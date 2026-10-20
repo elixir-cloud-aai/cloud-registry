@@ -170,6 +170,13 @@ the body and its [public URL](#public-urls) in the `Location` header; updating
 a service (`PUT`) returns `200 OK`. Identifiers `.` and `..` are rejected
 (`400 Bad Request`).
 
+URLs in registrations must be HTTP(S) URLs with a host: the service `url`,
+`documentationUrl`, `organization.url` and `contactUrl`, which can also be an
+email address (`mailto:`); other URLs are rejected (`400 Bad Request`, saying
+why). Anyone logged in can register services, so clients should treat
+registry content as untrusted: escape it rather than render it as HTML, and
+don't follow or fetch its URLs blindly (e.g., to internal addresses).
+
 See [Access control](#access-control) for the roles and [Verified
 services](#verified-services) for verifications. Extensions of the GA4GH
 endpoints, such as pagination, search or filters, will be reconsidered with
@@ -281,10 +288,10 @@ after normalizing common spellings: lowercase schemes and hosts, encoded
 international host names (IDNA 2008), canonical IPv6 addresses, percent-encoded
 non-ASCII characters in paths, and without trailing dots of hosts, default
 ports, dot segments (`/./`, `/../`), repeated and trailing slashes, needless
-percent-encoding in paths, queries and fragments. URLs with other schemes
-(e.g., `http` and `https`) are different services. Invalid URLs, URLs without
-scheme or host, and URLs with user info (`user:password@`) are rejected (`400
-Bad Request`, saying why).
+percent-encoding in paths, queries and fragments. The same URL with `http`
+and `https` gives different services. Invalid URLs, URLs without scheme
+or host, with schemes other than `http` and `https`, and URLs with user info
+(`user:password@`) are rejected (`400 Bad Request`, saying why).
 
 Registering a service again (`POST /services`), or changing a service to the
 URL and API type of another one (`PUT`), returns `409 Conflict`, with the

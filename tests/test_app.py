@@ -226,6 +226,100 @@ def test_service_url_invalid(client, admin_headers, method, path, url, detail):
     assert "Location" not in response.headers
 
 
+def _service_with(field, value):
+    """Service with a URL field (`organization.url` for the organization's)
+    set to a value.
+    """
+    if field == "organization.url":
+        return _service(organization={**SERVICE["organization"], "url": value})
+    return _service(**{field: value})
+
+
+URL_FIELDS = ["url", "contactUrl", "documentationUrl", "organization.url"]
+
+
+@pytest.mark.parametrize("method, path", [("post", ""), ("put", "/abc")])
+@pytest.mark.parametrize("field", URL_FIELDS)
+@pytest.mark.parametrize(
+    "value",
+    [
+        "javascript:alert(1)",
+        "JavaScript://example.org/%0Aalert(1)",
+        "file:///etc/passwd",
+        "ftp://ftp.example.org/pub",
+        "https://",
+        "https:///path",
+        "not a URL",
+    ],
+)
+def test_service_url_not_http(client, admin_headers, method, path, field, value):
+    """URLs of services, contacts, documentation and organizations must be
+    HTTP(S) URLs with a host.
+    """
+    response = getattr(client, method)(
+        f"{BASE}/services{path}",
+        json=_service_with(field, value),
+        headers=admin_headers,
+    )
+    _assert_error(response, 400)
+    assert response.mimetype == "application/problem+json"
+    assert response.json["title"] == "Bad request"
+    assert "Location" not in response.headers
+    assert client.get(f"{BASE}/services").json == []
+
+
+@pytest.mark.parametrize("method, path", [("post", ""), ("put", "/abc")])
+@pytest.mark.parametrize("field", URL_FIELDS)
+@pytest.mark.parametrize(
+    "value",
+    [
+        "http://www.example.org",
+        "https://www.example.org/docs?page=1#top",
+        "HTTPS://WWW.EXAMPLE.ORG",
+        "HttP://www.example.org:8080/a",
+    ],
+)
+def test_service_url_http(client, admin_headers, method, path, field, value):
+    """HTTP(S) URLs, with schemes in any case, are accepted and stored as
+    written.
+    """
+    response = getattr(client, method)(
+        f"{BASE}/services{path}",
+        json=_service_with(field, value),
+        headers=admin_headers,
+    )
+    assert response.status_code == 201, response.json
+    (stored,) = client.get(f"{BASE}/services").json
+    assert stored == {**_service_with(field, value), "id": response.json}
+
+
+@pytest.mark.parametrize("method, path", [("post", ""), ("put", "/abc")])
+def test_service_contact_url_mailto(client, admin_headers, method, path):
+    """Contact URLs can also be email addresses, as in the GA4GH service info
+    specification, but other URLs can't.
+    """
+    mailto = "mailto:support@example.org"
+    response = getattr(client, method)(
+        f"{BASE}/services{path}",
+        json=_service(contactUrl=mailto),
+        headers=admin_headers,
+    )
+    assert response.status_code == 201, response.json
+    for field in ["url", "documentationUrl", "organization.url"]:
+        response = getattr(client, method)(
+            f"{BASE}/services{path}",
+            json=_service_with(field, mailto),
+            headers=admin_headers,
+        )
+        _assert_error(response, 400)
+    response = getattr(client, method)(
+        f"{BASE}/services{path}",
+        json=_service(contactUrl="mailto:"),
+        headers=admin_headers,
+    )
+    _assert_error(response, 400)
+
+
 def test_put_service(client, admin_headers):
     """PUT creates a service with the given identifier (`201`, with its
     location), then replaces it (`200`).

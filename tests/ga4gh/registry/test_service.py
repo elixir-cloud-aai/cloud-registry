@@ -15,6 +15,8 @@ from cloud_registry.ga4gh.registry.service import (
     RegisterService,
     _normalize_host,
     add_service_keys,
+    check_link,
+    check_links,
     normalize_url,
     service_key,
 )
@@ -194,6 +196,9 @@ def test_normalize_url(url, normalized):
     [
         "tes.example.org/v1",
         "mailto:support@example.org",
+        "javascript://tes.example.org/%0Aalert(1)",
+        "file://tes.example.org/etc/passwd",
+        "ftp://tes.example.org/v1",
         "https://user:secret@tes.example.org",
         "https://user@tes.example.org",
         "https://tes.example.org:99999",
@@ -210,11 +215,93 @@ def test_normalize_url(url, normalized):
     ],
 )
 def test_normalize_url_invalid(url):
-    """Invalid URLs, URLs without scheme or host, with user info or invalid
-    ports or hosts are rejected.
+    """Invalid URLs, URLs without scheme or host, with schemes other than
+    `http` and `https`, user info or invalid ports or hosts are rejected.
     """
     with pytest.raises(InvalidService):
         normalize_url(url)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://www.example.org",
+        "HTTPS://WWW.Example.org:8443/docs?page=1#top",
+        "https://[::1]/docs",
+        "https://bücher.example.org",
+    ],
+)
+def test_check_link(url):
+    """HTTP(S) URLs with valid hosts are valid links."""
+    check_link(url, field="documentationUrl")
+
+
+@pytest.mark.parametrize(
+    "url, detail",
+    [
+        (1, "must be a string"),
+        ("https://www.example.org/a b", "must not contain whitespace"),
+        ("https://www.example.org/\x00", "must not contain whitespace"),
+        ("https://www.example.org:port", "Invalid URL"),
+        ("http://[::1/docs", "Invalid URL"),
+        ("javascript:alert(1)", "must be an HTTP(S) URL"),
+        ("mailto:support@example.org", "must be an HTTP(S) URL"),
+        ("www.example.org/docs", "must be an HTTP(S) URL"),
+        ("https:///docs", "need a host"),
+        ("https://user@www.example.org", "must not contain user info"),
+        ("https://www<x>.example.org", "Invalid host"),
+    ],
+)
+def test_check_link_invalid(url, detail):
+    """Links must be HTTP(S) URLs with a valid host and port, and without
+    user info or whitespace.
+    """
+    with pytest.raises(InvalidService) as exc_info:
+        check_link(url, field="documentationUrl")
+    assert detail in exc_info.value.description
+    assert "'documentationUrl'" in exc_info.value.description
+
+
+def test_check_link_schemes():
+    """Links can have other allowed schemes, with a path but no host."""
+    check_link(
+        "MAILTO:support@example.org", field="contactUrl", schemes=frozenset({"mailto"})
+    )
+    for url in ["mailto:", "mailto://example.org/support"]:
+        with pytest.raises(InvalidService):
+            check_link(url, field="contactUrl", schemes=frozenset({"mailto"}))
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {},
+        {"organization": "organization"},
+        {"organization": {"name": "My organization"}},
+        {
+            "contactUrl": "mailto:support@example.org",
+            "documentationUrl": "https://docs.example.org",
+            "organization": {"url": "https://example.org"},
+        },
+    ],
+)
+def test_check_links(data):
+    """Missing links are not checked, and valid links are accepted."""
+    check_links(data)
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"contactUrl": "javascript:alert(1)"},
+        {"documentationUrl": "mailto:support@example.org"},
+        {"organization": {"url": "file:///etc/passwd"}},
+    ],
+)
+def test_check_links_invalid(data):
+    """Invalid links are rejected."""
+    with pytest.raises(InvalidService):
+        check_links(data)
 
 
 def test_normalize_host_invalid_ipv6():

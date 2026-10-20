@@ -26,6 +26,14 @@ VERIFIED = "_verifiedAt"
 # Projection excluding internal fields
 PROJECTION = {"_id": False, KEY: False, VERIFIED: False}
 DEFAULT_PORTS = {"http": 80, "https": 443}
+# Fields with URLs of links, as paths of keys, with the schemes they allow
+# besides `http` and `https`: contact URLs can be email addresses (RFC 2368),
+# as in the GA4GH service info specification
+LINK_FIELDS: dict[tuple[str, ...], frozenset[str]] = {
+    ("contactUrl",): frozenset({"mailto"}),
+    ("documentationUrl",): frozenset(),
+    ("organization", "url"): frozenset(),
+}
 PERCENT_ENCODED = re.compile(r"%([0-9A-Fa-f]{2})")
 # Percent signs not starting a percent-encoding
 MALFORMED_PERCENT = re.compile(r"%(?![0-9A-Fa-f]{2})")
@@ -52,7 +60,9 @@ class DuplicateService(Conflict):
 
 
 class InvalidService(BadRequest):
-    """The URL or API type of a service is missing or invalid."""
+    """The URL or API type of a service, or the URL of a link, is missing or
+    invalid.
+    """
 
 
 def normalize_url(url: str) -> str:
@@ -62,8 +72,8 @@ def normalize_url(url: str) -> str:
     international host names (IDNA), writes IPv6 addresses in canonical form,
     percent-encodes non-ASCII characters of paths, and removes trailing dots
     of hosts, default ports, dot segments, repeated and trailing slashes,
-    needless percent-encoding of paths, queries and fragments. Other schemes
-    (e.g., `http` and `https`) give other URLs.
+    needless percent-encoding of paths, queries and fragments. The schemes
+    `http` and `https` give other URLs.
 
     Args:
         url: Service URL.
@@ -73,7 +83,8 @@ def normalize_url(url: str) -> str:
 
     Raises:
         InvalidService: The URL is invalid, has no scheme or an invalid or no
-            host, has user info, or malformed percent-encodings in its path.
+            host, has a scheme other than `http` and `https`, user info, or
+            malformed percent-encodings in its path.
     """
     try:
         parts = urlsplit(url.strip())
@@ -82,13 +93,78 @@ def normalize_url(url: str) -> str:
         raise InvalidService(f"Invalid service URL: {exc}.") from exc
     if not parts.scheme or not parts.hostname:
         raise InvalidService("Service URLs need a scheme and a host.")
+    scheme = parts.scheme.lower()
+    if scheme not in DEFAULT_PORTS:
+        raise InvalidService("Service URLs must be HTTP(S) URLs.")
     if parts.username is not None or parts.password is not None:
         raise InvalidService("Service URLs must not contain user info.")
-    scheme = parts.scheme.lower()
     host = _normalize_host(parts.hostname)
-    if port is not None and port != DEFAULT_PORTS.get(scheme):
+    if port is not None and port != DEFAULT_PORTS[scheme]:
         host = f"{host}:{port}"
     return urlunsplit((scheme, host, _normalize_path(parts.path), "", ""))
+
+
+def check_link(url: object, field: str, schemes: frozenset[str] = frozenset()) -> None:
+    """Check that the URL of a link is a valid HTTP(S) URL.
+
+    Links are not compared, so not normalized, but checked like service
+    URLs (scheme, host, port and user info).
+
+    Args:
+        url: URL of the link.
+        field: Name of the field with the URL, for error messages.
+        schemes: Schemes allowed besides `http` and `https`, for URLs with a
+            path (e.g., an email address) but no host.
+
+    Raises:
+        InvalidService: The URL is not a string or is invalid: it contains
+            whitespace or control characters, has a scheme other than `http`,
+            `https` and `schemes`, no host (HTTP(S)) or path (other schemes),
+            user info, or an invalid host or port.
+    """
+    if not isinstance(url, str):
+        raise InvalidService(f"'{field}' must be a string.")
+    if any(char.isspace() or not char.isprintable() for char in url):
+        raise InvalidService(
+            f"'{field}' must not contain whitespace or control characters."
+        )
+    try:
+        parts = urlsplit(url)
+        _ = parts.port  # raises `ValueError` for invalid ports
+    except ValueError as exc:
+        raise InvalidService(f"Invalid URL in '{field}': {exc}.") from exc
+    scheme = parts.scheme.lower()
+    if scheme in schemes and not parts.netloc and parts.path:
+        return
+    if scheme not in DEFAULT_PORTS:
+        raise InvalidService(f"'{field}' must be an HTTP(S) URL.")
+    if not parts.hostname:
+        raise InvalidService(f"URLs in '{field}' need a host.")
+    if parts.username is not None or parts.password is not None:
+        raise InvalidService(f"URLs in '{field}' must not contain user info.")
+    try:
+        _normalize_host(parts.hostname)
+    except InvalidService as exc:
+        raise InvalidService(f"Invalid host in '{field}'.") from exc
+
+
+def check_links(data: dict) -> None:
+    """Check the URLs of the links of a service (cf. `LINK_FIELDS`).
+
+    Args:
+        data: Service metadata.
+
+    Raises:
+        InvalidService: A URL is invalid (cf. `check_link()`).
+    """
+    for path, schemes in LINK_FIELDS.items():
+        value: object = data
+        for key in path:
+            if not isinstance(value, dict) or key not in value:
+                break
+            value = value[key]
+        else:
+            check_link(value, field=".".join(path), schemes=schemes)
 
 
 def _normalize_host(host: str) -> str:
@@ -256,12 +332,15 @@ class RegisterService:
                 again if it changed concurrently (cf. `_replace()`).
 
         Raises:
+            InvalidService: The URL or API type of the service, or the URL of
+                a link, is invalid.
             DuplicateService: Another service with the same URL and API type
                 is registered.
             InternalServerError: The service could not be registered within
                 the retries.
         """
         key = service_key(self.data)
+        check_links(self.data)
         self._check_duplicate(key=key)
 
         # replace or insert service with provided ID (PUT)
