@@ -4,7 +4,7 @@ DB = "serviceStore"
 MOCK_ID = "mock_id"
 MOCK_ID_ONE_CHAR = "A"
 CHARSET_EXPRESSION = "string.digits"
-INDEX_CONFIG = {"keys": [("id", 1)]}
+INDEX_CONFIG = {"keys": [("id", 1)], "options": {"unique": True}}
 COLLECTION_CONFIG = {
     "indexes": [INDEX_CONFIG],
 }

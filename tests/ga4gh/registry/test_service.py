@@ -2,18 +2,12 @@
 
 from copy import deepcopy
 import string  # noqa: F401
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
-from flask import Flask
-from foca.models.config import Config, MongoConfig
-import mongomock
 from pymongo.errors import DuplicateKeyError
 import pytest
 
-from cloud_registry.exceptions import (
-    # BadRequest,
-    InternalServerError,
-)
+from cloud_registry.exceptions import InternalServerError
 from cloud_registry.ga4gh.registry.service import RegisterService
 from cloud_registry.service_models.custom_config import CustomConfig
 from tests.mock_data import (
@@ -21,154 +15,127 @@ from tests.mock_data import (
     MOCK_ID,
     MOCK_ID_ONE_CHAR,
     MOCK_SERVICE,
-    MONGO_CONFIG,
 )
-
-
-def _raise(exception) -> None:
-    """General purpose exception raiser."""
-    raise exception
 
 
 class TestRegisterService:
     """Tests for `RegisterService` class."""
 
-    def test_init(self):
+    def test_init(self, foca_app, service_payload):
         """Test for constructing class."""
-        app = Flask(__name__)
-        app.config.foca = Config(
-            db=MongoConfig(**MONGO_CONFIG),
-            custom=CustomConfig(**CUSTOM_CONFIG),
-        )
-
-        data = deepcopy(MOCK_SERVICE)
-        with app.app_context():
-            obj = RegisterService(data=data)
-            assert obj.data["name"] == MOCK_SERVICE["name"]
+        with foca_app.app_context():
+            obj = RegisterService(data=service_payload)
+            assert obj.data["name"] == service_payload["name"]
             assert obj.data["id"] is None
+            assert not obj.replace
+            # Caller dict is not modified
+            assert "id" not in service_payload
 
-    def test_register_metadata(self):
+    def test_register_metadata(self, foca_app, service_payload):
         """Test for registering a service with a randomly assigned identifier."""
-        app = Flask(__name__)
-        app.config.foca = Config(
-            db=MongoConfig(**MONGO_CONFIG),
-            custom=CustomConfig(**CUSTOM_CONFIG),
-        )
-        app.config.foca.db.dbs["serviceStore"].collections[
-            "services"
-        ].client = MagicMock()
-
-        data = deepcopy(MOCK_SERVICE)
-        with app.app_context():
-            obj = RegisterService(data=data)
+        with foca_app.app_context():
+            obj = RegisterService(data=service_payload)
             obj.register_metadata()
             assert isinstance(obj.data["id"], str)
+            assert "id" not in service_payload
+            assert "_id" not in service_payload
 
-    def test_register_metadata_literal_id_charset(self):
+    def test_register_metadata_literal_id_charset(self, foca_app, service_payload):
         """Test for registering a service with a randomly assigned identifier
         generated from a literal character set.
         """
-        app = Flask(__name__)
         custom_config = deepcopy(CUSTOM_CONFIG)
         custom_config["endpoints"]["services"]["id"]["charset"] = MOCK_ID_ONE_CHAR
         custom_config["endpoints"]["services"]["id"]["length"] = 1
-        app.config.foca = Config(
-            db=MongoConfig(**MONGO_CONFIG),
-            custom=CustomConfig(**custom_config),
-        )
-        app.config.foca.db.dbs["serviceStore"].collections[
-            "services"
-        ].client = MagicMock()
+        foca_app.config.foca.custom = CustomConfig(**custom_config)
 
-        data = deepcopy(MOCK_SERVICE)
-        with app.app_context():
-            obj = RegisterService(data=data)
+        with foca_app.app_context():
+            obj = RegisterService(data=service_payload)
             obj.register_metadata()
             assert isinstance(obj.data["id"], str)
+            assert obj.data["id"] == MOCK_ID_ONE_CHAR
+            assert "id" not in service_payload
 
-    def test_register_metadata_with_id(self):
+    def test_register_metadata_with_id(self, foca_app, service_payload):
         """Test for registering a service with a user-supplied identifier."""
-        app = Flask(__name__)
-        app.config.foca = Config(
-            db=MongoConfig(**MONGO_CONFIG),
-            custom=CustomConfig(**CUSTOM_CONFIG),
-        )
-        app.config.foca.db.dbs["serviceStore"].collections[
-            "services"
-        ].client = MagicMock()
-
-        data = deepcopy(MOCK_SERVICE)
-        with app.app_context():
-            obj = RegisterService(data=data, id=MOCK_ID)
+        with foca_app.app_context():
+            obj = RegisterService(data=service_payload, id=MOCK_ID)
             obj.register_metadata()
             assert obj.data["id"] == MOCK_ID
+            assert obj.replace
+            assert not obj.was_replaced
+            assert "id" not in service_payload
 
-    def test_register_metadata_with_id_replace(self):
+    def test_register_metadata_with_id_replace(self, foca_app, service_payload):
         """Test for updating an existing obj."""
-        app = Flask(__name__)
-        app.config.foca = Config(
-            db=MongoConfig(**MONGO_CONFIG),
-            custom=CustomConfig(**CUSTOM_CONFIG),
+        coll = (
+            foca_app.config.foca.db.dbs["serviceStore"].collections["services"].client
         )
         mock_resp = deepcopy(MOCK_SERVICE)
         mock_resp["id"] = MOCK_ID
-        app.config.foca.db.dbs["serviceStore"].collections[
-            "services"
-        ].client = MagicMock()
-        app.config.foca.db.dbs["serviceStore"].collections[
-            "services"
-        ].client.insert_one(mock_resp)
+        coll.insert_one(mock_resp)
 
-        data = deepcopy(MOCK_SERVICE)
-        with app.app_context():
-            obj = RegisterService(data=data, id=MOCK_ID)
+        with foca_app.app_context():
+            obj = RegisterService(data=service_payload, id=MOCK_ID)
             obj.register_metadata()
             assert obj.data["id"] == MOCK_ID
+            assert obj.was_replaced
+            assert "id" not in service_payload
 
-    def test_register_metadata_duplicate_key(self):
-        """Test for registering a service; duplicate key error occurs."""
-        app = Flask(__name__)
-        app.config.foca = Config(
-            db=MongoConfig(**MONGO_CONFIG),
-            custom=CustomConfig(**CUSTOM_CONFIG),
-        )
+    def test_register_metadata_duplicate_key(self, foca_app, service_payload):
+        """Test for registering a service; duplicate key error occurs and retries."""
         mock_resp = MagicMock(side_effect=[DuplicateKeyError(""), None])
-        app.config.foca.db.dbs["serviceStore"].collections[
+        foca_app.config.foca.db.dbs["serviceStore"].collections[
             "services"
         ].client = MagicMock()
-        app.config.foca.db.dbs["serviceStore"].collections[
+        foca_app.config.foca.db.dbs["serviceStore"].collections[
             "services"
         ].client.insert_one = mock_resp
 
-        data = deepcopy(MOCK_SERVICE)
-        with app.app_context():
-            obj = RegisterService(data=data)
+        with foca_app.app_context():
+            obj = RegisterService(data=service_payload)
             obj.register_metadata()
             assert isinstance(obj.data["id"], str)
+            assert "id" not in service_payload
 
-    def test_register_metadata_duplicate_keys_repeated(self):
-        """Test for registering a service; running out of unique identifiers."""
-        custom_config = deepcopy(CUSTOM_CONFIG)
-        custom_config["endpoints"]["services"]["id"]["length"] = MOCK_ID_ONE_CHAR
-        custom_config["endpoints"]["services"]["id"]["length"] = 1
-        app = Flask(__name__)
-        app.config.foca = Config(
-            db=MongoConfig(**MONGO_CONFIG),
-            custom=CustomConfig(**CUSTOM_CONFIG),
+    def test_register_metadata_collision_retry_success(self, foca_app, service_payload):
+        """Test ID collision retry generates a new ID and succeeds (#72)."""
+        coll = (
+            foca_app.config.foca.db.dbs["serviceStore"].collections["services"].client
         )
-        mock_resp = deepcopy(MOCK_SERVICE)
-        app.config.foca.db.dbs["serviceStore"].collections[
-            "services"
-        ].client = mongomock.MongoClient().db.collection
-        app.config.foca.db.dbs["serviceStore"].collections[
-            "services"
-        ].client.insert_one(mock_resp)
+        # Pre-insert a colliding ID into the collection with unique index
+        coll.insert_one({"id": "COLLIDE", "name": "Existing Service"})
 
-        data = deepcopy(MOCK_SERVICE)
-        with app.app_context():
+        data = deepcopy(service_payload)
+        with foca_app.app_context():
+            with patch(
+                "cloud_registry.ga4gh.registry.service.generate_id",
+                side_effect=["COLLIDE", "NEW_UNIQUE_ID"],
+            ):
+                obj = RegisterService(data=data)
+                obj.register_metadata()
+                assert obj.data["id"] == "NEW_UNIQUE_ID"
+                assert "id" not in data
+                assert "_id" not in data
+
+    def test_register_metadata_duplicate_keys_repeated(self, foca_app, service_payload):
+        """Test registering service when all generated IDs collide (#71, #72)."""
+        custom_config = deepcopy(CUSTOM_CONFIG)
+        custom_config["endpoints"]["services"]["id"]["charset"] = MOCK_ID_ONE_CHAR
+        custom_config["endpoints"]["services"]["id"]["length"] = 1
+        foca_app.config.foca.custom = CustomConfig(**custom_config)
+
+        coll = (
+            foca_app.config.foca.db.dbs["serviceStore"].collections["services"].client
+        )
+        # Pre-insert the only possible 1-character identifier "A" into the collection
+        coll.insert_one({"id": MOCK_ID_ONE_CHAR, "name": "Pre-existing"})
+
+        data = deepcopy(service_payload)
+        with foca_app.app_context():
             with pytest.raises(InternalServerError):
                 obj = RegisterService(data=data)
-                obj.register_metadata()
-                obj = RegisterService(data=data)
-                obj.register_metadata()
-                print(obj.data["id"])
+                obj.register_metadata(retries=3)
+            # Caller dict remains unmodified
+            assert "id" not in data
+            assert "_id" not in data
