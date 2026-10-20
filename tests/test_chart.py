@@ -1,6 +1,4 @@
-"""Tests for the images, the MongoDB deployment and the probes of the Helm
-chart.
-"""
+"""Tests for the images, the MongoDB deployment and the probes of the chart."""
 
 import re
 import subprocess
@@ -13,6 +11,8 @@ from tests.test_config import CONFIG_FILE
 
 NO_AUTH = ("--set", "mongodb.auth.enabled=false")
 PROBES = ("startupProbe", "readinessProbe", "livenessProbe")
+# Default image tag
+APP_VERSION = yaml.safe_load((CHART / "Chart.yaml").read_text())["appVersion"]
 
 pytestmark = pytest.mark.skipif(HELM is None, reason="helm not installed")
 
@@ -75,24 +75,26 @@ def test_image_defaults_to_app_version():
     """Without a tag, the image of the chart's `appVersion` is deployed (`dev`
     for the chart in the repository).
     """
-    chart = yaml.safe_load((CHART / "Chart.yaml").read_text())
-    assert chart["appVersion"] == "dev"
-    assert _app_image() == "elixircloud/cloud-registry:dev"
+    assert _app_image() == f"elixircloud/cloud-registry:{APP_VERSION}"
 
 
-def test_image_of_packaged_chart(tmp_path):
+# Chart versions are SemVer, app versions PEP 440 (cf. the release workflow)
+@pytest.mark.parametrize(
+    ("chart_version", "app_version"), [("0.3.0", "0.3.0"), ("0.3.0-rc1", "0.3.0rc1")]
+)
+def test_image_of_packaged_chart(tmp_path, chart_version, app_version):
     """Released charts deploy the image of their version, as set by the
     release workflow.
     """
     assert HELM is not None
     subprocess.run(  # noqa: S603
-        [HELM, "package", str(CHART), "--version", "0.3.0"]
-        + ["--app-version", "0.3.0", "-d", str(tmp_path)],
+        [HELM, "package", str(CHART), "--version", chart_version]
+        + ["--app-version", app_version, "-d", str(tmp_path)],
         capture_output=True,
         check=True,
     )
-    package = tmp_path / "cloud-registry-0.3.0.tgz"
-    assert _app_image(chart=package) == "elixircloud/cloud-registry:0.3.0"
+    package = tmp_path / f"cloud-registry-{chart_version}.tgz"
+    assert _app_image(chart=package) == f"elixircloud/cloud-registry:{app_version}"
 
 
 @pytest.mark.parametrize(
@@ -101,9 +103,10 @@ def test_image_of_packaged_chart(tmp_path):
         (("--set", "cloud_registry.tag=sha-abc"), "elixircloud/cloud-registry:sha-abc"),
         (
             ("--set", "cloud_registry.image=registry.example.org:5000/cr"),
-            "registry.example.org:5000/cr:dev",
+            f"registry.example.org:5000/cr:{APP_VERSION}",
         ),
         # Image references with a tag or digest, as in earlier chart versions
+        (("--set", "cloud_registry.image=host:5000/cr:1.0"), "host:5000/cr:1.0"),
         (
             ("--set", "cloud_registry.image=elixircloud/cloud-registry:20261020"),
             "elixircloud/cloud-registry:20261020",
