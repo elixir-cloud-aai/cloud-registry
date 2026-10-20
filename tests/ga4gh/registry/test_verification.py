@@ -123,8 +123,6 @@ def test_putServiceVerification_checked(unit_app, services, checked):
         # same key, but not the URL as registered
         {**CHECKED, "url": "https://beacon.example.org/api/"},
         {**CHECKED, "url": "https://beacon.example.org/api?a=b"},
-        # invalid, so no service has it
-        {**CHECKED, "url": "beacon.example.org/api"},
         {**CHECKED, "type": {**MOCK_TYPE, "artifact": "tes"}},
     ],
 )
@@ -139,6 +137,36 @@ def test_putServiceVerification_conflict(unit_app, services, checked):
     assert res.mimetype == "application/problem+json"
     assert "another URL or API type" in res.json["detail"]
     assert services.find_one({"id": MOCK_ID})[VERIFIED] == TIME
+
+
+def test_putServiceVerification_invalid_url(unit_app, services):
+    """Invalid URLs of the service checked are rejected, saying why."""
+    _insert(services)
+    checked = {**CHECKED, "url": "beacon.example.org/api"}
+    with unit_app.test_request_context():
+        res = putServiceVerification(MOCK_ID, verification=checked)
+    assert res.status_code == 400
+    assert "need a scheme and a host" in res.json["detail"]
+    assert VERIFIED not in services.find_one({"id": MOCK_ID})
+
+
+@pytest.mark.parametrize(
+    "data, content_type",
+    [
+        ("text", "text/plain"),
+        ("null", "text/plain"),
+        ("{", "application/json"),
+    ],
+)
+def test_putServiceVerification_unparsed_body(unit_app, services, data, content_type):
+    """Requests with bodies that weren't parsed are rejected."""
+    _insert(services)
+    with unit_app.test_request_context(
+        method="PUT", data=data, content_type=content_type
+    ):
+        res = putServiceVerification(MOCK_ID)
+    assert res.status_code == 400
+    assert VERIFIED not in services.find_one({"id": MOCK_ID})
 
 
 @pytest.mark.parametrize("checked", [None, CHECKED])

@@ -293,8 +293,9 @@ paths:
         only verified if it still has exactly that URL (as written) and the
         same API type (`type.group`, `type.artifact`, case-insensitive; not
         `type.version`), otherwise `409` is returned and nothing changes.
-        Without a body, the service is verified as it is registered at the
-        time of the request. The verification is kept when the service is
+        Invalid URLs in the body, and bodies that are neither JSON nor empty
+        (or `null`), return `400`. Without a body, the service is verified as
+        it is registered at the time of the request. The verification is kept when the service is
         updated with the same URL and API type (e.g., a new version), and
         removed when they change, including other spellings of the URL.
       operationId: putServiceVerification
@@ -306,10 +307,10 @@ paths:
       requestBody:
         description: URL and API type of the service that were checked.
         required: false
+        x-body-name: verification
         content:
           application/json:
             schema:
-              x-body-name: verification
               # requests without a body are validated as `null`
               nullable: true
               $ref: '#/components/schemas/VerificationRegister'

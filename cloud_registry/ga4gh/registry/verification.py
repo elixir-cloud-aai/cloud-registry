@@ -17,12 +17,12 @@ read by anyone.
 from datetime import datetime, timezone
 import logging
 
-from flask import Response
+from flask import Response, request
 from foca.security.access_control import get_current_subject
 from pymongo import ReturnDocument
+from werkzeug.exceptions import HTTPException
 
-from cloud_registry.exceptions import Conflict, NotFound
-from cloud_registry.ga4gh.registry.server import problem
+from cloud_registry.exceptions import BadRequest, Conflict, NotFound, problem
 from cloud_registry.ga4gh.registry.service import (
     KEY,
     VERIFIED,
@@ -87,8 +87,8 @@ def _verification(service: dict) -> dict:
     }
 
 
-def _checked_filter(checked: dict) -> dict | None:
-    """Get the filter for a service with the URL and API type an admin
+def _checked_query(checked: dict) -> dict:
+    """Get the query for a service with the URL and API type an admin
     checked.
 
     Args:
@@ -96,15 +96,43 @@ def _checked_filter(checked: dict) -> dict | None:
             `putServiceVerification()`).
 
     Returns:
-        Filter for services with exactly that URL, as written, and the same
-        API type (cf. `service_key()`; the version is not compared), or
-        `None` if the URL is invalid, as no service has it then.
+        Query for services with exactly that URL, as written, and the same
+        API type (cf. `service_key()`; the version is not compared).
+
+    Raises:
+        InvalidService: The URL is invalid.
     """
-    try:
-        key = service_key(checked)
-    except InvalidService:
-        return None
-    return {"url": checked["url"], KEY: key}
+    return {"url": checked["url"], KEY: service_key(checked)}
+
+
+def _has_unparsed_body() -> bool:
+    """Check whether the current request has a body that wasn't parsed as
+    JSON.
+
+    Returns:
+        Whether the request has a body other than none, an empty one or JSON
+        `null`, e.g., malformed JSON or another media type, which Connexion
+        passes to controllers as no body.
+    """
+    # form data is consumed when it is parsed, so it isn't in the raw body
+    if request.form or request.files:
+        return True
+    data = request.get_data().strip()
+    return bool(data) and not (request.is_json and data == b"null")
+
+
+def _not_verified(serviceId: str, exc: HTTPException) -> Response:
+    """Log why a service is not verified, and build the error response.
+
+    Args:
+        serviceId: Service identifier.
+        exc: Exception with a request-specific description.
+
+    Returns:
+        Problem details response.
+    """
+    logger.info("Service '%s' not verified: %s", serviceId, exc.description)
+    return problem(exc)
 
 
 # GET /services/{serviceId}/verification
@@ -145,31 +173,34 @@ def putServiceVerification(
 
     Returns:
         Verification of the service, at the current time; or a problem
-        details response (`409`) if the service has another URL or API type
-        than the one checked.
+        details response: `400` if the body is neither JSON nor empty, or
+        the URL in it is invalid; `409` if the service has another URL or
+        API type than the one checked.
 
     Raises:
         cloud_registry.exceptions.NotFound: The service doesn't exist.
     """
-    filter: dict | None = {"id": serviceId}
+    query: dict = {"id": serviceId}
     if verification is not None:
-        checked = _checked_filter(verification)
-        filter = None if checked is None else {"id": serviceId, **checked}
-    verified_at = _now()
-    service = None
-    if filter is not None:
-        service = get_collection("services").find_one_and_update(
-            filter,
-            {"$set": {VERIFIED: verified_at}},
-            projection=VERIFICATION_PROJECTION,
-            return_document=ReturnDocument.AFTER,
+        try:
+            query.update(_checked_query(verification))
+        except InvalidService as exc:
+            return _not_verified(serviceId, exc)
+    elif _has_unparsed_body():
+        # not verified unconditionally if a precondition may have been meant
+        return _not_verified(
+            serviceId, BadRequest("The request body must be a JSON object or empty.")
         )
+    service = get_collection("services").find_one_and_update(
+        query,
+        {"$set": {VERIFIED: _now()}},
+        projection=VERIFICATION_PROJECTION,
+        return_document=ReturnDocument.AFTER,
+    )
     if service is None:
         if not service_exists(serviceId):
             raise NotFound
-        exc = VerificationConflict()
-        logger.info("Service '%s' not verified: %s", serviceId, exc.description)
-        return problem(exc)
+        return _not_verified(serviceId, VerificationConflict())
     logger.info("Service '%s' verified by '%s'.", serviceId, get_current_subject())
     return _verification(service)
 

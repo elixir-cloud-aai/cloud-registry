@@ -249,11 +249,11 @@ class RegisterService:
         """Register service.
 
         Args:
-            retries: How many times should the generation of a random
-                identifier and insertion into the database be retried when
-                encountering `DuplicateKeyError`s if a service identifier was
-                not provided; if it was provided, how many times should the
-                stored service be read again when it changed concurrently.
+            retries: Without a service identifier (POST), how many times
+                the generation of a random identifier and insertion into the
+                database are retried on `DuplicateKeyError`s. With an
+                identifier (PUT), how many times the stored service is read
+                again if it changed concurrently (cf. `_replace()`).
 
         Raises:
             DuplicateService: Another service with the same URL and API type
@@ -327,12 +327,12 @@ class RegisterService:
                 {"_id": False, "url": True, KEY: True, VERIFIED: True},
             )
             replacement = {**self.data, KEY: key}
-            filter: dict = {"id": self.data["id"]}
+            query: dict = {"id": self.data["id"]}
             if stored is not None:
                 # the fields as read; missing if they were (e.g., services
                 # without key, cf. `add_service_keys()`)
                 for field in ("url", KEY, VERIFIED):
-                    filter[field] = stored.get(field, {"$exists": False})
+                    query[field] = stored.get(field, {"$exists": False})
                 unchanged = (
                     stored.get("url") == self.data["url"] and stored.get(KEY) == key
                 )
@@ -340,7 +340,7 @@ class RegisterService:
                     replacement[VERIFIED] = stored[VERIFIED]
             try:
                 result = self.db_coll.replace_one(
-                    filter=filter,
+                    filter=query,
                     replacement=replacement,
                     upsert=stored is None,
                 )
@@ -363,10 +363,10 @@ class RegisterService:
         Raises:
             DuplicateService: Another service has the key.
         """
-        filter: dict = {KEY: key}
+        query: dict = {KEY: key}
         if self.data["id"] is not None:
-            filter["id"] = {"$ne": self.data["id"]}
-        existing = self.db_coll.find_one(filter, {"_id": False, "id": True})
+            query["id"] = {"$ne": self.data["id"]}
+        existing = self.db_coll.find_one(query, {"_id": False, "id": True})
         if existing is not None:
             raise DuplicateService(existing_id=existing["id"])
 

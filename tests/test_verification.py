@@ -136,8 +136,6 @@ def test_verify_checked(client, service, body):
         # same normalized URL, but not as registered
         {**checked(), "url": "https://tes.example.org/ga4gh/tes/v1/"},
         {**checked(), "url": "https://tes.example.org/ga4gh/tes/v1?a=b"},
-        # no service can have invalid URLs
-        {**checked(), "url": "https://user@tes.example.org/ga4gh/tes/v1"},
         {**checked(), "type": {**SERVICE["type"], "artifact": "wes"}},
         {**checked(), "type": {**SERVICE["type"], "group": "org.example"}},
     ],
@@ -174,6 +172,68 @@ def test_verify_checked_invalid(client, service, body):
     """Bodies need exactly a URL and an API type."""
     assert verify(client, checked=body).status_code == 400
     assert verified(client) == []
+
+
+@pytest.mark.parametrize(
+    "url, detail",
+    [
+        ("https://user@tes.example.org/ga4gh/tes/v1", "must not contain user info"),
+        ("tes.example.org/ga4gh/tes/v1", "need a scheme and a host"),
+    ],
+)
+def test_verify_checked_invalid_url(client, service, url, detail):
+    """Invalid URLs in the body are rejected, saying why."""
+    response = verify(client, checked={**checked(), "url": url})
+    assert response.status_code == 400
+    assert response.mimetype == "application/problem+json"
+    assert detail in response.json["detail"]
+    assert verified(client) == []
+
+
+@pytest.mark.parametrize(
+    "data, content_type",
+    [
+        ("url=https://tes.example.org", "application/x-www-form-urlencoded"),
+        (dumps(checked()), "text/plain"),
+        (dumps(checked()), None),
+        ('{"url": ', "application/json"),
+        ("null", "text/plain"),
+    ],
+)
+def test_verify_unparsed_body(client, service, data, content_type):
+    """Bodies that aren't JSON are rejected, rather than verifying the
+    service unconditionally.
+    """
+    headers = make_headers(ADMIN)
+    if content_type is not None:
+        headers["Content-Type"] = content_type
+    response = client.put(
+        f"{BASE}/services/{service}/verification", data=data, headers=headers
+    )
+    assert response.status_code == 400
+    assert response.mimetype == "application/problem+json"
+    assert verified(client) == []
+
+
+@pytest.mark.parametrize(
+    "data, content_type",
+    [
+        ("", None),
+        ("", "application/json"),
+        (" ", "application/json"),
+        ("null", "application/json"),
+    ],
+)
+def test_verify_empty_body(client, service, data, content_type):
+    """Empty bodies and `null` verify the service as registered."""
+    headers = make_headers(ADMIN)
+    if content_type is not None:
+        headers["Content-Type"] = content_type
+    response = client.put(
+        f"{BASE}/services/{service}/verification", data=data, headers=headers
+    )
+    assert response.status_code == 200
+    assert verified(client) == [service]
 
 
 def test_verify_again(client, service):

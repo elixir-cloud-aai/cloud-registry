@@ -1,13 +1,11 @@
 """Controllers for service endpoints."""
 
-from json import dumps
 import logging
 
 from flask import Response, request
 from foca.utils.logging import log_traffic
-from werkzeug.exceptions import HTTPException
 
-from cloud_registry.exceptions import BadRequest, NotFound, exceptions
+from cloud_registry.exceptions import BadRequest, NotFound, problem
 from cloud_registry.ga4gh.registry.permissions import add_owner, remove_permissions
 from cloud_registry.ga4gh.registry.service import (
     PROJECTION,
@@ -197,34 +195,6 @@ def _register_service(
         path = f"{collection_path.rstrip('/')}/{service.data['id']}"
         return service.data["id"], 201, {"Location": get_public_url(path)}
     return service.data["id"]
-
-
-def problem(exc: HTTPException, **extensions: str) -> Response:
-    """Build a problem details response with the description of an exception.
-
-    FOCA's problem details are fixed per exception class, so responses with
-    details specific to a request are built here.
-
-    Args:
-        exc: Exception with a request-specific description.
-        extensions: Extension members of the problem details.
-
-    Returns:
-        Problem details response.
-    """
-    # title as for other errors, from the closest mapped exception class
-    title = next(
-        exceptions[cls]["title"] for cls in type(exc).__mro__ if cls in exceptions
-    )
-    details = {
-        "title": title,
-        "status": exc.code,
-        "detail": exc.description,
-        **extensions,
-    }
-    return Response(
-        dumps(details), status=exc.code, mimetype="application/problem+json"
-    )
 
 
 def _unregister_service(service: RegisterService) -> None:

@@ -1,5 +1,7 @@
 """App exceptions."""
 
+from json import dumps
+
 from connexion.exceptions import (
     BadRequestProblem,
     ExtraParameterProblem,
@@ -7,9 +9,11 @@ from connexion.exceptions import (
     OAuthProblem,
     Unauthorized,
 )
+from flask import Response
 from werkzeug.exceptions import (
     BadRequest,
     Conflict,
+    HTTPException,
     InternalServerError,
     NotFound,
 )
@@ -67,3 +71,31 @@ exceptions = {
         "status": 500,
     },
 }
+
+
+def problem(exc: HTTPException, **extensions: str) -> Response:
+    """Build a problem details response with the description of an exception.
+
+    FOCA's problem details are fixed per exception class, so responses with
+    details specific to a request are built here.
+
+    Args:
+        exc: Exception with a request-specific description.
+        extensions: Extension members of the problem details.
+
+    Returns:
+        Problem details response.
+    """
+    # title as for other errors, from the closest mapped exception class
+    title = next(
+        exceptions[cls]["title"] for cls in type(exc).__mro__ if cls in exceptions
+    )
+    details = {
+        "title": title,
+        "status": exc.code,
+        "detail": exc.description,
+        **extensions,
+    }
+    return Response(
+        dumps(details), status=exc.code, mimetype="application/problem+json"
+    )

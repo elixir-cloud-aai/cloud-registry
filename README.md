@@ -215,8 +215,9 @@ URL (as registered, character by character) and the same API type
 (`type.group` and `type.artifact`, case-insensitive; `type.version` is not
 compared), checked in the same write. Otherwise, e.g., if the owner changed
 the URL after the admin checked it, the request returns `409 Conflict` and
-changes nothing. Without a body, the service is verified as it is
-registered at the time of the request.
+changes nothing. Invalid URLs, and bodies that aren't JSON (e.g., form
+data), return `400 Bad Request`. Without a body (or with `null`), the
+service is verified as it is registered at the time of the request.
 
 The request returns the verification, with the URL and API type of the
 service:
@@ -241,18 +242,19 @@ list the services (`GET /services`) and keep those listed by
 `GET /verifications` with the same identifier, `url` and `type` (`group` and
 `artifact`), so that a service changed between the two requests isn't used.
 
-A verification applies to the URL, exactly as written, and the API type of
-the service at the time it is verified. It is removed when the service is
-updated with any other URL, even another spelling of the same one (e.g.,
-another case of the host, a trailing slash, or a query or fragment, which
-are ignored when [comparing services](#duplicate-services)), or another API
-type (`type.group` or `type.artifact`, compared as for duplicates), in the
-same write, as the checks may not hold for them; changing them back doesn't
-restore it. Other updates (e.g., of `version`, `type.version` or `name`)
-keep the verification. Replacements and verifications at the same time are
-ordered: a verification is never kept for another URL or API type, and
-replacements keeping both don't remove verifications made meanwhile.
-Deleting a service deletes its verification.
+A verification applies to the service as it was when it was verified:
+
+- **URL, as written:** updating the service with any other URL removes the
+  verification, even another spelling of the same one (e.g., another case
+  of the host, a trailing slash, or a query or fragment, which are ignored
+  when [comparing services](#duplicate-services)).
+- **API type:** updating `type.group` or `type.artifact` (compared as for
+  duplicates) removes it.
+- Changing them back doesn't restore it. Other updates (e.g., of `version`,
+  `type.version` or `name`) keep it.
+- Deleting a service deletes its verification.
+- Admins should send the URL and API type they checked when verifying (see
+  above), so that a service changed meanwhile isn't verified.
 
 ## Installation
 
