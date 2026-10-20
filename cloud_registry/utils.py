@@ -62,14 +62,18 @@ def _format_host(host: str) -> str:
     """Format a host for URLs.
 
     Args:
-        host: Host name or IP address, with or without brackets for IPv6
-            addresses.
+        host: Host name or IP address; IPv6 addresses with or without
+            brackets (with brackets, zone IDs percent-encoded, as in URLs).
 
     Returns:
         Host; IPv6 addresses in brackets, with zone IDs percent-encoded (RFC
         6874).
     """
-    address, _, zone = host.partition("%")
+    bracketed = host.startswith("[") and host.endswith("]")
+    address, _, zone = host.strip("[]").partition("%")
+    if bracketed:
+        # as in URLs: zone IDs percent-encoded
+        zone = zone.removeprefix("25")
     try:
         ipaddress.IPv6Address(address)
     except ValueError:

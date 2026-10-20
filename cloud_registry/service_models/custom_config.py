@@ -58,8 +58,9 @@ class IdConfig(FOCABaseConfig):
 
     Raises:
         pydantic.ValidationError: The class was instantianted with an illegal
-            data type, or `charset` is empty or an expression (such as
-            `string.digits`), which FOCA no longer evaluates.
+            data type, or `charset` is empty, an expression (such as
+            `string.digits`), which FOCA no longer evaluates, contains `/` or
+            consists of dots only, as identifiers are URL path segments.
 
     Example:
         >>> IdConfig(
@@ -75,7 +76,13 @@ class IdConfig(FOCABaseConfig):
     @field_validator("charset")
     @classmethod
     def _check_charset(cls, charset: str) -> str:
-        """Reject character sets that identifiers cannot be generated from."""
+        """Reject character sets that identifiers cannot be generated from,
+        or that give identifiers that aren't URL path segments.
+        """
+        if "/" in charset:
+            raise ValueError("Identifier character sets must not contain '/'")
+        if charset and not charset.strip("."):
+            raise ValueError("Identifier character sets must not be dots only")
         try:
             generate_id(charset=charset, length=1)
         except TypeError as exc:  # pydantic only reports `ValueError`s

@@ -277,6 +277,9 @@ class RegisterService:
                 self.data["id"] = generate_id(
                     charset=self.id_charset, length=self.id_length
                 )
+                # dot segments, which clients resolve in URLs
+                if self.data["id"] in (".", ".."):
+                    continue
                 try:
                     # insert a new dict, as `insert_one()` adds an `_id` field
                     self.db_coll.insert_one(document={**self.data, KEY: key})
