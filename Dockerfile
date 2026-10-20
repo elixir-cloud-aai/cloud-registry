@@ -13,7 +13,7 @@ LABEL maintainer.organisation="ELIXIR Cloud & AAI"
 COPY ./ /app
 
 ## Install app; the FOCA image runs as non-root user and has no curl or jq,
-## which are needed by `update-config-map.sh`
+## which are needed by `update-config-map.sh` (as is yq; remove with #67)
 USER root
 RUN apt-get update \
   && apt-get install -y --no-install-recommends curl jq \
@@ -21,7 +21,7 @@ RUN apt-get update \
   && cd /app \
   && pip install --no-cache-dir -e . \
   && cd / \
-  && pip install --no-cache-dir yq
+  && pip install --no-cache-dir yq==3.2.3
 USER 1000
 
 WORKDIR /app

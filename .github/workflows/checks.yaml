@@ -9,17 +9,31 @@ on:
   pull_request:
     branches: [dev]
 
+permissions:
+  contents: read
+
+# Cancel superseded runs of a pull request; runs for pushes get their own
+# group, so that queued runs for successive pushes are not dropped
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   analyze_code:
     name: Static code analysis
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.10"
+          cache: pip
+          cache-dependency-path: requirements_dev.txt
       - name: Install requirements
         run: |
           pip install --upgrade pip==24.0
@@ -30,18 +44,37 @@ jobs:
         run: mypy cloud_registry
       - name: Code formatting check with black
         run: black --check .
+      - name: Build distributions
+        run: python -m build
+      - name: Check wheel contents
+        run: |
+          unzip -Z1 dist/*.whl | tee wheel-contents.txt
+          if grep -Ev '^cloud_registry(/|-[^/]+\.dist-info/)' wheel-contents.txt; then
+            echo "::error::Unexpected files in wheel"
+            exit 1
+          fi
+          grep -qx 'cloud_registry/config.yaml' wheel-contents.txt
+          grep -q '^cloud_registry/api/.*\.yaml$' wheel-contents.txt
   test:
-    name: Run tests
+    name: Run tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
-    env:
-      PROBE_ENDPOINT: http://localhost:8080/ga4gh/registry/v1/ui/
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.12: Python version of the base image in the Dockerfile
+        python-version: ["3.10", "3.12"]
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: "3.10"
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
       - name: Install requirements
         run: |
           pip install --upgrade pip==24.0
@@ -52,48 +85,85 @@ jobs:
         run: |
           coverage run --source cloud_registry -m pytest -W ignore::DeprecationWarning
           coverage xml
+      # Upload errors fail the workflow only on pushes, because pull requests
+      # from forks and Dependabot get no access to the Codecov token
       - name: Submit Report to Codecov
-        uses: codecov/codecov-action@v3
+        if: matrix.python-version == '3.12'
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.xml
-          fail_ci_if_error: true
+          fail_ci_if_error: ${{ github.event_name == 'push' }}
           verbose: true
-      - name: Set up Docker Compose
-        uses: docker/setup-compose-action@v1.2.0
+  # Stable check name for branch protection, independent of the matrix
+  tests_passed:
+    name: Run tests
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [test]
+    steps:
+      - name: Check that all test jobs passed
+        run: test "${{ needs.test.result }}" = "success"
+  smoke_test:
+    name: Run app with Docker Compose
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PROBE_ENDPOINT: http://localhost:8080/ga4gh/registry/v1/ui/
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          version: latest
+          persist-credentials: false
       - name: Start app
-        run: /usr/bin/docker compose up -d --build
-      - name: Wait until app is up
-        run: sleep 30
-      - name: Run health check
+        run: docker compose up -d --build
+      - name: Wait for app to respond
         run: |
-          echo "${PROBE_ENDPOINT}"
-          test $( \
-            curl \
-             -sL \
-             -v \
-             -o /dev/null \
-             -w '%{http_code}' \
-             -X GET \
-             --header 'Accept: application/json' \
-             "${PROBE_ENDPOINT}" \
-            ) == '200' || exit 1
+          for _ in $(seq 1 60); do
+            status=$(curl -s -o /dev/null -w '%{http_code}' \
+              --header 'Accept: application/json' "${PROBE_ENDPOINT}" || true)
+            [ "${status}" = "200" ] && exit 0
+            sleep 2
+          done
+          echo "App did not respond with 200 at ${PROBE_ENDPOINT} (last status: ${status})"
+          exit 1
+      - name: Show app logs
+        if: failure()
+        run: docker compose logs
   publish:
     name: Build and publish app image
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'push' }}
-    needs: [analyze_code, test]
+    needs: [analyze_code, tests_passed, smoke_test]
+    # Publish one image at a time, and only for the newest commit on the
+    # branch, so that an older run cannot overwrite `latest` with older code
+    concurrency:
+      group: ${{ github.workflow }}-publish-${{ github.ref }}
+      cancel-in-progress: false
     steps:
+      - name: Check that commit is still the branch head
+        id: head
+        run: |
+          head=$(git ls-remote "https://github.com/${{ github.repository }}.git" "${{ github.ref }}" | cut -f1)
+          [ -n "${head}" ] || { echo "::error::Could not look up ${{ github.ref }}"; exit 1; }
+          if [ "${head}" = "${{ github.sha }}" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Skipping publish: ${{ github.ref }} has moved on to ${head}"
+          fi
       - name: Check out repository
-        uses: actions/checkout@v3
+        if: steps.head.outputs.current == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Generate tag
+        if: steps.head.outputs.current == 'true'
         run: |
           echo "TAG=$(date '+%Y%m%d')" >> $GITHUB_ENV
       - name: Build and publish image
+        if: steps.head.outputs.current == 'true'
         id: docker
-        uses: philips-software/docker-ci-scripts@v5.0.0
+        uses: philips-software/docker-ci-scripts@69ca3b3e358f8746c67341d6ab551ef5ec25a36c # v5.0.0
         with:
           dockerfile: .
           image-name: "cloud-registry"
@@ -105,6 +175,7 @@ jobs:
           DOCKER_ORGANIZATION: ${{ secrets.DOCKERHUB_ORG }}
           GITHUB_ORGANIZATION: ${{ github.repository_owner }}
       - name: Verify that image was pushed
+        if: steps.head.outputs.current == 'true'
         run: |
           echo "Push indicator: ${{ steps.docker.outputs.push-indicator }}"
           echo "# Set to 'true' if image was pushed, empty string otherwise"
