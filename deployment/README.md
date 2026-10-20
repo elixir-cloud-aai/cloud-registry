@@ -25,3 +25,22 @@ helm upgrade cloud-registry . -n namespace
 `namespace` is the name of the namespace where the cluster was installed.
 `cloud-registry` is the name given when installing. In order to see the correct name, do a `helm ls
 -n namespace`.
+
+### Upgrading to a new app config
+
+The app config is generated once, at installation, by the `configmap-job-*`
+Job from the config in the image, and `helm upgrade` does not run the Job
+again. When a new image changes the config format, such as the upgrade to
+FOCA 0.14 and the removal of `meta_version`, an old config makes the app fail
+at startup. In that case, delete the Job before upgrading, so that it
+generates the config from the new image:
+
+```
+kubectl delete job configmap-job-<appName> -n namespace
+helm upgrade cloud-registry . -n namespace
+kubectl wait --for=condition=complete job/configmap-job-<appName> -n namespace
+kubectl rollout restart deployment/<appName> -n namespace
+```
+
+`<appName>` is `cloud_registry.appName` in `values.yaml`. The restart is
+needed because the app reads the config only at startup.
