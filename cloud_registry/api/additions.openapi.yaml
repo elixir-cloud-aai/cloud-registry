@@ -34,6 +34,12 @@ paths:
       responses:
         '201':
           description: The service info was successfully created.
+          headers:
+            Location:
+              description: URL of the service info endpoint.
+              schema:
+                type: string
+                format: uri
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -151,11 +157,42 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 components:
+  # Errors are returned as `application/problem+json` (RFC 7807). The entries
+  # below are merged into the error responses of the GA4GH specification
+  # (cf. `api.specs` in `config.yaml`), adding that media type
   responses:
     BadRequest:
       description: 'Bad request ([RFC 7235](https://tools.ietf.org/html/rfc7235))'
       content:
         application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalServerError:
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error:
+      content:
+        application/problem+json:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
@@ -236,6 +273,7 @@ components:
       description: 'GA4GH service'
       type: object
       required:
+        - id
         - name
         - type
         - organization

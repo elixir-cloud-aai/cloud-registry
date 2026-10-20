@@ -12,13 +12,15 @@ class ServiceConfig(FOCABaseConfig):
         url_prefix: Service protocol at which the application is exposed.
         external_host: Host at which the application is exposed.
         external_port: Port at which the application is exposed.
-        api_path: API Path at which service resources are exposed.
+        api_path: Path prefix in front of the API base path in public URLs,
+            e.g., when served behind a reverse proxy; empty for none.
 
     Attributes:
         url_prefix: Service protocol at which the application is exposed.
         external_host: Host at which the application is exposed.
         external_port: Port at which the application is exposed.
-        api_path: API Path at which service resources are exposed.
+        api_path: Path prefix in front of the API base path in public URLs,
+            e.g., when served behind a reverse proxy; empty for none.
 
     Raises:
         pydantic.ValidationError: The class was instantianted with an illegal

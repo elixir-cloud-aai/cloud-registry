@@ -7,12 +7,15 @@ import pytest
 
 from cloud_registry.exceptions import NotFound
 from cloud_registry.ga4gh.registry.service_info import (
+    CONFIG_HASH,
+    WRITTEN_AT,
     RegisterServiceInfo,
 )
 from tests.mock_data import (
     HEADERS_SERVICE_INFO,
     SERVICE_CONFIG,
     SERVICE_INFO_CONFIG,
+    SERVICE_INFO_PATH,
 )
 
 
@@ -60,7 +63,7 @@ class TestRegisterServiceInfo:
 
     def test_set_service_info_from_app_context(self, unit_app):
         """Test for setting service info from app context."""
-        with unit_app.app_context():
+        with unit_app.test_request_context(SERVICE_INFO_PATH, method="POST"):
             service_info = RegisterServiceInfo()
             service_info.set_service_info_from_app_context(
                 data=SERVICE_INFO_CONFIG,
@@ -90,11 +93,66 @@ class TestRegisterServiceInfo:
             assert register.get_service_info() != SERVICE_INFO_CONFIG
         assert service_info.count_documents({}) == 1
 
+    def test_legacy_documents(self, unit_app, service_info):
+        """Documents written before write times were tracked are served in
+        insertion order, and newly written service info takes precedence.
+        """
+        service_info.insert_one(deepcopy(SERVICE_INFO_CONFIG))
+        service_info.insert_one({**SERVICE_INFO_CONFIG, "id": "posted"})
+
+        with unit_app.app_context():
+            register = RegisterServiceInfo()
+            register.set_service_info_from_config()  # unchanged: not written
+            assert register.get_service_info()["id"] == "posted"
+
+            register.conf_info = {**register.conf_info, "name": "changed"}
+            register.set_service_info_from_config()
+            info = register.get_service_info()
+        assert (info["id"], info["name"]) == (SERVICE_INFO_CONFIG["id"], "changed")
+
+    def test_legacy_document_then_post(self, unit_app):
+        """Service info posted with the configured identifier after an upgrade
+        from a version without config hashes is kept on restart.
+        """
+        with unit_app.test_request_context(SERVICE_INFO_PATH, method="POST"):
+            register = RegisterServiceInfo()
+            register.collection.insert_one(deepcopy(SERVICE_INFO_CONFIG))
+            register.set_service_info_from_config()
+            register.set_service_info_from_app_context(
+                data={**SERVICE_INFO_CONFIG, "name": "Posted"}
+            )
+            register.set_service_info_from_config()
+            assert register.get_service_info()["name"] == "Posted"
+
+    def test_internal_fields(self, unit_app):
+        """Internal fields are stored but not returned."""
+        with unit_app.app_context():
+            register = RegisterServiceInfo()
+            register.set_service_info_from_config()
+            stored = register.collection.find_one({"id": SERVICE_INFO_CONFIG["id"]})
+            assert {WRITTEN_AT, CONFIG_HASH} <= stored.keys()
+            for info in (
+                register.get_service_info(),
+                register._get_stored_service_info(id=SERVICE_INFO_CONFIG["id"]),
+            ):
+                assert not {"_id", WRITTEN_AT, CONFIG_HASH} & info.keys()
+
     def test__get_headers(self, unit_app):
         """Test for response headers getter."""
-        with unit_app.app_context():
+        with unit_app.test_request_context(SERVICE_INFO_PATH, method="POST"):
             headers = RegisterServiceInfo()._get_headers()
             assert headers == HEADERS_SERVICE_INFO
+
+    def test__get_headers_script_root(self, unit_app):
+        """`Location` includes the path the app is mounted at."""
+        with unit_app.test_request_context(
+            SERVICE_INFO_PATH, method="POST", base_url="http://localhost/prefix"
+        ):
+            headers = RegisterServiceInfo()._get_headers()
+        assert headers == {
+            "Location": "http://1.2.3.4:80/registry/prefix/ga4gh/registry/v1/"
+            "service-info"
+        }
 
 
 class TestServiceInfoTimestamps:
@@ -188,7 +246,7 @@ class TestServiceInfoTimestamps:
         del data["createdAt"]
         del data["updatedAt"]
         self.now = "2026-02-01T00:00:00Z"
-        with app.app_context():
+        with app.test_request_context(SERVICE_INFO_PATH, method="POST"):
             register = RegisterServiceInfo()
             register.set_service_info_from_app_context(data=data)
             info = register.get_service_info()
@@ -201,7 +259,7 @@ class TestServiceInfoTimestamps:
         data = {**SERVICE_INFO_CONFIG, "id": "other"}
         del data["createdAt"]
         del data["updatedAt"]
-        with app.app_context():
+        with app.test_request_context(SERVICE_INFO_PATH, method="POST"):
             register = RegisterServiceInfo()
             register.set_service_info_from_app_context(data=data)
             info = register.get_service_info()
