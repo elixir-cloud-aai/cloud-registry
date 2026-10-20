@@ -2,9 +2,9 @@ apiVersion: v2
 name: cloud-registry
 description: A Helm chart for Kubernetes
 type: application
-version: 3.0.0
-# Placeholders: releases set `version` and `appVersion` to the release
-# version (`vX.Y.Z` tag, see "Versioning and releases" in README.md).
+# Placeholders: releases set `version` and `appVersion` from the tag
+# (`vX.Y.Z`, see "Versioning and releases" in README.md).
+version: 0.0.0
 # `appVersion` is the default image tag, so the chart in the repository
 # deploys the `dev` image unless `cloud_registry.tag` is set
 appVersion: "dev"

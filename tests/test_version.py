@@ -2,32 +2,59 @@
 
 from importlib.metadata import version
 from pathlib import Path
-import re
+import shutil
+import subprocess
 import sys
+
+from packaging.version import Version
+import pytest
+import setuptools_scm
 
 if sys.version_info >= (3, 11):
     import tomllib
-else:  # pytest depends on tomli on Python 3.10
+else:
     import tomli as tomllib
 
-PYPROJECT = Path(__file__).parents[1] / "pyproject.toml"
-# Canonical PEP 440 version (PEP 440, appendix B), with an optional local
-# version label (e.g., `+g<commit>` for untagged commits)
-PEP_440 = re.compile(
-    r"([1-9][0-9]*!)?(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*))*"
-    r"((a|b|rc)(0|[1-9][0-9]*))?(\.post(0|[1-9][0-9]*))?(\.dev(0|[1-9][0-9]*))?"
-    r"(\+[a-z0-9]+(\.[a-z0-9]+)*)?"
-)
+ROOT = Path(__file__).parents[1]
+GIT = shutil.which("git")
 
 
 def test_installed_version():
     """The installed package has a valid PEP 440 version."""
-    assert PEP_440.fullmatch(version("cloud-registry"))
+    installed = version("cloud-registry")
+    assert str(Version(installed)) == installed
 
 
 def test_fallback_version():
-    """Builds without Git metadata get a valid development version."""
-    config = tomllib.loads(PYPROJECT.read_text())
-    fallback = config["tool"]["setuptools_scm"]["fallback_version"]
-    assert PEP_440.fullmatch(fallback)
-    assert ".dev" in fallback
+    """Builds without Git metadata get a development version."""
+    config = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    fallback = Version(config["tool"]["setuptools_scm"]["fallback_version"])
+    assert fallback.is_devrelease
+
+
+def test_pretend_version(monkeypatch, tmp_path):
+    """The version passed to Docker builds is used without Git metadata."""
+    monkeypatch.setenv("SETUPTOOLS_SCM_PRETEND_VERSION", "1.2.3rc1")
+    assert setuptools_scm.get_version(root=str(tmp_path)) == "1.2.3rc1"
+
+
+@pytest.mark.skipif(GIT is None, reason="git not installed")
+def test_version_from_tag(monkeypatch, tmp_path):
+    """The version of a tagged commit is the tag without the `v`."""
+    assert GIT is not None
+    for name in ("SETUPTOOLS_SCM_PRETEND_VERSION", "GIT_DIR", "GIT_WORK_TREE"):
+        monkeypatch.delenv(name, raising=False)
+
+    def git(*args: str) -> None:
+        subprocess.run(  # noqa: S603
+            [GIT, "-C", str(tmp_path), "-c", "user.name=test"]
+            + ["-c", "user.email=test@example.org", "-c", "commit.gpgsign=false"]
+            + ["-c", "tag.gpgsign=false", *args],
+            capture_output=True,
+            check=True,
+        )
+
+    git("init", "-q")
+    git("commit", "-q", "--allow-empty", "-m", "release")
+    git("tag", "-a", "v1.2.3", "-m", "v1.2.3")
+    assert setuptools_scm.get_version(root=str(tmp_path)) == "1.2.3"

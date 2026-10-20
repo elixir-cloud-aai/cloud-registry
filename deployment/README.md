@@ -16,8 +16,9 @@ merges into the base config on startup (via `FOCA_CONFIG_OVERLAY`):
   and the `mongodb` host.
 
 The overlay requires an image built with FOCA 0.14 or later (e.g.,
-`elixircloud/cloud-registry:20261020` or later, `0.3.0` or later, or any
-`dev` or `sha-<commit>` image); older images ignore it.
+`elixircloud/cloud-registry:20261020` or later, any `dev` or `sha-<commit>`
+image, or any release from the first one tagged from Git on; see the release
+notes); older images ignore it.
 
 Each deployment must set the audience (`config.security.auth.audience`, the
 app refuses to start without it) and map an admin group to the role `admin`

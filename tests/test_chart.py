@@ -78,9 +78,16 @@ def test_image_defaults_to_app_version():
     assert _app_image() == f"elixircloud/cloud-registry:{APP_VERSION}"
 
 
-# Chart versions are SemVer, app versions PEP 440 (cf. the release workflow)
+# Chart versions are SemVer, app versions PEP 440; the pairs mirror the
+# mapping in the release workflow, which is not tested itself
 @pytest.mark.parametrize(
-    ("chart_version", "app_version"), [("0.3.0", "0.3.0"), ("0.3.0-rc1", "0.3.0rc1")]
+    ("chart_version", "app_version"),
+    [
+        ("0.3.0", "0.3.0"),
+        ("0.3.0-a1", "0.3.0a1"),
+        ("0.3.0-b2", "0.3.0b2"),
+        ("0.3.0-rc1", "0.3.0rc1"),
+    ],
 )
 def test_image_of_packaged_chart(tmp_path, chart_version, app_version):
     """Released charts deploy the image of their version, as set by the

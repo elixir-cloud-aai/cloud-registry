@@ -17,8 +17,8 @@ permissions:
   contents: read
 
 # One run per tag, so that a run waiting for approval is not cancelled by
-# the run of another tag; `latest` is determined from the tags on `main` when
-# publishing, so concurrent releases agree on it
+# the run of another tag; `latest` is decided at the end of each run, from
+# freshly fetched tags on `main`
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
@@ -47,19 +47,26 @@ jobs:
         # what actually control publishing
         env:
           TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
         run: |
-          if [[ ! "${TAG}" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)((a|b|rc)[0-9]+)?$ ]]; then
+          # Canonical versions only (no leading zeros), as setuptools-scm
+          # would normalize them
+          if [[ ! "${TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)((a|b|rc)(0|[1-9][0-9]*))?$ ]]; then
               echo "::error::Tag '${TAG}' is not a release version (e.g., v1.2.3 or v1.2.3rc1)"
               exit 1
           fi
-          base="${BASH_REMATCH[1]}"
-          pre="${BASH_REMATCH[2]}"
-          # Signatures are not verified here (that needs the signer's key),
-          # only that the tag is annotated and signed
-          if [[ "$(git cat-file -t "refs/tags/${TAG}")" != "tag" ]] \
-              || ! git cat-file -p "refs/tags/${TAG}" \
-                  | grep -qE '^-----BEGIN (PGP|SSH) SIGNATURE-----$'; then
-              echo "::error::Tag '${TAG}' is not signed (git tag -s)"
+          base="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+          pre="${BASH_REMATCH[4]}"
+          # Annotated, with a signature that GitHub verified
+          if [[ "$(git cat-file -t "refs/tags/${TAG}")" != "tag" ]]; then
+              echo "::error::Tag '${TAG}' is not annotated (git tag -s)"
+              exit 1
+          fi
+          verified="$(gh api "repos/${REPOSITORY}/git/tags/$(git rev-parse "refs/tags/${TAG}")" \
+              --jq .verification.verified)"
+          if [[ "${verified}" != "true" ]]; then
+              echo "::error::Tag '${TAG}' has no signature verified by GitHub (git tag -s)"
               exit 1
           fi
           if ! git merge-base --is-ancestor HEAD origin/main; then
@@ -105,6 +112,8 @@ jobs:
       url: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}
     permissions:
       contents: write # create the GitHub release
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
     steps:
       # The commit checked by `prepare`; release tags cannot be moved (tag
       # ruleset)
@@ -115,72 +124,78 @@ jobs:
           ref: ${{ needs.prepare.outputs.sha }}
           # All tags and `main`, to determine the highest release
           fetch-depth: 0
-      # Determined after approval rather than in `prepare`, so that a re-run
-      # of an older release does not move `latest` back
-      - name: Check whether this is the highest release
-        id: latest
-        env:
-          TAG: ${{ github.ref_name }}
-          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
-        run: |
-          # Stable releases on `main` only, so that stray tags are ignored
-          highest="$(git tag -l 'v*' --merged origin/main --sort=-v:refname \
-              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
-          if [[ "${PRERELEASE}" == "false" && "${highest}" == "${TAG}" ]]; then
-              echo "latest=true" >> "${GITHUB_OUTPUT}"
-          else
-              echo "latest=false" >> "${GITHUB_OUTPUT}"
-          fi
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - name: Log in to Docker Hub
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          username: ${{ secrets.DOCKERHUB_LOGIN }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      # Tags `X.Y.Z`, plus `latest` for the highest release; OCI labels with
-      # the version, commit and source
+      # Tag `X.Y.Z`; OCI labels with the version, commit and source
       - name: Generate image tags and labels
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ secrets.DOCKERHUB_ORG }}/cloud-registry
           flavor: latest=false
-          tags: |
-            type=raw,value=${{ needs.prepare.outputs.version }}
-            type=raw,value=latest,enable=${{ steps.latest.outputs.latest }}
-      # Built once and loaded, to check the app version before pushing; the
-      # push reuses the build cache
+          tags: type=raw,value=${{ needs.prepare.outputs.version }}
+      # Built once and loaded; the checked image is the one that is pushed
       - name: Build image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           load: true
-          tags: cloud-registry:release-check
+          # Single image, as pushed with `docker push` (no attestations)
+          provenance: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           build-args: SETUPTOOLS_SCM_PRETEND_VERSION=${{ needs.prepare.outputs.version }}
       - name: Check app version of image
         env:
-          VERSION: ${{ needs.prepare.outputs.version }}
+          IMAGE: ${{ steps.meta.outputs.tags }}
         run: |
-          actual="$(docker run --rm --entrypoint python cloud-registry:release-check \
+          actual="$(docker run --rm --entrypoint python "${IMAGE}" \
               -c "from importlib.metadata import version; print(version('cloud-registry'))")"
           if [[ "${actual}" != "${VERSION}" ]]; then
               echo "::error::Image reports version '${actual}', expected '${VERSION}'"
               exit 1
           fi
-      - name: Push image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      - name: Log in to Docker Hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: SETUPTOOLS_SCM_PRETEND_VERSION=${{ needs.prepare.outputs.version }}
+          username: ${{ secrets.DOCKERHUB_LOGIN }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Push image
+        env:
+          IMAGE: ${{ steps.meta.outputs.tags }}
+        run: docker push "${IMAGE}"
       - name: Download chart
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: chart
           path: dist/
+      # Decided last, from freshly fetched tags (the repository is public, so
+      # no credentials are needed), so that neither a re-run of an older
+      # release nor a concurrent release moves `latest` back
+      - name: Check whether this is the highest release
+        id: latest
+        env:
+          TAG: ${{ github.ref_name }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          git fetch --quiet --force --tags origin \
+              "+refs/heads/main:refs/remotes/origin/main"
+          # Stable releases on `main` only, so that stray tags are ignored
+          highest="$(git tag -l 'v*' --merged origin/main --sort=-v:refname \
+              | grep -E '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' \
+              | head -n 1 || true)"
+          if [[ "${PRERELEASE}" == "false" && "${highest}" == "${TAG}" ]]; then
+              echo "latest=true" >> "${GITHUB_OUTPUT}"
+          else
+              echo "latest=false" >> "${GITHUB_OUTPUT}"
+          fi
+      - name: Push image as latest
+        if: steps.latest.outputs.latest == 'true'
+        env:
+          IMAGE: ${{ steps.meta.outputs.tags }}
+        run: |
+          docker tag "${IMAGE}" "${IMAGE%:*}:latest"
+          docker push "${IMAGE%:*}:latest"
       - name: Create release with generated notes
         env:
           GH_TOKEN: ${{ github.token }}
@@ -192,6 +207,7 @@ jobs:
           # On reruns, complete an existing release instead of failing
           if gh release view "${TAG}" > /dev/null 2>&1; then
               gh release upload "${TAG}" dist/* --clobber
+              gh release edit "${TAG}" --latest="${LATEST}"
               exit 0
           fi
           gh release create "${TAG}" dist/* \

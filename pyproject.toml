@@ -1,4 +1,6 @@
 [build-system]
+# setuptools-scm is pinned separately in `requirements_dev.txt` for CI, which
+# computes the version of dev images with it
 requires = ["setuptools>=77", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 

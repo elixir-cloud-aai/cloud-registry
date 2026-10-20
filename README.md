@@ -322,24 +322,27 @@ git tag -s vX.Y.Z <sha> -m "vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-The tag must be annotated and signed (`git tag -s`); the [release
-workflow][release-workflow], triggered by the tag, checks that it carries a
-signature (but does not verify it) and that its commit is on `main`. It
-packages the Helm chart with the release version as `version` and
-`appVersion` (the default image tag). After approval in the `release`
-environment, it builds the image, checks that the app reports the release
-version, pushes the image tagged `X.Y.Z` (and `latest`, if it is the highest
-release on `main`), and creates a GitHub release with generated notes and the
-chart (`.tgz`). No packages are published to PyPI. Tags of pre-releases
-(e.g., `vX.Y.Zrc1`, also `aN` and `bN`) create GitHub pre-releases, with
-chart version `X.Y.Z-rc1`, and never update `latest`. Images of commits on
-`dev` are published by the [CI workflow][checks-workflow] (environment
+The tag must be annotated and signed (`git tag -s`), with a key that GitHub
+can verify (added to the tagger's GitHub account). The [release
+workflow][release-workflow], triggered by the tag, checks that GitHub
+verified the signature and that the tag's commit is on `main`. It packages
+the Helm chart with the release version as `version` and `appVersion` (the
+default image tag). After approval in the `release` environment, it builds
+the image, checks that the app reports the release version, pushes exactly
+that image tagged `X.Y.Z` (and `latest`, if it is the highest release on
+`main`), and creates a GitHub release with generated notes and the chart
+(`.tgz`). No packages are published to PyPI. Tags of pre-releases (e.g.,
+`vX.Y.Zrc1`, also `aN` and `bN`) create GitHub pre-releases, with chart
+version `X.Y.Z-rc1`, and never update `latest`. Images of commits on `dev`
+are published by the [CI workflow][checks-workflow] (environment
 `dev-images`).
 
-Maintainers: the Docker Hub secrets (`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`,
-`DOCKERHUB_ORG`) must exist only in the `release` and `dev-images`
-environments, not as repository secrets, and a tag ruleset restricts who may
-create `v*` tags and prevents moving or deleting them.
+Maintainers: the workflows rely on these repository settings: environment
+`dev-images` limited to branch `dev`; environment `release` with a required
+reviewer; a tag ruleset for `v*` that restricts who may create them and
+prevents moving or deleting them; `main` protected against non-fast-forward
+pushes; and the Docker Hub secrets (`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`,
+`DOCKERHUB_ORG`) only in the two environments, not as repository secrets.
 
 ## License
 
