@@ -193,6 +193,19 @@ def _owners(resource: str) -> list[str]:
     return [user for user, role in list_resource_roles(resource) if role == "owner"]
 
 
+def _is_owner(resource: str, userId: str) -> bool:
+    """Check whether a user is an owner of a service.
+
+    Args:
+        resource: Resource path of the service.
+        userId: User identifier.
+
+    Returns:
+        Whether the user is an owner.
+    """
+    return userId in _owners(resource)
+
+
 def _check_other_owners(resource: str, userId: str) -> None:
     """Check that a service has owners other than a user.
 
@@ -209,7 +222,7 @@ def _check_other_owners(resource: str, userId: str) -> None:
         raise Conflict
 
 
-def _restore_owner_if_none(resource: str, userId: str) -> None:
+def _restore_owner_if_none(serviceId: str, resource: str, userId: str) -> None:
     """Make a former owner owner again if a service has no owners left.
 
     Checking for other owners before changing roles is not atomic:
@@ -218,13 +231,19 @@ def _restore_owner_if_none(resource: str, userId: str) -> None:
     no owner is left, restores the owner role it removed.
 
     Args:
+        serviceId: Service identifier.
         resource: Resource path of the service.
         userId: Identifier of the user whose owner role was removed.
 
     Raises:
         cloud_registry.exceptions.Conflict: The service had no owners left.
+        cloud_registry.exceptions.NotFound: The service was deleted
+            meanwhile.
     """
     if not _owners(resource):
+        # A concurrent deletion of the service removed all roles
+        if not service_exists(serviceId):
+            raise NotFound
         add_resource_role(subject=userId, role="owner", resource=resource)
         logger.info("Restored owner '%s' of '%s'", userId, resource)
         raise Conflict
@@ -249,7 +268,7 @@ def putServicePermission(serviceId: str, userId: str, **kwargs) -> dict:
     if not service_exists(serviceId):
         raise NotFound
     resource = service_path(serviceId)
-    was_owner = (userId, "owner") in list_resource_roles(resource)
+    was_owner = _is_owner(resource, userId)
     if role != "owner":
         _check_other_owners(resource, userId)
     try:
@@ -264,7 +283,7 @@ def putServicePermission(serviceId: str, userId: str, **kwargs) -> dict:
             remove_resource_role(subject=userId, role=other_role, resource=resource)
     if was_owner and role != "owner":
         try:
-            _restore_owner_if_none(resource, userId)
+            _restore_owner_if_none(serviceId, resource, userId)
         except Conflict:
             remove_resource_role(subject=userId, role=role, resource=resource)
             raise
@@ -290,7 +309,7 @@ def deleteServicePermission(serviceId: str, userId: str, **kwargs) -> str:
         raise NotFound
     resource = service_path(serviceId)
     _check_other_owners(resource, userId)
-    was_owner = (userId, "owner") in list_resource_roles(resource)
+    was_owner = _is_owner(resource, userId)
     revoked = False
     for role in ROLES:
         try:
@@ -304,7 +323,7 @@ def deleteServicePermission(serviceId: str, userId: str, **kwargs) -> str:
     if not revoked:
         raise NotFound
     if was_owner:
-        _restore_owner_if_none(resource, userId)
+        _restore_owner_if_none(serviceId, resource, userId)
     get_collection(USER_NAMES).delete_many({"service_id": serviceId, "user_id": userId})
     return userId
 

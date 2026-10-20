@@ -126,7 +126,8 @@ token issued by [LS Login][ls-login]:
   On startup, the app logs the groups mapped to `admin`.
 
 `GET /me` returns the current user's identifier (to give to owners), whether
-they are an admin, and their roles on services. Owners are not shown in the
+they are an admin, and their roles on services; it also stores their name for
+these services. Owners are not shown in the
 public service responses.
 
 Access control is implemented with [FOCA][foca-access-control]; see the

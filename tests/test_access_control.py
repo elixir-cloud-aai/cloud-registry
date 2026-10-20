@@ -306,7 +306,9 @@ def test_last_owner_restored(client, monkeypatch, change):
     restored.
     """
     service_id = register(client)
-    # as if another request removed the other owner after the check passed
+    # skip the check before the change, so that only the check afterwards can
+    # keep the service from losing its last owner (as when concurrent
+    # requests removed the other owners after the first check)
     monkeypatch.setattr(permissions_module, "_check_other_owners", lambda *args: None)
     if change == "revoke":
         assert revoke(client, service_id, ALICE) == 409
