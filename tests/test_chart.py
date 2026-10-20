@@ -10,15 +10,16 @@ from tests.helm import CHART, HELM, MONGODB_SECRET, render
 from tests.test_config import CONFIG_FILE
 
 NO_AUTH = ("--set", "mongodb.auth.enabled=false")
+PROBES = ("startupProbe", "readinessProbe", "livenessProbe")
 
 pytestmark = pytest.mark.skipif(HELM is None, reason="helm not installed")
 
 
-def _render(*args: str) -> dict:
+def _render(*args: str, **kwargs) -> dict:
     """Render the chart and index the documents by kind and name."""
     return {
         (doc["kind"], doc["metadata"]["name"]): doc
-        for doc in render("--set", "host_name=x", *args)
+        for doc in render("--set", "host_name=x", *args, **kwargs)
     }
 
 
@@ -54,9 +55,6 @@ def test_mongodb_pinned_and_recreated():
     assert docs[("Deployment", "mongodb")]["spec"]["strategy"] == {"type": "Recreate"}
 
 
-PROBES = ("startupProbe", "readinessProbe", "livenessProbe")
-
-
 def test_probes():
     """App and MongoDB have probes on their ports."""
     docs = _render()
@@ -68,12 +66,40 @@ def test_probes():
         assert mongodb[probe]["tcpSocket"] == {"port": 27017}
 
 
+def _startup_window(container: dict) -> int:
+    """Get the seconds a container may take to start before it is restarted."""
+    probe = container["startupProbe"]
+    return probe.get("initialDelaySeconds", 0) + (
+        probe["periodSeconds"] * probe["failureThreshold"]
+    )
+
+
+def test_startup_windows():
+    """The app may take 5 minutes to start, MongoDB 30 (e.g., for recovery);
+    liveness checks only start afterwards.
+    """
+    docs = _render()
+    app = _container(docs, "cloud-registry")
+    mongodb = _container(docs, "mongodb")
+    assert _startup_window(app) == 5 * 60
+    assert _startup_window(mongodb) == 30 * 60
+    for container in (app, mongodb):
+        assert "initialDelaySeconds" not in container["livenessProbe"]
+
+
 def test_probe_path():
     """The path of the app's probes can be changed."""
     docs = _render("--set", "cloud_registry.probePath=/health")
     app = _container(docs, "cloud-registry")
     for probe in PROBES:
         assert app[probe]["httpGet"]["path"] == "/health"
+
+
+@pytest.mark.parametrize("path", ["health", "null"])
+def test_probe_path_invalid(path):
+    """Probe paths must be set and absolute."""
+    with pytest.raises(subprocess.CalledProcessError):
+        _render("--set", f"cloud_registry.probePath={path}")
 
 
 def _init_script_volumes(docs: dict) -> tuple[list, list]:
@@ -89,18 +115,20 @@ def _init_script_volumes(docs: dict) -> tuple[list, list]:
 
 
 def test_auth_disabled():
-    """Without authentication, no credentials or init script are used."""
-    docs = _render(*NO_AUTH)
-    assert not _secret_refs(_container(docs, "cloud-registry"))
-    assert not _secret_refs(_container(docs, "mongodb"))
+    """Without authentication, no Secret, credentials or init script are
+    needed.
+    """
+    docs = _render(*NO_AUTH, mongodb_secret=None)
+    for name in ("cloud-registry", "mongodb"):
+        assert not _secret_refs(_container(docs, name))
+    assert _literal_env(_container(docs, "cloud-registry")) == {"FOCA_CONFIG_OVERLAY"}
+    assert _literal_env(_container(docs, "mongodb")) == set()
     assert ("ConfigMap", "mongo-init-script") not in docs
     assert _init_script_volumes(docs) == ([], [])
 
 
 def test_auth_enabled():
-    """Authentication is enabled by default, with credentials from the
-    existing Secret only.
-    """
+    """Authentication is on by default, with credentials from the Secret only."""
     docs = _render()
     app = _container(docs, "cloud-registry")
     assert _secret_refs(app) == {
@@ -129,8 +157,9 @@ def test_auth_enabled():
     assert not [kind for kind, _ in docs if kind == "Secret"]
 
 
-def test_auth_requires_secret():
-    """Authentication without a Secret fails."""
+@pytest.mark.parametrize("args", [(), ("--set", "mongodb.auth.existingSecret=")])
+def test_auth_requires_secret(args):
+    """Authentication (the default) without a Secret fails."""
     with pytest.raises(subprocess.CalledProcessError) as exc:
-        _render("--set", "mongodb.auth.existingSecret=")
+        _render(*args, mongodb_secret=None)
     assert "mongodb.auth.existingSecret must be set" in exc.value.stderr

@@ -57,9 +57,10 @@ mongodb:
   # Pinned to a minor version; patch versions are updated on restarts
   image: docker.io/library/mongo:7.0
   auth:
-    # Require credentials (set `existingSecret`); only applied when MongoDB
-    # starts with an empty data directory (see the deployment docs for
-    # existing databases). Without authentication, any pod that can reach the
+    # Require credentials (set `existingSecret`); enforced on every start,
+    # but users are only created when MongoDB starts with an empty data
+    # directory, so create them first for existing databases (see the
+    # deployment docs). Without authentication, any pod that can reach the
     # MongoDB service can read and modify the data, so disable it explicitly
     # only if that is acceptable
     enabled: true

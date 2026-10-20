@@ -73,8 +73,8 @@ cannot read the data of newer versions. **Before upgrading from chart version
 2, check the running MongoDB version (see [Version](#version)) and set
 `mongodb.image` to its major and minor version (e.g.,
 `docker.io/library/mongo:9.0`).** Chart version 3 also enables MongoDB
-authentication by default: for an existing database, create the users first
-(see [Authentication](#authentication)), or set `mongodb.auth.enabled: false`.
+authentication by default: see [Authentication](#authentication) for existing
+databases.
 
 ## Probes
 
