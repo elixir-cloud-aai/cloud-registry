@@ -9,24 +9,22 @@ build:
   os: ubuntu-22.04
   tools:
     python: "3.10"
-    # You can also specify other tool versions:
-    # nodejs: "20"
-    # rust: "1.70"
-    # golang: "1.20"
+  jobs:
+    # The version is derived from Git tags (setuptools-scm), which shallow
+    # clones may lack
+    post_checkout:
+      - git fetch --unshallow --tags || true
 
 # Build documentation in the "docs/" directory with Sphinx
 sphinx:
   configuration: docs/api/conf.py
-  # You can configure Sphinx to use a different builder, for instance use the dirhtml builder for simpler URLs
-  # builder: "dirhtml"
-  # Fail on all warnings to avoid broken references
-  # fail_on_warning: true
+  # Fail on all warnings, e.g., modules that autodoc cannot import
+  fail_on_warning: true
 
-# Optionally build your docs in additional formats such as PDF and ePub
-# formats:
-#    - pdf
-#    - epub
-
+# Install the package with its dependencies, so that autodoc can import the
+# modules, and the docs requirements
 python:
-   install:
-   - requirements: docs/api/requirements.txt
+  install:
+    - method: pip
+      path: .
+    - requirements: docs/api/requirements.txt

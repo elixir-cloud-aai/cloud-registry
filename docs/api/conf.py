@@ -16,12 +16,16 @@ import sys
 from setuptools_scm import get_version
 from sphinx.ext import apidoc
 
-root_dir = Path.cwd().resolve().parents[1]
+docs_dir = Path(__file__).resolve().parent
+root_dir = docs_dir.parents[1]
 
-sys.path.insert(0, root_dir)
+# Document the checked-out sources; their dependencies must be installed
+# (Read the Docs installs the package, cf. `.readthedocs.yaml`), otherwise
+# autodoc cannot import the modules and the module pages stay empty
+sys.path.insert(0, str(root_dir))
 
 # The version comes from Git tags (cf. `[tool.setuptools_scm]` in
-# `pyproject.toml`); the package itself is not installed for the docs
+# `pyproject.toml`)
 __version__ = get_version(root=str(root_dir), fallback_version="0.0.0.dev0")
 
 
@@ -45,13 +49,17 @@ extensions = [
     "sphinx.ext.napoleon",
 ]
 
+# Render `Attributes` sections of docstrings as fields of their class, as
+# autodoc documents the attributes of models already (otherwise duplicates)
+napoleon_use_ivar = True
+
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = ["_build", "api/yourpackage.rst"]
+exclude_patterns = ["_build"]
 
 # Default doc to search for
 master_doc = "index"
@@ -72,16 +80,17 @@ html_static_path = []
 # -- Automation -------------------------------------------------------------
 
 
-# Auto-generate API doc
+# Auto-generate API doc (sources in `modules/`, ignored by Git)
 def run_apidoc(_):
-    ignore_paths = []
     argv = [
         "--force",
         "--module-first",
+        # `cloud_registry.service_models` has no `__init__.py`
+        "--implicit-namespaces",
         "-o",
-        "./modules",
-        "../../cloud_registry",
-    ] + ignore_paths
+        str(docs_dir / "modules"),
+        str(root_dir / "cloud_registry"),
+    ]
     apidoc.main(argv)
 
 
