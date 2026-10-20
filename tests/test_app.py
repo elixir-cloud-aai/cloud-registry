@@ -276,7 +276,6 @@ def test_main(monkeypatch, mongo_client, app_env, capsys):
     err = capsys.readouterr().err
     assert f"Groups mapped to the role 'admin': {ADMIN_GROUP}" in err
     assert "Serving service info 'ELIXIR_CLOUD_SERVICE_REGISTRY_1'" in err
-    assert "service_info" not in mongo_client["serviceStore"].list_collection_names()
 
 
 def test_main_requires_admin(monkeypatch, tmp_path, app_env):

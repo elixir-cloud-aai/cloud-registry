@@ -76,7 +76,8 @@ services:
 (`custom.endpoints.service_info`), without the database. On startup, the app
 checks it against the GA4GH `Service` schema and refuses to start if it is
 invalid, naming the invalid field. `version` defaults to the version of the
-installed app; `createdAt` and `updatedAt` are served only if set. To change
+installed app; `createdAt` and `updatedAt` are served only if set. Fields set
+to `null` (e.g., in a config overlay) are not served. To change
 the service info, change the config and restart the app (the Helm chart
 restarts it when the `config` value changes).
 
@@ -85,10 +86,10 @@ in the database. That endpoint is gone, and stored service info is no longer
 served (the `service_info` collection can be dropped): put it in the config
 when upgrading.
 
-Public URLs, e.g., in `Location` headers, are built from `custom.endpoints.service` in `config.yaml`. Set
-`api_path` to the path prefix in front of the API base path when the app is
-served behind a reverse proxy under a subpath (e.g., `registry`), or leave it
-empty. Previously, `api_path` held the API base path itself (e.g.,
+Public URLs, e.g., in `Location` headers, are built from
+`custom.endpoints.service` in `config.yaml`. Set `api_path` to the path prefix
+in front of the API base path when the app is served behind a reverse proxy
+under a subpath (e.g., `registry`), or leave it empty. Previously, `api_path` held the API base path itself (e.g.,
 `ga4gh/registry/v1`); remove that value when upgrading.
 
 ### Access control

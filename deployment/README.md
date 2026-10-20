@@ -41,7 +41,8 @@ config:
 
 The service info served at `/service-info` is set via
 `config.custom.endpoints.service_info` (mappings are merged, so set only the
-fields to change, e.g., `environment: prod`). Pods are restarted when the
+fields to change, e.g., `environment: prod`, and set optional fields of the
+default to `null` to remove them, e.g., `contactUrl: null`). Pods are restarted when the
 ConfigMap changes, and the app refuses to start if the service info is
 invalid.
 

@@ -28,6 +28,11 @@ def _configure(unit_app, **fields) -> dict:
     return config
 
 
+def _set_null(unit_app, **fields) -> None:
+    """Set fields of the configured service info to `None`, as overlays do."""
+    unit_app.config.foca.custom.endpoints.service_info.update(fields)
+
+
 def _not_installed(name):
     raise PackageNotFoundError(name)
 
@@ -61,6 +66,24 @@ def test_get_service_info_copy(unit_app):
     with unit_app.app_context():
         get_service_info()["organization"]["name"] = "changed"
         assert get_service_info() == SERVICE_INFO_CONFIG
+
+
+def test_get_service_info_nulls(unit_app):
+    """Fields set to `null` are removed, also in nested mappings."""
+    organization = {**SERVICE_INFO_CONFIG["organization"], "x-logo": None}
+    _set_null(unit_app, contactUrl=None, organization=organization)
+    with unit_app.app_context():
+        info = get_service_info()
+        check_service_info()
+    expected = {k: v for k, v in SERVICE_INFO_CONFIG.items() if k != "contactUrl"}
+    assert info == expected
+
+
+def test_null_runtime_field(unit_app):
+    """A required field set to `null` is missing, even if set at runtime."""
+    _set_null(unit_app, version=None)
+    with unit_app.app_context(), pytest.raises(InvalidServiceInfo, match="'version'"):
+        check_service_info(runtime_fields=lambda: {"version": "1.2.3"})
 
 
 def test_check_service_info(unit_app, caplog):
@@ -110,6 +133,8 @@ def test_check_service_info_missing(unit_app, field):
         ({"createdAt": "yesterday"}, "createdAt"),
         ({"updatedAt": "2020-11-08"}, "updatedAt"),
         ({"updatedAt": "2020-11-08T00:00:00"}, "updatedAt"),
+        ({"updatedAt": "2020-13-45T25:99:99Z"}, "updatedAt"),
+        ({"updatedAt": "2021-02-29T00:00:00Z"}, "updatedAt"),
         ({"type": {"group": "org.ga4gh", "artifact": "x"}}, "type"),
         ({"name": 1}, "name"),
     ],
@@ -132,6 +157,7 @@ def test_check_service_info_invalid(unit_app, fields, path):
         {"contactUrl": "mailto:support@example.com"},
         {"createdAt": "2020-11-08T10:20:30.123+01:00"},
         {"updatedAt": "2020-11-08t10:20:30z"},
+        {"updatedAt": "2020-02-29 10:20:30.1234567-05:30"},
         {"x-custom": {"any": "value"}},
     ],
 )

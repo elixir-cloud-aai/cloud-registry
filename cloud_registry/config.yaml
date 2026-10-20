@@ -42,8 +42,7 @@ security:
     # services and becomes their owner; owners may update and delete their
     # services and grant other users the roles `owner` or `maintainer`
     # (update only) on them; admins may do everything. Roles on services are
-    # managed by the app (see
-    # `cloud_registry/ga4gh/registry/permissions.py`).
+    # managed by the app (see `cloud_registry/ga4gh/registry/permissions.py`).
     # Cf. https://foca.readthedocs.io/en/latest/access-control/
     access_control:
         enabled: True
