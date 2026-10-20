@@ -4,7 +4,8 @@ severity: error
 message: HTTP status code returned as a string
 note: |
   Return status codes as integers, e.g. `return body, 201`; Connexion does
-  not convert strings. Only status codes in returned tuples are detected.
+  not convert strings. Only string literals in returned tuples are
+  detected, not variables holding strings.
 rule:
   any:
     - pattern: return $BODY, $CODE

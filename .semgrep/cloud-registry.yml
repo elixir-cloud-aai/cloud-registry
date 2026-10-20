@@ -11,7 +11,7 @@ rules:
       include:
         - "/cloud_registry/config.yaml"
         - "/deployment/**/*.yaml"
-    pattern-regex: (?im)^\s*debug:\s*['"]?(true|yes|on)['"]?\s*$
+    pattern-regex: (?im)^\s*debug:\s*['"]?(true|yes|on)['"]?\s*(#.*)?$
   - id: jwt-decode-without-verification
     languages: [python]
     severity: ERROR
