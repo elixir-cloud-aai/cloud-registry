@@ -1,6 +1,8 @@
 """Cloud Registry custom config models."""
 
 from foca.models.config import FOCABaseConfig
+from foca.utils.misc import generate_id
+from pydantic import field_validator
 
 
 class ServiceConfig(FOCABaseConfig):
@@ -210,7 +212,8 @@ class IdConfig(FOCABaseConfig):
 
     Raises:
         pydantic.ValidationError: The class was instantianted with an illegal
-            data type.
+            data type, or `charset` is empty or an expression (such as
+            `string.digits`), which FOCA no longer evaluates.
 
     Example:
         >>> IdConfig(
@@ -222,6 +225,16 @@ class IdConfig(FOCABaseConfig):
 
     charset: str
     length: int
+
+    @field_validator("charset")
+    @classmethod
+    def _check_charset(cls, charset: str) -> str:
+        """Reject character sets that identifiers cannot be generated from."""
+        try:
+            generate_id(charset=charset, length=1)
+        except TypeError as exc:  # pydantic only reports `ValueError`s
+            raise ValueError(str(exc)) from exc
+        return charset
 
 
 class MetaVersionConfig(FOCABaseConfig):
