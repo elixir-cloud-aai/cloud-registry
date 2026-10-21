@@ -14,9 +14,20 @@ LABEL maintainer.organisation="ELIXIR Cloud & AAI"
 
 ## Install dependencies first, so that code changes do not reinstall them;
 ## the FOCA image runs as non-root user
+## TODO(#104): FOCA 0.15.0 is not released yet: `requirements.txt` installs its
+## release candidate from Git (replacing the base image's FOCA 0.14.0), so Git
+## is installed for the build and removed again; the build fails unless FOCA
+## 0.15 (with `foca.api.service_info`) is installed. Once FOCA 0.15.0 is
+## released, require it in `requirements.txt`, install the requirements with
+## `pip` only and change the base image to a FOCA 0.15.0 image (if published)
 USER root
 COPY requirements.txt /tmp/src/
-RUN pip install --no-cache-dir -r /tmp/src/requirements.txt
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends git \
+  && pip install --no-cache-dir -r /tmp/src/requirements.txt \
+  && apt-get purge -y --auto-remove git \
+  && rm -rf /var/lib/apt/lists/* \
+  && python -c "import foca.api.service_info"
 
 ## Install app (non-editable; the base config is installed with the package,
 ## and deployments override it via `FOCA_CONFIG_OVERLAY`)
