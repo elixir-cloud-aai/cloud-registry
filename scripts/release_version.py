@@ -137,9 +137,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("command", choices=["outputs", "latest"])
     parser.add_argument("tag", help="release tag, e.g., v1.2.3 or v1.2.3rc1")
     args = parser.parse_args(argv)
-    # Read before `try`, so that only invalid tags give its error (decoding
-    # errors are `ValueError`s too)
-    tags = sys.stdin.read().splitlines() if args.command == "latest" else []
+    # Undecodable bytes are replaced, so that tags with them are ignored as
+    # invalid tags (instead of failing with a `UnicodeDecodeError`)
+    tags = (
+        sys.stdin.buffer.read().decode("utf-8", "replace").splitlines()
+        if args.command == "latest"
+        else []
+    )
     try:
         if args.command == "outputs":
             lines = parse_tag(args.tag).outputs()

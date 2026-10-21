@@ -142,16 +142,19 @@ def test_main_outputs(capsys: pytest.CaptureFixture[str]) -> None:
         ("v0.2.0\nv0.3.0\nv1.0.0rc1\n", "latest=true\n"),
         ("v0.3.0\nv0.3.1\n", "latest=false\n"),
         ("", "latest=false\n"),
+        # Tags that aren't UTF-8 are ignored
+        (b"v0.3.0\nv\xff9.0.0\nv9.0.0\xff\n", "latest=true\n"),
     ],
 )
 def test_main_latest(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    tags: str,
+    tags: str | bytes,
     output: str,
 ) -> None:
     """`latest` reads the tags on `main` from standard input."""
-    monkeypatch.setattr("sys.stdin", io.StringIO(tags))
+    data = tags.encode() if isinstance(tags, str) else tags
+    monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(data)))
     assert release_version.main(["latest", "v0.3.0"]) == 0
     captured = capsys.readouterr()
     assert captured.out == output
@@ -165,7 +168,7 @@ def test_main_invalid_tag(
     args: list[str],
 ) -> None:
     """Invalid tags fail with an error annotation and no outputs."""
-    monkeypatch.setattr("sys.stdin", io.StringIO("v0.3.0\n"))
+    monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(b"v0.3.0\n")))
     assert release_version.main(args) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
