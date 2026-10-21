@@ -146,12 +146,14 @@ api:
 # Service info, served at `GET /service-info` by FOCA, according to the GA4GH
 # `Service` schema (validated on startup); `version` defaults to the version
 # of the installed package (`package`). Deployments set their own `id`,
-# `name`, `description`, `organization`, `contactUrl` and `environment`
+# `name`, `description`, `organization`, `contactUrl` and `environment`; `id`
+# and `organization` are placeholders with reserved example domains (RFC
+# 2606), which the app warns of on startup
 # Cf. https://foca.readthedocs.io/en/latest/configuration/service-info/
 service_info:
     package: cloud-registry
     service:
-        id: "cloud.elixir-on.cloud-registry"
+        id: "org.example.cloud-registry"
         name: "Cloud Registry"
         type:
             group: "org.ga4gh"
@@ -159,9 +161,8 @@ service_info:
             version: "1.0.0"
         description: "Registry of GA4GH and other web services."
         organization:
-            name: "ELIXIR On-Cloud"
-            url: "https://elixir-on.cloud/"
-        contactUrl: "mailto:cloud-service@elixir-europe.org"
+            name: "Example Organization"
+            url: "https://example.org"
         documentationUrl: "https://github.com/elixir-cloud-aai/cloud-registry"
         environment: "dev"
         # Optional timestamps (RFC 3339), served only if set, e.g.:
