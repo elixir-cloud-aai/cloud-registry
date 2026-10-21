@@ -776,6 +776,7 @@ def test_group_permissions_without_group(client, path):
     ]
     assert revoke(client, service_id, ALICE) == 409
     assert client.delete(url, headers=headers(ALICE)).status_code == 404
+    assert permissions(client, service_id) == [(ALICE, "owner")]
 
 
 def test_group_with_slash(client):

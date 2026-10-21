@@ -983,9 +983,7 @@ def test_create_app_dev_overlay(monkeypatch, app_env, capsys):
     """`create_app()` with the Docker Compose overlay warns that there are no
     admins, but not about `keep_group_subjects`, which applies.
     """
-    monkeypatch.setenv(
-        "FOCA_CONFIG_OVERLAY", str(APP_DIR.parent / "config.dev.yaml")
-    )
+    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(APP_DIR.parent / "config.dev.yaml"))
     cloud_registry.app.create_app()
     err = capsys.readouterr().err
     assert "No group is mapped to the role 'admin'" in err
