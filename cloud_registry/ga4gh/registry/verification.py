@@ -155,8 +155,8 @@ def getServiceVerification(serviceId: str, **kwargs: Any) -> dict[str, Any]:
 
     Args:
         serviceId: Service identifier.
-        **kwargs: Further arguments that Connexion passes (e.g., `user`,
-            `token_info` or the request body); unused.
+        **kwargs: Further arguments that Connexion passes (`user`,
+            `token_info`); unused.
 
     Returns:
         Verification of the service.
@@ -186,8 +186,8 @@ def putServiceVerification(
     Args:
         serviceId: Service identifier.
         verification: URL and API type the admin checked; optional.
-        **kwargs: Further arguments that Connexion passes (e.g., `user`,
-            `token_info` or the request body); unused.
+        **kwargs: Further arguments that Connexion passes (`user`,
+            `token_info`); unused.
 
     Returns:
         Verification of the service, at the current time (or the later time
@@ -236,8 +236,8 @@ def deleteServiceVerification(serviceId: str, **kwargs: Any) -> str:
 
     Args:
         serviceId: Service identifier.
-        **kwargs: Further arguments that Connexion passes (e.g., `user`,
-            `token_info` or the request body); unused.
+        **kwargs: Further arguments that Connexion passes (`user`,
+            `token_info`); unused.
 
     Returns:
         Identifier of the service.
@@ -264,8 +264,8 @@ def getVerifications(**kwargs: Any) -> list[dict[str, Any]]:
     """List verified services.
 
     Args:
-        **kwargs: Further arguments that Connexion passes (e.g., `user`,
-            `token_info` or the request body); unused.
+        **kwargs: Further arguments that Connexion passes (`user`,
+            `token_info`); unused.
 
     Returns:
         Identifier and verification of each verified service, sorted by
