@@ -37,7 +37,8 @@ _MOVING = r"(?![\w.-])"
 UNVERSIONED = re.compile(
     rf"{re.escape(DOCS_HOST)}/(?:en/)?(?:latest|stable){_MOVING}"
     rf"|github\.com/{re.escape(REPOSITORY)}/"
-    rf"(?:blob|tree|raw|edit|blame|commits)/(?:dev|main|HEAD){_MOVING}"
+    rf"(?:blob|tree|raw|edit|blame|commits)/(?:refs/heads/)?(?:dev|main|HEAD)"
+    rf"{_MOVING}"
     rf"|raw\.githubusercontent\.com/{re.escape(REPOSITORY)}/"
     rf"(?:refs/heads/)?(?:dev|main|HEAD){_MOVING}",
     re.ASCII | re.IGNORECASE,

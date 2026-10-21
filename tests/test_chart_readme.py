@@ -79,6 +79,7 @@ def test_version_links(markdown: str, expected: str) -> None:
         f"{REPO}/edit/dev/README.md",
         f"{REPO}/commits/dev",
         f"{REPO}/blame/main/README.md",
+        f"{REPO}/blob/refs/heads/dev/README.md",
         "https://raw.githubusercontent.com/elixir-cloud-aai/cloud-registry/dev/x",
         "https://raw.githubusercontent.com/elixir-cloud-aai/cloud-registry/refs/heads/dev/x",
     ],
