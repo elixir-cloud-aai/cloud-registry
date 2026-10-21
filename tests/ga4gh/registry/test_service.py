@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from datetime import datetime
+import logging
 from typing import Any, NoReturn
 
 from flask import Flask
@@ -25,6 +26,7 @@ from cloud_registry.ga4gh.registry.service import (
     check_strings,
     normalize_url,
     service_key,
+    warn_url_schemes,
 )
 from cloud_registry.utils import get_custom_config
 from tests.mock_data import (
@@ -203,6 +205,46 @@ class TestRegisterService:
             obj.register_metadata()
             RegisterService(data=data, id=obj.data["id"]).register_metadata()
         assert data == MOCK_SERVICE
+
+    @pytest.mark.parametrize("service_id", [None, MOCK_ID])
+    @pytest.mark.parametrize(
+        "url", ["http://beacon.example.org/api", " HTTP://beacon.example.org"]
+    )
+    def test_register_metadata_http_rejected(
+        self,
+        unit_app: Flask,
+        services: Collection[dict[str, Any]],
+        service_id: str | None,
+        url: str,
+    ) -> None:
+        """Service URLs with `http` are rejected by default, saying why."""
+        with unit_app.app_context():
+            obj = RegisterService(data={**MOCK_SERVICE, "url": url}, id=service_id)
+            with pytest.raises(InvalidService) as exc_info:
+                obj.register_metadata()
+        assert exc_info.value.description == (
+            "Service URLs must use an allowed scheme: 'https'."
+        )
+        assert services.count_documents({}) == 0
+
+    def test_register_metadata_http_allowed(
+        self, unit_app: Flask, services: Collection[dict[str, Any]]
+    ) -> None:
+        """Service URLs with `http` are accepted if the scheme is allowed."""
+        with unit_app.app_context():
+            get_custom_config().endpoints.services.url_schemes = ["http", "https"]
+            for url in ("http://beacon.example.org/api", MOCK_SERVICE["url"]):
+                obj = RegisterService(data={**MOCK_SERVICE, "url": url})
+                obj.register_metadata()
+                assert _find(services, obj.data["id"])["url"] == url
+
+    def test_register_metadata_https_disallowed(self, unit_app: Flask) -> None:
+        """Only the allowed schemes are accepted, e.g., `http` only."""
+        with unit_app.app_context():
+            get_custom_config().endpoints.services.url_schemes = ["http"]
+            obj = RegisterService(data=deepcopy(MOCK_SERVICE))
+            with pytest.raises(InvalidService, match="allowed scheme: 'http'"):
+                obj.register_metadata()
 
 
 @pytest.mark.parametrize(
@@ -769,6 +811,48 @@ class TestAddServiceKeys:
         assert "'B': same URL and API type as 'A'" in message
         assert "'D': same URL and API type as 'C'" in message
         assert "'BAD': Service URLs need a scheme and a host." in message
+
+
+class TestWarnUrlSchemes:
+    """Tests for warning of stored services with schemes not allowed."""
+
+    def test_warned(
+        self,
+        unit_app: Flask,
+        services: Collection[dict[str, Any]],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Stored services with schemes not allowed are named, others not."""
+        for id, url in [
+            ("HTTP", "http://beacon.example.org"),
+            ("UPPER", " HTTP://other.example.org"),
+            ("HTTPS", "https://third.example.org"),
+            ("BAD", 1),
+            ("INVALID", "http://[::1/v1"),
+        ]:
+            services.insert_one({**MOCK_SERVICE, "id": id, "url": url})
+        services.insert_one({"id": "NOURL"})
+        with unit_app.app_context(), caplog.at_level(logging.WARNING):
+            warn_url_schemes()
+        assert len(caplog.records) == 1
+        message = caplog.records[0].getMessage()
+        assert "'HTTP', 'UPPER'" in message
+        assert "url_schemes" in message
+        assert "HTTPS" not in message
+        assert "BAD" not in message
+        assert "INVALID" not in message
+
+    def test_none(
+        self,
+        unit_app: Flask,
+        services: Collection[dict[str, Any]],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Without such services, nothing is logged."""
+        services.insert_one({**MOCK_SERVICE, "id": MOCK_ID})
+        with unit_app.app_context(), caplog.at_level(logging.WARNING):
+            warn_url_schemes()
+        assert not caplog.records
 
 
 class TestVerificationReset:

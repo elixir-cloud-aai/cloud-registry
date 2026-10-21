@@ -650,6 +650,8 @@ def test_put_duplicate(client: FlaskClient, admin_headers: dict[str, str]) -> No
         ("http://[::1/v1", "must be valid URLs"),
         ("https://tes.exa\nmple.org", "must not contain whitespace"),
         ("ftp://tes.example.org", "must be HTTP(S) URLs"),
+        # by default (`custom.endpoints.services.url_schemes`)
+        ("http://tes.example.org", "must use an allowed scheme: 'https'"),
     ],
 )
 def test_service_url_invalid(
@@ -669,6 +671,29 @@ def test_service_url_invalid(
     assert response.get_json()["title"] == "Bad request"
     assert detail in response.get_json()["detail"]
     assert "Location" not in response.headers
+
+
+@pytest.mark.parametrize("method, path", [("post", ""), ("put", "/abc")])
+def test_service_url_http_allowed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    admin_headers: dict[str, str],
+    method: str,
+    path: str,
+) -> None:
+    """`http` service URLs are accepted if the config allows the scheme."""
+    overlay = yaml.safe_load(CONFIG_OVERLAY.read_text())
+    overlay["custom"] = {"endpoints": {"services": {"url_schemes": ["http", "https"]}}}
+    _set_overlay(monkeypatch, tmp_path, overlay)
+    client = cloud_registry.app.create_app().app.test_client()
+    url = "http://tes.example.org/ga4gh/tes/v1"
+    response = getattr(client, method)(
+        f"{BASE}/services{path}", json=_service(url=url), headers=admin_headers
+    )
+    assert response.status_code == 201
+    service_id = response.get_json()
+    assert client.get(f"{BASE}/services/{service_id}").get_json()["url"] == url
 
 
 def _service_with(field: str, value: str) -> dict[str, Any]:
@@ -1234,6 +1259,24 @@ def test_create_app_checks(
     assert f"Groups mapped to the role 'admin': {ADMIN_GROUP}" in err
     assert "keep_group_subjects" not in err
     assert "Serving service info 'cloud.elixir-on.cloud-registry'" in err
+    assert "url_schemes" not in err
+
+
+def test_create_app_url_schemes(
+    mongo_client: MongoClient[dict[str, Any]],
+    app_env: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`create_app()` warns of stored services with schemes not allowed.
+
+    They are still served.
+    """
+    services = mongo_client["serviceStore"]["services"]
+    services.insert_one({**_service(url="http://tes.example.org"), "id": "PLAIN"})
+    app = cloud_registry.app.create_app()
+    assert "url_schemes" in capsys.readouterr().err
+    response = app.app.test_client().get(f"{BASE}/services/PLAIN")
+    assert response.status_code == 200
 
 
 def test_create_app_group_subjects(
