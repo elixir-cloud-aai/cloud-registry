@@ -91,7 +91,7 @@ jobs:
               fi
           } >> "${GITHUB_OUTPUT}"
       # Curated release notes are published as written, so unfinished ones
-      # (with a `TODO`) must not be
+      # (with a `TODO`) must not be published
       - name: Check release notes
         env:
           VERSION: ${{ steps.version.outputs.version }}
