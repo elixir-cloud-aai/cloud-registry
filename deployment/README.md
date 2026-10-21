@@ -173,6 +173,9 @@ so the chart sets that user and group (`runAsUser`, `runAsGroup`), and
 `fsGroup` makes the data volume writable for it (unless the storage ignores
 `fsGroup`).
 
+Neither pod gets a service account token (`automountServiceAccountToken:
+false`), as neither calls the Kubernetes API.
+
 The `/tmp` volumes are limited to 64 MiB each by `tmpSizeLimit` of
 `cloud_registry` and `mongodb` (a positive Kubernetes quantity, e.g., `64Mi`,
 or a number of bytes; `null` removes the limit); the kubelet evicts pods that

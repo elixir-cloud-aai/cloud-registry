@@ -24,6 +24,8 @@ spec:
       labels:
         {{- include "cloud-registry.selectorLabels" (dict "root" . "component" "app") | nindent 8 }}
     spec:
+      # The pod doesn't call the Kubernetes API
+      automountServiceAccountToken: false
       containers:
       - image: {{ include "cloud-registry.image" . | quote }}
         imagePullPolicy: Always

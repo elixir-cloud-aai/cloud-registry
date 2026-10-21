@@ -488,11 +488,14 @@ def test_labels_all():
     [(APP, {TMP}), (MONGODB, {TMP, "/data/configdb", "/data/db"})],
 )
 def test_security_context(name, writable):
-    """Containers run as non-root, without privileges and with a read-only
-    root file system; directories they write to are volumes.
+    """Containers run as non-root, without privileges, without a service
+    account token and with a read-only root file system; directories they
+    write to are volumes.
     """
     docs = _render()
     pod = _pod(docs, name)
+    # neither the app nor MongoDB call the Kubernetes API
+    assert pod["automountServiceAccountToken"] is False
     assert pod["securityContext"]["runAsNonRoot"] is True
     assert pod["securityContext"]["seccompProfile"] == {"type": "RuntimeDefault"}
     context = pod["containers"][0]["securityContext"]
