@@ -17,6 +17,14 @@ else:
 
 ROOT = Path(__file__).parents[1]
 GIT = shutil.which("git")
+# Git options for commits and tags in a temporary repository: an identity,
+# without signing
+GIT_CONFIG = [
+    *("-c", "user.name=test"),
+    *("-c", "user.email=test@example.org"),
+    *("-c", "commit.gpgsign=false"),
+    *("-c", "tag.gpgsign=false"),
+]
 
 
 def test_installed_version() -> None:
@@ -48,13 +56,7 @@ def test_version_from_tag(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> No
     def git(*args: str) -> None:
         """Run Git in the temporary repository."""
         subprocess.run(  # noqa: S603 (fixed arguments, no shell)
-            [
-                GIT,
-                *("-C", str(tmp_path), "-c", "user.name=test"),
-                *("-c", "user.email=test@example.org", "-c", "commit.gpgsign=false"),
-                *("-c", "tag.gpgsign=false"),
-                *args,
-            ],
+            [GIT, "-C", str(tmp_path), *GIT_CONFIG, *args],
             capture_output=True,
             check=True,
         )

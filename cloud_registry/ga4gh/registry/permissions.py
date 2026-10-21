@@ -180,7 +180,10 @@ def is_admin() -> bool:
     """
     prefix = get_config().security.access_control.subject_prefix
     role_manager = get_enforcer().get_role_manager()
-    subjects = [f"{prefix}{get_current_subject()}", *get_current_groups()]
+    subject = get_current_subject()
+    subjects = [*get_current_groups()]
+    if subject is not None:
+        subjects.insert(0, f"{prefix}{subject}")
     return any(role_manager.has_link(subject, "admin") for subject in subjects)
 
 

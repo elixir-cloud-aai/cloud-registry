@@ -9,11 +9,13 @@ line-length = 88
 target-version = "py310"
 
 [tool.ruff.lint]
-# The rule set shared with FOCA and other FOCA apps
+# The rule set shared by FOCA and FOCA apps: FOCA's rules plus `G` and `S`
+# (which FOCA is to adopt, too); unlike in FOCA, `D` applies everywhere,
+# also to the tests and docs hooks
 select = [
     "B",    # flake8-bugbear
     "C4",   # flake8-comprehensions
-    "D",    # pydocstyle (docstrings), also in tests and docs hooks
+    "D",    # pydocstyle (docstrings)
     "E",    # pycodestyle errors
     "F",    # Pyflakes
     "G",    # flake8-logging-format
@@ -26,8 +28,9 @@ select = [
     "W",    # pycodestyle warnings
 ]
 ignore = [
-    # Complexity limits, as in FOCA: functions mirror the API's operations
-    # and test parameters, and splitting them would obscure them
+    # Complexity limits, as in FOCA: some functions mirror the API's
+    # operations or take many test fixtures, and splitting them would obscure
+    # them
     "PLR0912",  # too-many-branches
     "PLR0913",  # too-many-arguments
     "PLR0915",  # too-many-statements
@@ -42,6 +45,7 @@ force-sort-within-sections = true
 known-first-party = ["cloud_registry", "tests"]
 
 [tool.ruff.lint.per-file-ignores]
+# pytest checks with `assert`
 "tests/**" = ["S101"]
 
 [tool.ruff.lint.pydocstyle]

@@ -121,7 +121,16 @@ def test_problem_long_description() -> None:
     assert detail.endswith("a is invalid")
 
 
-def test_problem_without_code() -> None:
+class _NoDescription(HTTPException):
+    """HTTP exception with a code, but without a description."""
+
+    code = 400
+
+
+@pytest.mark.parametrize(
+    "exc", [HTTPException(), _NoDescription()], ids=["no_code", "no_description"]
+)
+def test_problem_without_code(exc: HTTPException) -> None:
     """Problem details need an exception with a code and a description."""
     with pytest.raises(ValueError, match="code and a description"):
-        problem(HTTPException())
+        problem(exc)

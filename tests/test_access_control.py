@@ -571,16 +571,35 @@ def test_no_claims_without_token(app: App) -> None:
         assert permissions_module._get_current_claims() == {}
 
 
-def test_subject_required(app: App) -> None:
+@pytest.mark.parametrize(
+    "operation",
+    [
+        lambda: permissions_module.add_owner("ABC"),
+        lambda: permissions_module.remove_owner("ABC"),
+        permissions_module.getMe,
+    ],
+    ids=["add_owner", "remove_owner", "getMe"],
+)
+def test_subject_required(app: App, operation: Callable[[], object]) -> None:
     """Operations that need a subject reject requests without one."""
     with app.app.test_request_context(), pytest.raises(Unauthorized):
-        permissions_module.add_owner("ABC")
+        operation()
+
+
+def test_is_admin_without_subject(app: App) -> None:
+    """Requests without a subject or groups aren't an admin's."""
+    with app.app.test_request_context(f"{BASE}/me"):
+        app.app.preprocess_request()
+        assert not permissions_module.is_admin()
 
 
 def test_api_base_path_outside_api(app: App) -> None:
     """Requests not handled by an API have no API base path."""
-    with app.app.test_request_context("/unknown"), pytest.raises(RuntimeError):
-        permissions_module.service_path("ABC")
+    with (
+        app.app.test_request_context("/unknown"),
+        pytest.raises(RuntimeError, match="not handled by an API"),
+    ):
+        permissions_module._api_base_path()
 
 
 def _roles(app: App, service_id: str) -> list[tuple[str, str]]:
