@@ -48,31 +48,31 @@ spec:
         - name: http
           containerPort: 8080
           protocol: TCP
-        # Probes request `cloud_registry.probePath`, by default the Swagger UI
+        # Probes request `cloudRegistry.probePath`, by default the Swagger UI
         # (no authentication, no database access)
         # Up to 5 minutes are allowed for the start before liveness checks
         startupProbe:
           httpGet:
-            path: {{ .Values.cloud_registry.probePath | quote }}
+            path: {{ .Values.cloudRegistry.probePath | quote }}
             port: 8080
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 30
         readinessProbe:
           httpGet:
-            path: {{ .Values.cloud_registry.probePath | quote }}
+            path: {{ .Values.cloudRegistry.probePath | quote }}
             port: 8080
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
         livenessProbe:
           httpGet:
-            path: {{ .Values.cloud_registry.probePath | quote }}
+            path: {{ .Values.cloudRegistry.probePath | quote }}
             port: 8080
           periodSeconds: 20
           timeoutSeconds: 5
           failureThreshold: 3
-        {{- with int .Values.cloud_registry.preStopSleepSeconds }}
+        {{- with int .Values.cloudRegistry.preStopSleepSeconds }}
         # Keep serving until the ingress controller and Service have removed
         # the pod from their endpoints, as Gunicorn stops accepting
         # connections on SIGTERM (Python, as the image need not have `sleep`)
@@ -81,9 +81,9 @@ spec:
             exec:
               command: ["python", "-c", {{ printf "import time; time.sleep(%d)" . | quote }}]
         {{- end }}
-        resources: {{- toYaml .Values.cloud_registry.resources | nindent 10 }}
+        resources: {{- toYaml .Values.cloudRegistry.resources | nindent 10 }}
         securityContext:
-          {{- include "cloud-registry.securityContext" (dict "root" . "context" .Values.cloud_registry.securityContext) | nindent 10 }}
+          {{- include "cloud-registry.securityContext" (dict "root" . "context" .Values.cloudRegistry.securityContext) | nindent 10 }}
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
         volumeMounts:
@@ -91,18 +91,18 @@ spec:
           name: config
           readOnly: true
         # Writable, as the root file system is read-only by default (e.g., for
-        # temporary files of uploads), up to `cloud_registry.tmpSizeLimit`
+        # temporary files of uploads), up to `cloudRegistry.tmpSizeLimit`
         - mountPath: /tmp
           name: tmp
       dnsPolicy: ClusterFirst
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext:
-        {{- include "cloud-registry.securityContext" (dict "root" . "context" .Values.cloud_registry.podSecurityContext) | nindent 8 }}
+        {{- include "cloud-registry.securityContext" (dict "root" . "context" .Values.cloudRegistry.podSecurityContext) | nindent 8 }}
       terminationGracePeriodSeconds: {{ include "cloud-registry.terminationGracePeriod" . }}
       volumes:
       - configMap:
           name: {{ printf "%s-config" (include "cloud-registry.fullname" .) | quote }}
         name: config
       - name: tmp
-        {{- include "cloud-registry.emptyDir" .Values.cloud_registry.tmpSizeLimit | nindent 8 }}
+        {{- include "cloud-registry.emptyDir" .Values.cloudRegistry.tmpSizeLimit | nindent 8 }}
