@@ -756,18 +756,16 @@ def _set_overlay(monkeypatch, tmp_path, overlay: dict) -> None:
     monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(path))
 
 
-def test_main(monkeypatch, mongo_client, app_env, capsys):
-    """`main()` creates the app, logs the admin groups and service info, and
-    runs the app on the configured port.
+def test_create_app_checks(mongo_client, app_env, capsys):
+    """`create_app()` logs the admin groups and service info, and adds
+    missing keys of services (in each Gunicorn worker).
     """
-    ports = _mock_run(monkeypatch)
     # registered without a key, e.g., before keys were introduced
     services = mongo_client["serviceStore"]["services"]
     services.insert_one({**SERVICE, "id": "OLD"})
 
-    cloud_registry.app.main()
+    cloud_registry.app.create_app()
 
-    assert ports == [8080]
     assert services.find_one({"id": "OLD"})["_serviceKey"]
     # FOCA configures logging to stderr
     err = capsys.readouterr().err
@@ -775,27 +773,25 @@ def test_main(monkeypatch, mongo_client, app_env, capsys):
     assert "Serving service info 'ELIXIR_CLOUD_SERVICE_REGISTRY_1'" in err
 
 
-def test_main_duplicate_services(monkeypatch, mongo_client, app_env):
-    """`main()` fails if services have the same URL and API type."""
-    ports = _mock_run(monkeypatch)
+def test_create_app_duplicate_services(mongo_client, app_env):
+    """`create_app()` fails if services have the same URL and API type."""
     services = mongo_client["serviceStore"]["services"]
     services.insert_many([{**SERVICE, "id": "FIRST"}, {**SERVICE, "id": "SECOND"}])
     with pytest.raises(RuntimeError, match="same URL and API type"):
-        cloud_registry.app.main()
-    assert ports == []
+        cloud_registry.app.create_app()
 
 
-def test_main_requires_admin(monkeypatch, tmp_path, app_env):
-    """`main()` fails if no group is mapped to the role `admin`."""
+def test_create_app_requires_admin(monkeypatch, tmp_path, app_env):
+    """`create_app()` fails if no group is mapped to the role `admin`."""
     _set_overlay(monkeypatch, tmp_path, {"security": {"auth": {"audience": ["a"]}}})
-    ports = _mock_run(monkeypatch)
     with pytest.raises(RuntimeError, match="require_admin"):
-        cloud_registry.app.main()
-    assert ports == []
+        cloud_registry.app.create_app()
 
 
-def test_main_admin_optional(monkeypatch, tmp_path, app_env, capsys):
-    """Without admin groups, `main()` warns if admins are not required."""
+def test_create_app_admin_optional(monkeypatch, tmp_path, app_env, capsys):
+    """Without admin groups, `create_app()` warns if admins are not
+    required.
+    """
     _set_overlay(
         monkeypatch,
         tmp_path,
@@ -804,14 +800,14 @@ def test_main_admin_optional(monkeypatch, tmp_path, app_env, capsys):
             "custom": {"access_control": {"require_admin": False}},
         },
     )
-    ports = _mock_run(monkeypatch)
-    cloud_registry.app.main()
-    assert ports == [8080]
+    cloud_registry.app.create_app()
     assert "No group is mapped to the role 'admin'" in capsys.readouterr().err
 
 
-def test_main_invalid_service_info(monkeypatch, tmp_path, app_env):
-    """`main()` fails if the service info is invalid, naming the field."""
+def test_create_app_invalid_service_info(monkeypatch, tmp_path, app_env):
+    """`create_app()` fails if the service info is invalid, naming the
+    field.
+    """
     _set_overlay(
         monkeypatch,
         tmp_path,
@@ -823,16 +819,32 @@ def test_main_invalid_service_info(monkeypatch, tmp_path, app_env):
             },
         },
     )
-    ports = _mock_run(monkeypatch)
     with pytest.raises(
         InvalidServiceInfo, match=r"`custom\.endpoints\.service_info\.contactUrl`"
     ):
-        cloud_registry.app.main()
-    assert ports == []
+        cloud_registry.app.create_app()
 
 
-def test_main_config_missing(monkeypatch, tmp_path):
-    """`main()` fails if the config file is missing (FOCA raises `OSError`)."""
+def test_create_app_config_missing(monkeypatch, tmp_path):
+    """`create_app()` fails if the config file is missing (FOCA raises
+    `OSError`).
+    """
     monkeypatch.setattr(cloud_registry.app, "__file__", str(tmp_path / "app.py"))
     with pytest.raises(OSError, match=str(tmp_path / "config.yaml")):
+        cloud_registry.app.create_app()
+
+
+def test_main(monkeypatch, app_env):
+    """`main()` runs the app on the configured port."""
+    ports = _mock_run(monkeypatch)
+    cloud_registry.app.main()
+    assert ports == [8080]
+
+
+def test_main_check_fails(monkeypatch, tmp_path, app_env):
+    """`main()` does not run the app if a startup check fails."""
+    _set_overlay(monkeypatch, tmp_path, {"security": {"auth": {"audience": ["a"]}}})
+    ports = _mock_run(monkeypatch)
+    with pytest.raises(RuntimeError, match="require_admin"):
         cloud_registry.app.main()
+    assert ports == []

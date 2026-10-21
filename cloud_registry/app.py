@@ -1,4 +1,4 @@
-"""Entry point of the app (`python -m cloud_registry.app`)."""
+"""App factory, and entry point for development (`python -m cloud_registry.app`)."""
 
 from pathlib import Path
 
@@ -39,10 +39,21 @@ def check_streamed_size() -> None:
 
 
 def create_app() -> App:
-    """Create the app from the config, with the size limit of request bodies.
+    """Create the app from the config, with the size limit of request bodies,
+    check admin groups and service info, and add missing keys of services.
+
+    Gunicorn calls this in each worker, after forking (MongoDB clients must
+    not be shared across forks), so the checks run in each worker; if they
+    fail, the worker fails to boot and Gunicorn exits.
 
     Returns:
         Connexion app.
+
+    Raises:
+        RuntimeError: No group is mapped to the role `admin` (unless admins
+            are optional), or stored services are invalid or duplicates.
+        cloud_registry.ga4gh.registry.service_info.InvalidServiceInfo: The
+            service info is invalid.
     """
     foca = Foca(
         config_file=Path(__file__).parent / "config.yaml",
@@ -59,21 +70,19 @@ def create_app() -> App:
         limit = get_custom_config().max_content_length
     app.app.config["MAX_CONTENT_LENGTH"] = limit
     app.app.before_request(check_streamed_size)
-    return app
-
-
-def main():
-    """Create the app, check admin groups and service info, add missing keys
-    of services, and run the app.
-    """
-    app = create_app()
 
     with app.app.app_context():
         check_admin_groups()
         check_service_info()
         add_service_keys()
+    return app
 
-    # start app
+
+def main():
+    """Create the app and run it with Flask's development server, on the
+    configured port (for development; not for production).
+    """
+    app = create_app()
     app.run(port=app.port)
 
 
