@@ -2,6 +2,7 @@
 
 from json import dumps
 import logging
+from typing import Any
 
 from connexion.exceptions import (
     BadRequestProblem,
@@ -91,8 +92,9 @@ exceptions = {
 
 
 def shorten_detail(detail: str) -> str:
-    """Shorten a detail to `MAX_DETAIL_LENGTH` characters, keeping its
-    start and end.
+    """Shorten a detail to `MAX_DETAIL_LENGTH` characters.
+
+    Keeps its start and end.
 
     Args:
         detail: Description of a problem.
@@ -130,10 +132,10 @@ def problem(exc: HTTPException, **extensions: str) -> Response:
 
 
 def validation_problem(exc: BadRequestProblem | ExtraParameterProblem) -> Response:
-    """Build a problem details response for a request that Connexion's
-    validation rejected, with the reason (e.g., the validator's message).
+    """Build a problem details response for a request that failed validation.
 
-    Registered as error handler for these exceptions (cf.
+    The response has the reason (e.g., the validator's message) of
+    Connexion's validation. Registered as error handler for these exceptions (cf.
     `cloud_registry.app.create_app()`), as FOCA's handler only serves the
     fixed details of the exception class.
 
@@ -156,7 +158,7 @@ def validation_problem(exc: BadRequestProblem | ExtraParameterProblem) -> Respon
     return _response(title=mapped["title"], status=mapped["status"], detail=detail)
 
 
-def _mapped(exc: Exception) -> dict:
+def _mapped(exc: Exception) -> dict[str, Any]:
     """Get the problem details mapped to the closest class of an exception.
 
     Args:

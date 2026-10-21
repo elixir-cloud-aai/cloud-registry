@@ -74,8 +74,19 @@ class IdConfig(FOCABaseConfig):
     @field_validator("charset")
     @classmethod
     def _check_charset(cls, charset: str) -> str:
-        """Reject character sets that identifiers cannot be generated from,
-        or that give identifiers that aren't URL path segments.
+        """Reject character sets unfit for identifiers.
+
+        Identifiers must be generated from them, and must be URL path segments.
+
+        Args:
+            charset: Character set of identifiers.
+
+        Returns:
+            The character set.
+
+        Raises:
+            ValueError: Identifiers cannot be generated from the character set,
+                or would not be URL path segments.
         """
         if "/" in charset:
             raise ValueError("Identifier character sets must not contain '/'")
@@ -89,8 +100,9 @@ class IdConfig(FOCABaseConfig):
 
 
 class ServicesConfig(FOCABaseConfig):
-    """Model for defining the service database store for cloud registry. This
-    defines the configurations for service identifiers stored on cloud
+    """Model for defining the service database store for cloud registry.
+
+    Defines the configurations for service identifiers stored on cloud
     registry.
 
     Args:

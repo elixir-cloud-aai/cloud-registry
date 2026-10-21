@@ -1,10 +1,10 @@
-"""Access control: policies, service ownership and controllers for managing
-permissions on services.
+"""Access control: policies, service ownership and permission controllers.
 
-Roles are granted to users (by their identifier) or to groups (values of the
-group claim, `security.access_control.claim_groups`); groups count like
-users, e.g., a group may be the only owner of a service. Changes of roles are
-logged (who changed which role of whom on which service), for auditing.
+The controllers manage permissions on services. Roles are granted to users (by
+their identifier) or to groups (values of the group claim,
+`security.access_control.claim_groups`); groups count like users, e.g., a group
+may be the only owner of a service. Changes of roles are logged (who changed
+which role of whom on which service), for auditing.
 
 Policies are configured in `config.yaml` (`security.access_control`) and
 enforced by FOCA on all operations that require authentication, using the
@@ -14,6 +14,7 @@ which deployments set) may do everything.
 """
 
 import logging
+from typing import Any
 
 from flask import current_app, request
 from flask.globals import request_ctx
@@ -113,7 +114,7 @@ def service_path(serviceId: str) -> str:
     return f"{_api_base_path()}/services/{serviceId}"
 
 
-def _get_current_claims() -> dict:
+def _get_current_claims() -> dict[str, Any]:
     """Get the claims of the validated token of the current request.
 
     Returns:
@@ -154,13 +155,13 @@ def is_admin() -> bool:
 
 
 def remember_current_user(service_ids: list[str]) -> None:
-    """Store the display name of the subject of the current request for
-    services they have a role on.
+    """Store the current subject's display name for services with a role.
 
+    Stored for the services the subject of the current request has a role on.
     Names are shown to owners and admins listing the roles on a service, so
-    they are only stored per service, once the user has used the registry
-    with a role on it (and are removed with the role). Nothing is stored if
-    the identity provider reports no name.
+    they are only stored per service, once the user has used the registry with
+    a role on it (and are removed with the role). Nothing is stored if the
+    identity provider reports no name.
 
     Args:
         service_ids: Identifiers of services the user has a role on.
@@ -178,8 +179,9 @@ def remember_current_user(service_ids: list[str]) -> None:
 
 
 def _forget_names(serviceId: str, userId: str | None = None) -> None:
-    """Delete display names stored for users on a service (cf.
-    `remember_current_user()`).
+    """Delete display names stored for users on a service.
+
+    Cf. `remember_current_user()`.
 
     Args:
         serviceId: Service identifier.
@@ -211,10 +213,12 @@ def add_owner(serviceId: str) -> None:
 
 
 def remove_owner(serviceId: str) -> None:
-    """Revoke the owner role of the subject of the current request on a
-    service, and their name stored for it (e.g., if the service they
-    registered was deleted meanwhile). Other roles on the service (e.g., of
-    the owner of a service registered again with the identifier) are kept.
+    """Revoke the owner role of the current subject on a service.
+
+    Also deletes the name stored for the subject of the current request on the
+    service (e.g., if the service they registered was deleted meanwhile). Other
+    roles on the service (e.g., of the owner of a service registered again with
+    the identifier) are kept.
 
     Args:
         serviceId: Service identifier.
@@ -247,11 +251,13 @@ def remove_permissions(serviceId: str) -> None:
 
 
 # GET /services/{serviceId}/permissions
-def getServicePermissions(serviceId: str, **kwargs) -> list[dict]:
+def getServicePermissions(serviceId: str, **kwargs: Any) -> list[dict[str, Any]]:
     """List roles granted on a service.
 
     Args:
         serviceId: Service identifier.
+        kwargs: Further arguments that Connexion passes (`user`,
+            `token_info`); unused.
 
     Returns:
         Roles granted on the service: user identifier, display name (if
@@ -330,8 +336,7 @@ def _owners(resource: str) -> list[tuple[SubjectType, str]]:
 def _check_other_owners(
     resource: str, subject: str, subject_type: SubjectType = "user"
 ) -> None:
-    """Check that a service has owners (users or groups) other than a
-    subject.
+    """Check that a service has owners (users or groups) other than a subject.
 
     Args:
         resource: Resource path of the service.
@@ -358,8 +363,7 @@ def _grant(
     role: str,
     subject_type: SubjectType = "user",
 ) -> None:
-    """Grant a user or group a role on a service, unless the service was
-    deleted.
+    """Grant a user or group a role on a service, unless it was deleted.
 
     Checking that the service exists before granting the role is not atomic:
     the service may be deleted in between (after its roles were revoked),
@@ -396,8 +400,7 @@ def _grant(
 def _restore_owner_if_none(
     serviceId: str, resource: str, subject: str, subject_type: SubjectType = "user"
 ) -> None:
-    """Make a former owner (user or group) owner again if a service has no
-    owners left.
+    """Make a former owner (user or group) owner again if none are left.
 
     Checking for other owners before changing roles is not atomic:
     concurrent requests of owners removing each other could leave a service
@@ -429,13 +432,12 @@ def _restore_owner_if_none(
 
 
 def _put_role(serviceId: str, subject: str, subject_type: SubjectType) -> None:
-    """Grant a user or group the role in the request body on a service,
-    replacing any other role.
+    """Grant a user or group the role in the request body on a service.
 
-    Other roles are revoked before the role is granted, so that a failure
-    leaves the subject with fewer rights, not more. On a user's first role
-    on the service, a name stored for them on it is deleted (cf.
-    `remember_current_user()`).
+    Replaces any other role: other roles are revoked before the role is
+    granted, so that a failure leaves the subject with fewer rights, not more.
+    On a user's first role on the service, a name stored for them on it is
+    deleted (cf. `remember_current_user()`).
 
     Args:
         serviceId: Service identifier.
@@ -547,13 +549,16 @@ def _check_user_id(userId: str) -> None:
 
 
 # PUT /services/{serviceId}/permissions/{userId}
-def putServicePermission(serviceId: str, userId: str, **kwargs) -> dict:
-    """Grant a user a role on a service, replacing any other role (cf.
-    `_put_role()`).
+def putServicePermission(serviceId: str, userId: str, **kwargs: Any) -> dict[str, Any]:
+    """Grant a user a role on a service, replacing any other role.
+
+    Cf. `_put_role()`.
 
     Args:
         serviceId: Service identifier.
         userId: User identifier (`sub` claim of the user's tokens).
+        kwargs: Further arguments that Connexion passes (`user`,
+            `token_info`); unused.
 
     Returns:
         User identifier and granted role.
@@ -568,12 +573,14 @@ def putServicePermission(serviceId: str, userId: str, **kwargs) -> dict:
 
 
 # DELETE /services/{serviceId}/permissions/{userId}
-def deleteServicePermission(serviceId: str, userId: str, **kwargs) -> str:
+def deleteServicePermission(serviceId: str, userId: str, **kwargs: Any) -> str:
     """Revoke all roles of a user on a service (cf. `_delete_roles()`).
 
     Args:
         serviceId: Service identifier.
         userId: User identifier.
+        kwargs: Further arguments that Connexion passes (`user`,
+            `token_info`); unused.
 
     Returns:
         User identifier.
@@ -588,17 +595,20 @@ def deleteServicePermission(serviceId: str, userId: str, **kwargs) -> str:
 
 
 # PUT /services/{serviceId}/permissions/groups/{entitlement}
-def putServiceGroupPermission(serviceId: str, entitlement: str, **kwargs) -> dict:
-    """Grant a group a role on a service, replacing any other role (cf.
-    `_put_role()`).
+def putServiceGroupPermission(
+    serviceId: str, entitlement: str, **kwargs: Any
+) -> dict[str, Any]:
+    """Grant a group a role on a service, replacing any other role.
 
-    Owners may only grant roles to groups they are members of (i.e., whose
-    entitlement is in their group claim), as they could otherwise hand a
-    service to any group; admins may grant roles to any group.
+    Cf. `_put_role()`. Owners may only grant roles to groups they are members
+    of (i.e., whose entitlement is in their group claim), as they could
+    otherwise hand a service to any group; admins may grant roles to any group.
 
     Args:
         serviceId: Service identifier.
         entitlement: Group, i.e., a value of the group claim of its members.
+        kwargs: Further arguments that Connexion passes (`user`,
+            `token_info`); unused.
 
     Returns:
         Group and granted role.
@@ -621,7 +631,9 @@ def putServiceGroupPermission(serviceId: str, entitlement: str, **kwargs) -> dic
 
 
 # DELETE /services/{serviceId}/permissions/groups/{entitlement}
-def deleteServiceGroupPermission(serviceId: str, entitlement: str, **kwargs) -> str:
+def deleteServiceGroupPermission(
+    serviceId: str, entitlement: str, **kwargs: Any
+) -> str:
     """Revoke all roles of a group on a service (cf. `_delete_roles()`).
 
     Any owner may revoke roles of groups, also of groups they are not a
@@ -630,6 +642,8 @@ def deleteServiceGroupPermission(serviceId: str, entitlement: str, **kwargs) -> 
     Args:
         serviceId: Service identifier.
         entitlement: Group.
+        kwargs: Further arguments that Connexion passes (`user`,
+            `token_info`); unused.
 
     Returns:
         The group.
@@ -639,9 +653,14 @@ def deleteServiceGroupPermission(serviceId: str, entitlement: str, **kwargs) -> 
 
 
 # GET /me
-def getMe(**kwargs) -> dict:
-    """Get the current user, and store or refresh their display name for
-    the services they have a role on.
+def getMe(**kwargs: Any) -> dict[str, Any]:
+    """Get the current user, and store or refresh their display name.
+
+    The name is stored for the services the user has a role on.
+
+    Args:
+        kwargs: Further arguments that Connexion passes (`user`,
+            `token_info`); unused.
 
     Returns:
         User identifier, whether the user is an admin (cf. `is_admin()`),

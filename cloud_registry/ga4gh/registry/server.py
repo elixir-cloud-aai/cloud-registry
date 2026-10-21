@@ -1,6 +1,7 @@
 """Controllers for service endpoints."""
 
 import logging
+from typing import Any
 
 from flask import Response, request
 from foca.utils.logging import escape_log_value, log_traffic
@@ -33,8 +34,12 @@ RegisterResponse = str | CreatedResponse | Response
 
 # GET /services
 @log_traffic
-def getServices(**kwargs) -> list:
+def getServices(**kwargs: Any) -> list[dict[str, Any]]:
     """List all services.
+
+    Args:
+        kwargs: Further arguments that Connexion passes (`user`,
+            `token_info`); unused.
 
     Returns:
         List of services.
@@ -49,11 +54,13 @@ def getServices(**kwargs) -> list:
 
 # GET /services/{serviceId}
 @log_traffic
-def getServiceById(serviceId: str, **kwargs) -> dict:
+def getServiceById(serviceId: str, **kwargs: Any) -> dict[str, Any]:
     """Retrieve service by its identifier.
 
     Args:
         serviceId: Identifier of service to be retrieved.
+        kwargs: Further arguments that Connexion passes (`user`,
+            `token_info`); unused.
 
     Returns:
         Service object.
@@ -67,8 +74,12 @@ def getServiceById(serviceId: str, **kwargs) -> dict:
 
 # GET /services/types
 @log_traffic
-def getServiceTypes(**kwargs) -> list:
+def getServiceTypes(**kwargs: Any) -> list[dict[str, Any]]:
     """List types of services.
+
+    Args:
+        kwargs: Further arguments that Connexion passes (`user`,
+            `token_info`); unused.
 
     Returns:
         List of distinct service types, sorted by group, artifact and version.
@@ -85,8 +96,12 @@ def getServiceTypes(**kwargs) -> list:
 
 # POST /services
 @log_traffic
-def postService(**kwargs) -> RegisterResponse:
+def postService(**kwargs: Any) -> RegisterResponse:
     """Add service with an auto-generated identifier.
+
+    Args:
+        kwargs: Further arguments that Connexion passes (`user`,
+            `token_info`); unused.
 
     Returns:
         Identifier of registered service, with status `201` and its URL as
@@ -97,7 +112,7 @@ def postService(**kwargs) -> RegisterResponse:
 
 # DELETE /services/{serviceId}
 @log_traffic
-def deleteService(serviceId: str, **kwargs) -> str:
+def deleteService(serviceId: str, **kwargs: Any) -> str:
     """Delete service.
 
     The roles on the service are revoked first, so that none are left on a
@@ -107,6 +122,8 @@ def deleteService(serviceId: str, **kwargs) -> str:
 
     Args:
         serviceId: Identifier of service to be deleted.
+        kwargs: Further arguments that Connexion passes (`user`,
+            `token_info`); unused.
 
     Returns:
         Identifier of deleted service.
@@ -129,7 +146,7 @@ def deleteService(serviceId: str, **kwargs) -> str:
 
 # PUT /services/{serviceId}
 @log_traffic
-def putService(serviceId: str, **kwargs) -> RegisterResponse:
+def putService(serviceId: str, **kwargs: Any) -> RegisterResponse:
     """Add/replace service with a user-supplied ID.
 
     Only admins may add services: for others, the service must exist (cf.
@@ -137,6 +154,8 @@ def putService(serviceId: str, **kwargs) -> RegisterResponse:
 
     Args:
         serviceId: Identifier of service to be registered/updated.
+        kwargs: Further arguments that Connexion passes (`user`,
+            `token_info`); unused.
 
     Returns:
         Identifier of registered/updated service; for registered services,
@@ -150,7 +169,7 @@ def putService(serviceId: str, **kwargs) -> RegisterResponse:
     )
 
 
-def _get_request_object() -> dict:
+def _get_request_object() -> dict[str, Any]:
     """Get the JSON object in the request body.
 
     Returns:
@@ -241,8 +260,9 @@ def _register_service(
 
 
 def _unregister_service(service: RegisterService) -> None:
-    """Delete a new service whose owner couldn't be stored, as only admins
-    could manage it, with any roles stored for it.
+    """Delete a new service whose owner couldn't be stored.
+
+    Only admins could manage it otherwise. Roles stored for it are revoked.
 
     Args:
         service: Registered service.
