@@ -104,13 +104,13 @@ cloud-registry -n <namespace>` shows them again).
 Resource names are derived from the release name, so that several releases
 can be installed in one namespace:
 
-- **App** (Deployment, Service, Ingress or Route; ConfigMap `<app>-config`):
-  `<app>` is `<release>-cloud-registry`, or the release name if it contains
-  `cloud-registry` (e.g., `cloud-registry` for the release `cloud-registry`,
-  `prod-cloud-registry` for the release `prod`);
-- **MongoDB** (Deployment, Service, PersistentVolumeClaim; ConfigMap
-  `<app>-mongodb-init-script`): `<app>-mongodb`; the app connects to this
-  Service.
+- **App** (Deployment, Service, Ingress or Route, NetworkPolicy; ConfigMap
+  `<app>-config`): `<app>` is `<release>-cloud-registry`, or the release
+  name if it contains `cloud-registry` (e.g., `cloud-registry` for the
+  release `cloud-registry`, `prod-cloud-registry` for the release `prod`);
+- **MongoDB** (Deployment, Service, PersistentVolumeClaim, NetworkPolicy;
+  ConfigMap `<app>-mongodb-init-script`): `<app>-mongodb`; the app connects
+  to this Service.
 
 `nameOverride` replaces `cloud-registry` in the names and the
 `app.kubernetes.io/name` label, `fullnameOverride` replaces `<app>`
@@ -256,6 +256,65 @@ mongodb:
 
 If the storage manages the permissions of the volume itself, `fsGroup: null`
 removes `fsGroup`.
+
+## Network policies
+
+The chart creates
+[NetworkPolicies](https://kubernetes.io/docs/concepts/services-networking/network-policies/)
+that restrict which pods may connect to its pods (ingress); connections from
+the pods, e.g., of the app to MongoDB and to the token issuers (OpenID
+Connect discovery, JWKS), are not restricted. They only take effect if the
+cluster's network plugin enforces NetworkPolicies (e.g., Calico or Cilium);
+other clusters accept and ignore them.
+
+- **MongoDB** (`mongodb.networkPolicy.enabled`, default `true`): only the
+  app's pods of the same release may connect, on MongoDB's port (selected by
+  the labels of [Names and labels](#names-and-labels)); other pods, e.g., of
+  other releases in the namespace, can't. `kubectl exec`, as in the
+  commands of [MongoDB](#mongodb), doesn't go through the pod network and
+  is not affected; to connect from other pods (e.g., a backup job), disable
+  the policy, or add a NetworkPolicy that allows them (NetworkPolicies add
+  up).
+- **App** (`cloudRegistry.networkPolicy.enabled`, default `false`): only the
+  NetworkPolicy peers in `cloudRegistry.networkPolicy.ingressFrom` may
+  connect, on the app's port. The default allows the namespace
+  `ingress-nginx`, where ingress-nginx usually runs, so before enabling the
+  policy, check that it matches the cluster's ingress controller (or the
+  OpenShift router); otherwise, the app is unreachable through the Ingress
+  (or Route). Add any other clients in the cluster that call the app's
+  Service directly, e.g.:
+
+  ```yaml
+  cloudRegistry:
+    networkPolicy:
+      enabled: true
+      ingressFrom:
+      # The pods of ingress-nginx in the namespace `ingress-nginx` (stricter
+      # than the default, which allows all pods of that namespace)
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: ingress-nginx
+        podSelector:
+          matchLabels:
+            app.kubernetes.io/name: ingress-nginx
+      # A client in the release's namespace
+      - podSelector:
+          matchLabels:
+            app.kubernetes.io/name: my-portal
+      # On OpenShift: the router's namespace
+      # - namespaceSelector:
+      #     matchLabels:
+      #       policy-group.network.openshift.io/ingress: ""
+  ```
+
+  `ingressFrom` replaces the default; rendering fails if it is empty (which
+  would allow all sources). An ingress controller in the host network (e.g.,
+  `hostNetwork: true`) connects from the nodes' addresses, which namespace
+  selectors don't match; allow them with an `ipBlock` instead.
+
+Neither policy blocks the probes: connections from the pod's own node, where
+the kubelet runs them, are always allowed (see "The two sorts of pod
+isolation" in the Kubernetes documentation).
 
 ## Server
 

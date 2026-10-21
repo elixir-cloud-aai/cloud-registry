@@ -75,6 +75,20 @@ cloudRegistry:
       # ClusterIssuer) and serve HTTPS
       enabled: false
       issuer: letsencrypt-prod
+  # NetworkPolicy allowing connections to the app only from `ingressFrom`
+  # (and the kubelet's probes; see deployment/README.md, Network policies);
+  # clusters without NetworkPolicy support ignore it. Disabled by default:
+  # before enabling it, make `ingressFrom` match the ingress controller
+  networkPolicy:
+    enabled: false
+    # NetworkPolicy peers (`spec.ingress[].from`) allowed to connect to the
+    # app; by default, the namespace of ingress-nginx. Must not be empty
+    # (which would allow all sources); on OpenShift, use the router's
+    # namespaces (`policy-group.network.openshift.io/ingress: ""`)
+    ingressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
   # Security contexts of the pod and the container; the image runs as user
   # 1000, and with a read-only root file system, temporary files go to an
   # `emptyDir` at `/tmp`. On OpenShift, `runAsUser`, `runAsGroup` and
@@ -147,6 +161,11 @@ mongodb:
     # `root-password` (MongoDB root user) and `username` and `password` (app
     # user, created with access to the app's database)
     existingSecret: ""
+  # NetworkPolicy allowing connections to MongoDB only from the app's pods of
+  # this release (and the kubelet's probes; see deployment/README.md, Network
+  # policies); clusters without NetworkPolicy support ignore it
+  networkPolicy:
+    enabled: true
   volumeSize: 1Gi
   # Security contexts of the pod and the container; the image starts as root
   # and switches to user `mongodb` (999), so the user is set here, and

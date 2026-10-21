@@ -24,6 +24,8 @@ from tests.test_config import CONFIG_FILE
 
 NO_AUTH = ("--set", "mongodb.auth.enabled=false")
 NO_INGRESS = ("--set", "cloudRegistry.ingress.enabled=false")
+# The app's NetworkPolicy is enabled (MongoDB's is by default)
+APP_POLICY = ("--set", "cloudRegistry.networkPolicy.enabled=true")
 # The cluster serves OpenShift Routes
 ROUTE_API = ("--api-versions", "route.openshift.io/v1")
 INIT_SCRIPT = f"{MONGODB}-init-script"
@@ -299,7 +301,8 @@ def test_auth_requires_secret(args):
 )
 def test_names(release, app):
     """Resource names are derived from the release name."""
-    docs = _render(release=release)
+    # The app's NetworkPolicy is opt-in, so it is enabled to cover all kinds
+    docs = _render(*APP_POLICY, release=release)
     mongodb = f"{app}-mongodb"
     assert set(docs) == {
         ("ConfigMap", f"{app}-config"),
@@ -307,6 +310,8 @@ def test_names(release, app):
         ("Deployment", app),
         ("Deployment", mongodb),
         ("Ingress", app),
+        ("NetworkPolicy", app),
+        ("NetworkPolicy", mongodb),
         ("PersistentVolumeClaim", mongodb),
         ("Service", app),
         ("Service", mongodb),
@@ -381,8 +386,8 @@ def test_releases_disjoint():
     """Two releases in one namespace share no resource names, and neither
     selects the pods of the other.
     """
-    first = _render(release="first")
-    second = _render(release="second")
+    first = _render(*APP_POLICY, release="first")
+    second = _render(*APP_POLICY, release="second")
     assert not set(first) & set(second)
     selectors = [
         tuple(sorted(doc["spec"]["selector"].items()))
@@ -511,7 +516,7 @@ def test_labels(name, component):
 
 def test_labels_all():
     """All resources have the standard labels."""
-    docs = _render(release="prod")
+    docs = _render(*APP_POLICY, release="prod")
     chart = yaml.safe_load((CHART / "Chart.yaml").read_text())
     for doc in docs.values():
         labels = doc["metadata"]["labels"]
@@ -1030,3 +1035,137 @@ def test_notes(args, exposed, tls_note):
     forward = f"kubectl port-forward svc/{APP} 8080:8080 -n registry\n"
     assert (forward in notes) is not exposed
     assert f"kubectl rollout status deploy/{APP} -n registry" in notes
+
+
+# Default peers allowed to connect to the app: the namespace of ingress-nginx
+INGRESS_NGINX = [
+    {
+        "namespaceSelector": {
+            "matchLabels": {"kubernetes.io/metadata.name": "ingress-nginx"}
+        }
+    }
+]
+
+
+def _network_policies(docs: dict) -> dict:
+    """Get the NetworkPolicies by name."""
+    return {name: doc for (kind, name), doc in docs.items() if kind == "NetworkPolicy"}
+
+
+def _pod_labels(docs: dict, name: str) -> dict:
+    """Get the pod labels of a Deployment."""
+    return docs[("Deployment", name)]["spec"]["template"]["metadata"]["labels"]
+
+
+def _only_ingress(policy: dict) -> list:
+    """Check that a NetworkPolicy restricts ingress only (not egress), and
+    get its ingress rules.
+    """
+    spec = policy["spec"]
+    assert spec["policyTypes"] == ["Ingress"]
+    assert "egress" not in spec
+    return spec["ingress"]
+
+
+def test_network_policy_defaults():
+    """By default, only the app's pods of the release may connect to MongoDB
+    (on its port), and the app has no NetworkPolicy.
+    """
+    docs = _render(release="prod")
+    policies = _network_policies(docs)
+    assert set(policies) == {"prod-cloud-registry-mongodb"}
+    policy = policies["prod-cloud-registry-mongodb"]
+    mongodb_labels = _pod_labels(docs, "prod-cloud-registry-mongodb")
+    assert policy["spec"]["podSelector"] == {"matchLabels": mongodb_labels}
+    app_labels = _pod_labels(docs, "prod-cloud-registry")
+    assert _only_ingress(policy) == [
+        {
+            "from": [{"podSelector": {"matchLabels": app_labels}}],
+            "ports": [{"port": 27017, "protocol": "TCP"}],
+        }
+    ]
+    container = _container(docs, "prod-cloud-registry-mongodb")
+    assert container["ports"][0]["containerPort"] == 27017
+
+
+def test_network_policy_disabled():
+    """The MongoDB NetworkPolicy can be disabled."""
+    docs = _render("--set", "mongodb.networkPolicy.enabled=false")
+    assert not _network_policies(docs)
+
+
+def test_network_policy_app():
+    """If enabled, only the namespace of ingress-nginx may connect to the
+    app (on its port) by default.
+    """
+    docs = _render(*APP_POLICY)
+    policy = _network_policies(docs)[APP]
+    assert policy["spec"]["podSelector"] == {"matchLabels": _pod_labels(docs, APP)}
+    assert _only_ingress(policy) == [
+        {"from": INGRESS_NGINX, "ports": [{"port": 8080, "protocol": "TCP"}]}
+    ]
+    assert _container(docs, APP)["ports"][0]["containerPort"] == 8080
+    assert MONGODB in _network_policies(docs)
+
+
+def test_network_policy_app_ingress_from(tmp_path):
+    """The peers allowed to connect to the app can be changed."""
+    peers = [
+        {
+            "namespaceSelector": {
+                "matchLabels": {"policy-group.network.openshift.io/ingress": ""}
+            }
+        },
+        {"ipBlock": {"cidr": "10.0.0.0/8"}},
+    ]
+    values_file = tmp_path / "values.yaml"
+    values_file.write_text(
+        yaml.safe_dump(
+            {
+                "cloudRegistry": {
+                    "networkPolicy": {"enabled": True, "ingressFrom": peers}
+                }
+            }
+        )
+    )
+    docs = _render("-f", str(values_file))
+    (rule,) = _only_ingress(_network_policies(docs)[APP])
+    assert rule["from"] == peers
+
+
+@pytest.mark.parametrize(
+    ("args", "error"),
+    [
+        (
+            ("--set-json", "cloudRegistry.networkPolicy.ingressFrom=[]"),
+            "'/cloudRegistry/networkPolicy/ingressFrom': minItems",
+        ),
+        (
+            ("--set-json", "cloudRegistry.networkPolicy.ingressFrom=[{}]"),
+            "'/cloudRegistry/networkPolicy/ingressFrom/0': minProperties",
+        ),
+        (
+            ("--set", "cloudRegistry.networkPolicy.ingressFrom=null"),
+            "ingressFrom must list at least one NetworkPolicy peer",
+        ),
+        (
+            (
+                "--set-json",
+                'cloudRegistry.networkPolicy.ingressFrom=[{"podselector": {}}]',
+            ),
+            "additional properties 'podselector'",
+        ),
+        (
+            ("--set-string", "mongodb.networkPolicy.enabled=false"),
+            "'/mongodb/networkPolicy/enabled': got string, want boolean",
+        ),
+    ],
+    ids=["empty", "empty-peer", "null", "unknown-peer-field", "enabled-type"],
+)
+def test_network_policy_invalid(args, error):
+    """Rendering fails without peers allowed to connect to the app (which
+    would allow all sources), with unknown peer fields or wrong types.
+    """
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render(*APP_POLICY, *args)
+    assert error in exc.value.stderr
