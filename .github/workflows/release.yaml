@@ -39,7 +39,6 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       prerelease: ${{ steps.version.outputs.prerelease }}
-      stable: ${{ steps.version.outputs.stable }}
       sha: ${{ steps.version.outputs.sha }}
     steps:
       - name: Check out repository
@@ -49,6 +48,11 @@ jobs:
           # Full history and all tags, to check that the release commit is on
           # `main`
           fetch-depth: 0
+      # For `scripts/release_version.py` (standard library only)
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
       - name: Check release tag and commit
         id: version
         # Guards against accidental releases, e.g., of unmerged commits; the
@@ -59,15 +63,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          # Canonical versions only (no leading zeros), as setuptools-scm
-          # would normalize them
-          if [[ ! "${TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)((a|b|rc)(0|[1-9][0-9]*))?$ ]]; then
-              echo "::error::Tag '${TAG}' is not a release version (e.g., v1.2.3 or v1.2.3rc1)"
-              exit 1
-          fi
-          major="${BASH_REMATCH[1]}"
-          base="${major}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
-          pre="${BASH_REMATCH[4]}"
+          # Fails unless the tag is a release version; version, chart version
+          # and kind of release (see `scripts/release_version.py`)
+          python scripts/release_version.py outputs "${TAG}" >> "${GITHUB_OUTPUT}"
           # Annotated, with a signature that GitHub verified
           if [[ "$(git cat-file -t "refs/tags/${TAG}")" != "tag" ]]; then
               echo "::error::Tag '${TAG}' is not annotated (git tag -s)"
@@ -83,25 +81,7 @@ jobs:
               echo "::error::Release commit is not on 'main'"
               exit 1
           fi
-          {
-              echo "version=${TAG#v}"
-              echo "sha=$(git rev-parse HEAD)"
-              # Charts need SemVer: `1.2.3rc1` becomes `1.2.3-rc1`
-              echo "chart_version=${base}${pre:+-${pre}}"
-              # `stable`: not an alpha, beta or release candidate (decides
-              # `latest`); `prerelease`: GitHub pre-release, also for all
-              # releases before 1.0.0
-              if [[ -n "${pre}" ]]; then
-                  echo "stable=false"
-              else
-                  echo "stable=true"
-              fi
-              if [[ -n "${pre}" || "${major}" == "0" ]]; then
-                  echo "prerelease=true"
-              else
-                  echo "prerelease=false"
-              fi
-          } >> "${GITHUB_OUTPUT}"
+          echo "sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
       # Curated release notes are published as written, so unfinished ones
       # (with a `TODO`) must not be published
       - name: Check release notes
@@ -173,6 +153,11 @@ jobs:
           ref: ${{ needs.prepare.outputs.sha }}
           # All tags and `main`, to determine the highest release
           fetch-depth: 0
+      # For `scripts/release_version.py` (standard library only)
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       # Tag `X.Y.Z`; OCI labels with the version, commit and source
@@ -225,19 +210,13 @@ jobs:
         id: latest
         env:
           TAG: ${{ github.ref_name }}
-          STABLE: ${{ needs.prepare.outputs.stable }}
         run: |
           git fetch --quiet --force --tags origin \
               "+refs/heads/main:refs/remotes/origin/main"
-          # Stable releases on `main` only, so that stray tags are ignored
-          highest="$(git tag -l 'v*' --merged origin/main --sort=-v:refname \
-              | grep -E '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' \
-              | head -n 1 || true)"
-          if [[ "${STABLE}" == "true" && "${highest}" == "${TAG}" ]]; then
-              echo "latest=true" >> "${GITHUB_OUTPUT}"
-          else
-              echo "latest=false" >> "${GITHUB_OUTPUT}"
-          fi
+          # The highest stable release among the tags on `main`, so that stray
+          # tags are ignored
+          git tag -l 'v*' --merged origin/main \
+              | python scripts/release_version.py latest "${TAG}" >> "${GITHUB_OUTPUT}"
       - name: Push image as latest
         if: steps.latest.outputs.latest == 'true'
         env:

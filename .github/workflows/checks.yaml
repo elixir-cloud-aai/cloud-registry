@@ -86,7 +86,7 @@ jobs:
           pip install -e ".[dev]"
       - name: Calculate unit test coverage
         run: |
-          coverage run --source cloud_registry -m pytest -W ignore::DeprecationWarning
+          coverage run --source cloud_registry,scripts -m pytest -W ignore::DeprecationWarning
           coverage xml
       # Upload errors fail the workflow only on pushes, because pull requests
       # from forks and Dependabot get no access to the Codecov token
