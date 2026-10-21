@@ -1,8 +1,8 @@
 apiVersion: v2
 name: cloud-registry
 description: >-
-  ELIXIR Cloud Service Registry, an implementation of the GA4GH Service
-  Registry API, with a MongoDB database
+  Cloud Registry, an implementation of the GA4GH Service Registry API by
+  ELIXIR On-Cloud, with a MongoDB database
 type: application
 # Placeholders: releases set `version` and `appVersion` from the tag
 # (`vX.Y.Z`, see "Versioning and releases" in `docs/development.md`).

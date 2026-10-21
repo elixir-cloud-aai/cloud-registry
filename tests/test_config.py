@@ -243,7 +243,7 @@ class TestChartOverlay:
         assert config.service_info is not None
         info = config.service_info.service
         assert info["environment"] == "prod"
-        assert info["id"] == "ELIXIR_CLOUD_SERVICE_REGISTRY_1"
+        assert info["id"] == "cloud.elixir-on.cloud-registry"
 
     def test_admin_group_required(self) -> None:
         """Rendering fails without a group mapped to the role `admin`."""

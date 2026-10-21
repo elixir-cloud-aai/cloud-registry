@@ -50,7 +50,7 @@ exclude_also = ['if __name__ == "__main__":']
 
 [project]
 name ="cloud-registry"
-authors = [{name = "ELIXIR Cloud & AAI"}, {email = "alexander.kanitz@alumni.ethz.ch"}]
+authors = [{name = "ELIXIR On-Cloud"}, {email = "alexander.kanitz@alumni.ethz.ch"}]
 keywords = [
     "ga4gh", "service", "registry", "elixir", "cloud", "rest", "restful",
     "api", "app", "server", "openapi", "swagger", "mongodb", "python", "flask"
@@ -66,7 +66,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 requires-python = ">=3.10"
-description = "GA4GH Service Registry API implementation for the ELIXIR Cloud"
+description = "GA4GH Service Registry API implementation by ELIXIR On-Cloud"
 license = "Apache-2.0"
 dynamic = ["version"]
 dependencies = [
