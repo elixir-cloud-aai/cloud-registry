@@ -136,8 +136,8 @@ checked in reviews.
   `disallow_any_generics`); reviews check those of variables.
 - **Tests:** [pytest](https://docs.pytest.org/), with coverage measured by
   [coverage](https://coverage.readthedocs.io/): keep it at 100% of
-  `cloud_registry` (Codecov reports changes of the coverage on pull
-  requests; reviews check that it stays at 100%). Add tests that fail
+  `cloud_registry` and `scripts` (Codecov reports changes of the coverage on
+  pull requests; reviews check that it stays at 100%). Add tests that fail
   without your change.
 - **Further checks:** [ast-grep](https://ast-grep.github.io/) (rules in
   `.ast-grep/`, with tests), [semgrep](https://semgrep.dev/) (security rules

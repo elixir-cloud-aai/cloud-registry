@@ -51,7 +51,7 @@ known-first-party = ["cloud_registry", "tests"]
 convention = "google"
 
 [tool.mypy]
-files = ["cloud_registry", "docs/hooks.py", "tests"]
+files = ["cloud_registry", "docs/hooks.py", "scripts", "tests"]
 # Complete type hints: all functions annotated, generic types parametrized
 # (instead of ruff's `ANN` rules, which report missing hints only, without
 # checking them)
@@ -70,7 +70,7 @@ module = ["gunicorn", "gunicorn.*"]
 ignore_missing_imports = true
 
 [tool.coverage.run]
-source = ["cloud_registry"]
+source = ["cloud_registry", "scripts"]
 
 [tool.coverage.report]
 exclude_also = ['if __name__ == "__main__":']

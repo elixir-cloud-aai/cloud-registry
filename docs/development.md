@@ -108,7 +108,11 @@ workflow](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/.github/wo
 passed for it (a run for the push of the commit to `dev`; if CI hasn't
 finished or failed, re-run the release workflow once it passed). It packages
 the Helm chart with the release version as `version` and `appVersion` (the
-default image tag). After approval in the `release` environment, it builds
+default image tag). In the packaged README, links to the latest docs and to
+files on branch `dev` point to the release (`/en/vX.Y.Z/`, `blob/vX.Y.Z/`);
+the release fails if any link to a version that moves is left
+(`scripts/chart_readme.py`). The README in the repository is unchanged.
+After approval in the `release` environment, it builds
 the image, checks that the app reports the release version, pushes exactly
 that image tagged `X.Y.Z` (and `latest`, if it is the highest stable release
 on `main`), and creates a GitHub release with the chart (`.tgz`) and the
@@ -126,6 +130,12 @@ update the `latest` image. These and, until 1.0.0, all other releases are
 GitHub pre-releases (never marked as the latest release). Images of commits
 on `dev` are published by the CI workflow (environment `dev-images`).
 
+The release workflow derives the version, the chart version, the kind of
+release (stable, GitHub pre-release) and whether the image is tagged `latest`
+from the tag with `scripts/release_version.py`, which is tested over a table
+of tags (`tests/test_release_version.py`) and checked like the app (ruff,
+mypy, coverage); change these rules there, not in the workflow.
+
 In curated notes, link all changes of the release as the compare view from
 the previous release's tag (e.g.,
 `https://github.com/elixir-cloud-aai/cloud-registry/compare/vA.B.C...vX.Y.Z`)
@@ -138,6 +148,8 @@ reviewer; a tag ruleset for `v*` that restricts who may create them and
 prevents moving or deleting them; `main` protected against non-fast-forward
 pushes; and the Docker Hub secrets (`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`,
 `DOCKERHUB_ORG`) only in the two environments, not as repository secrets.
+On Read the Docs, an automation rule activates the versions of tags (`v*`),
+so that the docs linked from packaged charts exist.
 
 The CI workflow (which tests the chart) and the release workflow (which
 packages it) install the same Helm version (`version:` of `azure/setup-helm`
