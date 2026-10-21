@@ -1,5 +1,8 @@
 ##### BASE IMAGE #####
-FROM elixircloud/foca:0.14.0-py3.12
+## Pinned by digest, so that rebuilds (e.g., of a release) use the same base
+## image; Dependabot updates the tag and digest together
+## (`.github/dependabot.yml`)
+FROM elixircloud/foca:0.14.0-py3.12@sha256:1c2ba7ea6a126d2be88c3f75c7b06a6cc6b4ac3b8b5590cd0df8460208e24da5
 
 ##### METADATA #####
 LABEL software="Cloud Registry"
@@ -17,11 +20,13 @@ RUN pip install --no-cache-dir -r /tmp/src/requirements.txt
 
 ## Install app (non-editable; the base config is installed with the package,
 ## and deployments override it via `FOCA_CONFIG_OVERLAY`)
-## (`README.md` is the package's long description)
+## (`README.md` is the package's long description; the license text is
+## installed with the package metadata, e.g.,
+## `site-packages/cloud_registry-<version>.dist-info/licenses/LICENSE`)
 ## The build context has no Git metadata, so the version is passed as a build
 ## argument (e.g., `--build-arg SETUPTOOLS_SCM_PRETEND_VERSION=0.3.0`, as the
 ## workflows do); without it, the app reports version `0.0.0.dev0`
-COPY pyproject.toml README.md /tmp/src/
+COPY pyproject.toml README.md LICENSE /tmp/src/
 COPY cloud_registry /tmp/src/cloud_registry
 ARG SETUPTOOLS_SCM_PRETEND_VERSION
 RUN pip install --no-cache-dir --no-deps /tmp/src \

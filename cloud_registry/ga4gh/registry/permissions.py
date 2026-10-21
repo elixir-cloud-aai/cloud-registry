@@ -1,6 +1,9 @@
 """Access control: policies, service ownership and controllers for managing
 permissions on services.
 
+Changes of roles are logged (who changed which role of whom on which
+service), for auditing.
+
 Policies are configured in `config.yaml` (`security.access_control`) and
 enforced by FOCA on all operations that require authentication, using the
 model in `cloud_registry/access_control/model.conf`. Subjects with the role
@@ -28,7 +31,7 @@ from foca.security.access_control.enforcement import (
 
 from cloud_registry.exceptions import BadRequest, Conflict, NotFound
 from cloud_registry.ga4gh.registry.service import service_exists
-from cloud_registry.utils import get_collection, get_custom_config
+from cloud_registry.utils import escape_log_value, get_collection, get_custom_config
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +44,9 @@ USER_NAMES = "user_names"
 def check_admin_groups() -> None:
     """Check that groups are mapped to the role `admin`, and log them.
 
-    Without such groups, nobody can manage services they don't own or set the
-    service info, so this is an error unless
-    `custom.access_control.require_admin` is false.
+    Without such groups, nobody can manage services they don't own, register
+    services with chosen identifiers or verify services, so this is an error
+    unless `custom.access_control.require_admin` is false.
 
     Raises:
         RuntimeError: No group is mapped to the role `admin`, and
@@ -64,7 +67,8 @@ def check_admin_groups() -> None:
     else:
         logger.warning(
             "No group is mapped to the role 'admin', so nobody can manage "
-            "services they don't own or set the service info"
+            "services they don't own, register services with chosen "
+            "identifiers or verify services"
         )
 
 
@@ -108,6 +112,29 @@ def _get_current_claims() -> dict:
     return claims if isinstance(claims, dict) else {}
 
 
+def current_user() -> str:
+    """Get the subject of the current request, for log messages.
+
+    Returns:
+        User identifier, with non-printable characters escaped.
+    """
+    return escape_log_value(get_current_subject())
+
+
+def is_admin() -> bool:
+    """Check whether the subject of the current request is an admin.
+
+    Returns:
+        Whether the subject has the role `admin`, as the policies see it:
+        from group claims (cf. `security.access_control.group_mapping`) or
+        granted to the user via FOCA's permissions API (a `g` rule).
+    """
+    prefix = get_config().security.access_control.subject_prefix
+    role_manager = get_enforcer().get_role_manager()
+    subjects = [f"{prefix}{get_current_subject()}", *get_current_groups()]
+    return any(role_manager.has_link(subject, "admin") for subject in subjects)
+
+
 def remember_current_user(service_ids: list[str]) -> None:
     """Store the display name of the subject of the current request for
     services they have a role on.
@@ -132,6 +159,20 @@ def remember_current_user(service_ids: list[str]) -> None:
         )
 
 
+def _forget_names(serviceId: str, userId: str | None = None) -> None:
+    """Delete display names stored for users on a service (cf.
+    `remember_current_user()`).
+
+    Args:
+        serviceId: Service identifier.
+        userId: User identifier; names of all users if `None`.
+    """
+    query = {"service_id": serviceId}
+    if userId is not None:
+        query["user_id"] = userId
+    get_collection(USER_NAMES).delete_many(query)
+
+
 def add_owner(serviceId: str) -> None:
     """Make the subject of the current request owner of a service.
 
@@ -143,7 +184,33 @@ def add_owner(serviceId: str) -> None:
         role="owner",
         resource=service_path(serviceId),
     )
+    logger.info(
+        "Role 'owner' on new service '%s' granted to its creator '%s'.",
+        escape_log_value(serviceId),
+        current_user(),
+    )
     remember_current_user([serviceId])
+
+
+def remove_owner(serviceId: str) -> None:
+    """Revoke the owner role of the subject of the current request on a
+    service, and their name stored for it (e.g., if the service they
+    registered was deleted meanwhile). Other roles on the service (e.g., of
+    the owner of a service registered again with the identifier) are kept.
+
+    Args:
+        serviceId: Service identifier.
+    """
+    user_id: str = get_current_subject()  # type: ignore[assignment]
+    if remove_resource_role(
+        subject=user_id, role="owner", resource=service_path(serviceId)
+    ):
+        logger.info(
+            "Role 'owner' on deleted service '%s' revoked from its creator '%s'.",
+            escape_log_value(serviceId),
+            current_user(),
+        )
+    _forget_names(serviceId, user_id)
 
 
 def remove_permissions(serviceId: str) -> None:
@@ -152,8 +219,13 @@ def remove_permissions(serviceId: str) -> None:
     Args:
         serviceId: Service identifier.
     """
-    remove_resource(service_path(serviceId))
-    get_collection(USER_NAMES).delete_many({"service_id": serviceId})
+    if remove_resource(service_path(serviceId)):
+        logger.info(
+            "All roles on service '%s' revoked by '%s'.",
+            escape_log_value(serviceId),
+            current_user(),
+        )
+    _forget_names(serviceId)
 
 
 # GET /services/{serviceId}/permissions
@@ -218,8 +290,41 @@ def _check_other_owners(resource: str, userId: str) -> None:
             the service.
     """
     if _owners(resource) == [userId]:
-        logger.info("User '%s' is the last owner of '%s'", userId, resource)
+        logger.info(
+            "User '%s' is the last owner of '%s'",
+            escape_log_value(userId),
+            escape_log_value(resource),
+        )
         raise Conflict
+
+
+def _grant(serviceId: str, resource: str, userId: str, role: str) -> None:
+    """Grant a user a role on a service, unless the service was deleted.
+
+    Checking that the service exists before granting the role is not atomic:
+    the service may be deleted in between (after its roles were revoked),
+    and the role would be left on the deleted service. So the existence is
+    checked again afterwards, and if the service is gone, the role (and a
+    name stored for the user on the service) is revoked again. (A deletion
+    also revokes the roles again after deleting the service, cf.
+    `deleteService()`.)
+
+    Args:
+        serviceId: Service identifier.
+        resource: Resource path of the service.
+        userId: User identifier.
+        role: Role to grant.
+
+    Raises:
+        cloud_registry.exceptions.NotFound: The service was deleted
+            meanwhile.
+        ValueError: The user identifier can't be stored in policy rules.
+    """
+    add_resource_role(subject=userId, role=role, resource=resource)
+    if not service_exists(serviceId):
+        remove_resource_role(subject=userId, role=role, resource=resource)
+        _forget_names(serviceId, userId)
+        raise NotFound
 
 
 def _restore_owner_if_none(serviceId: str, resource: str, userId: str) -> None:
@@ -241,11 +346,15 @@ def _restore_owner_if_none(serviceId: str, resource: str, userId: str) -> None:
             meanwhile.
     """
     if not _owners(resource):
-        # A concurrent deletion of the service removed all roles
-        if not service_exists(serviceId):
-            raise NotFound
-        add_resource_role(subject=userId, role="owner", resource=resource)
-        logger.info("Restored owner '%s' of '%s'", userId, resource)
+        # A concurrent deletion of the service removed all roles, unless
+        # the service still exists afterwards
+        _grant(serviceId, resource, userId, "owner")
+        logger.info(
+            "Restored owner '%s' of '%s', removed concurrently by '%s'",
+            escape_log_value(userId),
+            escape_log_value(resource),
+            current_user(),
+        )
         raise Conflict
 
 
@@ -270,7 +379,8 @@ def putServicePermission(serviceId: str, userId: str, **kwargs) -> dict:
             stored in policy rules.
         cloud_registry.exceptions.Conflict: The user is the last owner of
             the service, and the role is not `owner`.
-        cloud_registry.exceptions.NotFound: The service doesn't exist.
+        cloud_registry.exceptions.NotFound: The service doesn't exist, or
+            was deleted meanwhile (cf. `_grant()`).
     """
     role = request.json["role"]
     if not service_exists(serviceId):
@@ -290,15 +400,21 @@ def putServicePermission(serviceId: str, userId: str, **kwargs) -> dict:
         if "owner" in previous_roles and role != "owner":
             _restore_owner_if_none(serviceId, resource, userId)
         if not previous_roles:
-            get_collection(USER_NAMES).delete_many(
-                {"service_id": serviceId, "user_id": userId}
-            )
-        add_resource_role(subject=userId, role=role, resource=resource)
+            _forget_names(serviceId, userId)
+        _grant(serviceId, resource, userId, role)
     # FOCA rejects values that can't be stored in policy rules (e.g., user
     # identifiers with commas)
     except ValueError as exc:
-        logger.info("Invalid permission: %s", exc)
+        logger.info("Invalid permission: %s", escape_log_value(exc))
         raise BadRequest from exc
+    logger.info(
+        "Role '%s' on service '%s' granted to '%s' by '%s' (previous roles: %s).",
+        role,
+        escape_log_value(serviceId),
+        escape_log_value(userId),
+        current_user(),
+        ", ".join(previous_roles) or "none",
+    )
     return {"user_id": userId, "role": role}
 
 
@@ -336,7 +452,13 @@ def deleteServicePermission(serviceId: str, userId: str, **kwargs) -> str:
         raise NotFound
     if was_owner:
         _restore_owner_if_none(serviceId, resource, userId)
-    get_collection(USER_NAMES).delete_many({"service_id": serviceId, "user_id": userId})
+    _forget_names(serviceId, userId)
+    logger.info(
+        "Roles on service '%s' of '%s' revoked by '%s'.",
+        escape_log_value(serviceId),
+        escape_log_value(userId),
+        current_user(),
+    )
     return userId
 
 
@@ -346,8 +468,8 @@ def getMe(**kwargs) -> dict:
     the services they have a role on.
 
     Returns:
-        User identifier, whether the user is an admin, and the user's roles
-        on services, sorted by service identifier.
+        User identifier, whether the user is an admin (cf. `is_admin()`),
+        and the user's roles on services, sorted by service identifier.
     """
     user_id: str = get_current_subject()  # type: ignore[assignment]
     prefix = get_config().security.access_control.subject_prefix
@@ -362,6 +484,6 @@ def getMe(**kwargs) -> dict:
     remember_current_user([service["service_id"] for service in services])
     return {
         "user_id": user_id,
-        "admin": "admin" in get_current_groups(),
+        "admin": is_admin(),
         "services": sorted(services, key=lambda service: service["service_id"]),
     }

@@ -14,7 +14,7 @@ import yaml
 
 from cloud_registry.ga4gh.registry.service import KEY
 from tests.conftest import CONFIG_OVERLAY
-from tests.helm import ADMIN_GROUP, CHART, HELM, render
+from tests.helm import ADMIN_GROUP, AUDIENCE, CHART, HELM, render
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -182,6 +182,70 @@ class TestChartOverlay:
             admin_group=None,
         )
         assert overlay["custom"]["access_control"] == {"require_admin": False}
+
+    @pytest.mark.parametrize(
+        "args",
+        [
+            (),
+            ("--set-json", "config.security.auth.audience=[]"),
+            ("--set-json", 'config.security.auth.audience=[" "]'),
+            ("--set-json", "config.security.auth.audience=null"),
+            ("--set", "config.security.auth.verify_audience=true"),
+            ("--set-string", "config.security.auth.verify_audience=true"),
+            ("--set-json", "config.security.auth.verify_audience=null"),
+            ("--set-json", 'config.security.auth.issuers=["https://x.org/"]'),
+            # FOCA refuses no issuers anyway, as access control needs them
+            ("--set-json", "config.security.auth.issuers=[]"),
+        ],
+        ids=[
+            "missing",
+            "empty",
+            "blank",
+            "null",
+            "verified",
+            "string",
+            "null_verify",
+            "issuers",
+            "no_issuers",
+        ],
+    )
+    def test_audience_required(self, args):
+        """Rendering fails without an audience, as the app would refuse to
+        start (FOCA requires one for trusted issuers).
+        """
+        with pytest.raises(subprocess.CalledProcessError) as exc:
+            _render_overlay("--set", "host_name=example.org", *args, audience=None)
+        assert "config.security.auth.audience must" in exc.value.stderr
+
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ("--set", "config.security.auth.verify_audience=false"),
+            ("--set-string", "config.security.auth.verify_audience=false"),
+            ("--set-string", "config.security.auth.verify_audience=False"),
+            ("--set-string", "config.security.auth.verify_audience=no"),
+            ("--set", "config.security.auth.verify_audience=0"),
+        ],
+        ids=["disabled", "string", "capitalized", "no", "zero"],
+    )
+    def test_audience_optional(self, tmp_path, monkeypatch, args):
+        """Without audience validation, no audience is needed, as for the app
+        (which parses `verify_audience` as pydantic does booleans).
+        """
+        overlay = _render_overlay(
+            "--set", "host_name=example.org", *args, audience=None
+        )
+        # without the test overlay, which sets an audience
+        path = tmp_path / "overlay.yaml"
+        path.write_text(yaml.safe_dump(overlay))
+        monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(path))
+        assert _parse_config().security.auth.audience is None
+
+    def test_audience(self, tmp_path, monkeypatch):
+        """The audience is passed to the app."""
+        overlay = _render_overlay("--set", "host_name=example.org")
+        config = _load_config(tmp_path, monkeypatch, overlay)
+        assert config.security.auth.audience == [AUDIENCE]
 
     def test_admin_group(self, tmp_path, monkeypatch):
         """The admin group is passed to the app."""

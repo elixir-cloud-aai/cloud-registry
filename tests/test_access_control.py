@@ -5,6 +5,7 @@
 from copy import deepcopy
 from itertools import count
 
+import mongomock
 import pytest
 
 from cloud_registry.ga4gh.registry import permissions as permissions_module
@@ -407,3 +408,231 @@ def test_no_claims_without_token(app):
     """Without a validated token, there are no claims."""
     with app.app.test_request_context():
         assert permissions_module._get_current_claims() == {}
+
+
+def _roles(app, service_id):
+    """Roles granted on a service, also if it doesn't exist."""
+    with app.app.test_request_context(f"{BASE}/services/{service_id}"):
+        app.app.preprocess_request()
+        return sorted(
+            permissions_module.list_resource_roles(f"{BASE}/services/{service_id}")
+        )
+
+
+def before_first_call(patch, method, collection, callback):
+    """Run a callback once, before the first call of a method of `mongomock`
+    collections on a collection (e.g., to interleave another request).
+
+    Args:
+        patch: Monkeypatch (context) to patch the method with.
+        method: Name of the method of `mongomock.collection.Collection`.
+        collection: Name of the collection.
+        callback: Function to call, without arguments.
+
+    Returns:
+        List that is non-empty once the callback ran.
+    """
+    original = getattr(mongomock.collection.Collection, method)
+    fired = []
+
+    def wrapper(self, *args, **kwargs):
+        if self.name == collection and not fired:
+            fired.append(True)
+            callback()
+        return original(self, *args, **kwargs)
+
+    patch.setattr(mongomock.collection.Collection, method, wrapper)
+    return fired
+
+
+@pytest.mark.parametrize(
+    ("user", "status", "roles"),
+    [(BOB, 404, []), (ADMIN, 201, [(ADMIN, "owner")])],
+    ids=["maintainer", "admin"],
+)
+def test_put_racing_delete(app, client, monkeypatch, user, status, roles):
+    """A service deleted while it is replaced is only registered again by
+    admins: others get `404`, and don't become owners.
+    """
+    service_id = register(client)
+    assert grant(client, service_id, BOB, "maintainer") == 200
+
+    def delete_service():
+        # the owner deletes the service after it was read for the update
+        permissions_module.remove_permissions(service_id)
+        get_collection("services").delete_one({"id": service_id})
+
+    with monkeypatch.context() as patch:
+        fired = before_first_call(patch, "replace_one", "services", delete_service)
+        assert update(client, service_id, user) == status
+    assert fired
+    assert _roles(app, service_id) == roles
+    expected = 404 if status == 404 else 200
+    assert client.get(f"{BASE}/services/{service_id}").status_code == expected
+
+
+def test_create_racing_delete(app, client, monkeypatch, caplog):
+    """The owner role (and name) of the creator of a new service deleted
+    while its owner is stored is revoked again (`404`); roles granted by
+    others on the identifier (e.g., to the owner of a service registered
+    again with it) are kept.
+    """
+
+    def delete_service():
+        # the service is deleted before its owner role is checked (its roles
+        # were revoked before the owner role was granted); and another
+        # request grants a role on the identifier
+        get_collection("services").delete_one({"id": "MYSERV"})
+        permissions_module.add_resource_role(
+            subject=BOB,
+            role="owner",
+            resource=permissions_module.service_path("MYSERV"),
+        )
+
+    with monkeypatch.context() as patch:
+        fired = before_first_call(patch, "update_one", "user_names", delete_service)
+        assert update(client, "MYSERV", ADMIN) == 404
+    assert fired
+    assert any("revoked from its creator" in msg for msg in caplog.messages)
+    assert _roles(app, "MYSERV") == [(BOB, "owner")]
+    with app.app.app_context():
+        names = get_collection("user_names")
+        assert names.count_documents({"service_id": "MYSERV"}) == 0
+    assert client.get(f"{BASE}/services/MYSERV").status_code == 404
+
+
+def test_put_stale_role(app, client, monkeypatch):
+    """Roles left on the identifier of a deleted service don't let users
+    other than admins register it again.
+    """
+    service_id = register(client)
+    assert grant(client, service_id, BOB, "maintainer") == 200
+    # as if revoking the roles of the deleted service had failed
+    with monkeypatch.context() as patch:
+        patch.setattr(server_module, "remove_permissions", lambda serviceId: None)
+        assert delete(client, service_id, ALICE) == 200
+    assert update(client, service_id, BOB) == 404
+    assert client.get(f"{BASE}/services/{service_id}").status_code == 404
+
+
+def test_roles_removed_before_delete(app, client, monkeypatch):
+    """Roles on a service are revoked before it is deleted, so that no role
+    is left on a deleted service if deleting it fails.
+    """
+    service_id = register(client)
+    assert grant(client, service_id, BOB, "maintainer") == 200
+
+    def fail(self, *args, **kwargs):
+        raise RuntimeError("database unavailable")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(mongomock.collection.Collection, "delete_one", fail)
+        assert delete(client, service_id, ALICE) == 500
+    assert _roles(app, service_id) == []
+    assert client.get(f"{BASE}/services/{service_id}").status_code == 200
+
+
+def test_grant_racing_delete(app, client, monkeypatch):
+    """A role granted on a service that is deleted meanwhile is revoked
+    again (`404`).
+    """
+    service_id = register(client)
+    add_resource_role = permissions_module.add_resource_role
+    deleted = []
+
+    def delete_first(**kwargs):
+        # the service is deleted after its existence was checked
+        deleted.append(True)
+        permissions_module.remove_permissions(service_id)
+        get_collection("services").delete_one({"id": service_id})
+        return add_resource_role(**kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(permissions_module, "add_resource_role", delete_first)
+        assert grant(client, service_id, BOB, "maintainer") == 404
+    assert deleted == [True]
+    assert _roles(app, service_id) == []
+
+
+def test_delete_racing_grant(app, client, monkeypatch):
+    """Roles granted while a service is deleted (after its roles were
+    revoked) are revoked with it.
+    """
+    service_id = register(client)
+
+    def grant_role():
+        # a role is granted after the roles were revoked, and the grant's
+        # check found the service still registered
+        permissions_module.add_resource_role(
+            subject=BOB,
+            role="owner",
+            resource=permissions_module.service_path(service_id),
+        )
+
+    with monkeypatch.context() as patch:
+        fired = before_first_call(patch, "delete_one", "services", grant_role)
+        assert delete(client, service_id, ALICE) == 200
+    assert fired
+    assert _roles(app, service_id) == []
+
+
+PERMISSIONS_API = "/admin/access-control/permissions"
+
+
+def test_permissions_api_admin_only(client):
+    """FOCA's permissions API is for admins only."""
+    assert client.get(PERMISSIONS_API).status_code == 401
+    assert client.get(PERMISSIONS_API, headers=headers(ALICE)).status_code == 403
+    rule = {"policy_type": "g", "rule": {"v0": f"user:{ALICE}", "v1": "admin"}}
+    response = client.post(PERMISSIONS_API, json=rule, headers=headers(ALICE))
+    assert response.status_code == 403
+    assert me(client, ALICE)["admin"] is False
+    response = client.get(PERMISSIONS_API, headers=headers(ADMIN))
+    assert response.status_code == 200
+    # the configured policies are listed
+    assert response.json["pagination"]["total"] > 0
+
+
+def test_admin_via_permissions_api(client):
+    """Users granted the role `admin` via the permissions API are admins,
+    and `GET /me` says so, until the role is revoked.
+    """
+    service_id = register(client)
+    assert me(client, CAROL)["admin"] is False
+    rule = {"policy_type": "g", "rule": {"v0": f"user:{CAROL}", "v1": "admin"}}
+    response = client.post(PERMISSIONS_API, json=rule, headers=headers(ADMIN))
+    assert response.status_code == 200
+    rule_id = response.json
+    assert me(client, CAROL)["admin"] is True
+    assert update(client, service_id, CAROL) == 200
+    response = client.delete(f"{PERMISSIONS_API}/{rule_id}", headers=headers(ADMIN))
+    assert response.status_code == 200
+    assert me(client, CAROL)["admin"] is False
+    assert update(client, service_id, CAROL) == 403
+
+
+def test_role_changes_logged(client, caplog):
+    """Changes of roles are logged: who changed which role of whom on which
+    service.
+    """
+    caplog.set_level("INFO", logger=permissions_module.__name__)
+    service_id = register(client)
+    assert grant(client, service_id, BOB, "maintainer") == 200
+    assert grant(client, service_id, BOB, "owner") == 200
+    assert revoke(client, service_id, BOB) == 200
+    assert delete(client, service_id, ADMIN) == 200
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == permissions_module.__name__
+    ]
+    assert messages == [
+        f"Role 'owner' on new service '{service_id}' granted to its creator '{ALICE}'.",
+        f"Role 'maintainer' on service '{service_id}' granted to '{BOB}' by "
+        f"'{ALICE}' (previous roles: none).",
+        f"Role 'owner' on service '{service_id}' granted to '{BOB}' by "
+        f"'{ALICE}' (previous roles: maintainer).",
+        f"Roles on service '{service_id}' of '{BOB}' revoked by '{ALICE}'.",
+        f"All roles on service '{service_id}' revoked by '{ADMIN}'.",
+    ]
+    assert f"Service '{service_id}' deleted by '{ADMIN}'." in caplog.text

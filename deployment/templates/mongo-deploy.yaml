@@ -20,6 +20,8 @@ spec:
       labels:
         {{- include "cloud-registry.selectorLabels" (dict "root" . "component" "mongodb") | nindent 8 }}
     spec:
+      # The pod doesn't call the Kubernetes API
+      automountServiceAccountToken: false
       containers:
       - image: {{ .Values.mongodb.image }}
         imagePullPolicy: Always

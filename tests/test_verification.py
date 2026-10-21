@@ -424,3 +424,36 @@ def test_spec(client):
         spec["components"]["schemas"]["ExternalService"],
     ]
     assert "verif" not in dumps(ga4gh).lower()
+
+
+def test_logged_values_escaped(client, caplog):
+    """Values from request paths are logged with control characters escaped,
+    so that they can't forge or hide log lines (line breaks are rejected in
+    identifiers, as they can't be stored in policy rules).
+    """
+    caplog.set_level("INFO")
+    service_id = "MY%1BSERV"  # with an escape character
+    assert put_service(client, service_id=service_id) == 201
+    assert verify(client, service_id=service_id).status_code == 200
+    assert "Service 'MY\\x1bSERV' verified by" in caplog.text
+    assert "MY\x1bSERV" not in caplog.text
+
+
+def test_verification_changes_logged(client, caplog):
+    """Verifications, and their removal by admins or updates, are logged with
+    the user who changed them.
+    """
+    caplog.set_level("INFO")
+    assert put_service(client) == 201
+    assert verify(client).status_code == 200
+    assert put_service(client, _service(url="https://other.example.org")) == 200
+    assert verify(client).status_code == 200
+    assert unverify(client).status_code == 200
+    messages = [
+        f"Service '{SERVICE_ID}' verified by '{ADMIN}'.",
+        f"Verification of service '{SERVICE_ID}' removed by an update by "
+        f"'{ADMIN}' (URL or API type changed).",
+        f"Verification of service '{SERVICE_ID}' removed by '{ADMIN}'.",
+    ]
+    for message in messages:
+        assert message in caplog.text

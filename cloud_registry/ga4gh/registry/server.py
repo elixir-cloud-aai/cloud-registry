@@ -5,16 +5,23 @@ import logging
 from flask import Response, request
 from foca.utils.logging import log_traffic
 
-from cloud_registry.exceptions import BadRequest, NotFound, problem
-from cloud_registry.ga4gh.registry.permissions import add_owner, remove_permissions
+from cloud_registry.exceptions import BadRequest, NotFound, problem, shorten_detail
+from cloud_registry.ga4gh.registry.permissions import (
+    add_owner,
+    current_user,
+    is_admin,
+    remove_owner,
+    remove_permissions,
+)
 from cloud_registry.ga4gh.registry.service import (
     PROJECTION,
     DuplicateService,
     InvalidService,
     RegisterService,
+    service_exists,
 )
 from cloud_registry.ga4gh.registry.service_info import get_service_info
-from cloud_registry.utils import get_collection, get_public_url
+from cloud_registry.utils import escape_log_value, get_collection, get_public_url
 
 logger = logging.getLogger(__name__)
 # Response for a registered service: its identifier, status `201` and its URL
@@ -105,6 +112,11 @@ def postService(**kwargs) -> RegisterResponse:
 def deleteService(serviceId: str, **kwargs) -> str:
     """Delete service.
 
+    The roles on the service are revoked first, so that none are left on a
+    deleted service if deleting it fails, and nobody can act on it in
+    between; and again afterwards, as roles granted concurrently (after
+    their request checked that the service exists) would be left otherwise.
+
     Args:
         serviceId: Identifier of service to be deleted.
 
@@ -112,10 +124,18 @@ def deleteService(serviceId: str, **kwargs) -> str:
         Identifier of deleted service.
     """
     db_collection_service = get_collection("services")
+    if not service_exists(serviceId):
+        raise NotFound
+    remove_permissions(serviceId)
     res = db_collection_service.delete_one({"id": serviceId})
     if not res.deleted_count:
         raise NotFound
+    # a no-op unless a role was granted during the deletion (logged only if
+    # roles are revoked)
     remove_permissions(serviceId)
+    logger.info(
+        "Service '%s' deleted by '%s'.", escape_log_value(serviceId), current_user()
+    )
     return serviceId
 
 
@@ -123,6 +143,9 @@ def deleteService(serviceId: str, **kwargs) -> str:
 @log_traffic
 def putService(serviceId: str, **kwargs) -> RegisterResponse:
     """Add/replace service with a user-supplied ID.
+
+    Only admins may add services: for others, the service must exist (cf.
+    `RegisterService._replace()`), also if it is deleted concurrently.
 
     Args:
         serviceId: Identifier of service to be registered/updated.
@@ -134,7 +157,9 @@ def putService(serviceId: str, **kwargs) -> RegisterResponse:
     # the request path is the service's URL path: `/services/{serviceId}`,
     # with the API base path and the identifier as routed (decoded)
     collection_path = request.path.removesuffix(f"/{serviceId}")
-    return _register_service(collection_path=collection_path, service_id=serviceId)
+    return _register_service(
+        collection_path=collection_path, service_id=serviceId, allow_create=is_admin()
+    )
 
 
 def _get_request_object() -> dict:
@@ -154,7 +179,7 @@ def _get_request_object() -> dict:
 
 
 def _register_service(
-    collection_path: str, service_id: str | None = None
+    collection_path: str, service_id: str | None = None, allow_create: bool = True
 ) -> RegisterResponse:
     """Register the service in the request body.
 
@@ -162,21 +187,44 @@ def _register_service(
         collection_path: Path of the service collection (`/services`, with the
             API base path), for the URL of new services.
         service_id: Identifier of the service; generated if not provided.
+        allow_create: With `service_id`, whether the service may be
+            registered if it doesn't exist.
 
     Returns:
         Identifier of the service; if it is new, with status `201` and its URL
         as `Location`. Or an error response: `400` for invalid URLs, `409`
         naming the registered service with the same URL and API type.
+
+    Raises:
+        cloud_registry.exceptions.BadRequest: The owner role can't be stored
+            for the service identifier.
+        cloud_registry.exceptions.NotFound: A new service was deleted
+            meanwhile.
     """
-    service = RegisterService(data=_get_request_object(), id=service_id)
+    service = RegisterService(
+        data=_get_request_object(), id=service_id, allow_create=allow_create
+    )
     try:
         service.register_metadata()
     except InvalidService as exc:
-        logger.info("Service not registered: %s", exc.description)
+        logger.info(
+            "Service not registered: %s",
+            escape_log_value(shorten_detail(exc.description)),
+        )
         return problem(exc)
     except DuplicateService as exc:
-        logger.info("Service not registered: %s", exc.description)
+        logger.info(
+            "Service not registered: %s",
+            escape_log_value(shorten_detail(exc.description)),
+        )
         return problem(exc, serviceId=exc.existing_id)
+    if service.verification_removed:
+        logger.info(
+            "Verification of service '%s' removed by an update by '%s' (URL or "
+            "API type changed).",
+            escape_log_value(service.data["id"]),
+            current_user(),
+        )
     if service.was_created:
         try:
             # Roles left on the identifier by a deleted service (e.g., if
@@ -186,12 +234,19 @@ def _register_service(
         except ValueError as exc:
             # FOCA rejects values that can't be stored in policy rules (e.g.,
             # service identifiers with commas)
-            logger.info("Can't store owner role: %s", exc)
+            logger.info("Can't store owner role: %s", escape_log_value(exc))
             _unregister_service(service)
             raise BadRequest from exc
         except Exception:
             _unregister_service(service)
             raise
+        # The service may have been deleted (with its roles) before its owner
+        # was stored, which would leave the role on a deleted service (cf.
+        # `permissions._grant()`); only the role granted here is revoked, as
+        # the identifier may be registered again meanwhile
+        if not service_exists(service.data["id"]):
+            remove_owner(service.data["id"])
+            raise NotFound
         path = f"{collection_path.rstrip('/')}/{service.data['id']}"
         return service.data["id"], 201, {"Location": get_public_url(path)}
     return service.data["id"]

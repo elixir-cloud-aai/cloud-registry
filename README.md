@@ -129,8 +129,10 @@ You can explore the service via the [Swagger UI][url-swagger], which also
 serves the OpenAPI specification (`/ga4gh/registry/v1/openapi.json`).
 
 > The image's Gunicorn listens on port 8080 (`--bind`, see [Server](#server));
-> [`docker-compose.yaml`][compose] publishes it on the host. If you change
-> the published port, update the URLs above accordingly. `server.port` of the
+> [`docker-compose.yaml`][compose] publishes it on the host's loopback
+> interface (`127.0.0.1`) only, as its development config accepts tokens for
+> any audience. If you change the published port, update the URLs above
+> accordingly. `server.port` of the
 > [config][config] only sets the port of the development server
 > (`python -m cloud_registry.app`).
 
@@ -169,8 +171,12 @@ under the API base path `/ga4gh/registry/v1`:
 Registering a service (`POST /services`, or `PUT /services/{serviceId}` with a
 new identifier) returns `201 Created`, with the identifier of the service in
 the body and its [public URL](#public-urls) in the `Location` header; updating
-a service (`PUT`) returns `200 OK`. Identifiers `.` and `..` are rejected
-(`400 Bad Request`).
+a service (`PUT`) returns `200 OK`. Only admins can register services with
+`PUT`: others can only update services they have a role on (`403 Forbidden`
+otherwise). Services deleted while they are registered or updated return
+`404 Not Found`, unless an admin's `PUT` registers them again. Identifiers `.`
+and `..` (which clients resolve in URLs) and `types` (the path of
+`GET /services/types`) are rejected (`400 Bad Request`).
 
 URLs in registrations must be HTTP(S) URLs with a host: the service `url`,
 `documentationUrl`, `organization.url` and `contactUrl`, which can also be an
@@ -182,6 +188,11 @@ contain malformed percent-encodings. Anyone logged in can register services, so
 clients should treat registry content as untrusted: escape it rather than
 render it as HTML, and don't follow or fetch its URLs blindly (e.g., to
 internal addresses).
+
+Timestamps in registrations (`createdAt`, `updatedAt`) must be RFC 3339
+date-times (e.g., `2019-06-04T12:58:19Z`); others are rejected (`400 Bad
+Request`). Services stored before this check may have other values; they
+can't be updated unchanged, only with valid timestamps (or without them).
 
 Request bodies are limited to 1 MiB by default (`413 Content Too Large`; see
 [Request size limit](#request-size-limit)). Strings in the bodies of
@@ -198,6 +209,15 @@ verifications (`PUT /services/{serviceId}/verification`) are limited in length
 
 Services stored before these limits were introduced may have longer values;
 they can't be updated unchanged, only with the values shortened.
+
+The number of registrations per user is not limited, so deployments should
+limit request rates at the ingress (see the [deployment
+instructions][deployment-instructions]).
+
+Requests that don't match the [API specification](#usage) (e.g., missing or
+unknown fields, values that are too long, extra query parameters, or bodies
+that aren't JSON) are rejected with `400 Bad Request`, with the reason in
+`detail`.
 
 See [Access control](#access-control) for the roles and [Verified
 services](#verified-services) for verifications. Extensions of the GA4GH
@@ -283,6 +303,42 @@ public service responses.
 
 Access control is implemented with [FOCA][foca-access-control]; see the
 `security` section of the [configuration][config].
+
+For auditing, the app logs (at level `INFO`) who changed which roles of whom
+on which service, who deleted services, and who verified services or removed
+their verifications (also by updating their URL or API type). Changes via the
+[permissions API](#permissions-api) are not logged by the app itself: FOCA
+logs the requests (method, path and client address) and the identifiers of
+the added, updated or deleted policy rules, but not who changed them, or how.
+
+### Permissions API
+
+FOCA also serves its permissions API at `/admin/access-control/permissions`
+(not part of the registry's API specification), which lists, adds, changes and
+deletes the stored policy rules directly. Only admins can use it. Use the
+registry's endpoints above to manage roles on services: the permissions API
+bypasses the registry's checks, e.g., it can remove the last owner of a service
+(without `409 Conflict`) and leaves the stored names of users (see
+`GET /services/{serviceId}/permissions`) in place. The configured policies
+(`security.access_control.policies`) are managed on startup and can't be
+changed via the API.
+
+Admins can make other users admins with it, by granting them the role `admin`
+(a `g` rule for the user identifier with the prefix `user:`); `GET /me`
+reports them as admins, too:
+
+```bash
+curl -X POST "http://localhost:8080/admin/access-control/permissions" \
+  -H "Authorization: Bearer <admin token>" -H "Content-Type: application/json" \
+  -d '{"policy_type": "g", "rule": {"v0": "user:<user-id>", "v1": "admin"}}'
+```
+
+The request returns the identifier of the rule; `DELETE` on
+`/admin/access-control/permissions/<rule-id>` revokes it. Prefer the group
+mapping for admins, as it is configured with the deployment; roles granted via
+the API are stored in the database. The API is served like the registry's
+endpoints (e.g., the Helm chart's Ingress routes all paths); to keep it off
+the internet, route only `/ga4gh/registry/v1/` through a reverse proxy.
 
 ## Service info
 
@@ -578,20 +634,26 @@ git tag -s vX.Y.Z <sha> -m "vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-The tag must be annotated and signed (`git tag -s`), with a key that GitHub
-can verify (added to the tagger's GitHub account). The [release
-workflow][release-workflow], triggered by the tag, checks that GitHub
-verified the signature and that the tag's commit is on `main`. It packages
-the Helm chart with the release version as `version` and `appVersion` (the
-default image tag). After approval in the `release` environment, it builds
-the image, checks that the app reports the release version, pushes exactly
-that image tagged `X.Y.Z` (and `latest`, if it is the highest release on
-`main`), and creates a GitHub release with generated notes and the chart
-(`.tgz`). No packages are published to PyPI. Tags of pre-releases (e.g.,
-`vX.Y.Zrc1`, also `aN` and `bN`) create GitHub pre-releases, with chart
-version `X.Y.Z-rc1`, and never update `latest`. Images of commits on `dev`
-are published by the [CI workflow][checks-workflow] (environment
-`dev-images`).
+The tag must be annotated and signed (`git tag -s`), with a key that GitHub can
+verify (added to the tagger's GitHub account). The [release
+workflow][release-workflow], triggered by the tag, checks that GitHub verified
+the signature, that the tag's commit is on `main`, and that the [CI
+workflow][checks-workflow] passed for it (a run for the push of the commit to
+`dev`; if CI hasn't finished or failed, re-run the release workflow once it
+passed). It packages the Helm chart with the release version as `version` and
+`appVersion` (the default image tag). After approval in the `release`
+environment, it builds the image, checks that the app reports the release
+version, pushes exactly that image tagged `X.Y.Z` (and `latest`, if it is the
+highest release on `main`), and creates a GitHub release with the chart
+(`.tgz`) and the notes in `docs/releases/X.Y.Z.md` (for pre-releases, e.g.,
+`X.Y.Zrc1.md`), or, if there are none, notes generated from the merged pull
+requests. Curated notes are published as written, so the release workflow fails
+if they contain `TODO`; on re-runs, it replaces the notes of an existing
+release with them (also overwriting manual edits). No packages are published to
+PyPI. Tags of pre-releases (e.g., `vX.Y.Zrc1`, also `aN` and `bN`) create
+GitHub pre-releases, with chart version `X.Y.Z-rc1`, and never update `latest`.
+Images of commits on `dev` are published by the [CI workflow][checks-workflow]
+(environment `dev-images`).
 
 Maintainers: the workflows rely on these repository settings: environment
 `dev-images` limited to branch `dev`; environment `release` with a required

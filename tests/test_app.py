@@ -4,6 +4,7 @@ from copy import deepcopy
 from importlib.metadata import version
 import io
 import json
+import logging
 import os
 import string
 
@@ -14,6 +15,7 @@ import pytest
 import yaml
 
 import cloud_registry.app
+from cloud_registry.exceptions import MAX_DETAIL_LENGTH
 from cloud_registry.ga4gh.registry.service import KEY, service_key
 from cloud_registry.ga4gh.registry.service_info import InvalidServiceInfo
 from cloud_registry.service_models.custom_config import MAX_CONTENT_LENGTH
@@ -642,6 +644,28 @@ def test_put_dot_segment_id(client, admin_headers, service_id):
     assert client.get(f"{BASE}/services").json == []
 
 
+@pytest.mark.parametrize("service_id", ["types", "%74ypes"])
+def test_put_types_id(client, admin_headers, service_id):
+    """The identifier `types` is rejected, as its URL is that of the service
+    types (`GET /services/types`).
+    """
+    response = client.put(
+        f"{BASE}/services/{service_id}", json=_service(), headers=admin_headers
+    )
+    _assert_error(response, 400)
+    assert client.get(f"{BASE}/services").json == []
+
+
+@pytest.mark.parametrize("service_id", ["Types", "types.", "atypes"])
+def test_put_types_like_id(client, admin_headers, service_id):
+    """Identifiers other than `types` are accepted, and can be fetched."""
+    response = client.put(
+        f"{BASE}/services/{service_id}", json=_service(), headers=admin_headers
+    )
+    assert response.status_code == 201
+    assert client.get(f"{BASE}/services/{service_id}").json["id"] == service_id
+
+
 @pytest.mark.parametrize("service_id", ["...", ".a", "a."])
 def test_put_dotted_id(client, admin_headers, service_id):
     """Identifiers with dots that aren't dot segments are accepted."""
@@ -849,3 +873,103 @@ def test_main_check_fails(monkeypatch, tmp_path, app_env):
     with pytest.raises(RuntimeError, match="require_admin"):
         cloud_registry.app.main()
     assert ports == []
+
+
+@pytest.mark.parametrize("method, path", [("post", ""), ("put", "/abc")])
+@pytest.mark.parametrize("field", sorted(TIMESTAMPS))
+@pytest.mark.parametrize(
+    "value",
+    ["yesterday", "2019-06-04", "2019-06-04T12:58:19", "2019-02-30T00:00:00Z"],
+)
+def test_service_date_time_invalid(client, admin_headers, method, path, field, value):
+    """Timestamps of services must be RFC 3339 date-times (`400`, naming the
+    field).
+    """
+    response = getattr(client, method)(
+        f"{BASE}/services{path}", json=_service(**{field: value}), headers=admin_headers
+    )
+    _assert_error(response, 400)
+    assert f"'{field}'" in response.json["detail"]
+    assert client.get(f"{BASE}/services").json == []
+
+
+def test_service_date_time(client, admin_headers):
+    """Timestamps are stored as sent."""
+    timestamps = {
+        "createdAt": "2019-06-04T12:58:19Z",
+        "updatedAt": "2026-10-20t00:00:00.5+02:00",
+    }
+    service_id = _post(client, admin_headers, _service(**timestamps))
+    service = client.get(f"{BASE}/services/{service_id}").json
+    assert {field: service[field] for field in timestamps} == timestamps
+
+
+@pytest.mark.parametrize(
+    "request_kwargs, detail",
+    [
+        (
+            {"method": "post", "path": "/services", "json": {"url": "x"}},
+            "'name' is a required property",
+        ),
+        (
+            {
+                "method": "post",
+                "path": "/services",
+                "json": _service(name="a" * 1025),
+            },
+            "is too long - 'name'",
+        ),
+        (
+            {"method": "put", "path": "/services/types", "json": _service()},
+            "does not match",
+        ),
+        (
+            {
+                "method": "post",
+                "path": "/services",
+                "data": "{",
+                "content_type": "application/json",
+            },
+            "Request body is not valid JSON",
+        ),
+        (
+            {"method": "get", "path": "/services/abc?page=1"},
+            "Extra query parameter(s) page not in spec",
+        ),
+    ],
+    ids=["required", "too_long", "pattern", "json", "extra_parameter"],
+)
+def test_validation_error_detail(client, admin_headers, request_kwargs, detail):
+    """Requests rejected by the schema validation return `400`, saying why."""
+    path = request_kwargs.pop("path")
+    response = client.open(f"{BASE}{path}", headers=admin_headers, **request_kwargs)
+    _assert_error(response, 400)
+    assert response.mimetype == "application/problem+json"
+    assert response.json["title"] == "Bad request"
+    assert detail in response.json["detail"]
+
+
+def test_validation_error_detail_large_body(client, admin_headers):
+    """Reasons quoting large rejected values are shortened, keeping the
+    field name.
+    """
+    response = client.post(
+        f"{BASE}/services", headers=admin_headers, json=_service(name="a" * 900_000)
+    )
+    _assert_error(response, 400)
+    assert len(response.json["detail"]) == MAX_DETAIL_LENGTH
+    assert "…" in response.json["detail"]
+    assert response.json["detail"].endswith("is too long - 'name'")
+
+
+def test_validation_error_logs_bounded(client, admin_headers, caplog):
+    """Large rejected values are not logged in full, also not by Connexion's
+    validation, which logs the validator's message before the error handler.
+    """
+    with caplog.at_level(logging.DEBUG):
+        response = client.post(
+            f"{BASE}/services", headers=admin_headers, json=_service(name="a" * 900_000)
+        )
+    assert response.status_code == 400
+    assert any("Request rejected" in message for message in caplog.messages)
+    assert max(len(record.getMessage()) for record in caplog.records) < 2000

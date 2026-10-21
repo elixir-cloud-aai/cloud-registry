@@ -1,7 +1,6 @@
 """Service info, from the config."""
 
 from collections.abc import Callable
-from datetime import date
 from functools import cache
 from importlib.metadata import PackageNotFoundError, version
 import logging
@@ -13,7 +12,7 @@ from jsonschema import Draft4Validator, FormatChecker
 from jsonschema.exceptions import best_match
 import yaml
 
-from cloud_registry.utils import get_custom_config
+from cloud_registry.utils import get_custom_config, is_date_time
 
 logger = logging.getLogger(__name__)
 PACKAGE = "cloud-registry"
@@ -27,14 +26,6 @@ CONFIG_PATH = "custom.endpoints.service_info"
 FORMAT_CHECKER = FormatChecker(formats=())
 # RFC 3986: a scheme, followed by anything without whitespace
 URI = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:\S*")
-# RFC 3339, section 5.6 (ASCII digits only; the RFC allows a space instead of
-# `T` in a note only)
-DATE_TIME = re.compile(
-    r"(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})[Tt]"
-    r"(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2})(\.\d+)?"
-    r"([Zz]|[+-](?P<offset_hour>\d{2}):(?P<offset_minute>\d{2}))",
-    re.ASCII,
-)
 
 
 @FORMAT_CHECKER.checks("uri")
@@ -43,27 +34,8 @@ def _is_uri(value: object) -> bool:
     return not isinstance(value, str) or URI.fullmatch(value) is not None
 
 
-@FORMAT_CHECKER.checks("date-time")
-def _is_date_time(value: object) -> bool:
-    """Check whether a string is an RFC 3339 date-time (non-strings pass)."""
-    if not isinstance(value, str):
-        return True
-    match = DATE_TIME.fullmatch(value)
-    if match is None:
-        return False
-    parts = {name: int(part or 0) for name, part in match.groupdict().items()}
-    try:
-        date(parts["year"], parts["month"], parts["day"])
-    except ValueError:
-        return False
-    # Seconds may be 60 (leap seconds)
-    return (
-        parts["hour"] < 24
-        and parts["minute"] < 60
-        and parts["second"] <= 60
-        and parts["offset_hour"] < 24
-        and parts["offset_minute"] < 60
-    )
+# RFC 3339 date-times, as for the timestamps of registered services
+FORMAT_CHECKER.checks("date-time")(is_date_time)
 
 
 class InvalidServiceInfo(ValueError):

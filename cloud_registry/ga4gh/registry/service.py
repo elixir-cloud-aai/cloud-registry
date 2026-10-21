@@ -13,8 +13,18 @@ from foca.utils.misc import generate_id
 import idna
 from pymongo.errors import DuplicateKeyError
 
-from cloud_registry.exceptions import BadRequest, Conflict, InternalServerError
-from cloud_registry.utils import get_collection, get_custom_config
+from cloud_registry.exceptions import (
+    BadRequest,
+    Conflict,
+    InternalServerError,
+    NotFound,
+)
+from cloud_registry.utils import (
+    escape_log_value,
+    get_collection,
+    get_custom_config,
+    is_date_time,
+)
 
 logger = logging.getLogger(__name__)
 # Internal field identifying a service by its normalized URL and API type
@@ -44,6 +54,13 @@ LINK_FIELDS: dict[tuple[str, ...], frozenset[str]] = {
     ("documentationUrl",): frozenset(),
     ("organization", "url"): frozenset(),
 }
+# Fields with timestamps (`format: date-time`), which jsonschema doesn't check
+# without an optional package
+DATE_TIME_FIELDS = ("createdAt", "updatedAt")
+# Identifiers that can't be used for services: dot segments, which clients
+# resolve in URLs, and `types`, as `/services/types` lists the service types
+# (cf. the pattern of `serviceId` of `PUT` in `additions.openapi.yaml`)
+RESERVED_IDS = frozenset({".", "..", "types"})
 PERCENT_ENCODED = re.compile(r"%([0-9A-Fa-f]{2})")
 # Percent signs not starting a percent-encoding
 MALFORMED_PERCENT = re.compile(r"%(?![0-9A-Fa-f]{2})")
@@ -135,6 +152,26 @@ def check_strings(value: object, field: str = "") -> None:
             raise InvalidService(
                 f"{where} must not contain unpaired surrogates."
             ) from exc
+
+
+def check_date_times(data: dict) -> None:
+    """Check that the timestamps of a service are RFC 3339 date-times.
+
+    Args:
+        data: Service metadata.
+
+    Raises:
+        InvalidService: A timestamp (cf. `DATE_TIME_FIELDS`) is not an RFC
+            3339 date-time.
+    """
+    for field in DATE_TIME_FIELDS:
+        if field in data and not (
+            isinstance(data[field], str) and is_date_time(data[field])
+        ):
+            raise InvalidService(
+                f"'{field}' must be an RFC 3339 date-time (e.g., "
+                "'2019-06-04T12:58:19Z')."
+            )
 
 
 def check_link(url: object, field: str, schemes: frozenset[str] = frozenset()) -> None:
@@ -452,6 +489,7 @@ class RegisterService:
         self,
         data: dict,
         id: str | None = None,
+        allow_create: bool = True,
     ) -> None:
         """Initialize service data.
 
@@ -459,6 +497,10 @@ class RegisterService:
             data: Service metadata consistent with the
             `ExternalServiceRegister` schema.
             id: Service identifier. Auto-generated if not provided.
+            allow_create: With an identifier, whether the service may be
+                registered if it doesn't exist (e.g., for admins only, cf.
+                `_replace()`); otherwise, only an existing service is
+                replaced.
 
         Attributes:
             data: Service metadata; a copy of `data`, with the identifier.
@@ -466,6 +508,10 @@ class RegisterService:
                 should be replaced. Set to `True` if an `id` is provided,
                 otherwise set to `False`.
             was_created: Whether a new service was registered.
+            verification_removed: Whether the verification of a replaced
+                service was removed (cf. `_replace()`).
+            allow_create: Whether a service with the identifier may be
+                registered.
             id_charset: A string of allowed characters for generating service
                 identifiers.
             id_length: Length of generated service identifiers.
@@ -475,7 +521,9 @@ class RegisterService:
         self.data = deepcopy(data)
         self.data["id"] = id
         self.replace = id is not None
+        self.allow_create = allow_create
         self.was_created = False
+        self.verification_removed = False
         self.id_charset: str = endpoint_conf.services.id.charset
         self.id_length = int(endpoint_conf.services.id.length)
         self.db_coll = get_collection("services")
@@ -492,15 +540,20 @@ class RegisterService:
 
         Raises:
             InvalidService: The URL or API type of the service, the URL of a
-                link, or a string (cf. `check_strings()`) is invalid.
+                link, a timestamp (cf. `check_date_times()`) or a string (cf.
+                `check_strings()`) is invalid.
             DuplicateService: Another service with the same URL and API type
                 is registered.
             InternalServerError: The service could not be registered within
                 the retries.
+            cloud_registry.exceptions.NotFound: With an identifier, the
+                service doesn't exist (also if it was deleted concurrently),
+                and `allow_create` is false.
         """
         check_strings(self.data)
         key = service_key(self.data)
         check_links(self.data)
+        check_date_times(self.data)
         self._check_duplicate(key=key)
 
         # replace or insert service with provided ID (PUT)
@@ -513,8 +566,7 @@ class RegisterService:
                 self.data["id"] = generate_id(
                     charset=self.id_charset, length=self.id_length
                 )
-                # dot segments, which clients resolve in URLs
-                if self.data["id"] in (".", ".."):
+                if self.data["id"] in RESERVED_IDS:
                     continue
                 try:
                     # insert a new dict, as `insert_one()` adds an `_id` field
@@ -524,13 +576,17 @@ class RegisterService:
                     self._check_duplicate(key=key)
                     continue
                 self.was_created = True
-                logger.info("Added service with id '%s'.", self.data["id"])
+                logger.info(
+                    "Added service with id '%s'.", escape_log_value(self.data["id"])
+                )
                 break
             else:
                 raise InternalServerError
         logger.debug(
             "Entry in 'services' collection: %s",
-            self.db_coll.find_one({"id": self.data["id"]}, PROJECTION),
+            escape_log_value(
+                self.db_coll.find_one({"id": self.data["id"]}, PROJECTION)
+            ),
         )
 
     def _replace(self, key: str, retries: int) -> None:
@@ -549,6 +605,11 @@ class RegisterService:
         inserted concurrently (after it was read as missing) is a
         verification of the inserted service removed.
 
+        The service is only inserted if `allow_create` is set, also when it
+        was deleted after it was read (e.g., by a concurrent `DELETE`), so
+        that users who may only update a service can't register it again
+        (and become its owner).
+
         Args:
             key: Key of the service (cf. `service_key()`).
             retries: How many times the service is read again if it changed
@@ -559,12 +620,16 @@ class RegisterService:
                 was registered concurrently.
             cloud_registry.exceptions.InternalServerError: The service
                 changed or was added concurrently on each try.
+            cloud_registry.exceptions.NotFound: The service doesn't exist
+                (anymore), and `allow_create` is false.
         """
         for _ in range(retries + 1):
             stored = self.db_coll.find_one(
                 {"id": self.data["id"]},
                 {"_id": False, "url": True, KEY: True, VERIFIED: True},
             )
+            if stored is None and not self.allow_create:
+                raise NotFound
             replacement = {**self.data, KEY: key}
             query: dict = {"id": self.data["id"]}
             if stored is not None:
@@ -588,12 +653,22 @@ class RegisterService:
                 # otherwise, the service itself was (e.g., by a concurrent
                 # upsert with the identifier), so it is read again
                 self._check_duplicate(key=key)
-                logger.debug("Service '%s' added concurrently.", self.data["id"])
+                logger.debug(
+                    "Service '%s' added concurrently.",
+                    escape_log_value(self.data["id"]),
+                )
                 continue
             if result.matched_count or result.upserted_id is not None:
                 self.was_created = result.upserted_id is not None
+                self.verification_removed = (
+                    stored is not None
+                    and VERIFIED in stored
+                    and VERIFIED not in replacement
+                )
                 return
-            logger.debug("Service '%s' changed concurrently.", self.data["id"])
+            logger.debug(
+                "Service '%s' changed concurrently.", escape_log_value(self.data["id"])
+            )
         raise InternalServerError
 
     def _check_duplicate(self, key: str) -> None:
@@ -652,7 +727,7 @@ def add_service_keys() -> None:
             problems.append(f"'{service['id']}': same URL and API type as another")
             continue
         if result.modified_count:
-            logger.info("Added key to service '%s'.", service["id"])
+            logger.info("Added key to service '%s'.", escape_log_value(service["id"]))
     if problems:
         raise RuntimeError(
             "Fix or delete these services (cf. 'Duplicate services' in the "

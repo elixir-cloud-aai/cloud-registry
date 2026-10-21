@@ -18,11 +18,17 @@ from datetime import datetime, timezone
 import logging
 
 from flask import Response, request
-from foca.security.access_control import get_current_subject
 from pymongo import ReturnDocument
 from werkzeug.exceptions import HTTPException
 
-from cloud_registry.exceptions import BadRequest, Conflict, NotFound, problem
+from cloud_registry.exceptions import (
+    BadRequest,
+    Conflict,
+    NotFound,
+    problem,
+    shorten_detail,
+)
+from cloud_registry.ga4gh.registry.permissions import current_user
 from cloud_registry.ga4gh.registry.service import (
     KEY,
     VERIFIED,
@@ -30,7 +36,7 @@ from cloud_registry.ga4gh.registry.service import (
     service_exists,
     service_key,
 )
-from cloud_registry.utils import get_collection
+from cloud_registry.utils import escape_log_value, get_collection
 
 logger = logging.getLogger(__name__)
 # Projection of the fields served with verifications
@@ -134,7 +140,11 @@ def _not_verified(serviceId: str, exc: HTTPException) -> Response:
     Returns:
         Problem details response.
     """
-    logger.info("Service '%s' not verified: %s", serviceId, exc.description)
+    logger.info(
+        "Service '%s' not verified: %s",
+        escape_log_value(serviceId),
+        escape_log_value(shorten_detail(str(exc.description))),
+    )
     return problem(exc)
 
 
@@ -207,7 +217,11 @@ def putServiceVerification(
         if not service_exists(serviceId):
             raise NotFound
         return _not_verified(serviceId, VerificationConflict())
-    logger.info("Service '%s' verified by '%s'.", serviceId, get_current_subject())
+    logger.info(
+        "Service '%s' verified by '%s'.",
+        escape_log_value(serviceId),
+        current_user(),
+    )
     return _verification(service)
 
 
@@ -232,8 +246,8 @@ def deleteServiceVerification(serviceId: str, **kwargs) -> str:
         raise NotFound
     logger.info(
         "Verification of service '%s' removed by '%s'.",
-        serviceId,
-        get_current_subject(),
+        escape_log_value(serviceId),
+        current_user(),
     )
     return serviceId
 

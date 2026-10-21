@@ -21,6 +21,31 @@ As the app on startup, refuse to render without a group mapped to the role
 {{- if and $requireAdmin (not (has "admin" (values $mapping))) -}}
 {{- fail "config.security.access_control.group_mapping must map a group to the role admin (e.g., the admin group of the identity provider), or set config.custom.access_control.require_admin to false" -}}
 {{- end -}}
+{{- /*
+As the app on startup (FOCA), refuse to render without an audience (a list
+of non-blank client IDs) for the trusted token issuers, unless audience
+validation is explicitly disabled: with a value that pydantic parses as
+false (e.g., `false` or "False"; the strings are those of pydantic 2.14,
+pydantic-core 2.50). `null` doesn't disable it (FOCA refuses it). Without
+issuers, FOCA requires no audience, but refuses to run with access control,
+which the app needs, so there is no exception for them.
+*/ -}}
+{{- $verifyAudience := dig "security" "auth" "verify_audience" true $config -}}
+{{- if kindIs "invalid" $verifyAudience -}}
+{{- $verifyAudience = true -}}
+{{- else if kindIs "string" $verifyAudience -}}
+{{- $verifyAudience = not (has (lower $verifyAudience) (list "0" "off" "f" "false" "n" "no")) -}}
+{{- end -}}
+{{- $audience := dig "security" "auth" "audience" (list) $config -}}
+{{- $hasAudience := and (kindIs "slice" $audience) (gt (len $audience) 0) -}}
+{{- range $client := (ternary $audience (list) $hasAudience) -}}
+{{- if not (and (kindIs "string" $client) (trim $client)) -}}
+{{- $hasAudience = false -}}
+{{- end -}}
+{{- end -}}
+{{- if and $verifyAudience (not $hasAudience) -}}
+{{- fail "config.security.auth.audience must list the client IDs of the apps calling the registry (e.g., its front end), whose tokens are accepted; or set config.security.auth.verify_audience to false to accept tokens for any audience (not recommended)" -}}
+{{- end -}}
 {{- $generated := dict
   "custom" (dict "endpoints" (dict "service" (dict
     "url_prefix" "https"

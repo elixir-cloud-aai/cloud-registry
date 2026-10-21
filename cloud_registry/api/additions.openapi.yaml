@@ -29,7 +29,8 @@ paths:
       description: |
         Create a service resource. Services are unique by URL and API type:
         registering a service again returns `409`. Invalid URLs return `400`
-        (cf. `ExternalServiceRegister`).
+        (cf. `ExternalServiceRegister`). A service deleted during the request
+        returns `404`.
       operationId: postService
       tags:
         - cloud-registry
@@ -50,6 +51,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/DuplicateService'
         '500':
@@ -98,10 +101,12 @@ paths:
     put:
       summary: Register or update service.
       description: |
-        Create (`201`) or update (`200`) a service resource. Services are
-        unique by URL and API type: changing them to those of another service
-        returns `409`. Invalid URLs return `400` (cf.
-        `ExternalServiceRegister`).
+        Create (`201`) or update (`200`) a service resource. Only admins can
+        create services; others can only update services they have a role on
+        (`403` otherwise). Services deleted during the request return `404`,
+        unless an admin's request creates them again. Services are unique by
+        URL and API type: changing them to those of another service returns
+        `409`. Invalid URLs return `400` (cf. `ExternalServiceRegister`).
       operationId: putService
       tags:
         - cloud-registry
@@ -110,12 +115,14 @@ paths:
           in: path
           description: |
             Identifier of service to register/update; `.` and `..` are not
-            allowed, as they are path segments of their own in URLs.
+            allowed, as they are path segments of their own in URLs, and
+            neither is `types`, as `/services/types` lists the service types.
           required: true
           schema:
             type: string
-            # anything but `.` and `..` (dot segments in URLs)
-            pattern: '^(?!\.\.?$)'
+            # anything but `.` and `..` (dot segments in URLs) and `types`
+            # (`GET /services/types`)
+            pattern: '^(?!(\.\.?|types)$)'
       requestBody:
         description: Service metadata.
         required: true
@@ -139,6 +146,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/DuplicateService'
         '500':
@@ -563,7 +572,9 @@ components:
             be granted roles, users give it to owners of services.
         admin:
           type: boolean
-          description: Whether the user is an admin.
+          description: |
+            Whether the user is an admin: a member of a group mapped to the
+            role `admin`, or granted the role via FOCA's permissions API.
         services:
           type: array
           description: Roles of the user on services.
@@ -660,7 +671,8 @@ components:
         without user info, whitespace, control or format characters (except
         joiners in international host names) or malformed percent-encodings;
         `contactUrl` can also be a `mailto:` URL with email addresses. Others
-        return `400`.
+        return `400`, as do timestamps (`createdAt`, `updatedAt`) that aren't
+        RFC 3339 date-times.
       type: object
       required:
         - name

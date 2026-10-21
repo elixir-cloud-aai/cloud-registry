@@ -74,8 +74,8 @@ class TestRegisterService:
         assert obj.data["id"] == MOCK_ID_ONE_CHAR
 
     def test_register_metadata_dot_ids(self, monkeypatch, unit_app):
-        """Generated identifiers `.` and `..` are replaced."""
-        ids = iter([".", "..", "A"])
+        """Generated identifiers `.`, `..` and `types` are replaced."""
+        ids = iter([".", "..", "types", "A"])
         monkeypatch.setattr(
             "cloud_registry.ga4gh.registry.service.generate_id",
             lambda **kwargs: next(ids),

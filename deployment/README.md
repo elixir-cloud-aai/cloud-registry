@@ -20,11 +20,13 @@ config on startup (via `FOCA_CONFIG_OVERLAY`):
 
 The overlay requires an image built with FOCA 0.14 or later (e.g.,
 `elixircloud/cloud-registry:20261020` or later, any `dev` or `sha-<commit>`
-image, or any release from the first one tagged from Git on; see the release
-notes); older images ignore it.
+image, or any release from 0.3.0 on, the first one tagged from Git; see its
+[release notes](../docs/releases/0.3.0.md)); older images ignore it.
 
-Each deployment must set the audience (`config.security.auth.audience`, the
-app refuses to start without it) and map an admin group to the role `admin`
+Each deployment must set the audience (`config.security.auth.audience`;
+rendering fails without it, as the app would refuse to start, unless
+`config.security.auth.verify_audience` is `false`, which accepts tokens for
+any audience) and map an admin group to the role `admin`
 (`config.security.access_control.group_mapping`; rendering fails without one,
 unless `config.custom.access_control.require_admin` is `false`). Keep the
 values of each deployment in its own values file outside this repository
@@ -155,6 +157,56 @@ or set the annotation to `null` to remove it. Other ingress controllers, and
 OpenShift Routes, ignore the annotation; check their documentation for how to
 limit request bodies. Without such a limit, only the app's applies.
 
+### TLS
+
+The app advertises HTTPS URLs on port 443 (e.g., in `Location` headers; see
+[Configuration](#configuration)), but by default, the Ingress has no TLS
+(`https.enabled: false`) and serves plain HTTP, so TLS must be terminated in
+front of the cluster (e.g., by a load balancer); Helm's notes after installing
+say so. Otherwise, set `https.enabled: true` to serve HTTPS with a certificate
+from cert-manager; ingress-nginx then redirects HTTP requests to HTTPS by
+default.
+
+If TLS is terminated in front of the cluster, ingress-nginx can't tell HTTP
+from HTTPS requests by itself, so it doesn't redirect them. Optionally, have
+it redirect requests that the proxy in front marks as HTTP
+(`X-Forwarded-Proto`), if the controller trusts that header
+(`use-forwarded-headers` in its ConfigMap; otherwise, all requests are
+redirected, in a loop):
+
+```yaml
+cloud_registry:
+  ingress:
+    annotations:
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+```
+
+Better yet, let the proxy in front redirect HTTP requests itself.
+
+### Rate limits
+
+The app doesn't limit how often or how many services a user registers. Limit
+the request rate at the ingress instead, e.g., per client IP address with
+ingress-nginx (requests per second, a burst of 5 times as many, and
+concurrent connections; excess requests get `503`, or the status set by the
+controller's `limit-req-status-code`):
+
+```yaml
+cloud_registry:
+  ingress:
+    annotations:
+      nginx.ingress.kubernetes.io/limit-rps: "10"
+      nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
+      nginx.ingress.kubernetes.io/limit-connections: "20"
+```
+
+Behind a proxy or load balancer, the controller must see the clients'
+addresses (e.g., `use-forwarded-headers` or the PROXY protocol), otherwise all
+requests count for the proxy. For OpenShift Routes, see the
+`haproxy.router.openshift.io/rate-limit-connections` annotations.
+
+### OpenShift Route
+
 With `enabled: false`, the chart creates an OpenShift Route with TLS
 termination at the router instead, if the cluster serves Routes
 (`route.openshift.io/v1`); otherwise the app is only reachable within the
@@ -170,6 +222,9 @@ file system; they write to `emptyDir` volumes (`/tmp`; for MongoDB also
 so the chart sets that user and group (`runAsUser`, `runAsGroup`), and
 `fsGroup` makes the data volume writable for it (unless the storage ignores
 `fsGroup`).
+
+Neither pod gets a service account token (`automountServiceAccountToken:
+false`), as neither calls the Kubernetes API.
 
 The `/tmp` volumes are limited to 64 MiB each by `tmpSizeLimit` of
 `cloud_registry` and `mongodb` (a positive Kubernetes quantity, e.g., `64Mi`,
@@ -374,15 +429,28 @@ Deployment is called after `cloud_registry.appName`, by default
 Once the new release works, delete a retained volume
 (`kubectl delete pv <name>`) and the local dump.
 
-Since app version 0.3.0 (the first release after 0.2.0), services are unique by
-URL and API type. Upgrade to it with the app scaled to 0 replicas (`kubectl
-scale deploy/<appName> --replicas=0 -n <namespace>`, then `helm upgrade`), so
-that no pod of the old version registers services while the new one adds keys
-to the stored ones. If stored services have invalid URLs or the same URL and
-API type, the new version refuses to start and names them: fix or delete them
-in MongoDB (see "Duplicate services" in the
+### To app version 0.3.0
+
+Since app version 0.3.0, services are unique by URL and API type. For
+releases installed with the current chart (from the repository) that run an
+older image, upgrade with the app scaled to 0 replicas, so that no pod of the
+old version registers services while the new one adds keys to the stored
+ones:
+
+```bash
+kubectl scale deploy/cloud-registry -n <namespace> --replicas=0
+helm upgrade cloud-registry . -n <namespace> -f values-prod.yaml
+```
+
+(Releases of the legacy charts are uninstalled and reinstalled instead, see
+above; after restoring their data, the new version adds the keys on its first
+start.) If stored services have invalid URLs or the same URL and API type,
+the new version refuses to start and names them: fix or delete them in
+MongoDB (see "Duplicate services" in the
 [README](../README.md#duplicate-services) and [Authentication](#authentication)
-for credentials).
+for credentials). See the [release notes](../docs/releases/0.3.0.md) for all
+breaking changes; for the ELIXIR deployment, a fresh install with an empty
+database is recommended there.
 
 ## Probes
 
