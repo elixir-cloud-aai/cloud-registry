@@ -979,6 +979,19 @@ def test_create_app_group_subjects(monkeypatch, tmp_path, app_env, capsys):
     )
 
 
+def test_create_app_dev_overlay(monkeypatch, app_env, capsys):
+    """`create_app()` with the Docker Compose overlay warns that there are no
+    admins, but not about `keep_group_subjects`, which applies.
+    """
+    monkeypatch.setenv(
+        "FOCA_CONFIG_OVERLAY", str(APP_DIR.parent / "config.dev.yaml")
+    )
+    cloud_registry.app.create_app()
+    err = capsys.readouterr().err
+    assert "No group is mapped to the role 'admin'" in err
+    assert "keep_group_subjects" not in err
+
+
 def test_create_app_duplicate_services(mongo_client, app_env):
     """`create_app()` fails if services have the same URL and API type."""
     services = mongo_client["serviceStore"]["services"]
