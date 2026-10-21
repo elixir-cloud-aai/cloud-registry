@@ -1258,7 +1258,9 @@ def test_create_app_checks(
     err = capsys.readouterr().err
     assert f"Groups mapped to the role 'admin': {ADMIN_GROUP}" in err
     assert "keep_group_subjects" not in err
-    assert "Serving service info 'cloud.elixir-on.cloud-registry'" in err
+    assert "Serving service info 'org.example.cloud-registry'" in err
+    # the test overlay keeps the placeholders
+    assert "placeholder" in err
     assert "url_schemes" not in err
 
 
@@ -1376,6 +1378,59 @@ def _service_info_overlay(service_info: dict[str, Any]) -> dict[str, Any]:
         "custom": {"access_control": {"require_admin": False}},
         "service_info": service_info,
     }
+
+
+@pytest.mark.parametrize(
+    "service, fields",
+    [
+        ({}, "`id`, `organization`"),
+        ({"id": "org.example.registry"}, "`organization`"),
+        ({"organization": {"name": "My organization"}}, "`id`, `organization`"),
+        (
+            {"id": "org.example.registry", "organization": {"name": "My org"}},
+            "`organization`",
+        ),
+        (
+            {"organization": {"name": "My org", "url": "https://my.example.org"}},
+            "`id`",
+        ),
+    ],
+)
+def test_create_app_placeholder_service_info(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    capsys: pytest.CaptureFixture[str],
+    service: dict[str, Any],
+    fields: str,
+) -> None:
+    """`create_app()` warns while placeholders of the service info are kept.
+
+    Naming the fields still to set: `id`, and `organization` while its name or
+    URL is the placeholder's.
+    """
+    _set_overlay(monkeypatch, tmp_path, _service_info_overlay({"service": service}))
+    cloud_registry.app.create_app()
+    # FOCA configures logging to stderr
+    err = capsys.readouterr().err
+    assert err.count("placeholder values") == 1
+    assert f"placeholder values; set {fields} to" in err
+
+
+def test_create_app_deployment_service_info(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`create_app()` doesn't warn if the deployment sets its service info."""
+    service = {
+        "id": "org.example.registry",
+        "organization": {"name": "My organization", "url": "https://my.example.org"},
+    }
+    _set_overlay(monkeypatch, tmp_path, _service_info_overlay({"service": service}))
+    cloud_registry.app.create_app()
+    assert "placeholder" not in capsys.readouterr().err
 
 
 def test_create_app_service_info_nulls(
