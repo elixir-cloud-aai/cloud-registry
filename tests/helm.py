@@ -19,6 +19,8 @@ MONGODB = "cloud-registry-mongodb"
 MONGODB_SECRET = "mongodb-credentials"  # noqa: S105 (a Secret's name, no credential)
 # Group mapped to the role `admin`, required by default
 ADMIN_GROUP = "test-admins"
+# Audience of the app's tokens, required by default
+AUDIENCE = "test-client"
 # Templates added to a copy of the chart to render its notes into a ConfigMap,
 # as `helm template` does not render notes (and `helm install --dry-run` needs
 # a cluster)
@@ -36,6 +38,7 @@ def render(
     *args: str,
     mongodb_secret: str | None = MONGODB_SECRET,
     admin_group: str | None = ADMIN_GROUP,
+    audience: str | None = AUDIENCE,
     release: str = RELEASE,
     chart: Path = CHART,
 ) -> list[dict]:
@@ -46,6 +49,7 @@ def render(
         mongodb_secret: Name of the Secret with the MongoDB credentials; not
             set if `None`.
         admin_group: Group mapped to the role `admin`; not set if `None`.
+        audience: Audience of the app's tokens; not set if `None`.
         release: Name of the release.
         chart: Chart directory or packaged chart.
     """
@@ -55,6 +59,12 @@ def render(
         args = (
             "--set-json",
             f"config.security.access_control.group_mapping={mapping}",
+            *args,
+        )
+    if audience is not None:
+        args = (
+            "--set-json",
+            f"config.security.auth.audience={json.dumps([audience])}",
             *args,
         )
     if mongodb_secret is not None:

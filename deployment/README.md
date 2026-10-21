@@ -23,8 +23,10 @@ The overlay requires an image built with FOCA 0.14 or later (e.g.,
 image, or any release from the first one tagged from Git on; see the release
 notes); older images ignore it.
 
-Each deployment must set the audience (`config.security.auth.audience`, the
-app refuses to start without it) and map an admin group to the role `admin`
+Each deployment must set the audience (`config.security.auth.audience`;
+rendering fails without it, as the app would refuse to start, unless
+`config.security.auth.verify_audience` is `false`, which accepts tokens for
+any audience) and map an admin group to the role `admin`
 (`config.security.access_control.group_mapping`; rendering fails without one,
 unless `config.custom.access_control.require_admin` is `false`). Keep the
 values of each deployment in its own values file outside this repository

@@ -19,8 +19,9 @@ host_name: ""
 # App config overriding the base config in the image (`cloud_registry/config.yaml`
 # of the image's version); mappings are merged recursively, other values
 # (including lists) are replaced. Stored in a ConfigMap, so must not contain
-# secrets. Deployments must set `security.auth.audience` and map an admin
-# group to the role `admin` (rendering fails without one, unless
+# secrets. Deployments must set `security.auth.audience` (rendering fails
+# without it, unless `security.auth.verify_audience` is false) and map an
+# admin group to the role `admin` (rendering fails without one, unless
 # `custom.access_control.require_admin` is false). Examples:
 config: {}
 #   security:
