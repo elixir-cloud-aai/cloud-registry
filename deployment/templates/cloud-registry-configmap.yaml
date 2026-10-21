@@ -24,13 +24,16 @@ As the app on startup, refuse to render without a group mapped to the role
 {{- /*
 As the app on startup (FOCA), refuse to render without an audience (a list
 of non-blank client IDs) for the trusted token issuers, unless audience
-validation is explicitly disabled (with a value that pydantic parses as
-false, e.g., `false` or "False"). Without issuers, FOCA requires no
-audience, but refuses to run with access control, which the app needs, so
-there is no exception for them.
+validation is explicitly disabled: with a value that pydantic parses as
+false (e.g., `false` or "False"; the strings are those of pydantic 2.14,
+pydantic-core 2.50). `null` doesn't disable it (FOCA refuses it). Without
+issuers, FOCA requires no audience, but refuses to run with access control,
+which the app needs, so there is no exception for them.
 */ -}}
 {{- $verifyAudience := dig "security" "auth" "verify_audience" true $config -}}
-{{- if kindIs "string" $verifyAudience -}}
+{{- if kindIs "invalid" $verifyAudience -}}
+{{- $verifyAudience = true -}}
+{{- else if kindIs "string" $verifyAudience -}}
 {{- $verifyAudience = not (has (lower $verifyAudience) (list "0" "off" "f" "false" "n" "no")) -}}
 {{- end -}}
 {{- $audience := dig "security" "auth" "audience" (list) $config -}}

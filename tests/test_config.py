@@ -192,6 +192,7 @@ class TestChartOverlay:
             ("--set-json", "config.security.auth.audience=null"),
             ("--set", "config.security.auth.verify_audience=true"),
             ("--set-string", "config.security.auth.verify_audience=true"),
+            ("--set-json", "config.security.auth.verify_audience=null"),
             ("--set-json", 'config.security.auth.issuers=["https://x.org/"]'),
             # FOCA refuses no issuers anyway, as access control needs them
             ("--set-json", "config.security.auth.issuers=[]"),
@@ -203,6 +204,7 @@ class TestChartOverlay:
             "null",
             "verified",
             "string",
+            "null_verify",
             "issuers",
             "no_issuers",
         ],
