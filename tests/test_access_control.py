@@ -4,6 +4,7 @@
 
 from copy import deepcopy
 from itertools import count
+from urllib.parse import quote
 
 import mongomock
 import pytest
@@ -11,7 +12,7 @@ import pytest
 from cloud_registry.ga4gh.registry import permissions as permissions_module
 from cloud_registry.ga4gh.registry import server as server_module
 from cloud_registry.utils import get_collection
-from tests.conftest import ADMIN, NAMES, USER, make_headers
+from tests.conftest import ADMIN, ENTITLEMENTS, NAMES, TEAM_GROUP, USER, make_headers
 
 BASE = "/ga4gh/registry/v1"
 SERVICE = {
@@ -21,10 +22,13 @@ SERVICE = {
     "version": "1.0.0",
     "url": "https://tes.example.org/ga4gh/tes/v1",
 }
-# Users: alice (owner of services she registers), bob (member of another
-# group), carol (no name in user info), dave (blank name), and an admin
+# Users: alice (owner of services she registers, member of the team group),
+# bob (member of another group), carol (no name in user info), dave (blank
+# name), erin (member of the team group), and an admin
 ALICE, BOB, CAROL = USER, "bob@example.org", "carol@example.org"
-DAVE = "dave@example.org"
+DAVE, ERIN = "dave@example.org", "erin@example.org"
+# Group of bob, which alice is not a member of
+OTHER_GROUP = ENTITLEMENTS[BOB][0]
 
 
 def headers(user=None):
@@ -48,12 +52,31 @@ def _service():
     return deepcopy(SERVICE)
 
 
-def permissions(client, service_id, user=ADMIN):
+def permission_list(client, service_id, user=ADMIN):
+    """Roles granted on a service, as listed (users and groups)."""
     response = client.get(
         f"{BASE}/services/{service_id}/permissions", headers=headers(user)
     )
     assert response.status_code == 200, response.json
-    return sorted((p["user_id"], p["role"]) for p in response.json)
+    return response.json
+
+
+def permissions(client, service_id, user=ADMIN):
+    """Roles granted to users on a service."""
+    return sorted(
+        (p["user_id"], p["role"])
+        for p in permission_list(client, service_id, user)
+        if "user_id" in p
+    )
+
+
+def group_permissions(client, service_id, user=ADMIN):
+    """Roles granted to groups on a service."""
+    return sorted(
+        (p["group"], p["role"])
+        for p in permission_list(client, service_id, user)
+        if "group" in p
+    )
 
 
 def grant(client, service_id, user, role, as_user=ALICE):
@@ -237,7 +260,7 @@ def _names(client, service_id):
         f"{BASE}/services/{service_id}/permissions",
         headers=headers(ADMIN),
     )
-    return {p["user_id"]: p.get("name") for p in response.json}
+    return {p["user_id"]: p.get("name") for p in response.json if "user_id" in p}
 
 
 def test_permission_names(client):
@@ -636,3 +659,227 @@ def test_role_changes_logged(client, caplog):
         f"All roles on service '{service_id}' revoked by '{ADMIN}'.",
     ]
     assert f"Service '{service_id}' deleted by '{ADMIN}'." in caplog.text
+
+
+def group_path(service_id, group):
+    """Path of the roles of a group on a service (URL-encoded group)."""
+    return f"{BASE}/services/{service_id}/permissions/groups/{quote(group, safe='')}"
+
+
+def grant_group(client, service_id, group, role, as_user=ALICE):
+    return client.put(
+        group_path(service_id, group), json={"role": role}, headers=headers(as_user)
+    ).status_code
+
+
+def revoke_group(client, service_id, group, as_user=ALICE):
+    return client.delete(
+        group_path(service_id, group), headers=headers(as_user)
+    ).status_code
+
+
+def test_group_roles(client):
+    """Owners can grant roles to groups they are a member of; all members of
+    the group then have the role.
+    """
+    service_id = register(client)
+    response = client.put(
+        group_path(service_id, TEAM_GROUP),
+        json={"role": "owner"},
+        headers=headers(ALICE),
+    )
+    assert response.status_code == 200
+    assert response.json == {"group": TEAM_GROUP, "role": "owner"}
+    # user and group roles are listed together, and distinguishable
+    assert permission_list(client, service_id) == [
+        {"user_id": ALICE, "name": NAMES[ALICE], "role": "owner"},
+        {"group": TEAM_GROUP, "role": "owner"},
+    ]
+    # members of an owner group are owners; others are not
+    assert update(client, service_id, ERIN) == 200
+    assert permission_list(client, service_id, user=ERIN)
+    assert grant(client, service_id, CAROL, "maintainer", as_user=ERIN) == 200
+    assert update(client, service_id, BOB) == 403
+    # members of a maintainer group can update only
+    assert grant_group(client, service_id, TEAM_GROUP, "maintainer") == 200
+    assert group_permissions(client, service_id) == [(TEAM_GROUP, "maintainer")]
+    assert update(client, service_id, ERIN) == 200
+    assert delete(client, service_id, ERIN) == 403
+    assert grant(client, service_id, BOB, "maintainer", as_user=ERIN) == 403
+    response = client.get(
+        f"{BASE}/services/{service_id}/permissions", headers=headers(ERIN)
+    )
+    assert response.status_code == 403
+    response = client.delete(group_path(service_id, TEAM_GROUP), headers=headers(ALICE))
+    assert response.status_code == 200
+    assert response.json == TEAM_GROUP
+    assert group_permissions(client, service_id) == []
+    assert update(client, service_id, ERIN) == 403
+    # the roles of groups are revoked with the service
+    assert grant_group(client, service_id, TEAM_GROUP, "owner") == 200
+    assert delete(client, service_id, ERIN) == 200
+    assert update(client, service_id, ADMIN) == 201
+    assert group_permissions(client, service_id) == []
+
+
+def test_group_membership_required(client):
+    """Owners cannot grant roles to groups they are not a member of; admins
+    can grant roles to any group. Any owner can revoke roles of groups.
+    """
+    service_id = register(client)
+    assert grant_group(client, service_id, OTHER_GROUP, "maintainer") == 403
+    assert grant_group(client, service_id, OTHER_GROUP, "owner") == 403
+    assert group_permissions(client, service_id) == []
+    assert update(client, service_id, BOB) == 403
+    assert grant_group(client, service_id, OTHER_GROUP, "maintainer", ADMIN) == 200
+    assert update(client, service_id, BOB) == 200
+    # changing the role of a group is granting it, too
+    assert grant_group(client, service_id, OTHER_GROUP, "owner") == 403
+    assert revoke_group(client, service_id, OTHER_GROUP) == 200
+    assert update(client, service_id, BOB) == 403
+    # members of a group can't grant themselves roles through it
+    assert grant_group(client, service_id, TEAM_GROUP, "owner", as_user=ERIN) == 403
+
+
+def test_invalid_group_permissions(client):
+    """Invalid roles and groups, unknown services and missing roles are
+    rejected.
+    """
+    service_id = register(client)
+    assert grant_group(client, service_id, TEAM_GROUP, "admin") == 400
+    assert grant_group(client, service_id, "a,b", "owner", ADMIN) == 400
+    assert grant_group(client, "UNKNWN", TEAM_GROUP, "owner", ADMIN) == 404
+    assert revoke_group(client, "UNKNWN", TEAM_GROUP, as_user=ADMIN) == 404
+    assert revoke_group(client, service_id, TEAM_GROUP) == 404
+    assert revoke_group(client, service_id, "a,b") == 404
+    assert permission_list(client, service_id) == [
+        {"user_id": ALICE, "name": NAMES[ALICE], "role": "owner"}
+    ]
+
+
+def test_group_with_slash(client):
+    """Groups may contain slashes (e.g., URLs), URL-encoded in the path."""
+    service_id = register(client)
+    group = "https://idp.example.org/groups/team?x=1#y"
+    assert grant_group(client, service_id, group, "maintainer", ADMIN) == 200
+    assert group_permissions(client, service_id) == [(group, "maintainer")]
+    assert revoke_group(client, service_id, group) == 200
+    assert group_permissions(client, service_id) == []
+
+
+def test_users_and_groups_distinct(client):
+    """A user whose identifier starts with `group:` is not a group."""
+    service_id = register(client)
+    user = quote(f"group:{TEAM_GROUP}", safe="")
+    assert grant(client, service_id, user, "owner") == 200
+    assert update(client, service_id, ERIN) == 403
+    assert group_permissions(client, service_id) == []
+    assert permissions(client, service_id) == [
+        (ALICE, "owner"),
+        (f"group:{TEAM_GROUP}", "owner"),
+    ]
+    assert revoke_group(client, service_id, TEAM_GROUP) == 404
+
+
+def test_group_last_owner(client):
+    """Groups count as owners: the last user owner can be removed while a
+    group is owner, and the last owner group can't be removed or
+    downgraded, not even by admins.
+    """
+    service_id = register(client)
+    assert grant_group(client, service_id, TEAM_GROUP, "owner") == 200
+    assert revoke(client, service_id, ALICE, as_user=ERIN) == 200
+    assert permission_list(client, service_id) == [
+        {"group": TEAM_GROUP, "role": "owner"}
+    ]
+    # alice is still an owner, as a member of the group
+    assert update(client, service_id, ALICE) == 200
+    assert revoke_group(client, service_id, TEAM_GROUP, as_user=ERIN) == 409
+    assert grant_group(client, service_id, TEAM_GROUP, "maintainer", ERIN) == 409
+    assert revoke_group(client, service_id, TEAM_GROUP, as_user=ADMIN) == 409
+    assert grant_group(client, service_id, TEAM_GROUP, "owner", ERIN) == 200
+    # with another owner, the group can be removed
+    assert grant(client, service_id, ERIN, "owner", as_user=ERIN) == 200
+    assert revoke_group(client, service_id, TEAM_GROUP, as_user=ERIN) == 200
+    assert revoke(client, service_id, ERIN, as_user=ERIN) == 409
+    assert permission_list(client, service_id) == [{"user_id": ERIN, "role": "owner"}]
+
+
+@pytest.mark.parametrize("change", ["revoke", "downgrade"])
+def test_last_owner_group_restored(client, monkeypatch, change):
+    """If concurrent changes removed all owners, the removed owner group is
+    restored.
+    """
+    service_id = register(client)
+    assert grant_group(client, service_id, TEAM_GROUP, "owner") == 200
+    assert revoke(client, service_id, ALICE) == 200
+    monkeypatch.setattr(permissions_module, "_check_other_owners", lambda *args: None)
+    if change == "revoke":
+        assert revoke_group(client, service_id, TEAM_GROUP, as_user=ERIN) == 409
+    else:
+        assert grant_group(client, service_id, TEAM_GROUP, "maintainer", ERIN) == 409
+    assert group_permissions(client, service_id) == [(TEAM_GROUP, "owner")]
+
+
+def test_group_grant_racing_delete(app, client, monkeypatch):
+    """A role granted to a group on a service that is deleted meanwhile is
+    revoked again (`404`).
+    """
+    service_id = register(client)
+    add_resource_role = permissions_module.add_resource_role
+
+    def delete_first(**kwargs):
+        # the service is deleted after its existence was checked
+        permissions_module.remove_permissions(service_id)
+        get_collection("services").delete_one({"id": service_id})
+        return add_resource_role(**kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(permissions_module, "add_resource_role", delete_first)
+        assert grant_group(client, service_id, TEAM_GROUP, "maintainer") == 404
+    assert _roles(app, service_id) == []
+
+
+def test_me_group_roles(client):
+    """`GET /me` also lists the roles users have through groups."""
+    first, second = register(client), register(client)
+    assert grant_group(client, first, TEAM_GROUP, "maintainer") == 200
+    assert grant_group(client, second, OTHER_GROUP, "owner", ADMIN) == 200
+    assert me(client, ERIN)["services"] == [
+        {"service_id": first, "role": "maintainer", "group": TEAM_GROUP}
+    ]
+    assert me(client, BOB)["services"] == [
+        {"service_id": second, "role": "owner", "group": OTHER_GROUP}
+    ]
+    assert me(client, ALICE)["services"] == sorted(
+        [
+            {"service_id": first, "role": "owner"},
+            {"service_id": first, "role": "maintainer", "group": TEAM_GROUP},
+            {"service_id": second, "role": "owner"},
+        ],
+        key=lambda service: (service["service_id"], service.get("group", "")),
+    )
+    # names are only stored for roles granted to users
+    assert _names(client, first) == {ALICE: NAMES[ALICE]}
+
+
+def test_group_role_changes_logged(client, caplog):
+    """Changes of roles of groups are logged like those of users."""
+    caplog.set_level("INFO", logger=permissions_module.__name__)
+    service_id = register(client)
+    assert grant_group(client, service_id, TEAM_GROUP, "maintainer") == 200
+    assert grant_group(client, service_id, TEAM_GROUP, "owner") == 200
+    assert revoke_group(client, service_id, TEAM_GROUP) == 200
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == permissions_module.__name__
+    ]
+    assert messages[1:] == [
+        f"Role 'maintainer' on service '{service_id}' granted to group "
+        f"'{TEAM_GROUP}' by '{ALICE}' (previous roles: none).",
+        f"Role 'owner' on service '{service_id}' granted to group "
+        f"'{TEAM_GROUP}' by '{ALICE}' (previous roles: maintainer).",
+        f"Roles on service '{service_id}' of group '{TEAM_GROUP}' revoked by "
+        f"'{ALICE}'.",
+    ]
