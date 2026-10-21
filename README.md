@@ -43,6 +43,12 @@ deployment to the table in
 [`README.md`](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/README.md).
 <!-- --8<-- [end:deployments] -->
 
+## Contributing
+
+Contributions are welcome! See [`CONTRIBUTING.md`](CONTRIBUTING.md) and
+[Contributing][docs-contributing] in the documentation, and mind our [code of
+conduct](CODE_OF_CONDUCT.md).
+
 ## Quick start
 
 <!-- --8<-- [start:quick-start] -->
@@ -81,5 +87,6 @@ curl -X GET "http://localhost:8080/ga4gh/registry/v1/services" -H  "accept: appl
 [badge-url-license]: <https://www.apache.org/licenses/LICENSE-2.0>
 [deployment]: deployment/
 [docs]: <https://cloud-registry.readthedocs.io/en/latest/>
+[docs-contributing]: <https://cloud-registry.readthedocs.io/en/latest/contributing/>
 [logo]: docs/images/logo_elixir_on_cloud.png
 [org]: <https://elixir-on.cloud/>

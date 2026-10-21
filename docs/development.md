@@ -69,12 +69,10 @@ files of the repository adapted.
 
 This project is a community effort and lives off your contributions, be it in
 the form of bug reports, feature requests, discussions, or fixes and other code
-changes. Please refer to our organization's [contribution
-guidelines](https://github.com/elixir-cloud-aai/elixir-cloud-aai/blob/dev/CONTRIBUTING.md)
-if you are interested to contribute. Please mind the [code of
-conduct](https://github.com/elixir-cloud-aai/elixir-cloud-aai/blob/dev/CODE_OF_CONDUCT.md)
-for all interactions with the community. See [above](#development) to set up
-a development environment.
+changes. See [Contributing](contributing.md) for how to contribute, including
+the Python guidelines, and mind the [code of
+conduct](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/CODE_OF_CONDUCT.md)
+for all interactions with the community.
 
 ## Versioning and releases
 
