@@ -544,7 +544,9 @@ components:
         Group, i.e., a value of the group claim of the members' tokens
         (`eduperson_entitlement` for LS Login, e.g.,
         `urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN#aai.lifescience-ri.eu`),
-        URL-encoded (e.g., `#` as `%23`; may contain `/`).
+        URL-encoded (e.g., `#` as `%23`; may contain `/`, but not start
+        with it: the path then has a double slash, which is redirected to
+        the path without it, i.e., to another group).
       required: true
       schema:
         type: string

@@ -54,13 +54,21 @@ def check_admin_groups() -> None:
 
     Without such groups, nobody can manage services they don't own, register
     services with chosen identifiers or verify services, so this is an error
-    unless `custom.access_control.require_admin` is false.
+    unless `custom.access_control.require_admin` is false. A warning is
+    logged if groups are mapped, but `keep_group_subjects` is not set, as
+    roles on services granted to groups then don't apply.
 
     Raises:
         RuntimeError: No group is mapped to the role `admin`, and
             `custom.access_control.require_admin` is true.
     """
-    mapping = get_config().security.access_control.group_mapping or {}
+    conf = get_config().security.access_control
+    mapping = conf.group_mapping or {}
+    if mapping and not conf.keep_group_subjects:
+        logger.warning(
+            "`security.access_control.keep_group_subjects` is not set, so "
+            "roles on services granted to groups don't apply"
+        )
     groups = sorted(group for group, role in mapping.items() if role == "admin")
     if groups:
         logger.info("Groups mapped to the role 'admin': %s", ", ".join(groups))
@@ -334,9 +342,8 @@ def _check_other_owners(
     """
     if _owners(resource) == [(subject_type, subject)]:
         logger.info(
-            "%s %s is the last owner of '%s'",
-            subject_type.capitalize(),
-            _describe(subject, "user"),
+            "%s is the last owner of '%s'",
+            _describe(subject, subject_type),
             escape_log_value(resource),
         )
         raise Conflict

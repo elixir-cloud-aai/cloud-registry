@@ -314,7 +314,7 @@ token issued by [LS Login][ls-login] (see [Authentication](#authentication)):
   apply because the base config sets
   `security.access_control.keep_group_subjects` (all values of the group
   claim are used as subjects, besides the admin group mapping); don't unset
-  it in overlays.
+  it in overlays (the app warns on startup if it is unset).
 - **Maintainers** can update, but not delete a service.
 - Members of the groups that the deployment maps to the role `admin`
   (`security.access_control.group_mapping`) are **admins**: they can do
@@ -341,8 +341,9 @@ Access control is implemented with [FOCA][foca-access-control]; see the
 `security` section of the [configuration][config].
 
 For auditing, the app logs (at level `INFO`) who changed which roles of whom
-(users or groups) on which service, who deleted services, and who verified services or removed
-their verifications (also by updating their URL or API type). Changes via the
+(users or groups) on which service, who deleted services, and who verified
+services or removed their verifications (also by updating their URL or API
+type). Changes via the
 [permissions API](#permissions-api) are not logged by the app itself: FOCA
 logs the requests (method, path and client address) and the identifiers of
 the added, updated or deleted policy rules, but not who changed them, or how.

@@ -697,7 +697,7 @@ def test_group_roles(client):
     ]
     # members of an owner group are owners; others are not
     assert update(client, service_id, ERIN) == 200
-    assert permission_list(client, service_id, user=ERIN)
+    assert group_permissions(client, service_id, user=ERIN) == [(TEAM_GROUP, "owner")]
     assert grant(client, service_id, CAROL, "maintainer", as_user=ERIN) == 200
     assert update(client, service_id, BOB) == 403
     # members of a maintainer group can update only
@@ -813,7 +813,9 @@ def test_last_owner_group_restored(client, monkeypatch, change):
     service_id = register(client)
     assert grant_group(client, service_id, TEAM_GROUP, "owner") == 200
     assert revoke(client, service_id, ALICE) == 200
-    monkeypatch.setattr(permissions_module, "_check_other_owners", lambda *args: None)
+    monkeypatch.setattr(
+        permissions_module, "_check_other_owners", lambda *args, **kwargs: None
+    )
     if change == "revoke":
         assert revoke_group(client, service_id, TEAM_GROUP, as_user=ERIN) == 409
     else:
@@ -851,14 +853,16 @@ def test_me_group_roles(client):
     assert me(client, BOB)["services"] == [
         {"service_id": second, "role": "owner", "group": OTHER_GROUP}
     ]
-    assert me(client, ALICE)["services"] == sorted(
-        [
-            {"service_id": first, "role": "owner"},
-            {"service_id": first, "role": "maintainer", "group": TEAM_GROUP},
-            {"service_id": second, "role": "owner"},
-        ],
-        key=lambda service: (service["service_id"], service.get("group", "")),
-    )
+    # sorted by service identifier, roles of the user first
+    expected = [
+        {"service_id": first, "role": "owner"},
+        {"service_id": first, "role": "maintainer", "group": TEAM_GROUP},
+    ]
+    if second < first:
+        expected.insert(0, {"service_id": second, "role": "owner"})
+    else:
+        expected.append({"service_id": second, "role": "owner"})
+    assert me(client, ALICE)["services"] == expected
     # names are only stored for roles granted to users
     assert _names(client, first) == {ALICE: NAMES[ALICE]}
 

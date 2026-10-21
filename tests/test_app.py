@@ -952,7 +952,31 @@ def test_create_app_checks(mongo_client, app_env, capsys):
     # FOCA configures logging to stderr
     err = capsys.readouterr().err
     assert f"Groups mapped to the role 'admin': {ADMIN_GROUP}" in err
+    assert "keep_group_subjects" not in err
     assert "Serving service info 'ELIXIR_CLOUD_SERVICE_REGISTRY_1'" in err
+
+
+def test_create_app_group_subjects(monkeypatch, tmp_path, app_env, capsys):
+    """`create_app()` warns if roles of groups don't apply, as groups are
+    mapped, but not kept as subjects.
+    """
+    _set_overlay(
+        monkeypatch,
+        tmp_path,
+        {
+            "security": {
+                "auth": {"audience": ["a"]},
+                "access_control": {
+                    "group_mapping": {ADMIN_GROUP: "admin"},
+                    "keep_group_subjects": False,
+                },
+            }
+        },
+    )
+    cloud_registry.app.create_app()
+    assert "roles on services granted to groups don't apply" in (
+        capsys.readouterr().err
+    )
 
 
 def test_create_app_duplicate_services(mongo_client, app_env):
