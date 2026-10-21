@@ -14,6 +14,7 @@ import pytest
 import yaml
 
 import cloud_registry.app
+from cloud_registry.ga4gh.registry.service import KEY, service_key
 from cloud_registry.ga4gh.registry.service_info import InvalidServiceInfo
 from cloud_registry.service_models.custom_config import MAX_CONTENT_LENGTH
 from tests.conftest import (
@@ -766,7 +767,7 @@ def test_create_app_checks(mongo_client, app_env, capsys):
 
     cloud_registry.app.create_app()
 
-    assert services.find_one({"id": "OLD"})["_serviceKey"]
+    assert services.find_one({"id": "OLD"})[KEY] == service_key(SERVICE)
     # FOCA configures logging to stderr
     err = capsys.readouterr().err
     assert f"Groups mapped to the role 'admin': {ADMIN_GROUP}" in err
