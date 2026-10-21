@@ -2,7 +2,7 @@
 ## Pinned by digest, so that rebuilds (e.g., of a release) use the same base
 ## image; Dependabot updates the tag and digest together
 ## (`.github/dependabot.yml`)
-FROM elixircloud/foca:0.14.0-py3.12@sha256:1c2ba7ea6a126d2be88c3f75c7b06a6cc6b4ac3b8b5590cd0df8460208e24da5
+FROM elixircloud/foca:0.15.0-py3.12@sha256:0d21e23d67f8b84a0bf4e2ee893024ac82344aec41a09f9f4b6440d1e108e570
 
 ##### METADATA #####
 LABEL software="Cloud Registry"
@@ -14,22 +14,9 @@ LABEL maintainer.organisation="ELIXIR Cloud & AAI"
 
 ## Install dependencies first, so that code changes do not reinstall them;
 ## the FOCA image runs as non-root user
-## TODO(#104): FOCA 0.15.0 is not released yet: `requirements.txt` installs its
-## release candidate from Git (replacing the base image's FOCA 0.14.0), so Git
-## is installed for the build and removed again; the build fails unless FOCA
-## 0.15 (with `foca.api.service_info`, and limiting request bodies without
-## `Content-Length`, `_check_body_size()`) is installed. Once FOCA 0.15.0 is
-## released, require it in `requirements.txt`, install the requirements with
-## `pip` only and change the base image to a FOCA 0.15.0 image (if published)
 USER root
 COPY requirements.txt /tmp/src/
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends git \
-  && pip install --no-cache-dir -r /tmp/src/requirements.txt \
-  && apt-get purge -y --auto-remove git \
-  && rm -rf /var/lib/apt/lists/* \
-  && python -c "import foca.api.service_info" \
-  && python -c "from foca.factories.connexion_app import _check_body_size"
+RUN pip install --no-cache-dir -r /tmp/src/requirements.txt
 
 ## Install app (non-editable; the base config is installed with the package,
 ## and deployments override it via `FOCA_CONFIG_OVERLAY`)
