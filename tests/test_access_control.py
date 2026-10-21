@@ -471,7 +471,7 @@ def test_put_racing_delete(app, client, monkeypatch, user, status, roles):
     assert client.get(f"{BASE}/services/{service_id}").status_code == expected
 
 
-def test_create_racing_delete(app, client, monkeypatch):
+def test_create_racing_delete(app, client, monkeypatch, caplog):
     """The owner role (and name) of the creator of a new service deleted
     while its owner is stored is revoked again (`404`); roles granted by
     others on the identifier (e.g., to the owner of a service registered
@@ -479,10 +479,9 @@ def test_create_racing_delete(app, client, monkeypatch):
     """
 
     def delete_service():
-        # the service is deleted (with its roles) after its owner role was
-        # granted, before the owner's name is stored; and another request
-        # grants a role on the identifier
-        permissions_module.remove_permissions("MYSERV")
+        # the service is deleted before its owner role is checked (its roles
+        # were revoked before the owner role was granted); and another
+        # request grants a role on the identifier
         get_collection("services").delete_one({"id": "MYSERV"})
         permissions_module.add_resource_role(
             subject=BOB,
@@ -494,6 +493,7 @@ def test_create_racing_delete(app, client, monkeypatch):
         fired = before_first_call(patch, "update_one", "user_names", delete_service)
         assert update(client, "MYSERV", ADMIN) == 404
     assert fired
+    assert any("revoked from its creator" in msg for msg in caplog.messages)
     assert _roles(app, "MYSERV") == [(BOB, "owner")]
     with app.app.app_context():
         names = get_collection("user_names")
