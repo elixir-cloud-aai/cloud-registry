@@ -533,7 +533,9 @@ components:
       in: path
       description: |
         Identifier of the user, i.e., the `sub` claim of the user's tokens
-        (e.g., `abc123@lifescience-ri.eu` for LS Login).
+        (e.g., `abc123@lifescience-ri.eu` for LS Login). Not `groups`: the
+        path is then that of the roles of groups without a group, which is
+        not found (`404`).
       required: true
       schema:
         type: string

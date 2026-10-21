@@ -529,6 +529,23 @@ def _delete_roles(serviceId: str, subject: str, subject_type: SubjectType) -> No
     )
 
 
+def _check_user_id(userId: str) -> None:
+    """Check that a user identifier is not `groups`.
+
+    `/services/{serviceId}/permissions/groups` is the path of the roles of
+    groups without a group (cf. `putServiceGroupPermission()`), not of a
+    user `groups`, so it is not found, like `.../permissions/groups/`.
+
+    Args:
+        userId: User identifier.
+
+    Raises:
+        cloud_registry.exceptions.NotFound: The user identifier is `groups`.
+    """
+    if userId == "groups":
+        raise NotFound
+
+
 # PUT /services/{serviceId}/permissions/{userId}
 def putServicePermission(serviceId: str, userId: str, **kwargs) -> dict:
     """Grant a user a role on a service, replacing any other role (cf.
@@ -540,7 +557,12 @@ def putServicePermission(serviceId: str, userId: str, **kwargs) -> dict:
 
     Returns:
         User identifier and granted role.
+
+    Raises:
+        cloud_registry.exceptions.NotFound: The user identifier is `groups`
+            (cf. `_check_user_id()`).
     """
+    _check_user_id(userId)
     _put_role(serviceId, userId, "user")
     return {"user_id": userId, "role": request.json["role"]}
 
@@ -555,7 +577,12 @@ def deleteServicePermission(serviceId: str, userId: str, **kwargs) -> str:
 
     Returns:
         User identifier.
+
+    Raises:
+        cloud_registry.exceptions.NotFound: The user identifier is `groups`
+            (cf. `_check_user_id()`).
     """
+    _check_user_id(userId)
     _delete_roles(serviceId, userId, "user")
     return userId
 

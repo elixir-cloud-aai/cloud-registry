@@ -26,6 +26,10 @@ spec:
     spec:
       # The pod doesn't call the Kubernetes API
       automountServiceAccountToken: false
+      # No `<SERVICE>_PORT` etc. variables of the Services in the namespace:
+      # FOCA reads some as configuration (e.g., `MONGO_PORT` of a Service
+      # `mongo`, which isn't a port)
+      enableServiceLinks: false
       containers:
       - image: {{ include "cloud-registry.image" . | quote }}
         imagePullPolicy: Always

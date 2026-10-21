@@ -32,6 +32,12 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    ignore:
+      # FOCA minors are bumped by hand, in the base image and the `foca` pin
+      # in `requirements.txt` together (a new base image alone would get the
+      # old FOCA reinstalled on top)
+      - dependency-name: elixircloud/foca
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     groups:
       docker:
         patterns: ["*"]

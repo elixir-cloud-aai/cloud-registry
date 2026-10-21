@@ -128,8 +128,12 @@ jobs:
               echo "::error::No successful run of the CI workflow (checks.yaml) for a push of ${SHA}; once CI passed for it, re-run this workflow"
               exit 1
           fi
-      # Helm is preinstalled on GitHub-hosted Ubuntu runners; `appVersion`
-      # (the default image tag) is the release version
+      # Same Helm version as in `checks.yaml`, which tests the chart
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.22.1
+      # `appVersion` (the default image tag) is the release version
       - name: Package chart
         env:
           VERSION: ${{ steps.version.outputs.version }}
