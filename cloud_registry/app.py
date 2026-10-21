@@ -10,11 +10,13 @@ from pathlib import Path
 
 from connexion import App
 from connexion.exceptions import BadRequestProblem, ExtraParameterProblem
-from foca import Foca
+from foca import Foca, get_config
 
 from cloud_registry.exceptions import validation_problem
 from cloud_registry.ga4gh.registry.permissions import check_admin_groups
 from cloud_registry.ga4gh.registry.service import add_service_keys
+
+logger = logging.getLogger(__name__)
 
 # Logger of Connexion's request validation
 VALIDATION_LOGGER = "connexion.decorators.validation"
@@ -23,8 +25,9 @@ VALIDATION_LOGGER = "connexion.decorators.validation"
 def create_app() -> App:
     """Create the app from the config, with the error handler for validation
     errors (silencing Connexion's validation log messages), check admin
-    groups, and add missing keys of services. FOCA validates the service info
-    (`service_info`) of the config, and limits the size of request bodies
+    groups, warn if request bodies are not limited in size, and add missing
+    keys of services. FOCA validates the service info (`service_info`) of the
+    config, and limits the size of request bodies
     (`server.max_content_length`).
 
     Gunicorn calls this in each worker, after forking (MongoDB clients must
@@ -61,6 +64,12 @@ def create_app() -> App:
 
     with app.app.app_context():
         check_admin_groups()
+        # `null` removes FOCA's size limit of request bodies
+        if get_config().server.max_content_length is None:
+            logger.warning(
+                "Request bodies are not limited in size "
+                "(`server.max_content_length` is null)"
+            )
         add_service_keys()
     return app
 

@@ -360,6 +360,19 @@ def test_max_content_length_configured(monkeypatch, tmp_path, app_env, headers):
     assert _send(client, _body(1000), headers=headers).status_code == 201
 
 
+def test_max_content_length_null(monkeypatch, tmp_path, app_env, capsys):
+    """`server.max_content_length: null` removes the size limit of request
+    bodies (FOCA), which the app warns about on startup.
+    """
+    path = tmp_path / "overlay.yaml"
+    path.write_text(yaml.safe_dump({"server": {"max_content_length": None}}))
+    overlays = os.pathsep.join([str(CONFIG_OVERLAY), str(path)])
+    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", overlays)
+    app = cloud_registry.app.create_app()
+    assert app.app.config.get("MAX_CONTENT_LENGTH") is None
+    assert "Request bodies are not limited in size" in capsys.readouterr().err
+
+
 def _set_field(service: dict, field: str, value: str) -> dict:
     """Set a field of a service, given as a dotted path."""
     *parents, name = field.split(".")

@@ -529,7 +529,8 @@ with `413 Content Too Large` before the access token is checked and the body
 is parsed: requests whose `Content-Length` exceeds the limit are rejected
 without reading the body (and requests with an invalid `Content-Length` with
 `400`). Bodies of unknown size (`Transfer-Encoding: chunked`) are read up to
-one byte over the limit, and rejected if they are larger.
+one byte over the limit, and rejected if they are larger. `null` removes the
+limit (not recommended; the app logs a warning on startup).
 
 Set the same limit at the ingress or reverse proxy in front of the app, so
 that it rejects larger requests itself; the Helm chart sets the limit of
