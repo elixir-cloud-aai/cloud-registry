@@ -101,7 +101,8 @@ jobs:
   # The other test jobs use mongomock; this one runs all tests against
   # MongoDB (`MONGODB_TEST_URI`, see `tests/conftest.py`), the version of
   # `docker-compose.yaml` (8.0 doesn't start on some kernels of the runners:
-  # https://jira.mongodb.org/browse/SERVER-121912)
+  # https://jira.mongodb.org/browse/SERVER-121912). One Python version (that
+  # of the Dockerfile) suffices; coverage is reported by `test`
   test_mongodb:
     name: Run tests (MongoDB 7.0)
     runs-on: ubuntu-latest
@@ -132,8 +133,11 @@ jobs:
         run: |
           pip install --upgrade pip==24.0
           pip install -e ".[dev]"
+      # Fails instead of falling back to mongomock if the URI is missing
       - name: Run tests
-        run: pytest -W ignore::DeprecationWarning
+        run: |
+          test -n "${MONGODB_TEST_URI}"
+          pytest -W ignore::DeprecationWarning
   # Stable check name for branch protection, independent of the matrix
   tests_passed:
     name: Run tests
@@ -222,9 +226,10 @@ jobs:
         run: |
           curl --fail --silent --show-error --output /dev/null \
             --header 'Accept: application/json' "${PROBE_ENDPOINT}"
-      # Check database-backed endpoints of the app as deployed (the tests
-      # check them against MongoDB, too: `test_mongodb`). Writes need tokens of the trusted issuer (LS Login), so
-      # a verified service is inserted into the database directly
+      # Check database-backed endpoints of the app as deployed (`test_mongodb`
+      # covers them with the tests). Writes need tokens of the trusted issuer
+      # (LS Login), so a verified service is inserted into the database
+      # directly
       - name: Check API with MongoDB
         run: |
           docker compose exec -T mongodb mongosh --quiet serviceStore --eval '

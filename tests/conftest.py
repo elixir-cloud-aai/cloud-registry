@@ -8,7 +8,8 @@ by a mock; they have no network access, except to the test database.
 The tests use an in-memory database (mongomock), or, if the environment
 variable `MONGODB_TEST_URI` is set, the MongoDB at that URI (e.g.,
 `mongodb://localhost:27017`), as in CI: there, database `serviceStore` (`DB`)
-is dropped before each test, so use a MongoDB without other data.
+is dropped before each test, so use a single-node MongoDB (only the hosts of
+the URI may be connected to) without other data, one per test run.
 """
 
 from collections.abc import Iterator
