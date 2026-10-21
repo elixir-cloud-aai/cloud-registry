@@ -644,9 +644,10 @@ highest release on `main`), and creates a GitHub release with the chart
 (`.tgz`) and the notes in `docs/releases/X.Y.Z.md` (for pre-releases, e.g.,
 `X.Y.Zrc1.md`), or, if there are none, notes generated from the merged pull
 requests. Curated notes are published as written, so the release workflow fails
-if they contain `TODO`. No packages are published to PyPI. Tags of pre-releases
-(e.g., `vX.Y.Zrc1`, also `aN` and `bN`) create GitHub pre-releases, with chart
-version `X.Y.Z-rc1`, and never update `latest`. Images of commits on `dev` are
+if they contain `TODO`; on re-runs, it updates the notes of an existing
+release. No packages are published to PyPI. Tags of pre-releases (e.g.,
+`vX.Y.Zrc1`, also `aN` and `bN`) create GitHub pre-releases, with chart version
+`X.Y.Z-rc1`, and never update `latest`. Images of commits on `dev` are
 published by the [CI workflow][checks-workflow] (environment `dev-images`).
 
 Maintainers: the workflows rely on these repository settings: environment
