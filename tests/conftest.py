@@ -9,7 +9,8 @@ The tests use an in-memory database (mongomock), or, if the environment
 variable `MONGODB_TEST_URI` is set, the MongoDB at that URI (e.g.,
 `mongodb://localhost:27017`), as in CI: there, database `serviceStore` (`DB`)
 is dropped before each test, so use a single-node MongoDB (only the hosts of
-the URI may be connected to) without other data, one per test run.
+the URI may be connected to) without other data, one per test run. The tests
+refuse to start if the database exists already.
 """
 
 from collections.abc import Iterator
@@ -217,18 +218,42 @@ def make_headers(user: str = USER, key: rsa.RSAPrivateKey = KEY) -> dict[str, st
     return {"Authorization": f"Bearer {token}"}
 
 
+def _check_no_db(client: MongoClient[dict[str, Any]]) -> None:
+    """Check that a MongoDB has no database `DB`, which the tests would drop.
+
+    Args:
+        client: Client of the MongoDB.
+
+    Ends the test run (`pytest.exit()`, as a usage error) if the database
+    exists, e.g., with data of a deployment, or left by an aborted test run.
+    """
+    if DB in client.list_database_names():
+        pytest.exit(
+            f"MongoDB at MONGODB_TEST_URI has a database '{DB}', which the"
+            " tests would drop: use a MongoDB without it (drop it if it is"
+            " left from an aborted test run)",
+            returncode=pytest.ExitCode.USAGE_ERROR,
+        )
+
+
 @pytest.fixture(scope="session")
 def _mongodb() -> Iterator[MongoClient[dict[str, Any]] | None]:
-    """Client of the MongoDB at `MONGODB_TEST_URI`, if set, for all tests."""
+    """Client of the MongoDB at `MONGODB_TEST_URI`, if set, for all tests.
+
+    Fails if the MongoDB has data in database `DB` before the tests.
+    """
     if not MONGODB_TEST_URI:
         yield None
         return
     client: MongoClient[dict[str, Any]] = MongoClient(
         MONGODB_TEST_URI, serverSelectionTimeoutMS=5000
     )
-    yield client
-    client.drop_database(DB)
-    client.close()
+    try:
+        _check_no_db(client)
+        yield client
+        client.drop_database(DB)
+    finally:
+        client.close()
 
 
 @pytest.fixture

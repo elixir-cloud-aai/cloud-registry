@@ -29,6 +29,16 @@ def test_db_client_empty(db_client: MongoClient[dict[str, Any]], run: int) -> No
     services.insert_one({"id": f"run{run}"})
 
 
+def test_check_no_db() -> None:
+    """MongoDBs with database `DB` are refused, as the tests would drop it."""
+    client: MongoClient[dict[str, Any]] = mongomock.MongoClient()
+    client["other"]["services"].insert_one({"id": "other"})
+    conftest._check_no_db(client)
+    client[DB]["services"].insert_one({"id": "deployed"})
+    with pytest.raises(pytest.exit.Exception, match=f"has a database '{DB}'"):
+        conftest._check_no_db(client)
+
+
 def test_db_addresses() -> None:
     """The addresses of a URI's hosts are resolved; default port 27017."""
     assert conftest._db_addresses("") == frozenset()

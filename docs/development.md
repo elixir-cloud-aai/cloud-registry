@@ -20,7 +20,8 @@ The tests need no database: they use an in-memory one
 ([mongomock](https://github.com/mongomock/mongomock)). CI also runs them
 against MongoDB 7.0; to do so locally, set `MONGODB_TEST_URI` to a
 single-node MongoDB without other data, one per test run (the tests drop its
-database `serviceStore` before each test), e.g.:
+database `serviceStore` before each test, and refuse to start if it exists),
+e.g.:
 
 ```bash
 docker run -d --rm --name mongodb-test -p 127.0.0.1:27017:27017 mongo:7.0
