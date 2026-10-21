@@ -128,11 +128,13 @@ PyPI. Tags of alpha, beta and release candidate versions (e.g., `vX.Y.Zrc1`,
 also `aN` and `bN`) get chart version `X.Y.Z-rc1` (or `-aN`, `-bN`) and never
 update the `latest` image. These and, until 1.0.0, all other releases are
 GitHub pre-releases (never marked as the latest release). Images of commits
-on `dev` are published by the CI workflow (environment `dev-images`). The
-release workflow derives the version, the chart version, the kind of release
-and whether it is `latest` from the tag with `scripts/release_version.py`
-(tested over a table of tags in `tests/test_release_version.py`); change the
-rules there, not in the workflow.
+on `dev` are published by the CI workflow (environment `dev-images`).
+
+The release workflow derives the version, the chart version, the kind of
+release (stable, GitHub pre-release) and whether the image is tagged `latest`
+from the tag with `scripts/release_version.py`, which is tested over a table
+of tags (`tests/test_release_version.py`) and checked like the app (ruff,
+mypy, coverage); change these rules there, not in the workflow.
 
 In curated notes, link all changes of the release as the compare view from
 the previous release's tag (e.g.,

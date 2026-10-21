@@ -22,3 +22,8 @@ custom:
             url_prefix: http
             external_host: localhost
             external_port: 8080
+        # Also accept `http` service URLs, e.g., of services running locally
+        services:
+            url_schemes:
+                - http
+                - https

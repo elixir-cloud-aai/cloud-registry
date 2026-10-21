@@ -64,6 +64,12 @@ describe the deployment: `id`, `name`, `description`, `organization` (both
 the example in `values.yaml`). Pods are restarted when the ConfigMap changes,
 and the app refuses to start if the service info is invalid.
 
+Service URLs must be `https` URLs by default, as clients send access tokens
+to the registered services; `config.custom.endpoints.services.url_schemes`
+(e.g., `[http, https]`) allows `http` too, which is not recommended (see
+[Service URL
+schemes](https://cloud-registry.readthedocs.io/en/latest/configuration/#service-url-schemes)).
+
 Do not edit the ConfigMap with `kubectl edit`: Helm overwrites it on the next
 upgrade. As `config` is stored in a ConfigMap, it must not contain secrets
 (e.g., database credentials).

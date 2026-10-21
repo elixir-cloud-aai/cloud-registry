@@ -14,7 +14,7 @@ from foca import Foca, get_config
 
 from cloud_registry.exceptions import validation_problem
 from cloud_registry.ga4gh.registry.permissions import check_admin_groups
-from cloud_registry.ga4gh.registry.service import add_service_keys
+from cloud_registry.ga4gh.registry.service import add_service_keys, warn_url_schemes
 
 # Logger of Connexion's request validation
 VALIDATION_LOGGER = "connexion.decorators.validation"
@@ -25,7 +25,8 @@ def create_app() -> App:
 
     Adds the error handler for validation errors (silencing Connexion's
     validation log messages), checks admin groups, requires a size limit of
-    request bodies, and adds missing keys of services. FOCA validates the
+    request bodies, adds missing keys of services and warns of stored
+    services with URL schemes that are not allowed. FOCA validates the
     service info (`service_info`) of the config, and limits the size of
     request bodies (`server.max_content_length`).
 
@@ -73,6 +74,7 @@ def create_app() -> App:
                 "`server.max_content_length` (bytes), not null"
             )
         add_service_keys()
+        warn_url_schemes()
     return app
 
 
