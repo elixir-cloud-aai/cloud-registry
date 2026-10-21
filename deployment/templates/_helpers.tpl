@@ -165,11 +165,23 @@ chart's `appVersion`; an image with a tag or digest is used as it is.
 {{/*
 Size limit of request bodies of the app, in bytes: `custom.max_content_length`
 of the config, by default that of the app (1 MiB; cf.
-`cloud_registry/config.yaml`).
+`cloud_registry/config.yaml`). Fails unless it is a positive integer (numbers
+from values files are floats), as 0 means no limit for ingress-nginx.
 */}}
 {{- define "cloud-registry.maxContentLength" -}}
-{{- $config := .Values.config | default dict -}}
-{{- dig "custom" "max_content_length" 1048576 $config | int64 -}}
+{{- $custom := dig "custom" dict (.Values.config | default dict) -}}
+{{- if not (kindIs "map" $custom) -}}
+{{- $custom = dict -}}
+{{- end -}}
+{{- $limit := 1048576 -}}
+{{- if hasKey $custom "max_content_length" -}}
+{{- $limit = index $custom "max_content_length" -}}
+{{- end -}}
+{{- $integer := or (kindIs "int" $limit) (kindIs "int64" $limit) (and (kindIs "float64" $limit) (eq $limit (floor $limit))) -}}
+{{- if not (and $integer (ge (int64 $limit) 1)) -}}
+{{- fail (printf "config.custom.max_content_length must be a positive integer (bytes), not %v" $limit) -}}
+{{- end -}}
+{{- int64 $limit -}}
 {{- end -}}
 
 {{/*

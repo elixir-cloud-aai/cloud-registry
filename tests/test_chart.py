@@ -659,6 +659,34 @@ def test_ingress_body_size_app(tmp_path):
     assert ingress["metadata"]["annotations"] == {BODY_SIZE: "8388608"}
 
 
+@pytest.mark.parametrize(
+    "args",
+    [
+        ("--set", "config.custom.max_content_length=null"),
+        ("--set", "config.custom.max_content_length=0"),
+        ("--set-string", "config.custom.max_content_length=1m"),
+    ],
+    ids=["null", "zero", "string"],
+)
+def test_ingress_body_size_invalid(args):
+    """Rendering fails unless the app's size limit of request bodies is a
+    positive integer (0 would mean no limit for ingress-nginx).
+    """
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render(*args)
+    assert "max_content_length" in exc.value.stderr
+
+
+def test_ingress_body_size_custom_null():
+    """`config.custom: null` is like no custom config: ingress-nginx gets
+    the app's default limit, and the generated custom config is kept.
+    """
+    docs = _render("--set", "config.custom=null")
+    ingress = docs[("Ingress", APP)]
+    assert ingress["metadata"]["annotations"] == {BODY_SIZE: BODY_SIZE_LIMIT}
+    assert _overlay(docs)["custom"]["endpoints"]["service"]["external_host"] == "x"
+
+
 def test_ingress_body_size_annotation():
     """The size limit of request bodies set by an annotation takes
     precedence over that of the app; `null` removes it.

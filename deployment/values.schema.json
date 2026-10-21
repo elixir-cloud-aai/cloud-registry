@@ -1,5 +1,18 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
+  "$defs": {
+    "tmpSizeLimit": {
+      "type": ["string", "integer", "null"],
+      "pattern": "^([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([KMGTPE]i|[mkMGTPE]|[eE][+-]?[0-9]+)?$",
+      "not": {
+        "type": "string",
+        "pattern": "^(0+(\\.0*)?|\\.0+)([KMGTPE]i|[mkMGTPE]|[eE][+-]?[0-9]+)?$",
+        "$comment": "Rejects all-zero quantities (Go regular expressions have no lookahead)"
+      },
+      "minimum": 1,
+      "description": "Size limit of the emptyDir at /tmp: a positive Kubernetes quantity (e.g., 64Mi) or number of bytes; none if null"
+    }
+  },
   "type": "object",
   "properties": {
     "nameOverride": {
@@ -16,7 +29,19 @@
     },
     "config": {
       "type": ["object", "null"],
-      "description": "App config overriding the base config in the image"
+      "description": "App config overriding the base config in the image",
+      "properties": {
+        "custom": {
+          "type": ["object", "null"],
+          "properties": {
+            "max_content_length": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Size limit of request bodies, in bytes; also sets that of ingress-nginx"
+            }
+          }
+        }
+      }
     },
     "mongodb": {
       "type": "object",
@@ -47,10 +72,7 @@
           "description": "Security context of the container (runAsUser and runAsGroup are omitted on OpenShift)"
         },
         "tmpSizeLimit": {
-          "type": ["string", "integer", "null"],
-          "pattern": "^([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([KMGTPE]i|[mkMGTPE]|[eE][+-]?[0-9]+)?$",
-          "minimum": 1,
-          "description": "Size limit of the emptyDir at /tmp: a Kubernetes quantity (e.g., 64Mi) or a number of bytes; none if null"
+          "$ref": "#/$defs/tmpSizeLimit"
         }
       }
     },
@@ -114,10 +136,7 @@
           "description": "Security context of the container (runAsUser and runAsGroup are omitted on OpenShift)"
         },
         "tmpSizeLimit": {
-          "type": ["string", "integer", "null"],
-          "pattern": "^([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([KMGTPE]i|[mkMGTPE]|[eE][+-]?[0-9]+)?$",
-          "minimum": 1,
-          "description": "Size limit of the emptyDir at /tmp: a Kubernetes quantity (e.g., 64Mi) or a number of bytes; none if null"
+          "$ref": "#/$defs/tmpSizeLimit"
         }
       }
     }

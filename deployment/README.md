@@ -164,14 +164,16 @@ cluster, and Helm prints a warning after installing.
 Both containers run as non-root users, without privilege escalation or
 capabilities, with the runtime's default seccomp profile and a read-only root
 file system; they write to `emptyDir` volumes (`/tmp`; for MongoDB also
-`/data/configdb`) and MongoDB to its data volume. The `/tmp` volumes are
-limited to 64 MiB each (`tmpSizeLimit` of `cloud_registry` and `mongodb`: a
-Kubernetes quantity, e.g., `64Mi`, or a number of bytes; `null` removes the
-limit); the kubelet evicts pods that exceed it. The app
-image runs as user 1000; the MongoDB image starts as root and switches to user
-`mongodb` (999), so the chart sets that user and group (`runAsUser`,
-`runAsGroup`), and `fsGroup` makes the data volume writable for it (unless
-the storage ignores `fsGroup`).
+`/data/configdb`) and MongoDB to its data volume. The app image runs as user
+1000; the MongoDB image starts as root and switches to user `mongodb` (999),
+so the chart sets that user and group (`runAsUser`, `runAsGroup`), and
+`fsGroup` makes the data volume writable for it (unless the storage ignores
+`fsGroup`).
+
+The `/tmp` volumes are limited to 64 MiB each by `tmpSizeLimit` of
+`cloud_registry` and `mongodb` (a positive Kubernetes quantity, e.g., `64Mi`,
+or a number of bytes; `null` removes the limit); the kubelet evicts pods that
+exceed it.
 
 On OpenShift (detected by the API `security.openshift.io/v1`), the chart
 omits `runAsUser`, `runAsGroup` and `fsGroup`, as OpenShift assigns them from

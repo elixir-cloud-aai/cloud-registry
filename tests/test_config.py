@@ -208,6 +208,7 @@ class TestChartOverlay:
             "cloud_registry.tmpSizeLimit=",
             "cloud_registry.tmpSizeLimit=0",
             "mongodb.tmpSizeLimit=1K",
+            "mongodb.tmpSizeLimit=0Mi",
         ],
         ids=[
             "config",
@@ -220,6 +221,7 @@ class TestChartOverlay:
             "tmp_size_limit_empty",
             "tmp_size_limit_zero",
             "mongodb_tmp_size_limit_unit",
+            "mongodb_tmp_size_limit_zero",
         ],
     )
     def test_values_schema(self, value):

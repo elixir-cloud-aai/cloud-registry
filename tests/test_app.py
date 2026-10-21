@@ -167,7 +167,7 @@ def _body(size: int, suffix: bytes = b"") -> bytes:
     return body.ljust(size) + suffix
 
 
-def _send(client, body, method="post", path="", headers=None, **kwargs):
+def _send(client, body, method="post", path="", headers=None):
     """Send a request body to `/services`."""
     return client.open(
         f"{BASE}/services{path}",
@@ -175,7 +175,6 @@ def _send(client, body, method="post", path="", headers=None, **kwargs):
         data=body,
         content_type="application/json",
         headers=headers or {},
-        **kwargs,
     )
 
 

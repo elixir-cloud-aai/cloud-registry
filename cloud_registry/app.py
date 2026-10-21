@@ -29,6 +29,7 @@ def check_streamed_size() -> None:
         return  # checked by Werkzeug, by the declared size
     limit = current_app.config["MAX_CONTENT_LENGTH"]
     request.max_content_length = limit + 1
+    # cached (`cache=True`, the default), so Connexion reads the same data
     if len(request.get_data()) > limit:
         raise RequestEntityTooLarge()
 
