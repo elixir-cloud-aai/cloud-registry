@@ -191,6 +191,12 @@ def _register_service(
         Identifier of the service; if it is new, with status `201` and its URL
         as `Location`. Or an error response: `400` for invalid URLs, `409`
         naming the registered service with the same URL and API type.
+
+    Raises:
+        cloud_registry.exceptions.BadRequest: The owner role can't be stored
+            for the service identifier.
+        cloud_registry.exceptions.NotFound: A new service was deleted
+            meanwhile.
     """
     service = RegisterService(
         data=_get_request_object(), id=service_id, allow_create=allow_create
@@ -225,6 +231,12 @@ def _register_service(
         except Exception:
             _unregister_service(service)
             raise
+        # The service may have been deleted (with its roles) before its owner
+        # was stored, which would leave the role on a deleted service (cf.
+        # `permissions._grant()`)
+        if not service_exists(service.data["id"]):
+            remove_permissions(service.data["id"])
+            raise NotFound
         path = f"{collection_path.rstrip('/')}/{service.data['id']}"
         return service.data["id"], 201, {"Location": get_public_url(path)}
     return service.data["id"]

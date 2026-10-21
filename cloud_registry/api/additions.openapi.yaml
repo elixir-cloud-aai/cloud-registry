@@ -29,7 +29,8 @@ paths:
       description: |
         Create a service resource. Services are unique by URL and API type:
         registering a service again returns `409`. Invalid URLs return `400`
-        (cf. `ExternalServiceRegister`).
+        (cf. `ExternalServiceRegister`). A service deleted during the request
+        returns `404`.
       operationId: postService
       tags:
         - cloud-registry
@@ -50,6 +51,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/DuplicateService'
         '500':

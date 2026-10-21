@@ -471,6 +471,28 @@ def test_put_racing_delete(app, client, monkeypatch, user, status, roles):
     assert client.get(f"{BASE}/services/{service_id}").status_code == expected
 
 
+def test_create_racing_delete(app, client, monkeypatch):
+    """The owner role (and name) of a new service deleted while its owner is
+    stored is revoked again (`404`).
+    """
+
+    def delete_service():
+        # the service is deleted (with its roles) after its owner role was
+        # granted, before the owner's name is stored
+        permissions_module.remove_permissions("MYSERV")
+        get_collection("services").delete_one({"id": "MYSERV"})
+
+    with monkeypatch.context() as patch:
+        fired = before_first_call(patch, "update_one", "user_names", delete_service)
+        assert update(client, "MYSERV", ADMIN) == 404
+    assert fired
+    assert _roles(app, "MYSERV") == []
+    with app.app.app_context():
+        names = get_collection("user_names")
+        assert names.count_documents({"service_id": "MYSERV"}) == 0
+    assert client.get(f"{BASE}/services/MYSERV").status_code == 404
+
+
 def test_put_stale_role(app, client, monkeypatch):
     """Roles left on the identifier of a deleted service don't let users
     other than admins register it again.
