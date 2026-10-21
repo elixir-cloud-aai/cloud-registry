@@ -586,9 +586,10 @@ components:
         A service with the same URL and API type (`type.group` and
         `type.artifact`, case-insensitive) is registered. URLs are compared
         after normalizing common spellings (e.g., case of schemes and hosts,
-        default ports, trailing slashes, queries and fragments; see the
-        README). `serviceId` names the registered service; contact its owner
-        or an admin.
+        default ports, trailing slashes, queries and fragments; see
+        https://cloud-registry.readthedocs.io/en/latest/api/#duplicate-services).
+        `serviceId` names the registered service; contact its owner or an
+        admin.
       content:
         application/json:
           schema:
@@ -762,7 +763,7 @@ components:
         - owner
         - maintainer
     # Registration schemas (also `VerificationRegister`) limit the length of
-    # strings, which the GA4GH schemas do not limit; see the README (API)
+    # strings, which the GA4GH schemas do not limit; see `docs/api.md`
     ExternalServiceRegister:
       description: |
         GA4GH service with a URL. URLs (`url`, `organization.url`,
