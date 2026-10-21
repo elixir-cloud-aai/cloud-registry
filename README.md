@@ -163,6 +163,7 @@ under the API base path `/ga4gh/registry/v1`:
 | `/services/{serviceId}` | `DELETE` | owners, admins |
 | `/services/{serviceId}/permissions` | `GET` | owners, admins |
 | `/services/{serviceId}/permissions/{userId}` | `PUT`, `DELETE` | owners, admins |
+| `/services/{serviceId}/permissions/groups/{entitlement}` | `PUT`, `DELETE` | owners, admins (`PUT` by owners: groups they are members of) |
 | `/services/{serviceId}/verification` | `GET` | anyone |
 | `/services/{serviceId}/verification` | `PUT`, `DELETE` | admins |
 | `/verifications` | `GET` | anyone |
@@ -287,6 +288,33 @@ token issued by [LS Login][ls-login] (see [Authentication](#authentication)):
   `DELETE /services/<id>/permissions/<user-id>` revokes them. The last owner
   of a service can't be removed or downgraded (`409 Conflict`); delete the
   service instead.
+- Owners can also grant these roles to **groups** they are members of, by
+  the group's entitlement (a value of `eduperson_entitlement`, e.g., a group
+  of an ELIXIR node's team in Perun), URL-encoded in the path; all members
+  of the group then have the role, so team changes are handled centrally in
+  Perun instead of per service:
+
+  ```bash
+  curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/<id>/permissions/groups/urn%3Ageant%3Alifescience-ri.eu%3Agroup%3Aelixir%3A<group>%23aai.lifescience-ri.eu" \
+    -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+    -d '{"role": "owner"}'
+  ```
+
+  Granting roles to groups the owner is not a member of is refused (`403
+  Forbidden`), as owners could otherwise hand a service to any group;
+  admins can grant roles to any group. Any owner can revoke the roles of a
+  group (`DELETE /services/<id>/permissions/groups/<entitlement>`).
+  `GET /services/<id>/permissions` lists the roles of groups together with
+  those of users, as `{"group": <entitlement>, "role": <role>}` (users:
+  `user_id`, `name`, `role`). Groups count as owners: the last user owner
+  can be removed while a group is owner, and the last owner group can't be
+  removed or downgraded (`409 Conflict`). A service whose only owner is a
+  group then depends on the group's membership in Perun: if the group is
+  emptied or deleted, only admins can manage the service. Roles of groups
+  apply because the base config sets
+  `security.access_control.keep_group_subjects` (all values of the group
+  claim are used as subjects, besides the admin group mapping); don't unset
+  it in overlays (the app warns on startup if it is unset).
 - **Maintainers** can update, but not delete a service.
 - Members of the groups that the deployment maps to the role `admin`
   (`security.access_control.group_mapping`) are **admins**: they can do
@@ -304,19 +332,21 @@ token issued by [LS Login][ls-login] (see [Authentication](#authentication)):
   On startup, the app logs the groups mapped to `admin`.
 
 `GET /me` returns the current user's identifier (to give to owners), whether
-they are an admin, and their roles on services; it also stores their name for
-these services. Owners are not shown in the
+they are an admin, and their roles on services, also those through groups
+(with `group`; a service is listed once per role); it also stores their name
+for the services with roles granted to them. Owners are not shown in the
 public service responses.
 
 Access control is implemented with [FOCA][foca-access-control]; see the
 `security` section of the [configuration][config].
 
 For auditing, the app logs (at level `INFO`) who changed which roles of whom
-on which service, who deleted services, and who verified services or removed
-their verifications (also by updating their URL or API type). Changes via the
-[permissions API](#permissions-api) are not logged by the app itself: FOCA
-logs the requests (method, path and client address) and the identifiers of
-the added, updated or deleted policy rules, but not who changed them, or how.
+(users or groups) on which service, who deleted services, and who verified
+services or removed their verifications (also by updating their URL or API
+type). Changes via the [permissions API](#permissions-api) are not logged by
+the app itself: FOCA logs the requests (method, path and client address) and
+the identifiers of the added, updated or deleted policy rules, but not who
+changed them, or how.
 
 ### Permissions API
 

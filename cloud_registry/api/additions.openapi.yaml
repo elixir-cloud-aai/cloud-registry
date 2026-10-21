@@ -162,8 +162,8 @@ paths:
     get:
       summary: List service permissions.
       description: |
-        List the roles granted on a service. Only for owners of the service
-        and admins.
+        List the roles granted on a service, to users (`user_id`) and to
+        groups (`group`). Only for owners of the service and admins.
       operationId: getServicePermissions
       x-openapi-router-controller: cloud_registry.ga4gh.registry.permissions
       tags:
@@ -178,7 +178,9 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Permission'
+                  oneOf:
+                    - $ref: '#/components/schemas/Permission'
+                    - $ref: '#/components/schemas/GroupPermission'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -196,8 +198,8 @@ paths:
         Grant a user a role on a service, replacing any other role of the
         user on the service: `owner` (update and delete the service, manage
         its permissions) or `maintainer` (update the service). Only for
-        owners of the service and admins. The last owner of a service cannot
-        be downgraded (`409`).
+        owners of the service and admins. The last owner of a service (user
+        or group) cannot be downgraded (`409`).
       operationId: putServicePermission
       x-openapi-router-controller: cloud_registry.ga4gh.registry.permissions
       tags:
@@ -238,8 +240,8 @@ paths:
       summary: Revoke service permission.
       description: |
         Revoke the roles of a user on a service. Only for owners of the
-        service and admins. The last owner of a service cannot be removed
-        (`409`); delete the service instead.
+        service and admins. The last owner of a service (user or group)
+        cannot be removed (`409`); delete the service instead.
       operationId: deleteServicePermission
       x-openapi-router-controller: cloud_registry.ga4gh.registry.permissions
       tags:
@@ -255,6 +257,88 @@ paths:
               schema:
                 type: string
                 description: Identifier of the user.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+  "/services/{serviceId}/permissions/groups/{entitlement}":
+    put:
+      summary: Grant service permission to group.
+      description: |
+        Grant a group a role on a service, replacing any other role of the
+        group on the service: `owner` (update and delete the service, manage
+        its permissions) or `maintainer` (update the service). All members
+        of the group (users whose group claim, `eduperson_entitlement` for
+        LS Login, contains the group) have the role. Only for owners of the
+        service who are members of the group (`403` otherwise), and admins,
+        who can grant roles to any group. The last owner of a service (user
+        or group) cannot be downgraded (`409`).
+      operationId: putServiceGroupPermission
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.permissions
+      tags:
+        - cloud-registry
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+        - $ref: '#/components/parameters/Entitlement'
+      requestBody:
+        description: Role to grant.
+        required: true
+        content:
+          application/json:
+            schema:
+              x-body-name: permission
+              $ref: '#/components/schemas/PermissionRegister'
+      responses:
+        '200':
+          description: The role was granted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupPermission'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      summary: Revoke service permission of group.
+      description: |
+        Revoke the roles of a group on a service. Only for owners of the
+        service (also if they are not members of the group) and admins. The
+        last owner of a service (user or group) cannot be removed (`409`);
+        delete the service instead.
+      operationId: deleteServiceGroupPermission
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.permissions
+      tags:
+        - cloud-registry
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+        - $ref: '#/components/parameters/Entitlement'
+      responses:
+        '200':
+          description: The roles were revoked.
+          content:
+            application/json:
+              schema:
+                type: string
+                description: The group.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -453,6 +537,21 @@ components:
       required: true
       schema:
         type: string
+    Entitlement:
+      name: entitlement
+      in: path
+      description: |
+        Group, i.e., a value of the group claim of the members' tokens
+        (`eduperson_entitlement` for LS Login, e.g.,
+        `urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN#aai.lifescience-ri.eu`),
+        URL-encoded (e.g., `#` as `%23`; may contain `/`, but not start
+        with it: the path then has a double slash, which is redirected to
+        the path without it, i.e., to another group).
+      required: true
+      schema:
+        type: string
+        # may contain slashes (e.g., URLs)
+        format: path
   responses:
     ServiceCreated:
       description: The service was successfully registered.
@@ -533,6 +632,21 @@ components:
             the registry since being granted a role.
         role:
           $ref: '#/components/schemas/Role'
+    GroupPermission:
+      description: Role of a group on a service.
+      type: object
+      required:
+        - group
+        - role
+      additionalProperties: false
+      properties:
+        group:
+          type: string
+          description: |
+            The group, i.e., a value of the group claim of its members'
+            tokens (`eduperson_entitlement` for LS Login).
+        role:
+          $ref: '#/components/schemas/Role'
     Me:
       description: The current user.
       type: object
@@ -554,7 +668,10 @@ components:
             role `admin`, or granted the role via FOCA's permissions API.
         services:
           type: array
-          description: Roles of the user on services.
+          description: |
+            Roles of the user on services: granted to the user, and granted
+            to groups the user is a member of (with `group`), sorted by
+            service identifier; a service is listed once per role.
           items:
             $ref: '#/components/schemas/ServiceRole'
     ServiceRole:
@@ -570,6 +687,11 @@ components:
           description: Identifier of the service.
         role:
           $ref: '#/components/schemas/Role'
+        group:
+          type: string
+          description: |
+            Group the role was granted to, of which the user is a member;
+            not set for roles granted to the user.
     VerificationRegister:
       description: URL and API type of a service that an admin checked.
       type: object

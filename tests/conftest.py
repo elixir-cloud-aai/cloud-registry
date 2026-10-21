@@ -41,10 +41,14 @@ ADMIN = "admin@example.org"
 ADMIN_GROUP = (
     "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN:ADMIN#aai.lifescience-ri.eu"
 )
+# Group of a team, whose members are users (for roles granted to groups)
+TEAM_GROUP = "urn:geant:lifescience-ri.eu:group:elixir:TEAM#aai.lifescience-ri.eu"
 # Group memberships and display names the identity provider returns as user
 # info, like LS Login (not in access tokens)
 ENTITLEMENTS = {
+    USER: [TEAM_GROUP],
     ADMIN: [ADMIN_GROUP],
+    "erin@example.org": [TEAM_GROUP],
     "bob@example.org": [
         "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN#aai.lifescience-ri.eu"
     ],

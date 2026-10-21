@@ -49,9 +49,10 @@ security:
           - name
     # Access control: anyone may read, any authenticated user may register
     # services and becomes their owner; owners may update and delete their
-    # services and grant other users the roles `owner` or `maintainer`
-    # (update only) on them; admins may do everything. Roles on services are
-    # managed by the app (see `cloud_registry/ga4gh/registry/permissions.py`).
+    # services and grant other users, or groups they are members of, the
+    # roles `owner` or `maintainer` (update only) on them; admins may do
+    # everything. Roles on services are managed by the app (see
+    # `cloud_registry/ga4gh/registry/permissions.py`).
     # Cf. https://foca.readthedocs.io/en/latest/access-control/
     access_control:
         enabled: True
@@ -65,6 +66,10 @@ security:
         # `custom.access_control.require_admin` is false. E.g., for ELIXIR:
         # group_mapping:
         #   "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN:ADMIN#aai.lifescience-ri.eu": admin
+        # Also use all values of `claim_groups` (prefixed with `group:`) as
+        # subjects, so that roles on services granted to groups apply while
+        # `group_mapping` is set
+        keep_group_subjects: True
         # Managed on startup (removed rules are deleted); cannot be changed
         # via the permissions API
         policies:
@@ -76,6 +81,8 @@ security:
             - [p, owner, "/ga4gh/registry/v1/services/:id", "(PUT)|(DELETE)"]
             - [p, owner, "/ga4gh/registry/v1/services/:id/permissions", GET]
             - [p, owner, "/ga4gh/registry/v1/services/:id/permissions/:user", "(PUT)|(DELETE)"]
+            # groups may contain slashes
+            - [p, owner, "/ga4gh/registry/v1/services/:id/permissions/groups/*", "(PUT)|(DELETE)"]
             - [p, maintainer, "/ga4gh/registry/v1/services/:id", PUT]
             # any authenticated user may get their identifier and roles
             - [p, "*", /ga4gh/registry/v1/me, GET]
