@@ -1,11 +1,13 @@
 # Release when a version tag (`vX.Y.Z`, or `vX.Y.ZaN`, `vX.Y.ZbN`,
 # `vX.Y.ZrcN` for pre-releases) is pushed: check the tag and that CI passed
-# for its commit, package the Helm chart, build, check and push the Docker image, and create the GitHub
-# release with the chart attached. The tag is the only source of the version:
-# it is passed to the image build (the Docker build gets no Git metadata) and
-# set as the chart's `version` and `appVersion`. Publishing runs in the
-# `release` environment (required reviewer, Docker Hub secrets). Release tags
-# are immutable (tag ruleset). See "Versioning and releases" in README.md.
+# for its commit, package the Helm chart, build, check and push the Docker
+# image, and create the GitHub release with the chart attached. The tag is
+# the only source of the version: it is passed to the image build (the Docker
+# build gets no Git metadata) and set as the chart's `version` and
+# `appVersion`. Release notes are taken from `docs/releases/<version>.md` if
+# it exists, otherwise generated. Publishing runs in the `release`
+# environment (required reviewer, Docker Hub secrets). Release tags are
+# immutable (tag ruleset). See "Versioning and releases" in README.md.
 
 name: Release
 
@@ -215,7 +217,7 @@ jobs:
         run: |
           docker tag "${IMAGE}" "${IMAGE%:*}:latest"
           docker push "${IMAGE%:*}:latest"
-      - name: Create release with generated notes
+      - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -229,9 +231,15 @@ jobs:
               gh release edit "${TAG}" --latest="${LATEST}"
               exit 0
           fi
+          # Curated notes of the release commit if there are any, otherwise
+          # notes generated from the merged pull requests
+          notes=(--generate-notes)
+          if [[ -f "docs/releases/${VERSION}.md" ]]; then
+              notes=(--notes-file "docs/releases/${VERSION}.md")
+          fi
           gh release create "${TAG}" dist/* \
               --verify-tag \
               --title "${TAG}" \
-              --generate-notes \
+              "${notes[@]}" \
               --prerelease="${PRERELEASE}" \
               --latest="${LATEST}"

@@ -640,8 +640,9 @@ the Helm chart with the release version as `version` and `appVersion` (the
 default image tag). After approval in the `release` environment, it builds
 the image, checks that the app reports the release version, pushes exactly
 that image tagged `X.Y.Z` (and `latest`, if it is the highest release on
-`main`), and creates a GitHub release with generated notes and the chart
-(`.tgz`). No packages are published to PyPI. Tags of pre-releases (e.g.,
+`main`), and creates a GitHub release with the chart (`.tgz`) and the notes
+in `docs/releases/X.Y.Z.md` (for pre-releases, e.g., `X.Y.Zrc1.md`), or, if
+there are none, notes generated from the merged pull requests. No packages are published to PyPI. Tags of pre-releases (e.g.,
 `vX.Y.Zrc1`, also `aN` and `bN`) create GitHub pre-releases, with chart
 version `X.Y.Z-rc1`, and never update `latest`. Images of commits on `dev`
 are published by the [CI workflow][checks-workflow] (environment
