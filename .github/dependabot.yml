@@ -12,6 +12,14 @@ updates:
       python-dependencies:
         patterns: ["*"]
         exclude-patterns: ["connexion", "foca"]
+  # Requirements of the code documentation (Read the Docs)
+  - package-ecosystem: pip
+    directory: /docs/api
+    schedule:
+      interval: monthly
+    groups:
+      docs-dependencies:
+        patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
