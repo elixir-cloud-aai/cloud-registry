@@ -8,6 +8,7 @@ from flask import Flask
 from foca.config.access import get_app_config
 from foca.utils.logging import escape_log_value
 import pytest
+from werkzeug.exceptions import HTTPException
 
 from cloud_registry.exceptions import (
     MAX_DETAIL_LENGTH,
@@ -118,3 +119,9 @@ def test_problem_long_description() -> None:
     detail = json.loads(problem(exc).get_data())["detail"]
     assert len(detail) == MAX_DETAIL_LENGTH
     assert detail.endswith("a is invalid")
+
+
+def test_problem_without_code() -> None:
+    """Problem details need an exception with a code and a description."""
+    with pytest.raises(ValueError, match="code and a description"):
+        problem(HTTPException())
