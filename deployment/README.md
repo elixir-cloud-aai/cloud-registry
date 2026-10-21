@@ -58,9 +58,11 @@ changes](https://cloud-registry.readthedocs.io/en/latest/access-control/#group-m
 The service info served at `/service-info` is set via
 `config.service_info.service` (mappings are merged, so set only the fields to
 change, e.g., `environment: prod`, and set optional fields of the default to
-`null` to remove them, e.g., `contactUrl: null`). Pods are restarted when the
-ConfigMap changes, and the app refuses to start if the service info is
-invalid.
+`null` to remove them). The defaults describe the app, so set all fields that
+describe the deployment: `id`, `name`, `description`, `organization` (both
+`name` and `url`) and `contactUrl` (see the example in `values.yaml`). Pods are
+restarted when the ConfigMap changes, and the app refuses to start if the
+service info is invalid.
 
 Do not edit the ConfigMap with `kubectl edit`: Helm overwrites it on the next
 upgrade. As `config` is stored in a ConfigMap, it must not contain secrets

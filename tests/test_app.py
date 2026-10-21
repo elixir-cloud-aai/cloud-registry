@@ -953,7 +953,7 @@ def test_create_app_checks(mongo_client, app_env, capsys):
     err = capsys.readouterr().err
     assert f"Groups mapped to the role 'admin': {ADMIN_GROUP}" in err
     assert "keep_group_subjects" not in err
-    assert "Serving service info 'ELIXIR_CLOUD_SERVICE_REGISTRY_1'" in err
+    assert "Serving service info 'cloud.elixir-on.cloud-registry'" in err
 
 
 def test_create_app_group_subjects(monkeypatch, tmp_path, app_env, capsys):

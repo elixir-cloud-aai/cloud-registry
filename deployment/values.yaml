@@ -37,12 +37,17 @@ config: {}
 #       console:
 #         level: 20
 #   # Service info (GA4GH `Service` schema, checked on startup); the version
-#   # defaults to the app version
+#   # defaults to the app version. Mappings are merged with the defaults,
+#   # which describe the app, so set all fields of the deployment
 #   service_info:
 #     service:
+#       id: "org.example.registry"
+#       name: "My registry"
+#       description: "Registry of the services of my organization"
 #       organization:
 #         name: "My organization"
 #         url: "https://example.org"
+#       contactUrl: "mailto:registry@example.org"
 #       environment: "prod"
 
 cloudRegistry:
