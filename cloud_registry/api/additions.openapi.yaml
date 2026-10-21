@@ -566,7 +566,9 @@ components:
             be granted roles, users give it to owners of services.
         admin:
           type: boolean
-          description: Whether the user is an admin.
+          description: |
+            Whether the user is an admin: a member of a group mapped to the
+            role `admin`, or granted the role via FOCA's permissions API.
         services:
           type: array
           description: Roles of the user on services.

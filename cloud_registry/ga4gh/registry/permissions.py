@@ -399,8 +399,8 @@ def getMe(**kwargs) -> dict:
     the services they have a role on.
 
     Returns:
-        User identifier, whether the user is an admin, and the user's roles
-        on services, sorted by service identifier.
+        User identifier, whether the user is an admin (cf. `is_admin()`),
+        and the user's roles on services, sorted by service identifier.
     """
     user_id: str = get_current_subject()  # type: ignore[assignment]
     prefix = get_config().security.access_control.subject_prefix
@@ -415,6 +415,6 @@ def getMe(**kwargs) -> dict:
     remember_current_user([service["service_id"] for service in services])
     return {
         "user_id": user_id,
-        "admin": "admin" in get_current_groups(),
+        "admin": is_admin(),
         "services": sorted(services, key=lambda service: service["service_id"]),
     }

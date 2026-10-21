@@ -286,6 +286,35 @@ public service responses.
 Access control is implemented with [FOCA][foca-access-control]; see the
 `security` section of the [configuration][config].
 
+### Permissions API
+
+FOCA also serves its permissions API at `/admin/access-control/permissions`
+(not part of the registry's API specification), which lists, adds, changes and
+deletes the stored policy rules directly. Only admins can use it. Use the
+registry's endpoints above to manage roles on services: the permissions API
+bypasses the registry's checks, e.g., it can remove the last owner of a service
+(without `409 Conflict`) and leaves the stored names of users (see
+`GET /services/{serviceId}/permissions`) in place. The configured policies
+(`security.access_control.policies`) are managed on startup and can't be
+changed via the API.
+
+Admins can make other users admins with it, by granting them the role `admin`
+(a `g` rule for the user identifier with the prefix `user:`); `GET /me`
+reports them as admins, too:
+
+```bash
+curl -X POST "http://localhost:8080/admin/access-control/permissions" \
+  -H "Authorization: Bearer <admin token>" -H "Content-Type: application/json" \
+  -d '{"policy_type": "g", "rule": {"v0": "user:<user-id>", "v1": "admin"}}'
+```
+
+The request returns the identifier of the rule; `DELETE` on
+`/admin/access-control/permissions/<rule-id>` revokes it. Prefer the group
+mapping for admins, as it is configured with the deployment; roles granted via
+the API are stored in the database. The API is served like the registry's
+endpoints (e.g., the Helm chart's Ingress routes all paths); to keep it off
+the internet, route only `/ga4gh/registry/v1/` through a reverse proxy.
+
 ## Service info
 
 `GET /service-info` serves the service info from the config

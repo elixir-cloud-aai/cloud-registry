@@ -522,3 +522,38 @@ def test_delete_racing_grant(app, client, monkeypatch):
         patch.setattr(mongomock.collection.Collection, "delete_one", grant_first)
         assert delete(client, service_id, ALICE) == 200
     assert _roles(app, service_id) == []
+
+
+PERMISSIONS_API = "/admin/access-control/permissions"
+
+
+def test_permissions_api_admin_only(client):
+    """FOCA's permissions API is for admins only."""
+    assert client.get(PERMISSIONS_API).status_code == 401
+    assert client.get(PERMISSIONS_API, headers=headers(ALICE)).status_code == 403
+    rule = {"policy_type": "g", "rule": {"v0": f"user:{ALICE}", "v1": "admin"}}
+    response = client.post(PERMISSIONS_API, json=rule, headers=headers(ALICE))
+    assert response.status_code == 403
+    assert me(client, ALICE)["admin"] is False
+    response = client.get(PERMISSIONS_API, headers=headers(ADMIN))
+    assert response.status_code == 200
+    # the configured policies are listed
+    assert response.json["pagination"]["total"] > 0
+
+
+def test_admin_via_permissions_api(client):
+    """Users granted the role `admin` via the permissions API are admins,
+    and `GET /me` says so, until the role is revoked.
+    """
+    service_id = register(client)
+    assert me(client, CAROL)["admin"] is False
+    rule = {"policy_type": "g", "rule": {"v0": f"user:{CAROL}", "v1": "admin"}}
+    response = client.post(PERMISSIONS_API, json=rule, headers=headers(ADMIN))
+    assert response.status_code == 200
+    rule_id = response.json
+    assert me(client, CAROL)["admin"] is True
+    assert update(client, service_id, CAROL) == 200
+    response = client.delete(f"{PERMISSIONS_API}/{rule_id}", headers=headers(ADMIN))
+    assert response.status_code == 200
+    assert me(client, CAROL)["admin"] is False
+    assert update(client, service_id, CAROL) == 403
