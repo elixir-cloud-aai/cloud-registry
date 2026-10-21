@@ -24,14 +24,20 @@ worker_class = "gthread"
 workers = 1
 threads = 4
 
-# Workers that do not respond (e.g., stuck in a request) for `timeout`
-# seconds are restarted; on shutdown (e.g., SIGTERM from Kubernetes), workers
-# get `graceful_timeout` seconds to finish requests, i.e., less than the
+# Workers whose main loop does not report to Gunicorn for `timeout` seconds
+# (e.g., because it is blocked) are killed and restarted; with gthread
+# workers, requests run in threads, so a slow or stuck request does not
+# count. On shutdown (e.g., SIGTERM from Kubernetes), workers get
+# `graceful_timeout` seconds to finish requests, i.e., less than the
 # termination grace period of the pod
 timeout = 30
 graceful_timeout = 20
-# Idle keep-alive connections are closed after this many seconds
-keepalive = 5
+# Idle keep-alive connections are closed after this many seconds; longer than
+# the keep-alive timeout of proxies in front of the app (60 seconds for
+# ingress-nginx), so that a proxy does not reuse a connection just as it is
+# closed (failing the request with `502`). Idle connections wait in the
+# worker's poller, not in its threads (up to `worker_connections`, 1000)
+keepalive = 75
 
 # Size limits of the request line and headers (Gunicorn's defaults, set
 # explicitly); larger requests are rejected (`400`). The size limit of request

@@ -414,7 +414,10 @@ config overlay file and list it in environment variable `FOCA_CONFIG_OVERLAY`
 (several files separated by `:`); FOCA merges overlays into the config on
 startup (see the [FOCA deployment guide][foca-deployment]). The [Helm
 chart][deployment-instructions] uses the same mechanism: it renders its
-`config` value (in a values file per deployment) into an overlay.
+`config` value (in a values file per deployment) into an overlay. Overlays
+cannot change the address the image listens on: `server.host` and
+`server.port` apply to the development server only, not to Gunicorn (see
+[Server](#server)).
 
 Each deployment must set two values that depend on it, otherwise the app
 refuses to start:
@@ -471,10 +474,14 @@ instructions][deployment-instructions]).
 The image serves the app with [Gunicorn][gunicorn] on port 8080, with
 settings for a small container in
 [`cloud_registry/gunicorn_config.py`][gunicorn-config]: one worker process
-with 4 threads, workers restarted if they don't respond for 30 seconds, 20
-seconds to finish requests on shutdown, idle keep-alive connections closed
-after 5 seconds, and Gunicorn's size limits of the request line and headers.
-To change them, set `GUNICORN_CMD_ARGS` to [Gunicorn
+with 4 threads, workers restarted if their main loop doesn't respond for 30
+seconds (requests run in threads, so slow requests don't count), 20 seconds
+to finish requests on shutdown, idle keep-alive connections closed after 75
+seconds, and Gunicorn's size limits of the request line and headers. Keep the
+keep-alive timeout longer than that of a reverse proxy in front of the app
+for its connections to the app (60 seconds for ingress-nginx): otherwise, the
+proxy may reuse a connection just as Gunicorn closes it, and the request
+fails (`502`). To change the settings, set `GUNICORN_CMD_ARGS` to [Gunicorn
 options][gunicorn-settings] (e.g., `--workers 2 --threads 8`); Docker Compose
 passes it on from the host, and the Helm chart sets it from its
 `cloud_registry.gunicorn` values.

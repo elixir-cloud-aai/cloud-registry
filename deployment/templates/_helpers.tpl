@@ -218,3 +218,13 @@ rejects single quotes in them).
 {{- end -}}
 {{- join " " $args -}}
 {{- end -}}
+
+{{/*
+Termination grace period of the app's pod, in seconds: the `preStop` delay,
+then Gunicorn's graceful timeout for finishing requests, plus a margin for
+Gunicorn to stop its workers and exit before it is killed.
+*/}}
+{{- define "cloud-registry.terminationGracePeriod" -}}
+{{- $margin := 10 -}}
+{{- add (int .Values.cloud_registry.preStopSleepSeconds) (int .Values.cloud_registry.gunicorn.gracefulTimeout) $margin -}}
+{{- end -}}

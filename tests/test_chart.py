@@ -8,6 +8,7 @@ import pytest
 import yaml
 
 from cloud_registry.service_models.custom_config import MAX_CONTENT_LENGTH
+from tests.gunicorn_settings import load_settings
 from tests.helm import (
     APP,
     CHART,
@@ -19,7 +20,6 @@ from tests.helm import (
     render_with,
 )
 from tests.test_config import CONFIG_FILE
-from tests.test_gunicorn_config import load_settings
 
 NO_AUTH = ("--set", "mongodb.auth.enabled=false")
 NO_INGRESS = ("--set", "cloud_registry.ingress.enabled=false")
@@ -550,19 +550,21 @@ def _gunicorn_args(docs: dict) -> str:
     return args
 
 
-def test_gunicorn_defaults(monkeypatch):
-    """By default, Gunicorn gets the image's settings, and the termination
-    grace period is 10 seconds longer than its graceful timeout.
-    """
+def _grace_period(docs: dict) -> int:
+    """Get the termination grace period of the app's pod."""
+    return _pod(docs, APP)["terminationGracePeriodSeconds"]
+
+
+def test_gunicorn_defaults():
+    """By default, Gunicorn gets the image's settings."""
     docs = _render()
-    cfg = load_settings(monkeypatch, _gunicorn_args(docs)).cfg
-    image = load_settings(monkeypatch).cfg
+    cfg = load_settings(_gunicorn_args(docs)).cfg
+    image = load_settings().cfg
     for name in ("workers", "threads", "timeout", "graceful_timeout", "keepalive"):
         assert getattr(cfg, name) == getattr(image, name), name
-    assert _pod(docs, APP)["terminationGracePeriodSeconds"] == 30
 
 
-def test_gunicorn_values(monkeypatch, tmp_path):
+def test_gunicorn_values(tmp_path):
     """Gunicorn's settings can be changed (also from values files, which
     have floats), with further options, which may contain spaces.
     """
@@ -577,24 +579,47 @@ def test_gunicorn_values(monkeypatch, tmp_path):
     values_file = tmp_path / "values.yaml"
     values_file.write_text(yaml.safe_dump({"cloud_registry": {"gunicorn": values}}))
     docs = _render("-f", str(values_file))
-    cfg = load_settings(monkeypatch, _gunicorn_args(docs)).cfg
+    cfg = load_settings(_gunicorn_args(docs)).cfg
     assert (cfg.workers, cfg.threads, cfg.timeout) == (2, 8, 60)
     assert (cfg.graceful_timeout, cfg.keepalive) == (45, 0)
     assert (cfg.accesslog, cfg.access_log_format) == ("-", "%(h)s %(r)s")
-    assert _pod(docs, APP)["terminationGracePeriodSeconds"] == 55
 
 
 @pytest.mark.parametrize(
-    "args",
+    ("args", "error"),
     [
-        ("--set", "cloud_registry.gunicorn.workers=0"),
-        ("--set", "cloud_registry.gunicorn.threads=1.5"),
-        ("--set-string", "cloud_registry.gunicorn.timeout=30"),
-        ("--set", "cloud_registry.gunicorn.gracefulTimeout=null"),
-        ("--set", "cloud_registry.gunicorn.keepalive=-1"),
-        ("--set-json", """cloud_registry.gunicorn.extraArgs=["--name='x'"]"""),
-        ("--set", "cloud_registry.gunicorn.preload=true"),
-        ("--set", "cloud_registry.gunicorn=null"),
+        (
+            ("--set", "cloud_registry.gunicorn.workers=0"),
+            "'/cloud_registry/gunicorn/workers': minimum",
+        ),
+        (
+            ("--set-json", "cloud_registry.gunicorn.threads=1.5"),
+            "'/cloud_registry/gunicorn/threads': got number, want integer",
+        ),
+        (
+            ("--set-string", "cloud_registry.gunicorn.timeout=30"),
+            "'/cloud_registry/gunicorn/timeout': got string, want integer",
+        ),
+        (
+            ("--set", "cloud_registry.gunicorn.gracefulTimeout=null"),
+            "'/cloud_registry/gunicorn': missing property 'gracefulTimeout'",
+        ),
+        (
+            ("--set", "cloud_registry.gunicorn.keepalive=-1"),
+            "'/cloud_registry/gunicorn/keepalive': minimum",
+        ),
+        (
+            ("--set-json", """cloud_registry.gunicorn.extraArgs=["--name='x'"]"""),
+            "'/cloud_registry/gunicorn/extraArgs/0': ",
+        ),
+        (
+            ("--set", "cloud_registry.gunicorn.preload=true"),
+            "'/cloud_registry/gunicorn': additional properties 'preload'",
+        ),
+        (
+            ("--set", "cloud_registry.gunicorn=null"),
+            "'/cloud_registry': missing property 'gunicorn'",
+        ),
     ],
     ids=[
         "workers",
@@ -607,13 +632,81 @@ def test_gunicorn_values(monkeypatch, tmp_path):
         "null",
     ],
 )
-def test_gunicorn_invalid(args):
+def test_gunicorn_invalid(args, error):
     """Gunicorn's settings must be integers in their ranges, further options
     must not contain single quotes, and other settings are rejected.
     """
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render(*args)
-    assert "gunicorn" in exc.value.stderr
+    assert error in exc.value.stderr
+
+
+def test_gunicorn_port():
+    """The app's container port, its probes and the Service's target port
+    are the port Gunicorn listens on (the image's command; the app config's
+    `server.port` applies to the development server only).
+    """
+    (bind,) = load_settings().cfg.bind
+    port = int(bind.rpartition(":")[2])
+    docs = _render()
+    app = _container(docs, APP)
+    (container_port,) = app["ports"]
+    assert (container_port["name"], container_port["containerPort"]) == ("http", port)
+    for probe in PROBES:
+        assert app[probe]["httpGet"]["port"] in (port, "http"), probe
+    (service_port,) = docs[("Service", APP)]["spec"]["ports"]
+    assert service_port["targetPort"] in (port, "http")
+
+
+def test_pre_stop_default():
+    """By default, the app keeps serving for 5 seconds after its pod is
+    deleted (until the ingress controller removes it from its endpoints),
+    and the termination grace period covers that, Gunicorn's graceful
+    timeout and a margin of 10 seconds.
+    """
+    docs = _render()
+    hook = _container(docs, APP)["lifecycle"]["preStop"]
+    assert hook == {"exec": {"command": ["python", "-c", "import time; time.sleep(5)"]}}
+    assert _grace_period(docs) == 5 + 20 + 10
+
+
+def test_pre_stop_values(tmp_path):
+    """The delay can be changed (also from values files, which have floats)
+    or removed (`0`); the grace period follows it and the graceful timeout.
+    """
+    values_file = tmp_path / "values.yaml"
+    values_file.write_text(
+        yaml.safe_dump(
+            {
+                "cloud_registry": {
+                    "preStopSleepSeconds": 15,
+                    "gunicorn": {"gracefulTimeout": 45},
+                }
+            }
+        )
+    )
+    docs = _render("-f", str(values_file))
+    command = _container(docs, APP)["lifecycle"]["preStop"]["exec"]["command"]
+    assert command[-1] == "import time; time.sleep(15)"
+    assert _grace_period(docs) == 15 + 45 + 10
+    docs = _render("--set", "cloud_registry.preStopSleepSeconds=0")
+    assert "lifecycle" not in _container(docs, APP)
+    assert _grace_period(docs) == 20 + 10
+
+
+@pytest.mark.parametrize(
+    ("value", "error"),
+    [
+        ("-1", "'/cloud_registry/preStopSleepSeconds': minimum"),
+        ("1.5", "'/cloud_registry/preStopSleepSeconds': got number, want integer"),
+        ("null", "'/cloud_registry': missing property 'preStopSleepSeconds'"),
+    ],
+)
+def test_pre_stop_invalid(value, error):
+    """The delay must be a non-negative integer."""
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render("--set-json", f"cloud_registry.preStopSleepSeconds={value}")
+    assert error in exc.value.stderr
 
 
 def test_security_context_user_ids():

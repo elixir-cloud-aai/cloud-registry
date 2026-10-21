@@ -98,6 +98,10 @@ cloud_registry:
   # Size limit of the `emptyDir` at `/tmp` (the pod is evicted if it is
   # exceeded): a quantity (e.g., `64Mi`) or a number of bytes; `null` for none
   tmpSizeLimit: 64Mi
+  # Seconds that the app keeps serving after its pod is deleted, before it
+  # shuts down (`preStop` hook), so that the ingress controller and Service
+  # stop sending requests to it first; 0: no delay (no hook)
+  preStopSleepSeconds: 5
   # Gunicorn, the image's WSGI server (passed via `GUNICORN_CMD_ARGS`; see
   # deployment/README.md, Server). Each worker loads the whole app (about
   # 55Mi), so raise the memory in `resources` before raising `workers`
@@ -105,14 +109,18 @@ cloud_registry:
     # Worker processes, and threads per worker (requests served at once)
     workers: 1
     threads: 4
-    # Seconds after which workers that do not respond are restarted
+    # Seconds after which workers whose main loop does not respond are
+    # restarted (requests run in threads, so slow requests don't count)
     timeout: 30
-    # Seconds that workers get to finish requests on shutdown; the pod's
-    # termination grace period is 10 seconds longer
+    # Seconds that workers get to finish requests on shutdown (after
+    # `preStopSleepSeconds`); the pod's termination grace period is both
+    # plus 10 seconds
     gracefulTimeout: 20
     # Seconds after which idle keep-alive connections are closed (0: no
-    # keep-alive)
-    keepalive: 5
+    # keep-alive); keep it longer than the upstream keep-alive timeout of the
+    # ingress controller (60 seconds for ingress-nginx), which would otherwise
+    # reuse connections as they are closed (failing requests with `502`)
+    keepalive: 75
     # Further Gunicorn options, e.g., `["--access-logfile", "-"]` for an
     # access log (the app logs each request already)
     extraArgs: []

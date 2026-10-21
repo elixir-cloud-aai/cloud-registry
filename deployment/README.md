@@ -211,9 +211,9 @@ cloud_registry:
   gunicorn:
     workers: 1          # worker processes
     threads: 4          # threads per worker, i.e., requests served at once
-    timeout: 30         # seconds until unresponsive workers are restarted
+    timeout: 30         # seconds until workers whose main loop hangs restart
     gracefulTimeout: 20 # seconds to finish requests on shutdown
-    keepalive: 5        # seconds until idle keep-alive connections are closed
+    keepalive: 75       # seconds until idle keep-alive connections are closed
     extraArgs: []       # further options, e.g., ["--access-logfile", "-"]
 ```
 
@@ -221,14 +221,29 @@ Each worker loads the whole app (about 55 MiB of memory; the default memory
 limit, 128 MiB, fits one), so raise `cloud_registry.resources` before
 raising `workers`, or raise `threads` instead. Each worker runs the app's
 startup checks; if they fail, Gunicorn exits and the container restarts
-(see the logs: `kubectl logs deploy/<app> -n <namespace> --previous`). The
-pod's termination grace period is 10 seconds longer than `gracefulTimeout`,
-so that workers can finish their requests on shutdown. With the read-only
-root file system, Gunicorn keeps the heartbeat files of its workers in
-`/dev/shm` (or in the `/tmp` volume if `/dev/shm` isn't writable).
-Gunicorn's threads read requests themselves, so serve the app through a
-proxy that buffers requests (ingress-nginx does by default), so that slow
-clients can't tie them up.
+(see the logs: `kubectl logs deploy/<app> -n <namespace> --previous`).
+
+`timeout` restarts workers whose main loop stops responding; requests run in
+threads, so slow or stuck requests don't count. Keep `keepalive` longer than
+the ingress controller's keep-alive timeout for upstream connections (60
+seconds for ingress-nginx, `upstream-keepalive-timeout`): otherwise, it may
+reuse a connection just as Gunicorn closes it, and the request fails with
+`502` (requests other than `GET` are not retried). Idle connections wait in
+the worker's poller, not in its threads.
+
+On SIGTERM, Gunicorn stops accepting connections at once, while the ingress
+controller and the Service may still send requests to the pod for a few
+seconds. So the app keeps serving for `cloud_registry.preStopSleepSeconds`
+(default 5; `0` removes the `preStop` hook) before it shuts down, then
+workers get `gracefulTimeout` seconds to finish their requests. The pod's
+termination grace period is the sum of both plus 10 seconds.
+
+With the read-only root file system, Gunicorn keeps the heartbeat files of
+its workers in `/dev/shm` (or in the `/tmp` volume if `/dev/shm` isn't
+writable). Gunicorn's threads read requests themselves, so serve the app
+through a proxy that buffers requests (ingress-nginx does by default), so
+that slow clients can't tie them up (OpenShift Routes, served by HAProxy,
+don't buffer request bodies by default).
 
 ## Upgrades
 
