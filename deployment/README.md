@@ -265,7 +265,10 @@ that restrict which pods may connect to its pods (ingress); connections from
 the pods, e.g., of the app to MongoDB and to the token issuers (OpenID
 Connect discovery, JWKS), are not restricted. They only take effect if the
 cluster's network plugin enforces NetworkPolicies (e.g., Calico or Cilium);
-other clusters accept and ignore them.
+other clusters accept and ignore them. NetworkPolicies add up: a pod that
+several policies select accepts the connections that any of them allows, so
+check other policies that select the chart's pods (e.g., namespace-wide
+allow rules) before relying on these restrictions.
 
 - **MongoDB** (`mongodb.networkPolicy.enabled`, default `true`): only the
   app's pods of the same release may connect, on MongoDB's port (selected by
@@ -278,11 +281,12 @@ other clusters accept and ignore them.
 - **App** (`cloudRegistry.networkPolicy.enabled`, default `false`): only the
   NetworkPolicy peers in `cloudRegistry.networkPolicy.ingressFrom` may
   connect, on the app's port. The default allows the namespace
-  `ingress-nginx`, where ingress-nginx usually runs, so before enabling the
-  policy, check that it matches the cluster's ingress controller (or the
-  OpenShift router); otherwise, the app is unreachable through the Ingress
-  (or Route). Add any other clients in the cluster that call the app's
-  Service directly, e.g.:
+  `ingress-nginx`, where ingress-nginx usually runs, by its label
+  `kubernetes.io/metadata.name` (set on all namespaces from Kubernetes 1.21;
+  label it on older clusters), so before enabling the policy, check that it
+  matches the cluster's ingress controller (or the OpenShift router);
+  otherwise, the app is unreachable through the Ingress (or Route). Add any
+  other clients in the cluster that call the app's Service directly, e.g.:
 
   ```yaml
   cloudRegistry:
@@ -308,9 +312,11 @@ other clusters accept and ignore them.
   ```
 
   `ingressFrom` replaces the default; rendering fails if it is empty (which
-  would allow all sources). An ingress controller in the host network (e.g.,
-  `hostNetwork: true`) connects from the nodes' addresses, which namespace
-  selectors don't match; allow them with an `ipBlock` instead.
+  would allow all sources), and the schema rejects peers that Kubernetes would
+  reject (e.g., an `ipBlock` without `cidr` or with selectors). An ingress
+  controller in the host network (e.g., `hostNetwork: true`) connects from the
+  nodes' addresses, which namespace selectors don't match; allow them with an
+  `ipBlock` instead.
 
 Neither policy blocks the probes: connections from the pod's own node, where
 the kubelet runs them, are always allowed (see "The two sorts of pod

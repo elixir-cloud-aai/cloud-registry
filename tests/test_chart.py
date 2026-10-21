@@ -1116,7 +1116,7 @@ def test_network_policy_app_ingress_from(tmp_path):
                 "matchLabels": {"policy-group.network.openshift.io/ingress": ""}
             }
         },
-        {"ipBlock": {"cidr": "10.0.0.0/8"}},
+        {"ipBlock": {"cidr": "10.0.0.0/8", "except": ["10.1.0.0/16"]}},
     ]
     values_file = tmp_path / "values.yaml"
     values_file.write_text(
@@ -1156,11 +1156,34 @@ def test_network_policy_app_ingress_from(tmp_path):
             "additional properties 'podselector'",
         ),
         (
+            (
+                "--set-json",
+                'cloudRegistry.networkPolicy.ingressFrom=[{"ipBlock": {}}]',
+            ),
+            "missing property 'cidr'",
+        ),
+        (
+            (
+                "--set-json",
+                "cloudRegistry.networkPolicy.ingressFrom="
+                '[{"ipBlock": {"cidr": "10.0.0.0/8"}, "podSelector": {}}]',
+            ),
+            "'/cloudRegistry/networkPolicy/ingressFrom/0': maxProperties",
+        ),
+        (
             ("--set-string", "mongodb.networkPolicy.enabled=false"),
             "'/mongodb/networkPolicy/enabled': got string, want boolean",
         ),
     ],
-    ids=["empty", "empty-peer", "null", "unknown-peer-field", "enabled-type"],
+    ids=[
+        "empty",
+        "empty-peer",
+        "null",
+        "unknown-peer-field",
+        "ip-block-cidr",
+        "ip-block-selector",
+        "enabled-type",
+    ],
 )
 def test_network_policy_invalid(args, error):
     """Rendering fails without peers allowed to connect to the app (which
