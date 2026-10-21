@@ -19,8 +19,12 @@ from cloud_registry.exceptions import (
     InternalServerError,
     NotFound,
 )
-from cloud_registry.ga4gh.registry.service_info import is_date_time
-from cloud_registry.utils import escape_log_value, get_collection, get_custom_config
+from cloud_registry.utils import (
+    escape_log_value,
+    get_collection,
+    get_custom_config,
+    is_date_time,
+)
 
 logger = logging.getLogger(__name__)
 # Internal field identifying a service by its normalized URL and API type

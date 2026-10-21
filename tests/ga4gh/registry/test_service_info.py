@@ -12,6 +12,7 @@ from cloud_registry.ga4gh.registry.service_info import (
     get_service_info,
     package_fields,
 )
+from cloud_registry.utils import is_date_time
 from tests.mock_data import SERVICE_INFO_CONFIG
 
 REQUIRED = ("id", "name", "type", "organization", "version")
@@ -184,7 +185,7 @@ def test_check_service_info_valid(unit_app, fields):
         check_service_info()
 
 
-@pytest.mark.parametrize("check", [module._is_uri, module.is_date_time])
+@pytest.mark.parametrize("check", [module._is_uri, is_date_time])
 def test_format_checks_non_strings(check):
     """Format checks leave type checks to the schema."""
     assert check(1)
