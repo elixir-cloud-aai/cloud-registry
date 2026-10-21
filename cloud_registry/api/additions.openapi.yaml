@@ -665,7 +665,8 @@ components:
         without user info, whitespace, control or format characters (except
         joiners in international host names) or malformed percent-encodings;
         `contactUrl` can also be a `mailto:` URL with email addresses. Others
-        return `400`.
+        return `400`, as do timestamps (`createdAt`, `updatedAt`) that aren't
+        RFC 3339 date-times.
       type: object
       required:
         - name

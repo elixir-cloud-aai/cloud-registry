@@ -185,6 +185,11 @@ clients should treat registry content as untrusted: escape it rather than
 render it as HTML, and don't follow or fetch its URLs blindly (e.g., to
 internal addresses).
 
+Timestamps in registrations (`createdAt`, `updatedAt`) must be RFC 3339
+date-times (e.g., `2019-06-04T12:58:19Z`); others are rejected (`400 Bad
+Request`). Services stored before this check may have other values; they
+can't be updated unchanged, only with valid timestamps (or without them).
+
 Request bodies are limited to 1 MiB by default (`413 Content Too Large`; see
 [Request size limit](#request-size-limit)). Strings in the bodies of
 registrations (`POST /services`, `PUT /services/{serviceId}`) and

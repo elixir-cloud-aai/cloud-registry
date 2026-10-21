@@ -575,8 +575,7 @@ def test_role_changes_logged(client, caplog):
         if record.name == permissions_module.__name__
     ]
     assert messages == [
-        f"Role 'owner' on new service '{service_id}' granted to its creator "
-        f"'{ALICE}'.",
+        f"Role 'owner' on new service '{service_id}' granted to its creator '{ALICE}'.",
         f"Role 'maintainer' on service '{service_id}' granted to '{BOB}' by "
         f"'{ALICE}' (previous roles: none).",
         f"Role 'owner' on service '{service_id}' granted to '{BOB}' by "

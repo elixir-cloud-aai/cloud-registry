@@ -19,6 +19,7 @@ from cloud_registry.exceptions import (
     InternalServerError,
     NotFound,
 )
+from cloud_registry.ga4gh.registry.service_info import is_date_time
 from cloud_registry.utils import escape_log_value, get_collection, get_custom_config
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,9 @@ LINK_FIELDS: dict[tuple[str, ...], frozenset[str]] = {
     ("documentationUrl",): frozenset(),
     ("organization", "url"): frozenset(),
 }
+# Fields with timestamps (`format: date-time`), which jsonschema doesn't check
+# without an optional package
+DATE_TIME_FIELDS = ("createdAt", "updatedAt")
 PERCENT_ENCODED = re.compile(r"%([0-9A-Fa-f]{2})")
 # Percent signs not starting a percent-encoding
 MALFORMED_PERCENT = re.compile(r"%(?![0-9A-Fa-f]{2})")
@@ -140,6 +144,26 @@ def check_strings(value: object, field: str = "") -> None:
             raise InvalidService(
                 f"{where} must not contain unpaired surrogates."
             ) from exc
+
+
+def check_date_times(data: dict) -> None:
+    """Check that the timestamps of a service are RFC 3339 date-times.
+
+    Args:
+        data: Service metadata.
+
+    Raises:
+        InvalidService: A timestamp (cf. `DATE_TIME_FIELDS`) is not an RFC
+            3339 date-time.
+    """
+    for field in DATE_TIME_FIELDS:
+        if field in data and not (
+            isinstance(data[field], str) and is_date_time(data[field])
+        ):
+            raise InvalidService(
+                f"'{field}' must be an RFC 3339 date-time (e.g., "
+                "'2019-06-04T12:58:19Z')."
+            )
 
 
 def check_link(url: object, field: str, schemes: frozenset[str] = frozenset()) -> None:
@@ -508,7 +532,8 @@ class RegisterService:
 
         Raises:
             InvalidService: The URL or API type of the service, the URL of a
-                link, or a string (cf. `check_strings()`) is invalid.
+                link, a timestamp (cf. `check_date_times()`) or a string (cf.
+                `check_strings()`) is invalid.
             DuplicateService: Another service with the same URL and API type
                 is registered.
             InternalServerError: The service could not be registered within
@@ -520,6 +545,7 @@ class RegisterService:
         check_strings(self.data)
         key = service_key(self.data)
         check_links(self.data)
+        check_date_times(self.data)
         self._check_duplicate(key=key)
 
         # replace or insert service with provided ID (PUT)

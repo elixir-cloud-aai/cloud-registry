@@ -849,3 +849,32 @@ def test_main_check_fails(monkeypatch, tmp_path, app_env):
     with pytest.raises(RuntimeError, match="require_admin"):
         cloud_registry.app.main()
     assert ports == []
+
+
+@pytest.mark.parametrize("method, path", [("post", ""), ("put", "/abc")])
+@pytest.mark.parametrize("field", sorted(TIMESTAMPS))
+@pytest.mark.parametrize(
+    "value",
+    ["yesterday", "2019-06-04", "2019-06-04T12:58:19", "2019-02-30T00:00:00Z"],
+)
+def test_service_date_time_invalid(client, admin_headers, method, path, field, value):
+    """Timestamps of services must be RFC 3339 date-times (`400`, naming the
+    field).
+    """
+    response = getattr(client, method)(
+        f"{BASE}/services{path}", json=_service(**{field: value}), headers=admin_headers
+    )
+    _assert_error(response, 400)
+    assert f"'{field}'" in response.json["detail"]
+    assert client.get(f"{BASE}/services").json == []
+
+
+def test_service_date_time(client, admin_headers):
+    """Timestamps are stored as sent."""
+    timestamps = {
+        "createdAt": "2019-06-04T12:58:19Z",
+        "updatedAt": "2026-10-20t00:00:00.5+02:00",
+    }
+    service_id = _post(client, admin_headers, _service(**timestamps))
+    service = client.get(f"{BASE}/services/{service_id}").json
+    assert {field: service[field] for field in timestamps} == timestamps

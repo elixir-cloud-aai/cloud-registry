@@ -44,8 +44,12 @@ def _is_uri(value: object) -> bool:
 
 
 @FORMAT_CHECKER.checks("date-time")
-def _is_date_time(value: object) -> bool:
-    """Check whether a string is an RFC 3339 date-time (non-strings pass)."""
+def is_date_time(value: object) -> bool:
+    """Check whether a string is an RFC 3339 date-time (non-strings pass).
+
+    Also used for the timestamps of registered services (cf.
+    `cloud_registry.ga4gh.registry.service.check_date_times()`).
+    """
     if not isinstance(value, str):
         return True
     match = DATE_TIME.fullmatch(value)
