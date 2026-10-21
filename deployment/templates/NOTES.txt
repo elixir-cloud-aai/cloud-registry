@@ -8,7 +8,7 @@ terminated by the ingress, the route or a proxy in front of the cluster.
 {{- if $exposed -}}
 {{- $url = printf "https://%s" .Values.hostName -}}
 {{- end -}}
-Elixir Cloud Service Registry is being deployed as release {{ .Release.Name }}
+Cloud Registry is being deployed as release {{ .Release.Name }}
 in namespace {{ .Release.Namespace }}!
 {{- if and .Values.cloudRegistry.ingress.enabled (not .Values.cloudRegistry.ingress.https.enabled) }}
 

@@ -1,17 +1,17 @@
 openapi: 3.0.2
 info:
-  title: 'ELIXIR Cloud service registry'
+  title: 'Cloud Registry'
   description: |
-    Service registry providing information about all deployed service instances
-    in the ELIXIR Cloud network for administration, maintenance and service
-    discovery purposes. More information on
+    Registry of web services, e.g., of GA4GH APIs, for their discovery,
+    administration and maintenance, implementing the GA4GH Service Registry
+    API; brought to you by ELIXIR On-Cloud. More information on
     [GitHub](https://github.com/elixir-cloud-aai/cloud-registry).
   version: 1.0.0
   license:
     name: 'Apache 2.0'
     url: 'http://www.apache.org/licenses/LICENSE-2.0'
   contact:
-    name: 'ELIXIR Cloud & AAI'
+    name: 'ELIXIR On-Cloud'
     email: 'alexander.kanitz@alumni.ethz.ch'
 servers:
   - url: /ga4gh/registry/v1
