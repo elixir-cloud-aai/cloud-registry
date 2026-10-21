@@ -13,7 +13,8 @@ in namespace {{ .Release.Namespace }}!
 {{- if and .Values.cloud_registry.ingress.enabled (not .Values.cloud_registry.ingress.https.enabled) }}
 
 NOTE: The Ingress has no TLS (cloud_registry.ingress.https.enabled is false),
-so TLS must be terminated in front of the cluster for the URLs below.
+so TLS must be terminated in front of the cluster for the URLs below (see
+deployment/README.md, TLS).
 {{- end }}
 {{- if not $exposed }}
 

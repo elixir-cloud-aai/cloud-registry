@@ -157,6 +157,56 @@ or set the annotation to `null` to remove it. Other ingress controllers, and
 OpenShift Routes, ignore the annotation; check their documentation for how to
 limit request bodies. Without such a limit, only the app's applies.
 
+### TLS
+
+The app advertises HTTPS URLs on port 443 (e.g., in `Location` headers; see
+[Configuration](#configuration)), but by default, the Ingress has no TLS
+(`https.enabled: false`) and serves plain HTTP, so TLS must be terminated in
+front of the cluster (e.g., by a load balancer); Helm's notes after installing
+say so. Otherwise, set `https.enabled: true` to serve HTTPS with a certificate
+from cert-manager; ingress-nginx then redirects HTTP requests to HTTPS by
+default.
+
+If TLS is terminated in front of the cluster, ingress-nginx can't tell HTTP
+from HTTPS requests by itself, so it doesn't redirect them. Optionally, have
+it redirect requests that the proxy in front marks as HTTP
+(`X-Forwarded-Proto`), if the controller trusts that header
+(`use-forwarded-headers` in its ConfigMap; otherwise, all requests are
+redirected, in a loop):
+
+```yaml
+cloud_registry:
+  ingress:
+    annotations:
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+```
+
+Better yet, let the proxy in front redirect HTTP requests itself.
+
+### Rate limits
+
+The app doesn't limit how often or how many services a user registers. Limit
+the request rate at the ingress instead, e.g., per client IP address with
+ingress-nginx (requests per second, a burst of 5 times as many, and
+concurrent connections; excess requests get `503`, or the status set by the
+controller's `limit-req-status-code`):
+
+```yaml
+cloud_registry:
+  ingress:
+    annotations:
+      nginx.ingress.kubernetes.io/limit-rps: "10"
+      nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
+      nginx.ingress.kubernetes.io/limit-connections: "20"
+```
+
+Behind a proxy or load balancer, the controller must see the clients'
+addresses (e.g., `use-forwarded-headers` or the PROXY protocol), otherwise all
+requests count for the proxy. For OpenShift Routes, see the
+`haproxy.router.openshift.io/rate-limit-connections` annotations.
+
+### OpenShift Route
+
 With `enabled: false`, the chart creates an OpenShift Route with TLS
 termination at the router instead, if the cluster serves Routes
 (`route.openshift.io/v1`); otherwise the app is only reachable within the

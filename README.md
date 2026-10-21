@@ -192,7 +192,9 @@ Request`). Services stored before this check may have other values; they
 can't be updated unchanged, only with valid timestamps (or without them).
 
 Request bodies are limited to 1 MiB by default (`413 Content Too Large`; see
-[Request size limit](#request-size-limit)). Strings in the bodies of
+[Request size limit](#request-size-limit)); the number of registrations per
+user is not limited, so deployments should limit request rates at the ingress
+(see the [deployment instructions][deployment-instructions]). Strings in the bodies of
 registrations (`POST /services`, `PUT /services/{serviceId}`) and
 verifications (`PUT /services/{serviceId}/verification`) are limited in length
 (longer ones are rejected with `400 Bad Request`):
