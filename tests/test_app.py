@@ -32,6 +32,8 @@ from tests.conftest import (
 from tests.mock_data import ERROR_MEDIA_TYPE, MAX_CONTENT_LENGTH
 
 BASE = "/ga4gh/registry/v1"
+# Fields of OpenAPI Path Item Objects holding Operation Objects
+HTTP_METHODS = {"get", "put", "post", "delete", "options", "head", "patch", "trace"}
 # Public URL of the app, as configured in `config.yaml`
 PUBLIC_URL = "https://0.0.0.0:8080"
 TIMESTAMPS = {"createdAt", "updatedAt"}
@@ -784,10 +786,6 @@ def test_service_info_read_only(client, admin_headers):
     assert response.status_code == 405
     spec = client.get(f"{BASE}/openapi.json").json
     assert list(spec["paths"]["/service-info"]) == ["get"]
-
-
-# Fields of OpenAPI Path Item Objects holding Operation Objects
-HTTP_METHODS = {"get", "put", "post", "delete", "options", "head", "patch", "trace"}
 
 
 @pytest.mark.parametrize(
