@@ -1,4 +1,4 @@
-# ELIXIR Cloud service registry
+# Cloud Registry
 
 --8<-- "README.md:synopsis"
 
