@@ -762,7 +762,7 @@ def test_invalid_group_permissions(client):
 
 
 @pytest.mark.parametrize("path", ["groups", "groups/"])
-def test_group_permissions_without_group(client, path):
+def test_group_permissions_without_group(app, client, path):
     """Group roles without a group are not found, and are not taken as roles
     of a user `groups` (which would also count as another owner).
     """
@@ -775,8 +775,18 @@ def test_group_permissions_without_group(client, path):
         {"user_id": ALICE, "name": NAMES[ALICE], "role": "owner"}
     ]
     assert revoke(client, service_id, ALICE) == 409
+    # nor is a role of a user `groups` revoked (e.g., one stored before)
+    with app.app.test_request_context(f"{BASE}/services/{service_id}"):
+        permissions_module.add_resource_role(
+            subject="groups",
+            role="maintainer",
+            resource=permissions_module.service_path(service_id),
+        )
     assert client.delete(url, headers=headers(ALICE)).status_code == 404
-    assert permissions(client, service_id) == [(ALICE, "owner")]
+    assert permissions(client, service_id) == [
+        (ALICE, "owner"),
+        ("groups", "maintainer"),
+    ]
 
 
 def test_group_with_slash(client):
