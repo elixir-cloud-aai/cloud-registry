@@ -182,11 +182,20 @@ render it as HTML, and don't follow or fetch its URLs blindly (e.g., to
 internal addresses).
 
 Request bodies are limited to 1 MiB by default (`413 Content Too Large`; see
-[Request size limit](#request-size-limit)). Strings in registered services and
-verifications are limited in length (longer ones are rejected with `400 Bad
-Request`): URLs to 2048 characters, names (`name`, `organization.name`) to
-1024, `description` to 4096, and other fields (`version`, `environment`,
-`type.group`, `type.artifact`, `type.version`) to 256.
+[Request size limit](#request-size-limit)). Strings in the bodies of
+registrations (`POST /services`, `PUT /services/{serviceId}`) and
+verifications (`PUT /services/{serviceId}/verification`) are limited in length
+(longer ones are rejected with `400 Bad Request`):
+
+| Fields | Maximum length (characters) |
+| --- | --- |
+| URLs: `url`, `organization.url`, `contactUrl`, `documentationUrl` | 2048 |
+| Names: `name`, `organization.name` | 1024 |
+| `description` | 4096 |
+| `version`, `environment`, `type.group`, `type.artifact`, `type.version` | 256 |
+
+Services stored before these limits were introduced may have longer values;
+they can't be updated or verified unchanged, only with the values shortened.
 
 See [Access control](#access-control) for the roles and [Verified
 services](#verified-services) for verifications. Extensions of the GA4GH
@@ -449,13 +458,13 @@ Request bodies are limited to `custom.max_content_length` bytes (default:
 1048576, i.e., 1 MiB). Larger requests are rejected with `413 Content Too
 Large` before the access token is checked and the body is parsed: requests
 whose `Content-Length` exceeds the limit are rejected without reading the
-body. Bodies of unknown size (`Transfer-Encoding: chunked`) are read up to the
-limit only; the rest is dropped, so larger JSON bodies are rejected as
-malformed (`400 Bad Request`).
+body. Bodies of unknown size (`Transfer-Encoding: chunked`) are read up to one
+byte over the limit, and rejected if they are larger.
 
 Set the same limit at the ingress or reverse proxy in front of the app, so
-that it rejects larger requests itself; the Helm chart does so for
-ingress-nginx (see the [deployment instructions][deployment-instructions]).
+that it rejects larger requests itself; the Helm chart sets the limit of
+ingress-nginx from `custom.max_content_length` (see the [deployment
+instructions][deployment-instructions]).
 
 ## Development
 

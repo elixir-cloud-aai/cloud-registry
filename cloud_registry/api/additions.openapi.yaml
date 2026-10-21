@@ -651,9 +651,8 @@ components:
       enum:
         - owner
         - maintainer
-    # Registration schemas limit the length of strings (not limited by the
-    # GA4GH schemas): 2048 characters for URLs, 1024 for names, 4096 for
-    # descriptions and 256 for other fields
+    # Registration schemas (also `VerificationRegister`) limit the length of
+    # strings, which the GA4GH schemas do not limit; see the README (API)
     ExternalServiceRegister:
       description: |
         GA4GH service with a URL. URLs (`url`, `organization.url`,

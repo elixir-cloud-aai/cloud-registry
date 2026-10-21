@@ -67,7 +67,7 @@ exceptions = {
         "status": 409,
     },
     RequestEntityTooLarge: {
-        "title": "Content too large",
+        "title": "Content Too Large",
         "detail": "The request body exceeds the size limit.",
         "status": 413,
     },

@@ -15,6 +15,7 @@ import yaml
 
 import cloud_registry.app
 from cloud_registry.ga4gh.registry.service_info import InvalidServiceInfo
+from cloud_registry.service_models.custom_config import MAX_CONTENT_LENGTH
 from tests.conftest import (
     ADMIN_GROUP,
     APP_DIR,
@@ -157,15 +158,13 @@ def test_service_invalid(client, headers, method, path):
     _assert_error(response, 400)
 
 
-# Default size limit of request bodies (`custom.max_content_length`)
-MAX_CONTENT_LENGTH = 1024 * 1024
-
-
-def _body(size: int) -> bytes:
-    """A valid service as JSON of `size` bytes, padded with whitespace."""
+def _body(size: int, suffix: bytes = b"") -> bytes:
+    """A valid service as JSON, padded with whitespace to `size` bytes, and
+    followed by `suffix`.
+    """
     body = json.dumps(_service()).encode()
     assert len(body) <= size
-    return body.ljust(size)
+    return body.ljust(size) + suffix
 
 
 def _send(client, body, method="post", path="", headers=None, **kwargs):
@@ -180,6 +179,22 @@ def _send(client, body, method="post", path="", headers=None, **kwargs):
     )
 
 
+def _send_chunked(client, body, headers=None):
+    """Send a chunked request body (of unknown size) to `/services`, with a
+    stream terminated by the server, as by Werkzeug's server; return the
+    response and the number of bytes read.
+    """
+    stream = io.BytesIO(body)
+    response = client.post(
+        f"{BASE}/services",
+        input_stream=stream,
+        content_type="application/json",
+        headers={**(headers or {}), "Transfer-Encoding": "chunked"},
+        environ_overrides={"wsgi.input_terminated": True},
+    )
+    return response, stream.tell()
+
+
 def _record_idp_requests(monkeypatch) -> list:
     """Record the requests to the (mock) identity provider."""
     requests: list = []
@@ -192,13 +207,25 @@ def _record_idp_requests(monkeypatch) -> list:
     return requests
 
 
-def test_max_content_length(app):
-    """Request bodies are limited to 1 MiB by default."""
-    assert app.app.config["MAX_CONTENT_LENGTH"] == MAX_CONTENT_LENGTH
+def _assert_too_large(response) -> None:
+    """Assert that a response rejects a request body as too large."""
+    _assert_error(response, 413)
+    assert response.mimetype == "application/problem+json"
+    assert response.json["title"] == "Content Too Large"
 
 
-@pytest.mark.parametrize("method, path", [("POST", ""), ("PUT", "/abc")])
-@pytest.mark.parametrize("token", [False, True], ids=["no_token", "token"])
+def _assert_no_services(client) -> None:
+    """Assert that no services are registered (listing services is public)."""
+    response = client.get(f"{BASE}/services")
+    assert response.status_code == 200
+    assert response.json == []
+
+
+@pytest.mark.parametrize(
+    "method, path, token",
+    [("POST", "", False), ("POST", "", True), ("PUT", "/abc", True)],
+    ids=["post-no-token", "post-token", "put-token"],
+)
 def test_body_too_large(monkeypatch, client, admin_headers, method, path, token):
     """Request bodies over the size limit are rejected (`413`, as problem
     details) before the access token is checked, i.e., also without a token,
@@ -212,11 +239,9 @@ def test_body_too_large(monkeypatch, client, admin_headers, method, path, token)
         path=path,
         headers=admin_headers if token else None,
     )
-    _assert_error(response, 413)
-    assert response.mimetype == "application/problem+json"
-    assert response.json["title"] == "Content too large"
+    _assert_too_large(response)
     assert idp_requests == []
-    assert client.get(f"{BASE}/services").json == []
+    _assert_no_services(client)
 
 
 def test_body_too_large_declared(client):
@@ -230,33 +255,42 @@ def test_body_too_large_declared(client):
         content_type="application/json",
         environ_overrides={"CONTENT_LENGTH": str(MAX_CONTENT_LENGTH + 1)},
     )
-    _assert_error(response, 413)
+    _assert_too_large(response)
     assert stream.tell() == 0
 
 
-def test_body_streamed(client):
-    """Chunked request bodies (of unknown size, with a stream terminated by
-    the server, as by Werkzeug's server) are read up to the size limit only;
-    Werkzeug truncates them instead of rejecting them, so larger JSON bodies
-    are malformed.
+@pytest.mark.parametrize(
+    "body",
+    [
+        _body(MAX_CONTENT_LENGTH + 1),
+        # valid JSON up to the limit
+        _body(MAX_CONTENT_LENGTH, suffix=b"junk"),
+        json.dumps(_service(description="x" * 2 * MAX_CONTENT_LENGTH)).encode(),
+    ],
+    ids=["one-byte-over", "valid-up-to-limit", "twice"],
+)
+@pytest.mark.parametrize("token", [False, True], ids=["no-token", "token"])
+def test_body_too_large_chunked(monkeypatch, client, admin_headers, body, token):
+    """Chunked request bodies (of unknown size) over the size limit are
+    rejected (`413`) before the access token is checked, after reading at
+    most one byte more than the limit.
     """
-    service = _service(description="x" * (2 * MAX_CONTENT_LENGTH))
-    stream = io.BytesIO(json.dumps(service).encode())
-    response = client.post(
-        f"{BASE}/services",
-        input_stream=stream,
-        content_type="application/json",
-        headers={**make_headers(), "Transfer-Encoding": "chunked"},
-        environ_overrides={"wsgi.input_terminated": True},
-    )
-    _assert_error(response, 400)
-    assert stream.tell() == MAX_CONTENT_LENGTH
-    assert client.get(f"{BASE}/services").json == []
+    idp_requests = _record_idp_requests(monkeypatch)
+    response, read = _send_chunked(client, body, admin_headers if token else None)
+    _assert_too_large(response)
+    assert read == MAX_CONTENT_LENGTH + 1
+    assert idp_requests == []
+    _assert_no_services(client)
 
 
-def test_body_at_limit(client, headers):
+@pytest.mark.parametrize("chunked", [False, True], ids=["declared", "chunked"])
+def test_body_at_limit(client, headers, chunked):
     """Request bodies up to the size limit are accepted."""
-    response = _send(client, _body(MAX_CONTENT_LENGTH), headers=headers)
+    body = _body(MAX_CONTENT_LENGTH)
+    if chunked:
+        response, _ = _send_chunked(client, body, headers)
+    else:
+        response = _send(client, body, headers=headers)
     assert response.status_code == 201
 
 
@@ -269,7 +303,8 @@ def test_max_content_length_configured(monkeypatch, tmp_path, app_env, headers):
     app = cloud_registry.app.create_app()
     assert app.app.config["MAX_CONTENT_LENGTH"] == 1000
     client = app.app.test_client()
-    _assert_error(_send(client, _body(1001), headers=headers), 413)
+    _assert_too_large(_send(client, _body(1001), headers=headers))
+    _assert_too_large(_send_chunked(client, _body(1001), headers)[0])
     assert _send(client, _body(1000), headers=headers).status_code == 201
 
 
@@ -283,28 +318,30 @@ def _set_field(service: dict, field: str, value: str) -> dict:
     return service
 
 
-# Length limits of string fields of services (in `additions.openapi.yaml`);
-# URLs get a scheme and host
+URL_PREFIX = "https://example.org/"
+
+
+# Length limits of string fields of services (cf. README, API); values start
+# with the prefix (e.g., a scheme and host for URLs)
 @pytest.mark.parametrize(
-    "field, limit",
+    "field, prefix, limit",
     [
-        ("name", 1024),
-        ("description", 4096),
-        ("organization.name", 1024),
-        ("organization.url", 2048),
-        ("contactUrl", 2048),
-        ("documentationUrl", 2048),
-        ("environment", 256),
-        ("version", 256),
-        ("url", 2048),
-        ("type.group", 256),
-        ("type.artifact", 256),
-        ("type.version", 256),
+        ("name", "", 1024),
+        ("description", "", 4096),
+        ("organization.name", "", 1024),
+        ("organization.url", URL_PREFIX, 2048),
+        ("contactUrl", URL_PREFIX, 2048),
+        ("documentationUrl", URL_PREFIX, 2048),
+        ("environment", "", 256),
+        ("version", "", 256),
+        ("url", URL_PREFIX, 2048),
+        ("type.group", "", 256),
+        ("type.artifact", "", 256),
+        ("type.version", "", 256),
     ],
 )
-def test_service_length_limits(client, headers, field, limit):
+def test_service_length_limits(client, headers, field, prefix, limit):
     """String fields of services are limited in length."""
-    prefix = "https://example.org/" if field.lower().endswith("url") else ""
 
     def value(length: int) -> str:
         return prefix + "a" * (length - len(prefix))
