@@ -2,12 +2,19 @@
 
 Unit tests use a bare Flask app with the test configuration from
 `tests/mock_data.py`. App tests use the app created from `config.yaml` and the
-test overlay (`tests/config_overlay.yaml`), with MongoDB replaced by an
-in-memory database and the identity provider by a mock; they have no network
-access.
+test overlay (`tests/config_overlay.yaml`), with the identity provider replaced
+by a mock; they have no network access, except to the test database.
+
+The tests use an in-memory database (mongomock), or, if the environment
+variable `MONGODB_TEST_URI` is set, the MongoDB at that URI (e.g.,
+`mongodb://localhost:27017`), as in CI: there, database `serviceStore` (`DB`)
+is dropped before each test, so use a single-node MongoDB (only the hosts of
+the URI may be connected to) without other data, one per test run. The tests
+refuse to start if the database exists already.
 """
 
 from collections.abc import Iterator
+import os
 from pathlib import Path
 import socket
 import time
@@ -28,7 +35,8 @@ from foca.models.config import (
 from foca.security import auth
 import jwt
 import mongomock
-from pymongo import MongoClient
+from mongomock.collection import Collection as MockCollection
+from pymongo import MongoClient, uri_parser
 from pymongo.collection import Collection
 import pytest
 
@@ -72,6 +80,35 @@ NAMES = {
     "dave@example.org": " ",
 }
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+# URI of a MongoDB to test against instead of mongomock (see above)
+MONGODB_TEST_URI = os.environ.get("MONGODB_TEST_URI", "")
+# Class of the collections that the tests use, e.g., to patch their methods
+COLLECTION_CLASS: type[Collection[Any]] | type[MockCollection] = (
+    Collection if MONGODB_TEST_URI else MockCollection
+)
+_CONNECT = socket.socket.connect
+
+
+def _db_addresses(uri: str) -> frozenset[tuple[str, int]]:
+    """Return the socket addresses of the hosts of a MongoDB URI.
+
+    Args:
+        uri: MongoDB connection string (`mongodb://`), or an empty string.
+
+    Returns:
+        IP address and port of each host of the URI; none for an empty string.
+    """
+    if not uri:
+        return frozenset()
+    return frozenset(
+        (str(info[4][0]), port)
+        for host, port in uri_parser.parse_uri(uri)["nodelist"]
+        for info in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    )
+
+
+# Addresses that the tests may connect to
+DB_ADDRESSES = _db_addresses(MONGODB_TEST_URI)
 
 
 class MockResponse:
@@ -181,24 +218,85 @@ def make_headers(user: str = USER, key: rsa.RSAPrivateKey = KEY) -> dict[str, st
     return {"Authorization": f"Bearer {token}"}
 
 
+def _check_no_db(client: MongoClient[dict[str, Any]]) -> None:
+    """Check that a MongoDB has no database `DB`, which the tests would drop.
+
+    Args:
+        client: Client of the MongoDB.
+
+    Ends the test run (`pytest.exit()`, as a usage error) if the database
+    exists, e.g., with data of a deployment, or left by an aborted test run.
+    """
+    if DB in client.list_database_names():
+        pytest.exit(
+            f"MongoDB at MONGODB_TEST_URI has a database '{DB}', which the"
+            " tests would drop: use a MongoDB without it (drop it if it is"
+            " left from an aborted test run)",
+            returncode=pytest.ExitCode.USAGE_ERROR,
+        )
+
+
+@pytest.fixture(scope="session")
+def _mongodb() -> Iterator[MongoClient[dict[str, Any]] | None]:
+    """Client of the MongoDB at `MONGODB_TEST_URI`, if set, for all tests.
+
+    Fails if the MongoDB has data in database `DB` before the tests.
+    """
+    if not MONGODB_TEST_URI:
+        yield None
+        return
+    client: MongoClient[dict[str, Any]] = MongoClient(
+        MONGODB_TEST_URI, serverSelectionTimeoutMS=5000
+    )
+    try:
+        _check_no_db(client)
+        yield client
+        client.drop_database(DB)
+    finally:
+        client.close()
+
+
 @pytest.fixture
-def mongo_client(monkeypatch: pytest.MonkeyPatch) -> MongoClient[dict[str, Any]]:
-    """In-memory MongoDB client used by the app."""
-    client: MongoClient[dict[str, Any]] = mongomock.MongoClient()
-    monkeypatch.setattr(register_mongodb, "MongoClient", lambda *args, **kwargs: client)
-    return client
+def db_client(
+    _mongodb: MongoClient[dict[str, Any]] | None,
+) -> MongoClient[dict[str, Any]]:
+    """MongoDB client of a test, with an empty database `DB`.
+
+    The MongoDB at `MONGODB_TEST_URI` if set, otherwise a new in-memory one.
+    """
+    if _mongodb is None:
+        client: MongoClient[dict[str, Any]] = mongomock.MongoClient()
+        return client
+    _mongodb.drop_database(DB)
+    return _mongodb
+
+
+@pytest.fixture
+def mongo_client(
+    monkeypatch: pytest.MonkeyPatch, db_client: MongoClient[dict[str, Any]]
+) -> MongoClient[dict[str, Any]]:
+    """MongoDB client used by the app (see `db_client`)."""
+    monkeypatch.setattr(
+        register_mongodb, "MongoClient", lambda *args, **kwargs: db_client
+    )
+    return db_client
 
 
 def _no_network(sock: socket.socket, address: object) -> None:
     """Replace `socket.socket.connect()`, to block network access.
+
+    Connections to the test database (`DB_ADDRESSES`) are allowed.
 
     Args:
         sock: Socket to connect.
         address: Address to connect to.
 
     Raises:
-        OSError: Always.
+        OSError: If the address is not one of the test database.
     """
+    if isinstance(address, tuple) and tuple(address[:2]) in DB_ADDRESSES:
+        _CONNECT(sock, address)
+        return
     raise OSError(f"Network access blocked in tests: {address}")
 
 
@@ -273,11 +371,12 @@ def _collections(app: Flask) -> dict[str, CollectionConfig]:
 
 
 @pytest.fixture
-def unit_app() -> Flask:
+def unit_app(db_client: MongoClient[dict[str, Any]]) -> Flask:
     """Flask app with the test configuration, for unit tests.
 
-    Its collections are in memory and have the unique indexes from
-    `config.yaml`; error responses have the media type of `config.yaml`.
+    Its collections are those of database `DB` of `db_client`, with the unique
+    indexes from `config.yaml`; error responses have the media type of
+    `config.yaml`.
     """
     app = Flask(__name__)
     set_app_config(
@@ -290,11 +389,11 @@ def unit_app() -> Flask:
             }
         ),
     )
-    client: MongoClient[dict[str, Any]] = mongomock.MongoClient()
+    db = db_client[DB]
     for name, coll_conf in _collections(app).items():
-        coll_conf.client = client.db[name]
+        coll_conf.client = db[name]
         coll_conf.client.create_index("id", unique=True)
-    client.db["services"].create_index(SERVICE_KEY, unique=True, sparse=True)
+    db["services"].create_index(SERVICE_KEY, unique=True, sparse=True)
     return app
 
 

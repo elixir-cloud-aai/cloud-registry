@@ -16,12 +16,24 @@ pre-commit run --all-files --hook-stage manual gitleaks-all  # secrets
 pytest
 ```
 
-The tests need no database (they use `mongomock`). To try changes in the
-running app, rebuild it with `docker compose up --build -d` (see [Getting
-started](getting-started.md)). `python -m cloud_registry.app` runs the app
-with Flask's development server instead of Gunicorn (see
-[Server](configuration.md#server)); it needs a MongoDB at `db.host` of the
-config.
+The tests need no database: they use an in-memory one
+([mongomock](https://github.com/mongomock/mongomock)). CI also runs them
+against MongoDB 7.0; to do so locally, set `MONGODB_TEST_URI` to a
+single-node MongoDB without other data, one per test run (the tests drop its
+database `serviceStore` before each test, and refuse to start if it exists),
+e.g.:
+
+```bash
+docker run -d --rm --name mongodb-test -p 127.0.0.1:27017:27017 mongo:7.0
+MONGODB_TEST_URI=mongodb://localhost:27017 pytest
+docker stop mongodb-test
+```
+
+To try changes in the running app, rebuild it with
+`docker compose up --build -d` (see [Getting started](getting-started.md)).
+`python -m cloud_registry.app` runs the app with Flask's development server
+instead of Gunicorn (see [Server](configuration.md#server)); it needs a
+MongoDB at `db.host` of the config.
 
 Run `pre-commit` in the environment with the dev dependencies: the mypy and
 ast-grep hooks use the installed packages. The first run sets up the other
