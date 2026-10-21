@@ -794,6 +794,6 @@ def warn_url_schemes() -> None:
         logger.warning(
             "Services with URL schemes not allowed "
             "(`custom.endpoints.services.url_schemes`) are still served, but "
-            "can only be updated with an allowed scheme; fix or delete them: %s",
+            "can only be updated with an allowed scheme; update or delete them: %s",
             escape_log_value(", ".join(ids)),
         )

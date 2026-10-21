@@ -26,7 +26,7 @@ services:
         ports:
             - "127.0.0.1:8080:8080"
         # Development settings (`config.dev.yaml`): tokens for any audience,
-        # no admin groups required
+        # no admin groups required, `http` service URLs allowed
         # The image's command serves the app with Gunicorn; options from the
         # host's `GUNICORN_CMD_ARGS` (e.g., `--workers 2`) override its settings
         # (not `--bind`, which would break the published port and health check)

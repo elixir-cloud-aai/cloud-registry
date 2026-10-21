@@ -42,7 +42,9 @@ of `GET /services/types`) are rejected (`400 Bad Request`).
 URLs in registrations must be HTTP(S) URLs with a host: the service `url`,
 `documentationUrl`, `organization.url` and `contactUrl`, which can also be an
 email address (`mailto:`); other URLs are rejected (`400 Bad Request`, saying
-why). Links are stored as written, so they must not contain whitespace (unlike
+why). Service URLs must be `https` URLs by default, as clients send access
+tokens to the services; deployments can allow `http` (see [Service URL
+schemes](configuration.md#service-url-schemes)). Links are stored as written, so they must not contain whitespace (unlike
 service URLs, which may have leading and trailing spaces), control or format
 characters (except joiners in international host names), and no URLs may
 contain malformed percent-encodings. Anyone logged in can register services, so
