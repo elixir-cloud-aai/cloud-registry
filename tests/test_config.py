@@ -163,12 +163,20 @@ def test_config_requires_audience(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_config_dev_overlay(monkeypatch: pytest.MonkeyPatch) -> None:
     """The Docker Compose overlay is permissive.
 
-    It accepts tokens for any audience and does not require admin groups.
+    It accepts tokens for any audience, does not require admin groups and
+    allows `http` service URLs (e.g., of services on `localhost`).
     """
     monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(ROOT / "config.dev.yaml"))
     config = _parse_config()
     assert config.security.auth.verify_audience is False
     assert _custom(config).access_control.require_admin is False
+    assert _custom(config).endpoints.services.url_schemes == ["http", "https"]
+
+
+def test_config_url_schemes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The base config allows `https` service URLs only."""
+    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(CONFIG_OVERLAY))
+    assert _custom(_parse_config()).endpoints.services.url_schemes == ["https"]
 
 
 def test_service_key_index(monkeypatch: pytest.MonkeyPatch) -> None:

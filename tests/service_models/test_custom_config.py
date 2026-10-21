@@ -3,7 +3,7 @@
 from pydantic import ValidationError
 import pytest
 
-from cloud_registry.service_models.custom_config import IdConfig
+from cloud_registry.service_models.custom_config import IdConfig, ServicesConfig
 
 
 def test_id_config() -> None:
@@ -39,3 +39,20 @@ def test_id_config_invalid_length(length: int) -> None:
     """Lengths that identifiers cannot be generated with are rejected."""
     with pytest.raises(ValidationError):
         IdConfig(charset="ABC123", length=length)
+
+
+def test_services_config_url_schemes() -> None:
+    """Service URLs must be `https` URLs by default; `http` can be allowed."""
+    id_config = IdConfig(charset="ABC123", length=6)
+    assert ServicesConfig(id=id_config).url_schemes == ["https"]
+    schemes = ServicesConfig(id=id_config, url_schemes=["http", "https"]).url_schemes
+    assert schemes == ["http", "https"]
+
+
+@pytest.mark.parametrize("schemes", [[], ["ftp"], ["HTTPS"], "https"])
+def test_services_config_invalid_url_schemes(schemes: object) -> None:
+    """Empty lists and schemes other than `http` and `https` are rejected."""
+    with pytest.raises(ValidationError):
+        ServicesConfig.model_validate(
+            {"id": {"charset": "ABC123", "length": 6}, "url_schemes": schemes}
+        )

@@ -214,3 +214,8 @@ custom:
             id:
                 charset: ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
                 length: 6
+            # Schemes allowed in service URLs (`url`; `http`, `https`):
+            # clients send access tokens to registered services, so `https`
+            # only; links (e.g., `documentationUrl`) may be HTTP(S) URLs
+            url_schemes:
+                - https
