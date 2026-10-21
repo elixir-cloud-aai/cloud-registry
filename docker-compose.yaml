@@ -12,6 +12,9 @@ services:
             args:
                 SETUPTOOLS_SCM_PRETEND_VERSION: ${SETUPTOOLS_SCM_PRETEND_VERSION:-}
         restart: unless-stopped
+        # Longer than Gunicorn's graceful timeout (20 seconds), which idle
+        # keep-alive connections (e.g., of browsers) use up on shutdown
+        stop_grace_period: 30s
         depends_on:
             mongodb:
                 condition: service_healthy

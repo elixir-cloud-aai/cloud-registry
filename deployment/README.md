@@ -228,15 +228,17 @@ threads, so slow or stuck requests don't count. Keep `keepalive` longer than
 the ingress controller's keep-alive timeout for upstream connections (60
 seconds for ingress-nginx, `upstream-keepalive-timeout`): otherwise, it may
 reuse a connection just as Gunicorn closes it, and the request fails with
-`502` (requests other than `GET` are not retried). Idle connections wait in
-the worker's poller, not in its threads.
+`502` (non-idempotent requests, e.g., `POST`, are not retried). Idle
+connections wait in the worker's poller, not in its threads.
 
 On SIGTERM, Gunicorn stops accepting connections at once, while the ingress
 controller and the Service may still send requests to the pod for a few
 seconds. So the app keeps serving for `cloud_registry.preStopSleepSeconds`
 (default 5; `0` removes the `preStop` hook) before it shuts down, then
 workers get `gracefulTimeout` seconds to finish their requests. The pod's
-termination grace period is the sum of both plus 10 seconds.
+termination grace period is the sum of both plus 10 seconds. While the
+ingress controller holds idle connections to the pod, shutdown usually takes
+the full `gracefulTimeout`, so raising it slows down every rollout.
 
 With the read-only root file system, Gunicorn keeps the heartbeat files of
 its workers in `/dev/shm` (or in the `/tmp` volume if `/dev/shm` isn't
