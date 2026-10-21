@@ -12,9 +12,14 @@ As the app on startup, refuse to render without a group mapped to the role
 `admin`, unless admins are explicitly not required.
 */ -}}
 {{- $config := deepCopy (.Values.config | default dict) -}}
-{{- /* `custom: null` is like no custom config */ -}}
-{{- if not (kindIs "map" (get $config "custom")) -}}
-{{- $_ := unset $config "custom" -}}
+{{- /*
+`custom: null` and `server: null` are like no such section (FOCA would
+replace the base config's section with `null`, and refuse it)
+*/ -}}
+{{- range $section := list "custom" "server" -}}
+{{- if not (kindIs "map" (get $config $section)) -}}
+{{- $_ := unset $config $section -}}
+{{- end -}}
 {{- end -}}
 {{- $mapping := dig "security" "access_control" "group_mapping" dict $config -}}
 {{- $requireAdmin := dig "custom" "access_control" "require_admin" true $config -}}

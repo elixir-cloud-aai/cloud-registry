@@ -939,6 +939,17 @@ def test_ingress_body_size_custom_null():
     assert _overlay(docs)["custom"]["endpoints"]["service"]["external_host"] == "x"
 
 
+def test_server_null():
+    """`config.server: null` is like no server config: ingress-nginx gets
+    the app's default limit, and the overlay has no `server` (FOCA would
+    refuse `null`).
+    """
+    docs = _render("--set-json", "config.server=null")
+    ingress = docs[("Ingress", APP)]
+    assert ingress["metadata"]["annotations"] == {BODY_SIZE: BODY_SIZE_LIMIT}
+    assert "server" not in _overlay(docs)
+
+
 def test_ingress_body_size_annotation():
     """The size limit of request bodies set by an annotation takes
     precedence over that of the app; `null` removes it.
