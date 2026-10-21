@@ -19,6 +19,7 @@ updates:
     groups:
       github-actions:
         patterns: ["*"]
+  # Base image in the `Dockerfile` (tag and digest)
   - package-ecosystem: docker
     directory: /
     schedule:
