@@ -18,8 +18,12 @@ services:
         depends_on:
             mongodb:
                 condition: service_healthy
+        # Published on the host's loopback interface only, as the development
+        # settings (`config.dev.yaml`) accept tokens for any audience; to
+        # publish it on other interfaces, override `ports` in a
+        # `docker-compose.override.yaml` (with your own config, see README)
         ports:
-            - "8080:8080"
+            - "127.0.0.1:8080:8080"
         # Development settings (`config.dev.yaml`): tokens for any audience,
         # no admin groups required
         # The image's command serves the app with Gunicorn; options from the

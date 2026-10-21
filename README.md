@@ -129,8 +129,10 @@ You can explore the service via the [Swagger UI][url-swagger], which also
 serves the OpenAPI specification (`/ga4gh/registry/v1/openapi.json`).
 
 > The image's Gunicorn listens on port 8080 (`--bind`, see [Server](#server));
-> [`docker-compose.yaml`][compose] publishes it on the host. If you change
-> the published port, update the URLs above accordingly. `server.port` of the
+> [`docker-compose.yaml`][compose] publishes it on the host's loopback
+> interface (`127.0.0.1`) only, as its development config accepts tokens for
+> any audience. If you change the published port, update the URLs above
+> accordingly. `server.port` of the
 > [config][config] only sets the port of the development server
 > (`python -m cloud_registry.app`).
 
