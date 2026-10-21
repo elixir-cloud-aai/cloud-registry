@@ -58,11 +58,13 @@ changes](https://cloud-registry.readthedocs.io/en/latest/access-control/#group-m
 The service info served at `/service-info` is set via
 `config.service_info.service` (mappings are merged, so set only the fields to
 change, e.g., `environment: prod`, and set optional fields of the default to
-`null` to remove them). The defaults describe the app, so set all fields that
-describe the deployment: `id`, `name`, `description`, `organization` (both
-`name` and `url`), `contactUrl` and `environment` (the default is `dev`; see
-the example in `values.yaml`). Pods are restarted when the ConfigMap changes,
-and the app refuses to start if the service info is invalid.
+`null` to remove them). The defaults describe the app, with placeholders for
+`id` and `organization` and no `contactUrl`, so set all fields that describe
+the deployment: `id`, `name`, `description`, `organization` (both `name` and
+`url`), `contactUrl` and `environment` (the default is `dev`; see the example
+in `values.yaml`). The app logs a warning on startup while `id` or
+`organization` are the placeholders. Pods are restarted when the ConfigMap
+changes, and the app refuses to start if the service info is invalid.
 
 Service URLs must be `https` URLs by default, as clients send access tokens
 to the registered services; `config.custom.endpoints.services.url_schemes`

@@ -173,6 +173,25 @@ def test_config_dev_overlay(monkeypatch: pytest.MonkeyPatch) -> None:
     assert _custom(config).endpoints.services.url_schemes == ["http", "https"]
 
 
+def test_config_service_info_placeholders(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The base config's service info names no real organization.
+
+    Its `id` and `organization` are placeholders with reserved example domains
+    (RFC 2606), and it sets no contact.
+    """
+    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(CONFIG_OVERLAY))
+    service_info = _parse_config().service_info
+    assert service_info is not None
+    info = service_info.service
+    assert info["id"] == "org.example.cloud-registry"
+    assert info["organization"] == {
+        "name": "Example Organization",
+        "url": "https://example.org",
+    }
+    assert "contactUrl" not in info
+    assert "elixir-on" not in CONFIG_FILE.read_text()
+
+
 def test_config_url_schemes(monkeypatch: pytest.MonkeyPatch) -> None:
     """The base config allows `https` service URLs only."""
     monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(CONFIG_OVERLAY))
@@ -251,7 +270,7 @@ class TestChartOverlay:
         assert config.service_info is not None
         info = config.service_info.service
         assert info["environment"] == "prod"
-        assert info["id"] == "cloud.elixir-on.cloud-registry"
+        assert info["id"] == "org.example.cloud-registry"
 
     def test_admin_group_required(self) -> None:
         """Rendering fails without a group mapped to the role `admin`."""
