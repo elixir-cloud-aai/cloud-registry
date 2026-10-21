@@ -105,9 +105,9 @@ def _post(
         json=_service() if service is None else service,
         headers=headers,
     )
-    assert response.status_code == 201, response.get_json()
-    assert response.location == f"{PUBLIC_URL}{BASE}/services/{response.get_json()}"
     service_id: str = response.get_json()
+    assert response.status_code == 201, service_id
+    assert response.location == f"{PUBLIC_URL}{BASE}/services/{service_id}"
     return service_id
 
 

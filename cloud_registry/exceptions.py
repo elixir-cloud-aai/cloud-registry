@@ -123,6 +123,7 @@ def problem(exc: HTTPException, **extensions: str) -> Response:
     Returns:
         Problem details response.
     """
+    # The exceptions passed here are raised with a code and a description
     return _response(
         title=_mapped(exc)["title"],
         status=exc.code,  # type: ignore[arg-type]

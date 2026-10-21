@@ -98,6 +98,7 @@ def _api_base_path() -> str:
         Base path, e.g., `/ga4gh/registry/v1` (Connexion registers each API
         as a Flask blueprint with its base path as URL prefix).
     """
+    # Requests to the API are routed through its blueprint, so it is set
     return current_app.blueprints[request.blueprint].url_prefix or ""  # type: ignore[index]
 
 
@@ -181,7 +182,7 @@ def remember_current_user(service_ids: list[str]) -> None:
 def _forget_names(serviceId: str, userId: str | None = None) -> None:
     """Delete display names stored for users on a service.
 
-    Cf. `remember_current_user()`.
+    See `remember_current_user()`.
 
     Args:
         serviceId: Service identifier.
@@ -199,6 +200,8 @@ def add_owner(serviceId: str) -> None:
     Args:
         serviceId: Service identifier.
     """
+    # Operations that change roles require authentication, so the request
+    # has a subject
     add_resource_role(
         subject=get_current_subject(),  # type: ignore[arg-type]
         role="owner",
@@ -223,6 +226,8 @@ def remove_owner(serviceId: str) -> None:
     Args:
         serviceId: Service identifier.
     """
+    # Operations that change roles require authentication, so the request
+    # has a subject
     user_id: str = get_current_subject()  # type: ignore[assignment]
     if remove_resource_role(
         subject=user_id, role="owner", resource=service_path(serviceId)
@@ -256,7 +261,7 @@ def getServicePermissions(serviceId: str, **kwargs: Any) -> list[dict[str, Any]]
 
     Args:
         serviceId: Service identifier.
-        kwargs: Further arguments that Connexion passes (`user`,
+        **kwargs: Further arguments that Connexion passes (`user`,
             `token_info`); unused.
 
     Returns:
@@ -432,10 +437,10 @@ def _restore_owner_if_none(
 
 
 def _put_role(serviceId: str, subject: str, subject_type: SubjectType) -> None:
-    """Grant a user or group the role in the request body on a service.
+    """Grant a user or group the role in the request body, replacing others.
 
-    Replaces any other role: other roles are revoked before the role is
-    granted, so that a failure leaves the subject with fewer rights, not more.
+    Other roles on the service are revoked before the role is granted, so
+    that a failure leaves the subject with fewer rights, not more.
     On a user's first role on the service, a name stored for them on it is
     deleted (cf. `remember_current_user()`).
 
@@ -552,12 +557,12 @@ def _check_user_id(userId: str) -> None:
 def putServicePermission(serviceId: str, userId: str, **kwargs: Any) -> dict[str, Any]:
     """Grant a user a role on a service, replacing any other role.
 
-    Cf. `_put_role()`.
+    See `_put_role()`.
 
     Args:
         serviceId: Service identifier.
         userId: User identifier (`sub` claim of the user's tokens).
-        kwargs: Further arguments that Connexion passes (`user`,
+        **kwargs: Further arguments that Connexion passes (`user`,
             `token_info`); unused.
 
     Returns:
@@ -579,7 +584,7 @@ def deleteServicePermission(serviceId: str, userId: str, **kwargs: Any) -> str:
     Args:
         serviceId: Service identifier.
         userId: User identifier.
-        kwargs: Further arguments that Connexion passes (`user`,
+        **kwargs: Further arguments that Connexion passes (`user`,
             `token_info`); unused.
 
     Returns:
@@ -600,14 +605,14 @@ def putServiceGroupPermission(
 ) -> dict[str, Any]:
     """Grant a group a role on a service, replacing any other role.
 
-    Cf. `_put_role()`. Owners may only grant roles to groups they are members
+    See `_put_role()`. Owners may only grant roles to groups they are members
     of (i.e., whose entitlement is in their group claim), as they could
     otherwise hand a service to any group; admins may grant roles to any group.
 
     Args:
         serviceId: Service identifier.
         entitlement: Group, i.e., a value of the group claim of its members.
-        kwargs: Further arguments that Connexion passes (`user`,
+        **kwargs: Further arguments that Connexion passes (`user`,
             `token_info`); unused.
 
     Returns:
@@ -642,7 +647,7 @@ def deleteServiceGroupPermission(
     Args:
         serviceId: Service identifier.
         entitlement: Group.
-        kwargs: Further arguments that Connexion passes (`user`,
+        **kwargs: Further arguments that Connexion passes (`user`,
             `token_info`); unused.
 
     Returns:
@@ -659,7 +664,7 @@ def getMe(**kwargs: Any) -> dict[str, Any]:
     The name is stored for the services the user has a role on.
 
     Args:
-        kwargs: Further arguments that Connexion passes (`user`,
+        **kwargs: Further arguments that Connexion passes (`user`,
             `token_info`); unused.
 
     Returns:
@@ -670,6 +675,7 @@ def getMe(**kwargs: Any) -> dict[str, Any]:
         services with roles granted to the user, as only these are listed
         with names (cf. `getServicePermissions()`).
     """
+    # The endpoint requires authentication, so the request has a subject
     user_id: str = get_current_subject()  # type: ignore[assignment]
     prefix = get_config().security.access_control.subject_prefix
     services_path = f"{_api_base_path()}/services/"

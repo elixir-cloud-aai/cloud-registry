@@ -38,7 +38,7 @@ def getServices(**kwargs: Any) -> list[dict[str, Any]]:
     """List all services.
 
     Args:
-        kwargs: Further arguments that Connexion passes (`user`,
+        **kwargs: Further arguments that Connexion passes (`user`,
             `token_info`); unused.
 
     Returns:
@@ -59,7 +59,7 @@ def getServiceById(serviceId: str, **kwargs: Any) -> dict[str, Any]:
 
     Args:
         serviceId: Identifier of service to be retrieved.
-        kwargs: Further arguments that Connexion passes (`user`,
+        **kwargs: Further arguments that Connexion passes (`user`,
             `token_info`); unused.
 
     Returns:
@@ -78,7 +78,7 @@ def getServiceTypes(**kwargs: Any) -> list[dict[str, Any]]:
     """List types of services.
 
     Args:
-        kwargs: Further arguments that Connexion passes (`user`,
+        **kwargs: Further arguments that Connexion passes (`user`,
             `token_info`); unused.
 
     Returns:
@@ -100,7 +100,7 @@ def postService(**kwargs: Any) -> RegisterResponse:
     """Add service with an auto-generated identifier.
 
     Args:
-        kwargs: Further arguments that Connexion passes (`user`,
+        **kwargs: Further arguments that Connexion passes (`user`,
             `token_info`); unused.
 
     Returns:
@@ -122,7 +122,7 @@ def deleteService(serviceId: str, **kwargs: Any) -> str:
 
     Args:
         serviceId: Identifier of service to be deleted.
-        kwargs: Further arguments that Connexion passes (`user`,
+        **kwargs: Further arguments that Connexion passes (`user`,
             `token_info`); unused.
 
     Returns:
@@ -154,7 +154,7 @@ def putService(serviceId: str, **kwargs: Any) -> RegisterResponse:
 
     Args:
         serviceId: Identifier of service to be registered/updated.
-        kwargs: Further arguments that Connexion passes (`user`,
+        **kwargs: Further arguments that Connexion passes (`user`,
             `token_info`); unused.
 
     Returns:

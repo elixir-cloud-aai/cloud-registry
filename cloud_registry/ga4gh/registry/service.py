@@ -262,7 +262,7 @@ def _check_characters(
 
 
 def _check_percent_encodings(text: str, subject: str) -> None:
-    """Check that the percent signs in a URL, or part of it, start encodings.
+    """Check that the percent signs in a URL, or part of it, start percent-encodings.
 
     Args:
         text: URL, or part of it.
@@ -276,9 +276,9 @@ def _check_percent_encodings(text: str, subject: str) -> None:
 
 
 def _check_addresses(path: str, subject: str) -> None:
-    """Check the email addresses of a `mailto:` URL.
+    """Check the email addresses of a `mailto:` URL, minimally.
 
-    Minimally, not as of RFC 5322.
+    The addresses are not checked as of RFC 5322.
 
     Args:
         path: Path of the URL, with comma-separated addresses.
@@ -697,7 +697,7 @@ class RegisterService:
 def add_service_keys() -> None:
     """Add keys to services registered without one.
 
-    E.g., to services registered before keys were introduced.
+    For example, to services registered before keys were introduced.
 
     Concurrent runs of this function are safe (e.g., in each worker of the
     app on startup): keys added by another run are kept. Services registered

@@ -80,7 +80,7 @@ def render(
         )
     if mongodb_secret is not None:
         args = ("--set", f"mongodb.auth.existingSecret={mongodb_secret}", *args)
-    rendered = subprocess.run(  # noqa: S603
+    rendered = subprocess.run(  # noqa: S603 (argument list, no shell)
         [
             HELM,
             "template",

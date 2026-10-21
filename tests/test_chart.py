@@ -229,7 +229,7 @@ def test_image_of_packaged_chart(
     The release workflow sets it.
     """
     assert HELM is not None
-    subprocess.run(  # noqa: S603
+    subprocess.run(  # noqa: S603 (argument list, no shell)
         [HELM, "package", str(CHART), "--version", chart_version]
         + ["--app-version", app_version, "-d", str(tmp_path)],
         capture_output=True,

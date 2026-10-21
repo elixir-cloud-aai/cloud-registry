@@ -26,6 +26,8 @@ convention = "google"
 [tool.mypy]
 files = ["cloud_registry", "docs/hooks.py", "tests"]
 # Complete type hints: all functions annotated, generic types parametrized
+# (instead of ruff's `ANN` rules, which report missing hints only, without
+# checking them)
 disallow_untyped_defs = true
 disallow_any_generics = true
 warn_unused_ignores = true
