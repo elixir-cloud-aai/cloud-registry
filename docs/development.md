@@ -108,7 +108,11 @@ workflow](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/.github/wo
 passed for it (a run for the push of the commit to `dev`; if CI hasn't
 finished or failed, re-run the release workflow once it passed). It packages
 the Helm chart with the release version as `version` and `appVersion` (the
-default image tag). After approval in the `release` environment, it builds
+default image tag), and with the links of its README to the latest docs and
+to files on branch `dev` pointed to the docs and files of the release
+(`/en/vX.Y.Z/`, `blob/vX.Y.Z/`), failing if any such link is left
+(`scripts/chart_readme.py`; the README in the repository is unchanged).
+After approval in the `release` environment, it builds
 the image, checks that the app reports the release version, pushes exactly
 that image tagged `X.Y.Z` (and `latest`, if it is the highest stable release
 on `main`), and creates a GitHub release with the chart (`.tgz`) and the
@@ -142,6 +146,8 @@ reviewer; a tag ruleset for `v*` that restricts who may create them and
 prevents moving or deleting them; `main` protected against non-fast-forward
 pushes; and the Docker Hub secrets (`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`,
 `DOCKERHUB_ORG`) only in the two environments, not as repository secrets.
+On Read the Docs, an automation rule activates the versions of tags (`v*`),
+so that the docs linked from packaged charts exist.
 
 The CI workflow (which tests the chart) and the release workflow (which
 packages it) install the same Helm version (`version:` of `azure/setup-helm`
