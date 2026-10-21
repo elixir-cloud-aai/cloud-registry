@@ -67,6 +67,12 @@ curl -X GET "http://localhost:8080/ga4gh/registry/v1/services" -H  "accept: appl
 ```
 <!-- --8<-- [end:quick-start] -->
 
+## Contributing
+
+Contributions are welcome! See [`CONTRIBUTING.md`](CONTRIBUTING.md) and
+[Contributing][docs-contributing] in the documentation, and mind our [code of
+conduct](CODE_OF_CONDUCT.md).
+
 [badge-build-status]: <https://github.com/elixir-cloud-aai/cloud-registry/actions/workflows/checks.yaml/badge.svg>
 [badge-coverage]: <https://codecov.io/gh/elixir-cloud-aai/cloud-registry/branch/dev/graph/badge.svg?branch=dev>
 [badge-docker]: <https://img.shields.io/docker/v/elixircloud/cloud-registry?sort=semver&label=image&color=C39BD3>
@@ -81,5 +87,6 @@ curl -X GET "http://localhost:8080/ga4gh/registry/v1/services" -H  "accept: appl
 [badge-url-license]: <https://www.apache.org/licenses/LICENSE-2.0>
 [deployment]: deployment/
 [docs]: <https://cloud-registry.readthedocs.io/en/latest/>
+[docs-contributing]: <https://cloud-registry.readthedocs.io/en/latest/contributing/>
 [logo]: docs/images/logo_elixir_on_cloud.png
 [org]: <https://elixir-on.cloud/>

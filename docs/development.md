@@ -1,5 +1,9 @@
 # Development
 
+See [Contributing](contributing.md) for how to contribute, including the
+Python guidelines; this page describes the development setup, the checks, the
+documentation and the releases.
+
 Development needs Python 3.10 or later, and [Helm](https://helm.sh/) for the
 tests of the chart (skipped without it). To set up a development environment
 (e.g., in a virtual environment) and run the checks that CI runs:
@@ -34,8 +38,9 @@ Project-specific rules are in `.semgrep/` (security) and `.ast-grep/`
 [ShellCheck](https://www.shellcheck.net/) if it is installed (as on
 GitHub-hosted runners, so CI may find more than a local run without it). To
 suppress a false positive, add a comment with the reason to the line:
-`# noqa: <code>` (ruff), `# nosemgrep: <rule-id>`,
-`# ast-grep-ignore: <rule-id>` or `# gitleaks:allow`.
+`# noqa: <code>` (ruff), `# type: ignore[<code>]` (mypy),
+`# nosemgrep: <rule-id>`, `# ast-grep-ignore: <rule-id>` or
+`# gitleaks:allow`.
 
 ## Documentation
 
@@ -64,17 +69,6 @@ sections of `README.md` (between `--8<-- [start:<name>]` and
 the README of the Helm chart (`deployment/README.md`), which `docs/hooks.py`
 includes, with its links to pages of the docs (`../docs/<page>.md`) and other
 files of the repository adapted.
-
-## Contributing
-
-This project is a community effort and lives off your contributions, be it in
-the form of bug reports, feature requests, discussions, or fixes and other code
-changes. Please refer to our organization's [contribution
-guidelines](https://github.com/elixir-cloud-aai/elixir-cloud-aai/blob/dev/CONTRIBUTING.md)
-if you are interested to contribute. Please mind the [code of
-conduct](https://github.com/elixir-cloud-aai/elixir-cloud-aai/blob/dev/CODE_OF_CONDUCT.md)
-for all interactions with the community. See [above](#development) to set up
-a development environment.
 
 ## Versioning and releases
 
