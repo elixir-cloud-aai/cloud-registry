@@ -8,6 +8,7 @@ from cloud_registry.utils import (
     get_collection,
     get_custom_config,
     get_public_url,
+    is_date_time,
 )
 
 
@@ -94,3 +95,65 @@ def test_get_public_url_host(unit_app, host, url):
 def test_escape_log_value(value, escaped):
     """Non-printable characters are escaped, others are kept."""
     assert escape_log_value(value) == escaped
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "2020-11-08T10:20:30Z",
+        "2020-11-08t10:20:30z",
+        "2020-02-29T10:20:30.1234567-05:30",
+        "2020-11-08T10:20:30+23:59",
+        "2016-12-31T23:59:60Z",
+        1,
+        None,
+    ],
+    ids=[
+        "utc",
+        "lowercase",
+        "fraction_offset",
+        "max_offset",
+        "leap_second",
+        "int",
+        "none",
+    ],
+)
+def test_is_date_time(value):
+    """RFC 3339 date-times are valid; non-strings are left to type checks."""
+    assert is_date_time(value)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "2021-02-29T10:20:30Z",
+        "2020-11-31T10:20:30Z",
+        "2020-11-08T24:00:00Z",
+        "2020-11-08T10:60:00Z",
+        "2020-11-08T10:20:61Z",
+        "2020-11-08T10:20:30+24:00",
+        "2020-11-08T10:20:30+01:60",
+        "2020-11-08T10:20:30",
+        "2020-11-08 10:20:30Z",
+        "2020-11-08T10:20:30+0100",
+        "２０２０-11-08T10:20:30Z",
+        "",
+    ],
+    ids=[
+        "no_leap_year",
+        "invalid_day",
+        "hour",
+        "minute",
+        "second",
+        "offset_hour",
+        "offset_minute",
+        "no_offset",
+        "space",
+        "offset_no_colon",
+        "non_ascii_digits",
+        "empty",
+    ],
+)
+def test_is_date_time_invalid(value):
+    """Other strings are invalid."""
+    assert not is_date_time(value)
