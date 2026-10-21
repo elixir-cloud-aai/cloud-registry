@@ -195,9 +195,7 @@ Request`). Services stored before this check may have other values; they
 can't be updated unchanged, only with valid timestamps (or without them).
 
 Request bodies are limited to 1 MiB by default (`413 Content Too Large`; see
-[Request size limit](#request-size-limit)); the number of registrations per
-user is not limited, so deployments should limit request rates at the ingress
-(see the [deployment instructions][deployment-instructions]). Strings in the bodies of
+[Request size limit](#request-size-limit)). Strings in the bodies of
 registrations (`POST /services`, `PUT /services/{serviceId}`) and
 verifications (`PUT /services/{serviceId}/verification`) are limited in length
 (longer ones are rejected with `400 Bad Request`):
@@ -211,6 +209,10 @@ verifications (`PUT /services/{serviceId}/verification`) are limited in length
 
 Services stored before these limits were introduced may have longer values;
 they can't be updated unchanged, only with the values shortened.
+
+The number of registrations per user is not limited, so deployments should
+limit request rates at the ingress (see the [deployment
+instructions][deployment-instructions]).
 
 Requests that don't match the [API specification](#usage) (e.g., missing or
 unknown fields, values that are too long, extra query parameters, or bodies
@@ -305,7 +307,9 @@ Access control is implemented with [FOCA][foca-access-control]; see the
 For auditing, the app logs (at level `INFO`) who changed which roles of whom
 on which service, who deleted services, and who verified services or removed
 their verifications (also by updating their URL or API type). Changes via the
-[permissions API](#permissions-api) are logged by FOCA's request logging only.
+[permissions API](#permissions-api) are not logged by the app itself: FOCA
+logs the requests (method, path and client address) and the identifiers of
+the added, updated or deleted policy rules, but not who changed them, or how.
 
 ### Permissions API
 
