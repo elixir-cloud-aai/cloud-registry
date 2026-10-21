@@ -195,7 +195,7 @@ verifications (`PUT /services/{serviceId}/verification`) are limited in length
 | `version`, `environment`, `type.group`, `type.artifact`, `type.version` | 256 |
 
 Services stored before these limits were introduced may have longer values;
-they can't be updated or verified unchanged, only with the values shortened.
+they can't be updated unchanged, only with the values shortened.
 
 See [Access control](#access-control) for the roles and [Verified
 services](#verified-services) for verifications. Extensions of the GA4GH

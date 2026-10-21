@@ -14,8 +14,10 @@ from cloud_registry.utils import get_custom_config
 
 
 def check_streamed_size() -> None:
-    """Reject request bodies of unknown size over the size limit (`413`).
+    """Reject request bodies over the size limit (`413`).
 
+    Bodies with a larger declared size (`Content-Length`) are rejected
+    without reading them, also for operations that don't read their body.
     For bodies without `Content-Length` (e.g., chunked), Werkzeug reads up to
     `MAX_CONTENT_LENGTH` bytes only and silently drops the rest, so one more
     byte is read here to tell whether the body is larger. The body is cached
@@ -25,9 +27,11 @@ def check_streamed_size() -> None:
         werkzeug.exceptions.RequestEntityTooLarge: The body is larger than
             the size limit.
     """
-    if request.content_length is not None:
-        return  # checked by Werkzeug, by the declared size
     limit = current_app.config["MAX_CONTENT_LENGTH"]
+    if request.content_length is not None:
+        if request.content_length > limit:
+            raise RequestEntityTooLarge()
+        return
     request.max_content_length = limit + 1
     # cached (`cache=True`, the default), so Connexion reads the same data
     if len(request.get_data()) > limit:
@@ -48,8 +52,9 @@ def create_app() -> App:
     # Werkzeug rejects larger request bodies (`413`) when the request stream
     # is first accessed, i.e., when Connexion builds its request, before the
     # access token is checked and the body is parsed; declared sizes
-    # (`Content-Length`) are rejected without reading the body. Bodies of
-    # unknown size are checked before each request, also before Connexion
+    # (`Content-Length`) are rejected without reading the body. Before each
+    # request, also before Connexion, declared sizes and bodies of unknown
+    # size are checked
     with app.app.app_context():
         limit = get_custom_config().max_content_length
     app.app.config["MAX_CONTENT_LENGTH"] = limit

@@ -259,6 +259,25 @@ def test_body_too_large_declared(client):
 
 
 @pytest.mark.parametrize(
+    "method, path",
+    [("GET", "/services"), ("DELETE", "/services/abc")],
+)
+def test_body_too_large_declared_unread(client, method, path):
+    """Requests with a declared size over the limit are rejected (`413`),
+    also for operations that don't read their body, before the access token
+    is checked.
+    """
+    stream = io.BytesIO(b"")
+    response = client.open(
+        f"{BASE}{path}",
+        method=method,
+        input_stream=stream,
+        environ_overrides={"CONTENT_LENGTH": str(MAX_CONTENT_LENGTH + 1)},
+    )
+    _assert_too_large(response)
+
+
+@pytest.mark.parametrize(
     "body",
     [
         _body(MAX_CONTENT_LENGTH + 1),
