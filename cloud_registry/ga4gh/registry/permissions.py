@@ -44,9 +44,9 @@ USER_NAMES = "user_names"
 def check_admin_groups() -> None:
     """Check that groups are mapped to the role `admin`, and log them.
 
-    Without such groups, nobody can manage services they don't own or set the
-    service info, so this is an error unless
-    `custom.access_control.require_admin` is false.
+    Without such groups, nobody can manage services they don't own, register
+    services with chosen identifiers or verify services, so this is an error
+    unless `custom.access_control.require_admin` is false.
 
     Raises:
         RuntimeError: No group is mapped to the role `admin`, and
@@ -67,7 +67,8 @@ def check_admin_groups() -> None:
     else:
         logger.warning(
             "No group is mapped to the role 'admin', so nobody can manage "
-            "services they don't own or set the service info"
+            "services they don't own, register services with chosen "
+            "identifiers or verify services"
         )
 
 

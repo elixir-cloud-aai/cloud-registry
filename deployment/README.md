@@ -20,8 +20,8 @@ config on startup (via `FOCA_CONFIG_OVERLAY`):
 
 The overlay requires an image built with FOCA 0.14 or later (e.g.,
 `elixircloud/cloud-registry:20261020` or later, any `dev` or `sha-<commit>`
-image, or any release from the first one tagged from Git on; see the release
-notes); older images ignore it.
+image, or any release from 0.3.0 on, the first one tagged from Git; see its
+[release notes](../docs/releases/0.3.0.md)); older images ignore it.
 
 Each deployment must set the audience (`config.security.auth.audience`;
 rendering fails without it, as the app would refuse to start, unless
@@ -429,15 +429,28 @@ Deployment is called after `cloud_registry.appName`, by default
 Once the new release works, delete a retained volume
 (`kubectl delete pv <name>`) and the local dump.
 
-Since app version 0.3.0 (the first release after 0.2.0), services are unique by
-URL and API type. Upgrade to it with the app scaled to 0 replicas (`kubectl
-scale deploy/<appName> --replicas=0 -n <namespace>`, then `helm upgrade`), so
-that no pod of the old version registers services while the new one adds keys
-to the stored ones. If stored services have invalid URLs or the same URL and
-API type, the new version refuses to start and names them: fix or delete them
-in MongoDB (see "Duplicate services" in the
+### To app version 0.3.0
+
+Since app version 0.3.0, services are unique by URL and API type. For
+releases installed with the current chart (from the repository) that run an
+older image, upgrade with the app scaled to 0 replicas, so that no pod of the
+old version registers services while the new one adds keys to the stored
+ones:
+
+```bash
+kubectl scale deploy/cloud-registry -n <namespace> --replicas=0
+helm upgrade cloud-registry . -n <namespace> -f values-prod.yaml
+```
+
+(Releases of the legacy charts are uninstalled and reinstalled instead, see
+above; after restoring their data, the new version adds the keys on its first
+start.) If stored services have invalid URLs or the same URL and API type,
+the new version refuses to start and names them: fix or delete them in
+MongoDB (see "Duplicate services" in the
 [README](../README.md#duplicate-services) and [Authentication](#authentication)
-for credentials).
+for credentials). See the [release notes](../docs/releases/0.3.0.md) for all
+breaking changes; for the ELIXIR deployment, a fresh install with an empty
+database is recommended there.
 
 ## Probes
 
