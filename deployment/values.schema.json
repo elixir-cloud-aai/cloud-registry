@@ -78,7 +78,7 @@
     },
     "cloud_registry": {
       "type": "object",
-      "required": ["image", "probePath"],
+      "required": ["image", "probePath", "gunicorn"],
       "properties": {
         "image": {
           "type": "string",
@@ -137,6 +137,52 @@
         },
         "tmpSizeLimit": {
           "$ref": "#/$defs/tmpSizeLimit"
+        },
+        "gunicorn": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["workers", "threads", "timeout", "gracefulTimeout", "keepalive", "extraArgs"],
+          "description": "Settings of Gunicorn, the image's WSGI server (via GUNICORN_CMD_ARGS)",
+          "properties": {
+            "workers": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64,
+              "description": "Worker processes; each loads the whole app (about 55Mi)"
+            },
+            "threads": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 256,
+              "description": "Threads per worker"
+            },
+            "timeout": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600,
+              "description": "Seconds after which workers that do not respond are restarted"
+            },
+            "gracefulTimeout": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3600,
+              "description": "Seconds that workers get to finish requests on shutdown; the termination grace period is 10 seconds longer"
+            },
+            "keepalive": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3600,
+              "description": "Seconds after which idle keep-alive connections are closed (0: no keep-alive)"
+            },
+            "extraArgs": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[^']*$"
+              },
+              "description": "Further Gunicorn options (no single quotes)"
+            }
+          }
         }
       }
     }

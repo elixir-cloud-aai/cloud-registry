@@ -98,6 +98,24 @@ cloud_registry:
   # Size limit of the `emptyDir` at `/tmp` (the pod is evicted if it is
   # exceeded): a quantity (e.g., `64Mi`) or a number of bytes; `null` for none
   tmpSizeLimit: 64Mi
+  # Gunicorn, the image's WSGI server (passed via `GUNICORN_CMD_ARGS`; see
+  # deployment/README.md, Server). Each worker loads the whole app (about
+  # 55Mi), so raise the memory in `resources` before raising `workers`
+  gunicorn:
+    # Worker processes, and threads per worker (requests served at once)
+    workers: 1
+    threads: 4
+    # Seconds after which workers that do not respond are restarted
+    timeout: 30
+    # Seconds that workers get to finish requests on shutdown; the pod's
+    # termination grace period is 10 seconds longer
+    gracefulTimeout: 20
+    # Seconds after which idle keep-alive connections are closed (0: no
+    # keep-alive)
+    keepalive: 5
+    # Further Gunicorn options, e.g., `["--access-logfile", "-"]` for an
+    # access log (the app logs each request already)
+    extraArgs: []
 
 mongodb:
   # MongoDB 8.0 refuses to start on Linux kernels 6.19 to 7.0.13

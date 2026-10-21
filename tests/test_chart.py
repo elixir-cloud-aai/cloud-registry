@@ -19,6 +19,7 @@ from tests.helm import (
     render_with,
 )
 from tests.test_config import CONFIG_FILE
+from tests.test_gunicorn_config import load_settings
 
 NO_AUTH = ("--set", "mongodb.auth.enabled=false")
 NO_INGRESS = ("--set", "cloud_registry.ingress.enabled=false")
@@ -34,6 +35,8 @@ TMP_SIZE_LIMIT = "64Mi"
 BODY_SIZE = "nginx.ingress.kubernetes.io/proxy-body-size"
 BODY_SIZE_LIMIT = str(MAX_CONTENT_LENGTH)
 PROBES = ("startupProbe", "readinessProbe", "livenessProbe")
+# Environment variables of the app with literal values (no credentials)
+APP_ENV = {"FOCA_CONFIG_OVERLAY", "GUNICORN_CMD_ARGS"}
 # Default image tag
 APP_VERSION = yaml.safe_load((CHART / "Chart.yaml").read_text())["appVersion"]
 
@@ -241,7 +244,7 @@ def test_auth_disabled():
     docs = _render(*NO_AUTH, mongodb_secret=None)
     for name in (APP, MONGODB):
         assert not _secret_refs(_container(docs, name))
-    assert _literal_env(_container(docs, APP)) == {"FOCA_CONFIG_OVERLAY"}
+    assert _literal_env(_container(docs, APP)) == APP_ENV
     assert _literal_env(_container(docs, MONGODB)) == set()
     assert ("ConfigMap", INIT_SCRIPT) not in docs
     assert _init_script_volumes(docs) == ([], [])
@@ -263,7 +266,7 @@ def test_auth_enabled():
         "MONGO_APP_PASSWORD": (MONGODB_SECRET, "password"),
     }
     # No other variables, e.g., with literal credentials
-    assert _literal_env(app) == {"FOCA_CONFIG_OVERLAY"}
+    assert _literal_env(app) == APP_ENV
     assert _literal_env(mongodb) == set()
     script = docs[("ConfigMap", INIT_SCRIPT)]["data"]["create-app-user.js"]
     assert "process.env.MONGO_APP_PASSWORD" in script
@@ -538,6 +541,79 @@ def test_tmp_size_limit(tmp_path, name, values):
     assert _tmp_volume(docs, name)["emptyDir"] == {"sizeLimit": "67108864"}
     docs = _render("--set", f"{values}.tmpSizeLimit=null")
     assert _tmp_volume(docs, name)["emptyDir"] == {}
+
+
+def _gunicorn_args(docs: dict) -> str:
+    """Get the Gunicorn options of the app (`GUNICORN_CMD_ARGS`)."""
+    env = _container(docs, APP)["env"]
+    (args,) = [var["value"] for var in env if var["name"] == "GUNICORN_CMD_ARGS"]
+    return args
+
+
+def test_gunicorn_defaults(monkeypatch):
+    """By default, Gunicorn gets the image's settings, and the termination
+    grace period is 10 seconds longer than its graceful timeout.
+    """
+    docs = _render()
+    cfg = load_settings(monkeypatch, _gunicorn_args(docs)).cfg
+    image = load_settings(monkeypatch).cfg
+    for name in ("workers", "threads", "timeout", "graceful_timeout", "keepalive"):
+        assert getattr(cfg, name) == getattr(image, name), name
+    assert _pod(docs, APP)["terminationGracePeriodSeconds"] == 30
+
+
+def test_gunicorn_values(monkeypatch, tmp_path):
+    """Gunicorn's settings can be changed (also from values files, which
+    have floats), with further options, which may contain spaces.
+    """
+    values = {
+        "workers": 2,
+        "threads": 8,
+        "timeout": 60,
+        "gracefulTimeout": 45,
+        "keepalive": 0,
+        "extraArgs": ["--access-logfile", "-", "--access-logformat", "%(h)s %(r)s"],
+    }
+    values_file = tmp_path / "values.yaml"
+    values_file.write_text(yaml.safe_dump({"cloud_registry": {"gunicorn": values}}))
+    docs = _render("-f", str(values_file))
+    cfg = load_settings(monkeypatch, _gunicorn_args(docs)).cfg
+    assert (cfg.workers, cfg.threads, cfg.timeout) == (2, 8, 60)
+    assert (cfg.graceful_timeout, cfg.keepalive) == (45, 0)
+    assert (cfg.accesslog, cfg.access_log_format) == ("-", "%(h)s %(r)s")
+    assert _pod(docs, APP)["terminationGracePeriodSeconds"] == 55
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ("--set", "cloud_registry.gunicorn.workers=0"),
+        ("--set", "cloud_registry.gunicorn.threads=1.5"),
+        ("--set-string", "cloud_registry.gunicorn.timeout=30"),
+        ("--set", "cloud_registry.gunicorn.gracefulTimeout=null"),
+        ("--set", "cloud_registry.gunicorn.keepalive=-1"),
+        ("--set-json", """cloud_registry.gunicorn.extraArgs=["--name='x'"]"""),
+        ("--set", "cloud_registry.gunicorn.preload=true"),
+        ("--set", "cloud_registry.gunicorn=null"),
+    ],
+    ids=[
+        "workers",
+        "threads",
+        "timeout",
+        "graceful",
+        "keepalive",
+        "quote",
+        "unknown",
+        "null",
+    ],
+)
+def test_gunicorn_invalid(args):
+    """Gunicorn's settings must be integers in their ranges, further options
+    must not contain single quotes, and other settings are rejected.
+    """
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render(*args)
+    assert "gunicorn" in exc.value.stderr
 
 
 def test_security_context_user_ids():

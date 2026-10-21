@@ -197,3 +197,24 @@ emptyDir:
   sizeLimit: {{ ternary . (int64 . | toString) (kindIs "string" .) | quote }}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Gunicorn options (`GUNICORN_CMD_ARGS`) from `cloud_registry.gunicorn`: the
+numbers (floats from values files) as integers, followed by `extraArgs`, each
+in single quotes, as Gunicorn splits the options like shell words (the schema
+rejects single quotes in them).
+*/}}
+{{- define "cloud-registry.gunicornArgs" -}}
+{{- $g := .Values.cloud_registry.gunicorn -}}
+{{- $args := list
+  "--workers" (int $g.workers)
+  "--threads" (int $g.threads)
+  "--timeout" (int $g.timeout)
+  "--graceful-timeout" (int $g.gracefulTimeout)
+  "--keep-alive" (int $g.keepalive)
+-}}
+{{- range $g.extraArgs -}}
+{{- $args = append $args (squote .) -}}
+{{- end -}}
+{{- join " " $args -}}
+{{- end -}}

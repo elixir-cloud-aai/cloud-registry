@@ -14,7 +14,7 @@ CONFIG = "python:cloud_registry.gunicorn_config"
 APP = "cloud_registry.app:create_app()"
 
 
-def _load(monkeypatch, cmd_args: str | None = None) -> WSGIApplication:
+def load_settings(monkeypatch, cmd_args: str | None = None) -> WSGIApplication:
     """Load the Gunicorn config as the image's command does, optionally with
     `GUNICORN_CMD_ARGS`.
     """
@@ -32,7 +32,7 @@ def _load(monkeypatch, cmd_args: str | None = None) -> WSGIApplication:
 
 def test_settings(monkeypatch):
     """Gunicorn loads the settings, without preloading the app."""
-    cfg = _load(monkeypatch).cfg
+    cfg = load_settings(monkeypatch).cfg
     assert cfg.bind == ["0.0.0.0:8080"]
     assert cfg.worker_class_str == "gthread"
     assert (cfg.workers, cfg.threads) == (1, 4)
@@ -49,14 +49,14 @@ def test_settings(monkeypatch):
 def test_cmd_args(monkeypatch):
     """`GUNICORN_CMD_ARGS` overrides the settings."""
     args = shlex.join(["--workers", "2", "--threads", "8", "--timeout", "60"])
-    cfg = _load(monkeypatch, args).cfg
+    cfg = load_settings(monkeypatch, args).cfg
     assert (cfg.workers, cfg.threads, cfg.timeout) == (2, 8, 60)
     assert cfg.graceful_timeout == 20
 
 
 def test_app_uri(monkeypatch):
     """The app is created by the factory."""
-    assert _load(monkeypatch).app_uri == APP
+    assert load_settings(monkeypatch).app_uri == APP
 
 
 def test_worker_tmp_dir_shm(tmp_path):
