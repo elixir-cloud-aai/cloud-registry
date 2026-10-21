@@ -1,5 +1,7 @@
 """Mock data for testing."""
 
+from typing import Any
+
 DB = "serviceStore"
 # Media type of error responses, as in `config.yaml` (`exceptions.media_type`)
 ERROR_MEDIA_TYPE = "application/json"
@@ -9,23 +11,23 @@ MAX_CONTENT_LENGTH = 1024 * 1024
 MOCK_ID = "mock_id"
 MOCK_ID_ONE_CHAR = "A"
 CHARSET = "0123456789"
-INDEX_CONFIG = {"keys": [("id", 1)]}
-COLLECTION_CONFIG = {
+INDEX_CONFIG: dict[str, Any] = {"keys": [("id", 1)]}
+COLLECTION_CONFIG: dict[str, Any] = {
     "indexes": [INDEX_CONFIG],
 }
-DB_CONFIG = {
+DB_CONFIG: dict[str, Any] = {
     "collections": {
         "services": COLLECTION_CONFIG,
     },
 }
-MONGO_CONFIG = {
+MONGO_CONFIG: dict[str, Any] = {
     "host": "mongodb",
     "port": 27017,
     "dbs": {
         "serviceStore": DB_CONFIG,
     },
 }
-SERVICE_CONFIG = {
+SERVICE_CONFIG: dict[str, Any] = {
     "url_prefix": "http",
     "external_host": "1.2.3.4",
     "external_port": 80,
@@ -34,19 +36,23 @@ SERVICE_CONFIG = {
 }
 # Public URL of the app with `SERVICE_CONFIG`
 MOCK_PUBLIC_URL = "http://1.2.3.4:80/registry"
-SERVICES_CONFIG = {
+SERVICES_CONFIG: dict[str, Any] = {
     "id": {
         "charset": CHARSET,
         "length": 6,
     },
 }
-ENDPOINT_CONFIG = {
+ENDPOINT_CONFIG: dict[str, Any] = {
     "service": SERVICE_CONFIG,
     "services": SERVICES_CONFIG,
 }
-CUSTOM_CONFIG = {"endpoints": ENDPOINT_CONFIG}
-MOCK_TYPE = {"group": "org.ga4gh", "artifact": "beacon", "version": "1.0.0"}
-MOCK_SERVICE = {
+CUSTOM_CONFIG: dict[str, Any] = {"endpoints": ENDPOINT_CONFIG}
+MOCK_TYPE: dict[str, str] = {
+    "group": "org.ga4gh",
+    "artifact": "beacon",
+    "version": "1.0.0",
+}
+MOCK_SERVICE: dict[str, Any] = {
     "name": "name",
     "type": MOCK_TYPE,
     "organization": "organization",
