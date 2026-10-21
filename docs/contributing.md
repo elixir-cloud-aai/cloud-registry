@@ -128,8 +128,9 @@ checked in reviews.
   the tests), including `*args` and `**kwargs`, and generic types with their
   parameters (e.g., `dict[str, Any]`, not `dict`); add hints to module-level
   variables and to local variables whose type isn't obvious.
-  [mypy](https://mypy.readthedocs.io/) checks them
-  (`disallow_untyped_defs`, `disallow_any_generics`).
+  [mypy](https://mypy.readthedocs.io/) checks the hints, and that functions
+  and generic types have them (`disallow_untyped_defs`,
+  `disallow_any_generics`); reviews check those of variables.
 - **Tests:** [pytest](https://docs.pytest.org/), with coverage measured by
   [coverage](https://coverage.readthedocs.io/): keep it at 100% of
   `cloud_registry` (Codecov reports changes of the coverage on pull
