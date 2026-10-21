@@ -161,15 +161,14 @@
                     "additionalProperties": false,
                     "properties": {
                       "cidr": {"type": "string", "minLength": 1},
-                      "except": {"type": "array", "items": {"type": "string"}}
+                      "except": {"type": "array", "items": {"type": "string", "minLength": 1}}
                     }
                   }
                 },
                 "anyOf": [
                   {"required": ["ipBlock"], "maxProperties": 1},
                   {"not": {"required": ["ipBlock"]}}
-                ],
-                "$comment": "An ipBlock peer has no selectors (as Kubernetes requires)"
+                ]
               },
               "description": "NetworkPolicy peers allowed to connect to the app (by default, the namespace ingress-nginx); must not be empty"
             }

@@ -1166,6 +1166,14 @@ def test_network_policy_app_ingress_from(tmp_path):
             (
                 "--set-json",
                 "cloudRegistry.networkPolicy.ingressFrom="
+                '[{"ipBlock": {"cidr": "10.0.0.0/8", "excpt": []}}]',
+            ),
+            "additional properties 'excpt'",
+        ),
+        (
+            (
+                "--set-json",
+                "cloudRegistry.networkPolicy.ingressFrom="
                 '[{"ipBlock": {"cidr": "10.0.0.0/8"}, "podSelector": {}}]',
             ),
             "'/cloudRegistry/networkPolicy/ingressFrom/0': maxProperties",
@@ -1181,6 +1189,7 @@ def test_network_policy_app_ingress_from(tmp_path):
         "null",
         "unknown-peer-field",
         "ip-block-cidr",
+        "ip-block-unknown-field",
         "ip-block-selector",
         "enabled-type",
     ],

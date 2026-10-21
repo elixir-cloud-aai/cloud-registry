@@ -312,10 +312,10 @@ allow rules) before relying on these restrictions.
   ```
 
   `ingressFrom` replaces the default; rendering fails if it is empty (which
-  would allow all sources), and the schema rejects peers that Kubernetes would
-  reject (e.g., an `ipBlock` without `cidr` or with selectors). An ingress
-  controller in the host network (e.g., `hostNetwork: true`) connects from the
-  nodes' addresses, which namespace selectors don't match; allow them with an
+  would allow all sources), and the schema rejects unknown peer fields and an
+  `ipBlock` without `cidr` or combined with selectors. An ingress controller
+  in the host network (e.g., `hostNetwork: true`) connects from the nodes'
+  addresses, which namespace selectors don't match; allow them with an
   `ipBlock` instead.
 
 Neither policy blocks the probes: connections from the pod's own node, where
