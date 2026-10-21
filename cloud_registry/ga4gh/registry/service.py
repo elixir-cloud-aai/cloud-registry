@@ -6,7 +6,7 @@ import json
 import logging
 import re
 import string
-from urllib.parse import quote, urlsplit, urlunsplit
+from urllib.parse import SplitResult, quote, urlsplit, urlunsplit
 
 from foca.utils.misc import generate_id
 import idna
@@ -60,9 +60,7 @@ class DuplicateService(Conflict):
 
 
 class InvalidService(BadRequest):
-    """The URL or API type of a service, or the URL of a link, is missing or
-    invalid.
-    """
+    """The URL or API type of a service, or a link, is missing or invalid."""
 
 
 def normalize_url(url: str) -> str:
@@ -72,80 +70,51 @@ def normalize_url(url: str) -> str:
     international host names (IDNA), writes IPv6 addresses in canonical form,
     percent-encodes non-ASCII characters of paths, and removes trailing dots
     of hosts, default ports, dot segments, repeated and trailing slashes,
-    needless percent-encoding of paths, queries and fragments. The schemes
-    `http` and `https` give other URLs.
+    needless percent-encoding of paths, queries and fragments. `http` and
+    `https` URLs are different services.
 
     Args:
-        url: Service URL.
+        url: Service URL; leading and trailing spaces are ignored.
 
     Returns:
         Normalized URL.
 
     Raises:
-        InvalidService: The URL is invalid, has no scheme or an invalid or no
-            host, has a scheme other than `http` and `https`, user info, or
+        InvalidService: The URL is invalid (cf. `_split_http_url()`) or has
             malformed percent-encodings in its path.
     """
-    try:
-        parts = urlsplit(url.strip())
-        port = parts.port
-    except ValueError as exc:
-        raise InvalidService(f"Invalid service URL: {exc}.") from exc
-    if not parts.scheme or not parts.hostname:
-        raise InvalidService("Service URLs need a scheme and a host.")
+    parts, host = _split_http_url(url.strip(" "), subject="Service URLs")
     scheme = parts.scheme.lower()
-    if scheme not in DEFAULT_PORTS:
-        raise InvalidService("Service URLs must be HTTP(S) URLs.")
-    if parts.username is not None or parts.password is not None:
-        raise InvalidService("Service URLs must not contain user info.")
-    host = _normalize_host(parts.hostname)
-    if port is not None and port != DEFAULT_PORTS[scheme]:
-        host = f"{host}:{port}"
+    if parts.port is not None and parts.port != DEFAULT_PORTS[scheme]:
+        host = f"{host}:{parts.port}"
     return urlunsplit((scheme, host, _normalize_path(parts.path), "", ""))
 
 
 def check_link(url: object, field: str, schemes: frozenset[str] = frozenset()) -> None:
-    """Check that the URL of a link is a valid HTTP(S) URL.
+    """Check that the URL of a link is valid.
 
-    Links are not compared, so not normalized, but checked like service
-    URLs (scheme, host, port and user info).
+    Links are not compared, so not normalized, but checked like service URLs
+    (cf. `_split_http_url()`).
 
     Args:
         url: URL of the link.
         field: Name of the field with the URL, for error messages.
         schemes: Schemes allowed besides `http` and `https`, for URLs with a
-            path (e.g., an email address) but no host.
+            path (e.g., an email address) but no authority (`//host`).
 
     Raises:
-        InvalidService: The URL is not a string or is invalid: it contains
-            whitespace or control characters, has a scheme other than `http`,
-            `https` and `schemes`, no host (HTTP(S)) or path (other schemes),
-            user info, or an invalid host or port.
+        InvalidService: The URL is not a string, or invalid: neither an
+            HTTP(S) URL (cf. `_split_http_url()`) nor a URL with one of
+            `schemes`, a path, no authority, whitespace or control characters.
     """
+    subject = f"URLs in '{field}'"
     if not isinstance(url, str):
-        raise InvalidService(f"'{field}' must be a string.")
-    if any(char.isspace() or not char.isprintable() for char in url):
-        raise InvalidService(
-            f"'{field}' must not contain whitespace or control characters."
-        )
-    try:
-        parts = urlsplit(url)
-        _ = parts.port  # raises `ValueError` for invalid ports
-    except ValueError as exc:
-        raise InvalidService(f"Invalid URL in '{field}': {exc}.") from exc
-    scheme = parts.scheme.lower()
-    if scheme in schemes and not parts.netloc and parts.path:
+        raise InvalidService(f"{subject} must be strings.")
+    scheme, _, rest = url.partition(":")
+    if scheme.lower() in schemes and rest and not rest.startswith("//"):
+        _check_characters(url, subject=subject)
         return
-    if scheme not in DEFAULT_PORTS:
-        raise InvalidService(f"'{field}' must be an HTTP(S) URL.")
-    if not parts.hostname:
-        raise InvalidService(f"URLs in '{field}' need a host.")
-    if parts.username is not None or parts.password is not None:
-        raise InvalidService(f"URLs in '{field}' must not contain user info.")
-    try:
-        _normalize_host(parts.hostname)
-    except InvalidService as exc:
-        raise InvalidService(f"Invalid host in '{field}'.") from exc
+    _split_http_url(url, subject=subject)
 
 
 def check_links(data: dict) -> None:
@@ -167,11 +136,64 @@ def check_links(data: dict) -> None:
             check_link(value, field=".".join(path), schemes=schemes)
 
 
-def _normalize_host(host: str) -> str:
+def _check_characters(url: str, subject: str) -> None:
+    """Check that a URL has no whitespace or control characters.
+
+    URLs are stored as written, so such characters are rejected rather than
+    normalized: `urlsplit()` would strip some of them or drop tabs and
+    newlines, so that the stored URL would differ from the one checked.
+
+    Args:
+        url: URL.
+        subject: Subject of error messages (e.g., `Service URLs`).
+
+    Raises:
+        InvalidService: The URL has whitespace or control characters.
+    """
+    if any(char.isspace() or not char.isprintable() for char in url):
+        raise InvalidService(
+            f"{subject} must not contain whitespace or control characters."
+        )
+
+
+def _split_http_url(url: str, subject: str) -> tuple[SplitResult, str]:
+    """Split an HTTP(S) URL, checking it.
+
+    Args:
+        url: URL.
+        subject: Subject of error messages (e.g., `Service URLs`).
+
+    Returns:
+        Parts of the URL, and its normalized host (cf. `_normalize_host()`).
+
+    Raises:
+        InvalidService: The URL is invalid, has whitespace or control
+            characters, no scheme or an invalid or no host, a scheme other
+            than `http` and `https`, user info, or an invalid port (or `0`).
+    """
+    _check_characters(url, subject=subject)
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError as exc:
+        raise InvalidService(f"{subject} must be valid URLs: {exc}.") from exc
+    if parts.scheme and parts.scheme.lower() not in DEFAULT_PORTS:
+        raise InvalidService(f"{subject} must be HTTP(S) URLs.")
+    if not parts.scheme or not parts.hostname:
+        raise InvalidService(f"{subject} need a scheme and a host.")
+    if parts.username is not None or parts.password is not None:
+        raise InvalidService(f"{subject} must not contain user info.")
+    if port == 0:
+        raise InvalidService(f"{subject} need a valid port.")
+    return parts, _normalize_host(parts.hostname, subject=subject)
+
+
+def _normalize_host(host: str, subject: str = "Service URLs") -> str:
     """Normalize the host of a URL.
 
     Args:
         host: Lowercase host, without brackets for IPv6 addresses.
+        subject: Subject of error messages.
 
     Returns:
         Host without trailing dots; IPv6 addresses in canonical form, in
@@ -185,18 +207,18 @@ def _normalize_host(host: str) -> str:
         try:
             address = ipaddress.IPv6Address(address).compressed
         except ValueError as exc:
-            raise InvalidService(f"Invalid host in service URL: {exc}.") from exc
+            raise InvalidService(f"{subject} need a valid host: {exc}.") from exc
         return f"[{address}%{zone}]" if zone else f"[{address}]"
     if not host.isascii():
         try:
             host = idna.encode(host, uts46=True, transitional=False).decode()
         except idna.IDNAError as exc:
-            raise InvalidService(f"Invalid host in service URL: {exc}.") from exc
+            raise InvalidService(f"{subject} need a valid host: {exc}.") from exc
     if not REG_NAME.fullmatch(host):
-        raise InvalidService(f"Invalid host in service URL: '{host}'.")
+        raise InvalidService(f"{subject} need a valid host: '{host}'.")
     host = host.rstrip(".")
     if not host:
-        raise InvalidService("Service URLs need a scheme and a host.")
+        raise InvalidService(f"{subject} need a scheme and a host.")
     return host
 
 

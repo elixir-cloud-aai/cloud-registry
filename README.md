@@ -288,10 +288,11 @@ after normalizing common spellings: lowercase schemes and hosts, encoded
 international host names (IDNA 2008), canonical IPv6 addresses, percent-encoded
 non-ASCII characters in paths, and without trailing dots of hosts, default
 ports, dot segments (`/./`, `/../`), repeated and trailing slashes, needless
-percent-encoding in paths, queries and fragments. The same URL with `http`
-and `https` gives different services. Invalid URLs, URLs without scheme
-or host, with schemes other than `http` and `https`, and URLs with user info
-(`user:password@`) are rejected (`400 Bad Request`, saying why).
+percent-encoding in paths, queries and fragments. `http` and `https` URLs are
+different services. Invalid URLs, URLs without scheme or host, with schemes
+other than `http` and `https`, user info (`user:password@`), whitespace (other
+than leading and trailing spaces) or control characters are rejected (`400 Bad
+Request`, saying why).
 
 Registering a service again (`POST /services`), or changing a service to the
 URL and API type of another one (`PUT`), returns `409 Conflict`, with the
@@ -310,7 +311,8 @@ URLs would allow server-side request forgery.
 
 Services stored before this check get their key on startup. If some of them
 have invalid URLs, or the same URL and API type as another one, the app
-refuses to start and names all of them. Fix or delete them in the database,
+refuses to start and names all of them. Invalid URLs include URLs with schemes
+other than `http` and `https`, which were accepted before. Fix or delete them in the database,
 e.g., with `mongosh` (see the [deployment instructions][deployment-instructions]
 for access to the database of a Helm deployment):
 

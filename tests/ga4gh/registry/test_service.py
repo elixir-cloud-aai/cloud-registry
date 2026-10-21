@@ -203,6 +203,11 @@ def test_normalize_url(url, normalized):
         "https://user@tes.example.org",
         "https://tes.example.org:99999",
         "https://tes.example.org:port",
+        "https://tes.example.org:0",
+        "https://tes.exa\nmple.org",
+        "ht\ttps://tes.example.org",
+        "\u00a0https://tes.example.org",
+        "https://tes.example.org/v1\n",
         "http://[::1/v1",
         "https://.",
         "https://[::g]",
@@ -216,7 +221,8 @@ def test_normalize_url(url, normalized):
 )
 def test_normalize_url_invalid(url):
     """Invalid URLs, URLs without scheme or host, with schemes other than
-    `http` and `https`, user info or invalid ports or hosts are rejected.
+    `http` and `https`, user info, invalid ports or hosts, whitespace other
+    than surrounding spaces, or control characters are rejected.
     """
     with pytest.raises(InvalidService):
         normalize_url(url)
@@ -239,22 +245,30 @@ def test_check_link(url):
 @pytest.mark.parametrize(
     "url, detail",
     [
-        (1, "must be a string"),
+        (1, "must be strings"),
         ("https://www.example.org/a b", "must not contain whitespace"),
-        ("https://www.example.org/\x00", "must not contain whitespace"),
-        ("https://www.example.org:port", "Invalid URL"),
-        ("http://[::1/docs", "Invalid URL"),
-        ("javascript:alert(1)", "must be an HTTP(S) URL"),
-        ("mailto:support@example.org", "must be an HTTP(S) URL"),
-        ("www.example.org/docs", "must be an HTTP(S) URL"),
-        ("https:///docs", "need a host"),
+        (" https://www.example.org", "must not contain whitespace"),
+        ("\u00a0https://www.example.org", "must not contain whitespace"),
+        ("ht\ttps://www.example.org", "must not contain whitespace"),
+        ("https://www.exa\nmple.org", "must not contain whitespace"),
+        ("https://www.example.org/\x00", "control characters"),
+        ("https://www.example.org:port", "must be valid URLs"),
+        ("http://[::1/docs", "must be valid URLs"),
+        ("https://www.example.org:0", "need a valid port"),
+        ("javascript:alert(1)", "must be HTTP(S) URLs"),
+        ("file:///etc/passwd", "must be HTTP(S) URLs"),
+        ("ftp://ftp.example.org/pub", "must be HTTP(S) URLs"),
+        ("mailto:support@example.org", "must be HTTP(S) URLs"),
+        ("www.example.org/docs", "need a scheme and a host"),
+        ("not a URL", "must not contain whitespace"),
+        ("https:///docs", "need a scheme and a host"),
         ("https://user@www.example.org", "must not contain user info"),
-        ("https://www<x>.example.org", "Invalid host"),
+        ("https://www<x>.example.org", "need a valid host"),
     ],
 )
 def test_check_link_invalid(url, detail):
     """Links must be HTTP(S) URLs with a valid host and port, and without
-    user info or whitespace.
+    user info, whitespace or control characters, saying why.
     """
     with pytest.raises(InvalidService) as exc_info:
         check_link(url, field="documentationUrl")
@@ -262,14 +276,31 @@ def test_check_link_invalid(url, detail):
     assert "'documentationUrl'" in exc_info.value.description
 
 
-def test_check_link_schemes():
-    """Links can have other allowed schemes, with a path but no host."""
-    check_link(
-        "MAILTO:support@example.org", field="contactUrl", schemes=frozenset({"mailto"})
-    )
-    for url in ["mailto:", "mailto://example.org/support"]:
-        with pytest.raises(InvalidService):
-            check_link(url, field="contactUrl", schemes=frozenset({"mailto"}))
+@pytest.mark.parametrize(
+    "url", ["mailto:support@example.org", "MAILTO:support@example.org"]
+)
+def test_check_link_schemes(url):
+    """Links can have other allowed schemes, with a path but no authority."""
+    check_link(url, field="contactUrl", schemes=frozenset({"mailto"}))
+
+
+@pytest.mark.parametrize(
+    "url, detail",
+    [
+        ("mailto:", "must be HTTP(S) URLs"),
+        ("mailto://example.org/support", "must be HTTP(S) URLs"),
+        ("mailto:support@example.org\n", "must not contain whitespace"),
+        ("mailto:a b@example.org", "must not contain whitespace"),
+    ],
+)
+def test_check_link_schemes_invalid(url, detail):
+    """Links with other allowed schemes need a path, but no authority,
+    whitespace or control characters.
+    """
+    with pytest.raises(InvalidService) as exc_info:
+        check_link(url, field="contactUrl", schemes=frozenset({"mailto"}))
+    assert exc_info.value.description.startswith("URLs in 'contactUrl' ")
+    assert detail in exc_info.value.description
 
 
 @pytest.mark.parametrize(
