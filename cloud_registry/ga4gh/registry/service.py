@@ -54,8 +54,8 @@ LINK_FIELDS: dict[tuple[str, ...], frozenset[str]] = {
     ("documentationUrl",): frozenset(),
     ("organization", "url"): frozenset(),
 }
-# Fields with timestamps (`format: date-time`), which jsonschema doesn't check
-# without an optional package
+# Fields with timestamps (`format: date-time`), which Connexion's request
+# validation doesn't check without an optional package (`rfc3339-validator`)
 DATE_TIME_FIELDS = ("createdAt", "updatedAt")
 # Identifiers that can't be used for services: dot segments, which clients
 # resolve in URLs, and `types`, as `/services/types` lists the service types
