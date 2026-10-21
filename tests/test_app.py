@@ -1148,11 +1148,12 @@ def _error_contents(
         for method, operation in path_item.items():
             if method not in HTTP_METHODS:
                 continue
-            for status, response in operation["responses"].items():
+            for status, declared in operation["responses"].items():
                 if status != "default" and str(status)[0] not in "45":
                     continue
-                if "$ref" in response:
-                    name = response["$ref"].rsplit("/", 1)[-1]
+                response = declared
+                if "$ref" in declared:
+                    name = declared["$ref"].rsplit("/", 1)[-1]
                     response = spec["components"]["responses"][name]
                 yield f"{method.upper()} {path} {status}", response.get("content")
 

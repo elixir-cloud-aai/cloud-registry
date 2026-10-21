@@ -114,9 +114,12 @@ checked in reviews.
   extras `dev` and `docs`. Don't add `setup.py` or requirements files.
 - **Formatting and linting:** [ruff](https://docs.astral.sh/ruff/) formats
   the code (`ruff format`, compatible with Black, 88 characters per line) and
-  lints it (`ruff check`) with the rules of pycodestyle, Pyflakes, isort,
-  flake8-bugbear, pyupgrade, bandit (security), logging format and
-  pydocstyle.
+  lints it (`ruff check`) with the rule set shared with FOCA: pycodestyle,
+  Pyflakes, isort, flake8-bugbear, flake8-comprehensions, flake8-simplify,
+  Pylint, Ruff's own rules, pyupgrade, bandit (security), logging format and
+  pydocstyle (`pyproject.toml`, where each ignored rule says why). Prefer
+  explicit checks to suppressions (`# noqa`, `# type: ignore`); justify the
+  rare exceptions in the comment.
 - **Docstrings:** Google-style docstrings at all levels: packages, modules,
   classes, methods and functions, also private ones and tests, with a
   one-line summary and, where applicable, the sections `Args`, `Returns` (or

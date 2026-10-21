@@ -152,7 +152,8 @@ def test_is_date_time(value: object) -> None:
         "2020-11-08T10:20:30",
         "2020-11-08 10:20:30Z",
         "2020-11-08T10:20:30+0100",
-        "２０２０-11-08T10:20:30Z",
+        # fullwidth digits (non-ASCII digits that `\d` would match)
+        "\uff12\uff10\uff12\uff10-11-08T10:20:30Z",
         "",
     ],
     ids=[
