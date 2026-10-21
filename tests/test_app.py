@@ -723,8 +723,10 @@ def test_service_info_served_by_foca(app):
         for rule in app.app.url_map.iter_rules()
         if rule.rule == f"{BASE}/service-info"
     )
+    # both unwrapped, as FOCA's controller is itself decorated (traffic
+    # logging)
     view = inspect.unwrap(app.app.view_functions[rule.endpoint])
-    assert view is foca.api.service_info.getServiceInfo
+    assert view is inspect.unwrap(foca.api.service_info.getServiceInfo)
 
 
 def test_service_info_configured(app, client):

@@ -2,7 +2,7 @@ connexion>=2.15.1,<3.0.0
 # TODO(#104): FOCA 0.15.0 is not released yet, so its release candidate (a
 # commit on its `dev` branch) is installed from Git; once it is released,
 # require `foca>=0.15.0,<0.16` instead and remove Git from the `Dockerfile`
-foca @ git+https://github.com/elixir-cloud-aai/foca.git@5f07646ba101e58c9759f205511b6cbf273237a8
+foca @ git+https://github.com/elixir-cloud-aai/foca.git@43d95268f0f58048ab133f98f741d4a16f932063
 gunicorn>=26.2.0,<27
 idna>=3.0,<4
 jsonschema>=4.17.3,<5
