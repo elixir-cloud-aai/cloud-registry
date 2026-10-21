@@ -379,7 +379,9 @@ def test_put_duplicate(client, admin_headers):
     [
         ("https://user:secret@tes.example.org", "must not contain user info"),
         ("tes.example.org/v1", "need a scheme and a host"),
-        ("http://[::1/v1", "Invalid service URL"),
+        ("http://[::1/v1", "must be valid URLs"),
+        ("https://tes.exa\nmple.org", "must not contain whitespace"),
+        ("ftp://tes.example.org", "must be HTTP(S) URLs"),
     ],
 )
 def test_service_url_invalid(client, admin_headers, method, path, url, detail):
@@ -392,6 +394,118 @@ def test_service_url_invalid(client, admin_headers, method, path, url, detail):
     assert response.json["title"] == "Bad request"
     assert detail in response.json["detail"]
     assert "Location" not in response.headers
+
+
+def _service_with(field, value):
+    """Service with a URL field (`organization.url` for the organization's)
+    set to a value.
+    """
+    if field == "organization.url":
+        return _service(organization={**SERVICE["organization"], "url": value})
+    return _service(**{field: value})
+
+
+URL_FIELDS = ["url", "contactUrl", "documentationUrl", "organization.url"]
+
+
+@pytest.mark.parametrize("method, path", [("post", ""), ("put", "/abc")])
+@pytest.mark.parametrize(
+    "service, field",
+    [
+        (_service(name="My \ud800 TES"), "name"),
+        (
+            _service(type={"group": "org.\udfff", "artifact": "tes", "version": "1"}),
+            "type.group",
+        ),
+    ],
+)
+def test_service_surrogate(client, admin_headers, method, path, service, field):
+    """Services with unpaired surrogates in any string, which can't be
+    stored, are rejected (`400`), naming the field.
+    """
+    response = getattr(client, method)(
+        f"{BASE}/services{path}", json=service, headers=admin_headers
+    )
+    _assert_error(response, 400)
+    assert f"'{field}'" in response.json["detail"]
+    assert client.get(f"{BASE}/services").json == []
+
+
+@pytest.mark.parametrize("field", URL_FIELDS)
+def test_service_url_surrogate(client, admin_headers, field):
+    """URLs with unpaired surrogates, which can't be encoded, are rejected
+    (`400`), not failing later (`500`).
+    """
+    response = client.post(
+        f"{BASE}/services",
+        json=_service_with(field, "https://example.org/\ud800"),
+        headers=admin_headers,
+    )
+    _assert_error(response, 400)
+    assert client.get(f"{BASE}/services").json == []
+
+
+@pytest.mark.parametrize("method, path", [("post", ""), ("put", "/abc")])
+@pytest.mark.parametrize("field", URL_FIELDS)
+def test_service_url_not_http(client, admin_headers, method, path, field):
+    """URLs of services, contacts, documentation and organizations must be
+    HTTP(S) URLs (cf. the unit tests of `check_link()` for other cases).
+    """
+    response = getattr(client, method)(
+        f"{BASE}/services{path}",
+        json=_service_with(field, "javascript:alert(1)"),
+        headers=admin_headers,
+    )
+    _assert_error(response, 400)
+    assert response.mimetype == "application/problem+json"
+    assert "Location" not in response.headers
+    assert client.get(f"{BASE}/services").json == []
+
+
+@pytest.mark.parametrize("method, path", [("post", ""), ("put", "/abc")])
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("url", "HTTPS://TES.Example.org/ga4gh/tes/v1"),
+        ("contactUrl", "https://www.example.org/contact?topic=tes"),
+        ("documentationUrl", "http://docs.example.org/tes#top"),
+        ("organization.url", "HttP://www.example.org:8080"),
+    ],
+)
+def test_service_url_http(client, admin_headers, method, path, field, value):
+    """HTTP(S) URLs, with schemes in any case, are accepted and stored as
+    written.
+    """
+    response = getattr(client, method)(
+        f"{BASE}/services{path}",
+        json=_service_with(field, value),
+        headers=admin_headers,
+    )
+    assert response.status_code == 201, response.json
+    (stored,) = client.get(f"{BASE}/services").json
+    assert stored == {**_service_with(field, value), "id": response.json}
+
+
+@pytest.mark.parametrize("method, path", [("post", ""), ("put", "/abc")])
+def test_service_contact_url_mailto(client, admin_headers, method, path):
+    """Contact URLs can also be email addresses, as in the GA4GH service info
+    specification, but other links can't.
+    """
+    mailto = "mailto:support@example.org"
+    response = getattr(client, method)(
+        f"{BASE}/services{path}",
+        json=_service(contactUrl=mailto),
+        headers=admin_headers,
+    )
+    assert response.status_code == 201, response.json
+    stored = client.get(f"{BASE}/services/{response.json}").json
+    assert stored["contactUrl"] == mailto
+    response = getattr(client, method)(
+        f"{BASE}/services{path}",
+        json=_service(documentationUrl=mailto),
+        headers=admin_headers,
+    )
+    _assert_error(response, 400)
 
 
 def test_put_service(client, admin_headers):

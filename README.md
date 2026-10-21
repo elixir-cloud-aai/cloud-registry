@@ -170,6 +170,17 @@ the body and its [public URL](#public-urls) in the `Location` header; updating
 a service (`PUT`) returns `200 OK`. Identifiers `.` and `..` are rejected
 (`400 Bad Request`).
 
+URLs in registrations must be HTTP(S) URLs with a host: the service `url`,
+`documentationUrl`, `organization.url` and `contactUrl`, which can also be an
+email address (`mailto:`); other URLs are rejected (`400 Bad Request`, saying
+why). Links are stored as written, so they must not contain whitespace (unlike
+service URLs, which may have leading and trailing spaces), control or format
+characters (except joiners in international host names), and no URLs may
+contain malformed percent-encodings. Anyone logged in can register services, so
+clients should treat registry content as untrusted: escape it rather than
+render it as HTML, and don't follow or fetch its URLs blindly (e.g., to
+internal addresses).
+
 Request bodies are limited to 1 MiB by default (`413 Content Too Large`; see
 [Request size limit](#request-size-limit)). Strings in registered services and
 verifications are limited in length (longer ones are rejected with `400 Bad
@@ -288,10 +299,11 @@ after normalizing common spellings: lowercase schemes and hosts, encoded
 international host names (IDNA 2008), canonical IPv6 addresses, percent-encoded
 non-ASCII characters in paths, and without trailing dots of hosts, default
 ports, dot segments (`/./`, `/../`), repeated and trailing slashes, needless
-percent-encoding in paths, queries and fragments. URLs with other schemes
-(e.g., `http` and `https`) are different services. Invalid URLs, URLs without
-scheme or host, and URLs with user info (`user:password@`) are rejected (`400
-Bad Request`, saying why).
+percent-encoding in paths, queries and fragments. `http` and `https` URLs are
+different services. Invalid URLs, URLs without scheme or host, with schemes
+other than `http` and `https`, user info (`user:password@`), whitespace (other
+than leading and trailing spaces), control or format characters are rejected
+(`400 Bad Request`, saying why).
 
 Registering a service again (`POST /services`), or changing a service to the
 URL and API type of another one (`PUT`), returns `409 Conflict`, with the
@@ -308,11 +320,15 @@ URL (e.g., by fetching `{url}/service-info` on registration) was rejected:
 the identifier in service info is self-declared, and fetching user-supplied
 URLs would allow server-side request forgery.
 
-Services stored before this check get their key on startup. If some of them
-have invalid URLs, or the same URL and API type as another one, the app
-refuses to start and names all of them. Fix or delete them in the database,
-e.g., with `mongosh` (see the [deployment instructions][deployment-instructions]
-for access to the database of a Helm deployment):
+Services stored before this check get their key on startup; only services
+without a key are checked again. If some of them have invalid URLs, or the same
+URL and API type as another one, the app refuses to start and names all of
+them. Invalid URLs include some that were accepted before: URLs with schemes
+other than `http` and `https`, whitespace or control characters, malformed
+percent-encodings (also in queries and fragments), or port 0. Fix or delete
+them in the database, e.g., with `mongosh` (see the [deployment
+instructions][deployment-instructions] for access to the database of a Helm
+deployment):
 
 ```javascript
 db.getSiblingDB("serviceStore").services.deleteOne({id: "<id>"})
