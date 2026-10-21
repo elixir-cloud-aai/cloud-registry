@@ -9,17 +9,16 @@ updates:
       - dependency-name: connexion
         update-types: ["version-update:semver-major"]
     groups:
+      # Requirements of the documentation (`requirements_docs.txt`), in
+      # pull requests of their own
+      docs-dependencies:
+        patterns: ["mkdocs", "mkdocs-*", "mkdocstrings", "mkdocstrings-*"]
       python-dependencies:
         patterns: ["*"]
-        exclude-patterns: ["connexion", "foca"]
-  # Requirements of the code documentation (Read the Docs)
-  - package-ecosystem: pip
-    directory: /docs/api
-    schedule:
-      interval: monthly
-    groups:
-      docs-dependencies:
-        patterns: ["*"]
+        exclude-patterns: [
+          "connexion", "foca",
+          "mkdocs", "mkdocs-*", "mkdocstrings", "mkdocstrings-*",
+        ]
   - package-ecosystem: github-actions
     directory: /
     schedule:

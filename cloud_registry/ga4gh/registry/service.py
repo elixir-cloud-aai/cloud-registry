@@ -495,7 +495,7 @@ class RegisterService:
 
         Args:
             data: Service metadata consistent with the
-            `ExternalServiceRegister` schema.
+                `ExternalServiceRegister` schema.
             id: Service identifier. Auto-generated if not provided.
             allow_create: With an identifier, whether the service may be
                 registered if it doesn't exist (e.g., for admins only, cf.

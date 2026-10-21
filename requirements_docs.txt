@@ -1,0 +1,6 @@
+# Requirements of the documentation (`mkdocs.yml`), built by Read the Docs
+# (`.readthedocs.yaml`) and in CI
+mkdocs==1.6.1
+mkdocs-material==9.7.7
+mkdocstrings==1.0.8
+mkdocstrings-python==2.0.10

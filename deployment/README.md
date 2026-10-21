@@ -80,8 +80,8 @@ cloudRegistry:
 
 `cloudRegistry.image` may also include a tag or digest (e.g.,
 `elixircloud/cloud-registry:0.3.0`, as in earlier chart versions); then
-`cloudRegistry.tag` must be empty. See "Versioning and releases" in the
-[README](../README.md#versioning-and-releases) for the image tags.
+`cloudRegistry.tag` must be empty. See [Versioning and
+releases](../docs/development.md#versioning-and-releases) for the image tags.
 
 ## Installation
 
@@ -143,8 +143,9 @@ By default, the chart creates an Ingress for `hostName`
   override) and serves HTTPS with it.
 
 The app rejects request bodies over `config.server.max_content_length` bytes
-(default: 1 MiB; see [Request size limit](../README.md#request-size-limit)).
-The Ingress sets the same limit for ingress-nginx, in bytes
+(default: 1 MiB; see [Request size
+limit](../docs/configuration.md#request-size-limit)). The Ingress sets the
+same limit for ingress-nginx, in bytes
 (`nginx.ingress.kubernetes.io/proxy-body-size`), so that larger requests are
 rejected before they reach the app; to raise the limit, e.g., to 8 MiB, set
 only the app's:
@@ -324,10 +325,10 @@ isolation" in the Kubernetes documentation).
 
 ## Server
 
-The image serves the app with Gunicorn on port 8080 (see "Server" in the
-[README](../README.md#server)). The chart passes the settings in
-`cloudRegistry.gunicorn` to it (via `GUNICORN_CMD_ARGS`); the defaults are
-the image's:
+The image serves the app with Gunicorn on port 8080 (see
+[Server](../docs/configuration.md#server) in the app's configuration). The
+chart passes the settings in `cloudRegistry.gunicorn` to it (via
+`GUNICORN_CMD_ARGS`); the defaults are the image's:
 
 ```yaml
 cloudRegistry:
@@ -516,11 +517,10 @@ helm upgrade cloud-registry . -n <namespace> -f values-prod.yaml
 above; after restoring their data, the new version adds the keys on its first
 start.) If stored services have invalid URLs or the same URL and API type,
 the new version refuses to start and names them: fix or delete them in
-MongoDB (see "Duplicate services" in the
-[README](../README.md#duplicate-services) and [Authentication](#authentication)
-for credentials). See the [release notes](../docs/releases/0.3.0.md) for all
-breaking changes; for the ELIXIR deployment, a fresh install with an empty
-database is recommended there.
+MongoDB (see [Stored services](../docs/upgrading.md#stored-services) and
+[Authentication](#authentication) for credentials). See the [release
+notes](../docs/releases/0.3.0.md) for all breaking changes; for the ELIXIR
+deployment, a fresh install with an empty database is recommended there.
 
 The values keys `host_name` and `cloud_registry` are renamed to `hostName`
 and `cloudRegistry` (rendering fails while the old keys are set): rename
