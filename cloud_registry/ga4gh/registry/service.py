@@ -789,6 +789,8 @@ def warn_url_schemes() -> None:
         except InvalidService:
             ids.append(f"'{service['id']}'")
         except ValueError:
+            # invalid URLs stored before URLs were checked can't be updated
+            # unchanged anyway (cf. "Stored services" in `docs/upgrading.md`)
             continue
     if ids:
         logger.warning(

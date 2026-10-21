@@ -848,9 +848,17 @@ class TestWarnUrlSchemes:
         services: Collection[dict[str, Any]],
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Without such services, nothing is logged."""
+        """Without such services, nothing is logged.
+
+        Also not for `http` URLs if `http` is allowed.
+        """
         services.insert_one({**MOCK_SERVICE, "id": MOCK_ID})
         with unit_app.app_context(), caplog.at_level(logging.WARNING):
+            warn_url_schemes()
+            services.insert_one(
+                {**MOCK_SERVICE, "id": "HTTP", "url": "http://beacon.example.org"}
+            )
+            get_custom_config().endpoints.services.url_schemes = ["http", "https"]
             warn_url_schemes()
         assert not caplog.records
 

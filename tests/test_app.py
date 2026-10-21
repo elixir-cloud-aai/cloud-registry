@@ -1274,7 +1274,9 @@ def test_create_app_url_schemes(
     services = mongo_client["serviceStore"]["services"]
     services.insert_one({**_service(url="http://tes.example.org"), "id": "PLAIN"})
     app = cloud_registry.app.create_app()
-    assert "url_schemes" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "url_schemes" in err
+    assert "'PLAIN'" in err
     response = app.app.test_client().get(f"{BASE}/services/PLAIN")
     assert response.status_code == 200
 
