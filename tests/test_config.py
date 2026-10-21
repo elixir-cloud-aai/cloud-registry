@@ -204,6 +204,8 @@ class TestChartOverlay:
             "cloud_registry.ingress.annotations.a=1",
             "cloud_registry.ingress.class=nginx",
             "cloud_registry.ingress.https.secret=tls",
+            "cloud_registry.tmpSizeLimit=1",
+            "mongodb.tmpSizeLimit=1",
         ],
         ids=[
             "config",
@@ -212,6 +214,8 @@ class TestChartOverlay:
             "ingress_annotation",
             "ingress_unknown",
             "ingress_https_unknown",
+            "app_tmp_size_limit",
+            "mongodb_tmp_size_limit",
         ],
     )
     def test_values_schema(self, value):

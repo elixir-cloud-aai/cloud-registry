@@ -150,6 +150,10 @@ exceptions:
     mapping: cloud_registry.exceptions.exceptions
 
 custom:
+    # Size limit of request bodies, in bytes (default: 1 MiB); larger requests
+    # are rejected with `413` before authentication and parsing. Keep the
+    # body size limit of the ingress or proxy in front of the app in line
+    max_content_length: 1048576
     # Refuse to start unless a group is mapped to the role `admin` (see
     # `security.access_control.group_mapping`)
     access_control:

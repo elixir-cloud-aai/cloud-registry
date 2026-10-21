@@ -26,6 +26,12 @@ ROUTE_API = ("--api-versions", "route.openshift.io/v1")
 INIT_SCRIPT = f"{MONGODB}-init-script"
 # Mount path of the containers' temporary directory
 TMP = "/tmp"  # noqa: S108 (a path in the container)
+# Default size limit of the temporary directories
+TMP_SIZE_LIMIT = "64Mi"
+# Annotation of ingress-nginx for the size limit of request bodies, and its
+# default, the app's limit (1 MiB)
+BODY_SIZE = "nginx.ingress.kubernetes.io/proxy-body-size"
+BODY_SIZE_LIMIT = "1m"
 PROBES = ("startupProbe", "readinessProbe", "livenessProbe")
 # Default image tag
 APP_VERSION = yaml.safe_load((CHART / "Chart.yaml").read_text())["appVersion"]
@@ -498,8 +504,30 @@ def test_security_context(name, writable):
     data = mounts.pop("/data/db", None)
     if name == MONGODB:
         assert data["persistentVolumeClaim"] == {"claimName": MONGODB}
+    assert mounts.pop(TMP)["emptyDir"] == {"sizeLimit": TMP_SIZE_LIMIT}
     for volume in mounts.values():
         assert volume["emptyDir"] == {}
+
+
+def _tmp_volume(docs: dict, name: str) -> dict:
+    """Get the volume of a Deployment mounted at `/tmp`."""
+    pod = _pod(docs, name)
+    (mount,) = [
+        m for m in pod["containers"][0]["volumeMounts"] if m["mountPath"] == TMP
+    ]
+    (volume,) = [vol for vol in pod["volumes"] if vol["name"] == mount["name"]]
+    return volume
+
+
+@pytest.mark.parametrize(
+    ("name", "values"), [(APP, "cloud_registry"), (MONGODB, "mongodb")]
+)
+def test_tmp_size_limit(name, values):
+    """The size limit of the temporary directory can be changed or removed."""
+    docs = _render("--set", f"{values}.tmpSizeLimit=1Gi")
+    assert _tmp_volume(docs, name)["emptyDir"] == {"sizeLimit": "1Gi"}
+    docs = _render("--set", f"{values}.tmpSizeLimit=null")
+    assert _tmp_volume(docs, name)["emptyDir"] == {}
 
 
 def test_security_context_user_ids():
@@ -557,11 +585,12 @@ def test_db_host(release, app):
 
 
 def test_ingress():
-    """The Ingress routes the host to the app's Service, without annotations
-    or class by default.
+    """The Ingress routes the host to the app's Service, without class by
+    default; its only annotation limits request bodies (for ingress-nginx)
+    to the app's limit.
     """
     ingress = _render()[("Ingress", APP)]
-    assert "annotations" not in ingress["metadata"]
+    assert ingress["metadata"]["annotations"] == {BODY_SIZE: BODY_SIZE_LIMIT}
     assert "ingressClassName" not in ingress["spec"]
     assert "tls" not in ingress["spec"]
     (rule,) = ingress["spec"]["rules"]
@@ -588,10 +617,25 @@ def test_ingress_options():
         "a.example.org/b": "c",
         "cert-manager.io/cluster-issuer": "letsencrypt-prod",
         "kubernetes.io/tls-acme": "false",
+        BODY_SIZE: BODY_SIZE_LIMIT,
     }
     assert ingress["spec"]["tls"] == [
         {"hosts": ["x"], "secretName": f"{APP}-ingress-secret"}
     ]
+
+
+def test_ingress_body_size():
+    """The size limit of request bodies can be changed or removed."""
+
+    def render(limit):
+        annotations = json.dumps({BODY_SIZE: limit})
+        args = ("--set-json", f"cloud_registry.ingress.annotations={annotations}")
+        return _render(*args)[("Ingress", APP)]
+
+    ingress = render("8m")
+    assert ingress["metadata"]["annotations"] == {BODY_SIZE: "8m"}
+    ingress = render(None)
+    assert "annotations" not in ingress["metadata"]
 
 
 def test_route():

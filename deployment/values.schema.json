@@ -45,6 +45,10 @@
         "securityContext": {
           "type": "object",
           "description": "Security context of the container (runAsUser and runAsGroup are omitted on OpenShift)"
+        },
+        "tmpSizeLimit": {
+          "type": ["string", "null"],
+          "description": "Size limit of the emptyDir at /tmp (a quantity, e.g., 64Mi); none if null"
         }
       }
     },
@@ -106,6 +110,10 @@
         "securityContext": {
           "type": "object",
           "description": "Security context of the container (runAsUser and runAsGroup are omitted on OpenShift)"
+        },
+        "tmpSizeLimit": {
+          "type": ["string", "null"],
+          "description": "Size limit of the emptyDir at /tmp (a quantity, e.g., 64Mi); none if null"
         }
       }
     }

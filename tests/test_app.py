@@ -2,16 +2,26 @@
 
 from copy import deepcopy
 from importlib.metadata import version
+import io
+import json
+import os
 import string
 
 import connexion
 from cryptography.hazmat.primitives.asymmetric import rsa
+from foca.security import auth
 import pytest
 import yaml
 
 import cloud_registry.app
 from cloud_registry.ga4gh.registry.service_info import InvalidServiceInfo
-from tests.conftest import ADMIN_GROUP, APP_DIR, make_headers
+from tests.conftest import (
+    ADMIN_GROUP,
+    APP_DIR,
+    CONFIG_OVERLAY,
+    make_headers,
+    mock_get,
+)
 
 BASE = "/ga4gh/registry/v1"
 # Public URL of the app, as configured in `config.yaml`
@@ -145,6 +155,164 @@ def test_service_invalid(client, headers, method, path):
         f"{BASE}/services{path}", json=service, headers=headers
     )
     _assert_error(response, 400)
+
+
+# Default size limit of request bodies (`custom.max_content_length`)
+MAX_CONTENT_LENGTH = 1024 * 1024
+
+
+def _body(size: int) -> bytes:
+    """A valid service as JSON of `size` bytes, padded with whitespace."""
+    body = json.dumps(_service()).encode()
+    assert len(body) <= size
+    return body.ljust(size)
+
+
+def _send(client, body, method="post", path="", headers=None, **kwargs):
+    """Send a request body to `/services`."""
+    return client.open(
+        f"{BASE}/services{path}",
+        method=method,
+        data=body,
+        content_type="application/json",
+        headers=headers or {},
+        **kwargs,
+    )
+
+
+def _record_idp_requests(monkeypatch) -> list:
+    """Record the requests to the (mock) identity provider."""
+    requests: list = []
+
+    def get(url, *args, **kwargs):
+        requests.append(url)
+        return mock_get(url, *args, **kwargs)
+
+    monkeypatch.setattr(auth.requests, "get", get)
+    return requests
+
+
+def test_max_content_length(app):
+    """Request bodies are limited to 1 MiB by default."""
+    assert app.app.config["MAX_CONTENT_LENGTH"] == MAX_CONTENT_LENGTH
+
+
+@pytest.mark.parametrize("method, path", [("POST", ""), ("PUT", "/abc")])
+@pytest.mark.parametrize("token", [False, True], ids=["no_token", "token"])
+def test_body_too_large(monkeypatch, client, admin_headers, method, path, token):
+    """Request bodies over the size limit are rejected (`413`, as problem
+    details) before the access token is checked, i.e., also without a token,
+    and without contacting the identity provider.
+    """
+    idp_requests = _record_idp_requests(monkeypatch)
+    response = _send(
+        client,
+        _body(MAX_CONTENT_LENGTH + 1),
+        method=method,
+        path=path,
+        headers=admin_headers if token else None,
+    )
+    _assert_error(response, 413)
+    assert response.mimetype == "application/problem+json"
+    assert response.json["title"] == "Content too large"
+    assert idp_requests == []
+    assert client.get(f"{BASE}/services").json == []
+
+
+def test_body_too_large_declared(client):
+    """Requests are rejected by their declared size (`Content-Length`),
+    without reading their body.
+    """
+    stream = io.BytesIO(json.dumps(_service()).encode())
+    response = client.post(
+        f"{BASE}/services",
+        input_stream=stream,
+        content_type="application/json",
+        environ_overrides={"CONTENT_LENGTH": str(MAX_CONTENT_LENGTH + 1)},
+    )
+    _assert_error(response, 413)
+    assert stream.tell() == 0
+
+
+def test_body_streamed(client):
+    """Chunked request bodies (of unknown size, with a stream terminated by
+    the server, as by Werkzeug's server) are read up to the size limit only;
+    Werkzeug truncates them instead of rejecting them, so larger JSON bodies
+    are malformed.
+    """
+    service = _service(description="x" * (2 * MAX_CONTENT_LENGTH))
+    stream = io.BytesIO(json.dumps(service).encode())
+    response = client.post(
+        f"{BASE}/services",
+        input_stream=stream,
+        content_type="application/json",
+        headers={**make_headers(), "Transfer-Encoding": "chunked"},
+        environ_overrides={"wsgi.input_terminated": True},
+    )
+    _assert_error(response, 400)
+    assert stream.tell() == MAX_CONTENT_LENGTH
+    assert client.get(f"{BASE}/services").json == []
+
+
+def test_body_at_limit(client, headers):
+    """Request bodies up to the size limit are accepted."""
+    response = _send(client, _body(MAX_CONTENT_LENGTH), headers=headers)
+    assert response.status_code == 201
+
+
+def test_max_content_length_configured(monkeypatch, tmp_path, app_env, headers):
+    """The size limit of request bodies is set from the config."""
+    path = tmp_path / "overlay.yaml"
+    path.write_text(yaml.safe_dump({"custom": {"max_content_length": 1000}}))
+    overlays = os.pathsep.join([str(CONFIG_OVERLAY), str(path)])
+    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", overlays)
+    app = cloud_registry.app.create_app()
+    assert app.app.config["MAX_CONTENT_LENGTH"] == 1000
+    client = app.app.test_client()
+    _assert_error(_send(client, _body(1001), headers=headers), 413)
+    assert _send(client, _body(1000), headers=headers).status_code == 201
+
+
+def _set_field(service: dict, field: str, value: str) -> dict:
+    """Set a field of a service, given as a dotted path."""
+    *parents, name = field.split(".")
+    obj = service
+    for parent in parents:
+        obj = obj[parent]
+    obj[name] = value
+    return service
+
+
+# Length limits of string fields of services (in `additions.openapi.yaml`);
+# URLs get a scheme and host
+@pytest.mark.parametrize(
+    "field, limit",
+    [
+        ("name", 1024),
+        ("description", 4096),
+        ("organization.name", 1024),
+        ("organization.url", 2048),
+        ("contactUrl", 2048),
+        ("documentationUrl", 2048),
+        ("environment", 256),
+        ("version", 256),
+        ("url", 2048),
+        ("type.group", 256),
+        ("type.artifact", 256),
+        ("type.version", 256),
+    ],
+)
+def test_service_length_limits(client, headers, field, limit):
+    """String fields of services are limited in length."""
+    prefix = "https://example.org/" if field.lower().endswith("url") else ""
+
+    def value(length: int) -> str:
+        return prefix + "a" * (length - len(prefix))
+
+    service = _set_field(_service(), field, value(limit + 1))
+    response = client.post(f"{BASE}/services", json=service, headers=headers)
+    _assert_error(response, 400)
+    _post(client, headers, _set_field(_service(), field, value(limit)))
 
 
 def test_get_service_not_found(client, headers):

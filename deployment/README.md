@@ -129,10 +129,33 @@ By default, the chart creates an Ingress for `host_name`
 (`cloud_registry.ingress`):
 
 - `className` sets the Ingress class (default: the cluster's default class);
-- `annotations` sets annotations, e.g., for the ingress controller;
+- `annotations` sets annotations, e.g., for the ingress controller; they
+  are merged with the default annotations, and `null` removes one;
 - `https.enabled` requests a certificate from cert-manager (via the
   ClusterIssuer `https.issuer`, by annotations that `annotations` can
   override) and serves HTTPS with it.
+
+The app rejects request bodies over 1 MiB (`config.custom.max_content_length`,
+in bytes; see [Request size limit](../README.md#request-size-limit)). By
+default, the Ingress sets the same limit for ingress-nginx
+(`nginx.ingress.kubernetes.io/proxy-body-size: "1m"`, which is also its own
+default), so that larger requests are rejected before they reach the app.
+Change both together, e.g., for 8 MiB:
+
+```yaml
+config:
+  custom:
+    max_content_length: 8388608
+cloud_registry:
+  ingress:
+    annotations:
+      nginx.ingress.kubernetes.io/proxy-body-size: "8m"
+```
+
+Other ingress controllers ignore the annotation (set it to `null` to remove
+it) and have their own settings, often without a limit by default (e.g.,
+Traefik's `Buffering` middleware with `maxRequestBodyBytes`); OpenShift Routes
+have no limit. There, only the app's limit applies.
 
 With `enabled: false`, the chart creates an OpenShift Route with TLS
 termination at the router instead, if the cluster serves Routes
@@ -144,11 +167,13 @@ cluster, and Helm prints a warning after installing.
 Both containers run as non-root users, without privilege escalation or
 capabilities, with the runtime's default seccomp profile and a read-only root
 file system; they write to `emptyDir` volumes (`/tmp`; for MongoDB also
-`/data/configdb`) and MongoDB to its data volume. The app image runs as user
-1000; the MongoDB image starts as root and switches to user `mongodb` (999),
-so the chart sets that user and group (`runAsUser`, `runAsGroup`), and
-`fsGroup` makes the data volume writable for it (unless the storage ignores
-`fsGroup`).
+`/data/configdb`) and MongoDB to its data volume. The `/tmp` volumes are
+limited to 64 MiB each (`tmpSizeLimit` of `cloud_registry` and `mongodb`;
+`null` removes the limit); the kubelet evicts pods that exceed it. The app
+image runs as user 1000; the MongoDB image starts as root and switches to user
+`mongodb` (999), so the chart sets that user and group (`runAsUser`,
+`runAsGroup`), and `fsGroup` makes the data volume writable for it (unless
+the storage ignores `fsGroup`).
 
 On OpenShift (detected by the API `security.openshift.io/v1`), the chart
 omits `runAsUser`, `runAsGroup` and `fsGroup`, as OpenShift assigns them from

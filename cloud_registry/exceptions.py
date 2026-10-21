@@ -16,6 +16,7 @@ from werkzeug.exceptions import (
     HTTPException,
     InternalServerError,
     NotFound,
+    RequestEntityTooLarge,
 )
 
 # exceptions raised in app context
@@ -64,6 +65,11 @@ exceptions = {
         "title": "Conflict",
         "detail": "The request conflicts with the current state of the resource.",
         "status": 409,
+    },
+    RequestEntityTooLarge: {
+        "title": "Content too large",
+        "detail": "The request body exceeds the size limit.",
+        "status": 413,
     },
     InternalServerError: {
         "title": "Internal server error",

@@ -13,7 +13,6 @@ import time
 
 from cryptography.hazmat.primitives.asymmetric import rsa
 from flask import Flask
-from foca import Foca
 from foca.config.access import set_app_config
 from foca.database import register_mongodb
 from foca.models.config import Config, MongoConfig
@@ -22,6 +21,7 @@ import jwt
 import mongomock
 import pytest
 
+from cloud_registry.app import create_app
 from cloud_registry.ga4gh.registry.service import KEY as SERVICE_KEY
 from cloud_registry.service_models.custom_config import CustomConfig
 from tests.mock_data import CUSTOM_CONFIG, DB, MONGO_CONFIG
@@ -165,10 +165,7 @@ def app_env(monkeypatch, mongo_client, mock_idp):
 @pytest.fixture
 def app(app_env):
     """App created from `config.yaml` and the test overlay."""
-    return Foca(
-        config_file=APP_DIR / "config.yaml",
-        custom_config_model="cloud_registry.service_models.custom_config.CustomConfig",
-    ).create_app()
+    return create_app()
 
 
 @pytest.fixture

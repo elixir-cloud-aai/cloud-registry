@@ -170,6 +170,13 @@ the body and its [public URL](#public-urls) in the `Location` header; updating
 a service (`PUT`) returns `200 OK`. Identifiers `.` and `..` are rejected
 (`400 Bad Request`).
 
+Request bodies are limited to 1 MiB by default (`413 Content Too Large`; see
+[Request size limit](#request-size-limit)). Strings in registered services and
+verifications are limited in length (longer ones are rejected with `400 Bad
+Request`): URLs to 2048 characters, names (`name`, `organization.name`) to
+1024, `description` to 4096, and other fields (`version`, `environment`,
+`type.group`, `type.artifact`, `type.version`) to 256.
+
 See [Access control](#access-control) for the roles and [Verified
 services](#verified-services) for verifications. Extensions of the GA4GH
 endpoints, such as pagination, search or filters, will be reconsidered with
@@ -419,6 +426,20 @@ the path prefix in front of the API base path when the app is served behind a
 reverse proxy under a subpath (e.g., `registry`), or leave it empty.
 Previously, `api_path` held the API base path itself (e.g.,
 `ga4gh/registry/v1`); remove that value when upgrading.
+
+### Request size limit
+
+Request bodies are limited to `custom.max_content_length` bytes (default:
+1048576, i.e., 1 MiB). Larger requests are rejected with `413 Content Too
+Large` before the access token is checked and the body is parsed: requests
+whose `Content-Length` exceeds the limit are rejected without reading the
+body. Bodies of unknown size (`Transfer-Encoding: chunked`) are read up to the
+limit only; the rest is dropped, so larger JSON bodies are rejected as
+malformed (`400 Bad Request`).
+
+Set the same limit at the ingress or reverse proxy in front of the app, so
+that it rejects larger requests itself; the Helm chart does so for
+ingress-nginx (see the [deployment instructions][deployment-instructions]).
 
 ## Development
 
