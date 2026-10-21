@@ -1,28 +1,47 @@
-# ELIXIR Cloud service registry
+[![ELIXIR On-Cloud][logo]][org]
+
+# Cloud Registry
 
 [![License][badge-license]][badge-url-license]
-[![Docs][badge-docs]][badge-url-docs]
 [![Build_status][badge-build-status]][badge-url-build-status]
+[![Docs][badge-docs]][badge-url-docs]
 [![Coverage][badge-coverage]][badge-url-coverage]
+[![GitHub_tag][badge-github-tag]][badge-url-github-tag]
+[![Docker_image][badge-docker]][badge-url-docker]
 
 <!-- --8<-- [start:synopsis] -->
-GA4GH Service Registry API implementation for the ELIXIR Cloud. The ELIXIR
-Cloud registry, with its [web front
-end](https://github.com/elixir-cloud-aai/cloud-registry-ui), is deployed at
-[https://registry.elixir-on.cloud/](https://registry.elixir-on.cloud/).
-
-Service entries comply with the [`ExternalService`
-schema](https://github.com/ga4gh-discovery/ga4gh-service-registry/blob/8c45be52940db92c2fa1cd821519c271c22b1c4c/service-registry.yaml#L158)
-defined in the [GA4GH Service Registry
-API](https://github.com/ga4gh-discovery/ga4gh-service-registry). Anyone can
-read them; users logged in with [LS
-Login](https://lifescience-ri.eu/ls-login/) can register services and manage
-those they own.
+A registry of web services for your project, network or infrastructure,
+brought to you by [ELIXIR On-Cloud](https://elixir-on.cloud/). It implements
+the [GA4GH Service Registry
+API](https://github.com/ga4gh-discovery/ga4gh-service-registry), so that
+clients can discover your GA4GH services (or any other web services) and
+their API types, versions and operators in one place. Service entries comply
+with the [`ExternalService`
+schema](https://github.com/ga4gh-discovery/ga4gh-service-registry/blob/8c45be52940db92c2fa1cd821519c271c22b1c4c/service-registry.yaml#L158).
+Anyone can read them; users logged in with [LS
+Login](https://lifescience-ri.eu/ls-login/) (or another OpenID Connect
+provider that you trust) can register services and manage those they own, and
+admins can verify them. Run it with Docker Compose or deploy it to Kubernetes
+with its Helm chart; a [web front
+end](https://github.com/elixir-cloud-aai/cloud-registry-ui) is available,
+too.
 <!-- --8<-- [end:synopsis] -->
 
 **Read the [documentation][docs]** for the configuration, the API, access
 control, the deployment with the Helm chart in [`deployment/`][deployment],
 operations, upgrades and development.
+
+## Known deployments
+
+<!-- --8<-- [start:deployments] -->
+| Deployment | Operated by | Notes |
+| --- | --- | --- |
+| <https://registry.elixir-on.cloud/> | [ELIXIR On-Cloud](https://elixir-on.cloud/) | With the [web front end](https://github.com/elixir-cloud-aai/cloud-registry-ui) |
+
+Running the Cloud Registry yourself? Open a pull request that adds your
+deployment to the table in
+[`README.md`](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/README.md).
+<!-- --8<-- [end:deployments] -->
 
 ## Quick start
 
@@ -48,13 +67,19 @@ curl -X GET "http://localhost:8080/ga4gh/registry/v1/services" -H  "accept: appl
 ```
 <!-- --8<-- [end:quick-start] -->
 
-[badge-build-status]:<https://github.com/elixir-cloud-aai/cloud-registry/actions/workflows/checks.yaml/badge.svg>
-[badge-coverage]:<https://codecov.io/gh/elixir-cloud-aai/cloud-registry/branch/dev/graph/badge.svg>
-[badge-docs]: <https://readthedocs.org/projects/cloud-registry/badge/?version=latest>
-[badge-license]:<https://img.shields.io/badge/license-Apache%202.0-blue.svg>
-[badge-url-build-status]:<https://github.com/elixir-cloud-aai/cloud-registry/actions/workflows/checks.yaml>
-[badge-url-coverage]:<https://codecov.io/gh/elixir-cloud-aai/cloud-registry>
-[badge-url-docs]: <https://cloud-registry.readthedocs.io/en/latest/?badge=latest>
-[badge-url-license]:<https://www.apache.org/licenses/LICENSE-2.0>
+[badge-build-status]: <https://github.com/elixir-cloud-aai/cloud-registry/actions/workflows/checks.yaml/badge.svg>
+[badge-coverage]: <https://codecov.io/gh/elixir-cloud-aai/cloud-registry/branch/dev/graph/badge.svg?branch=dev>
+[badge-docker]: <https://img.shields.io/docker/v/elixircloud/cloud-registry?sort=semver&label=image&color=C39BD3>
+[badge-docs]: <https://readthedocs.org/projects/cloud-registry/badge/>
+[badge-github-tag]: <https://img.shields.io/github/v/tag/elixir-cloud-aai/cloud-registry?color=C39BD3>
+[badge-license]: <https://img.shields.io/badge/license-Apache%202.0-blue.svg>
+[badge-url-build-status]: <https://github.com/elixir-cloud-aai/cloud-registry/actions/workflows/checks.yaml>
+[badge-url-coverage]: <https://codecov.io/gh/elixir-cloud-aai/cloud-registry?branch=dev>
+[badge-url-docker]: <https://hub.docker.com/r/elixircloud/cloud-registry/tags>
+[badge-url-docs]: <https://cloud-registry.readthedocs.io/en/latest/>
+[badge-url-github-tag]: <https://github.com/elixir-cloud-aai/cloud-registry/releases>
+[badge-url-license]: <https://www.apache.org/licenses/LICENSE-2.0>
 [deployment]: deployment/
 [docs]: <https://cloud-registry.readthedocs.io/en/latest/>
+[logo]: docs/images/logo_elixir_on_cloud.png
+[org]: <https://elixir-on.cloud/>
