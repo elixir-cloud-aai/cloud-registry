@@ -630,24 +630,24 @@ git tag -s vX.Y.Z <sha> -m "vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-The tag must be annotated and signed (`git tag -s`), with a key that GitHub
-can verify (added to the tagger's GitHub account). The [release
-workflow][release-workflow], triggered by the tag, checks that GitHub
-verified the signature, that the tag's commit is on `main`, and that the [CI
+The tag must be annotated and signed (`git tag -s`), with a key that GitHub can
+verify (added to the tagger's GitHub account). The [release
+workflow][release-workflow], triggered by the tag, checks that GitHub verified
+the signature, that the tag's commit is on `main`, and that the [CI
 workflow][checks-workflow] passed for it (a run for the push of the commit to
 `dev`; if CI hasn't finished or failed, re-run the release workflow once it
-passed). It packages
-the Helm chart with the release version as `version` and `appVersion` (the
-default image tag). After approval in the `release` environment, it builds
-the image, checks that the app reports the release version, pushes exactly
-that image tagged `X.Y.Z` (and `latest`, if it is the highest release on
-`main`), and creates a GitHub release with the chart (`.tgz`) and the notes
-in `docs/releases/X.Y.Z.md` (for pre-releases, e.g., `X.Y.Zrc1.md`), or, if
-there are none, notes generated from the merged pull requests. No packages are published to PyPI. Tags of pre-releases (e.g.,
-`vX.Y.Zrc1`, also `aN` and `bN`) create GitHub pre-releases, with chart
-version `X.Y.Z-rc1`, and never update `latest`. Images of commits on `dev`
-are published by the [CI workflow][checks-workflow] (environment
-`dev-images`).
+passed). It packages the Helm chart with the release version as `version` and
+`appVersion` (the default image tag). After approval in the `release`
+environment, it builds the image, checks that the app reports the release
+version, pushes exactly that image tagged `X.Y.Z` (and `latest`, if it is the
+highest release on `main`), and creates a GitHub release with the chart
+(`.tgz`) and the notes in `docs/releases/X.Y.Z.md` (for pre-releases, e.g.,
+`X.Y.Zrc1.md`), or, if there are none, notes generated from the merged pull
+requests. Curated notes are published as written, so the release workflow fails
+if they contain `TODO`. No packages are published to PyPI. Tags of pre-releases
+(e.g., `vX.Y.Zrc1`, also `aN` and `bN`) create GitHub pre-releases, with chart
+version `X.Y.Z-rc1`, and never update `latest`. Images of commits on `dev` are
+published by the [CI workflow][checks-workflow] (environment `dev-images`).
 
 Maintainers: the workflows rely on these repository settings: environment
 `dev-images` limited to branch `dev`; environment `release` with a required

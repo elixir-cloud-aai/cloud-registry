@@ -5,9 +5,10 @@
 # the only source of the version: it is passed to the image build (the Docker
 # build gets no Git metadata) and set as the chart's `version` and
 # `appVersion`. Release notes are taken from `docs/releases/<version>.md` if
-# it exists, otherwise generated. Publishing runs in the `release`
-# environment (required reviewer, Docker Hub secrets). Release tags are
-# immutable (tag ruleset). See "Versioning and releases" in README.md.
+# it exists (the run fails if it contains `TODO`), otherwise generated.
+# Publishing runs in the `release` environment (required reviewer, Docker
+# Hub secrets). Release tags are immutable (tag ruleset). See "Versioning
+# and releases" in README.md.
 
 name: Release
 
@@ -89,6 +90,17 @@ jobs:
                   echo "prerelease=false"
               fi
           } >> "${GITHUB_OUTPUT}"
+      # Curated release notes are published as written, so unfinished ones
+      # (with a `TODO`) must not be
+      - name: Check release notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          notes="docs/releases/${VERSION}.md"
+          if [[ -f "${notes}" ]] && grep -n "TODO" "${notes}"; then
+              echo "::error::${notes} contains TODO: finish the release notes, then tag a new release"
+              exit 1
+          fi
       # The checks above don't run the tests: require a successful run of
       # the CI workflow for a push of the release commit (to `dev`, before it
       # moved to `main`); runs for pull requests test merge commits, not the
