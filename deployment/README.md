@@ -95,12 +95,11 @@ Create the Secret with the MongoDB credentials (see
 [Authentication](#authentication)) and set its name in the values file
 (`mongodb.auth.existingSecret`), then install the chart of a
 [release](https://github.com/elixir-cloud-aai/cloud-registry/releases)
-(`cloud-registry-X.Y.Z.tgz`, attached to the release `vX.Y.Z`), e.g., of
-0.3.0:
+(`cloud-registry-X.Y.Z.tgz`, attached to the release `vX.Y.Z`):
 
 ```bash
 helm install cloud-registry \
-  https://github.com/elixir-cloud-aai/cloud-registry/releases/download/v0.3.0/cloud-registry-0.3.0.tgz \
+  https://github.com/elixir-cloud-aai/cloud-registry/releases/download/vX.Y.Z/cloud-registry-X.Y.Z.tgz \
   -n <namespace> -f values-prod.yaml
 ```
 
@@ -154,10 +153,11 @@ By default, the chart creates an Ingress for `hostName`
 FOCA's permissions API (`/admin/access-control/`, for admins only; see
 [Permissions API](https://cloud-registry.readthedocs.io/en/latest/operations/#permissions-api)). To keep that API off
 the internet, block `/admin/` in the proxy in front of the cluster, or
-disable the chart's Ingress (`enabled: false`; see also [OpenShift
-Route](#openshift-route)) and create one of your own that routes only
-`/ga4gh/registry/v1/` to the app's Service (port `http`). The Ingress is
-configured with:
+disable the chart's Ingress (`enabled: false`) and create one of your own
+that routes only `/ga4gh/registry/v1/` to the app's Service (port `http`).
+On OpenShift, the chart then creates a Route for all paths instead (see
+[OpenShift Route](#openshift-route)), so there, block `/admin/` in front of
+the router. The Ingress is configured with:
 
 - `className` sets the Ingress class (default: the cluster's default class);
 - `annotations` sets annotations, e.g., for the ingress controller; they
@@ -236,8 +236,8 @@ requests count for the proxy. For OpenShift Routes, see the
 
 ### OpenShift Route
 
-With `enabled: false`, the chart creates an OpenShift Route with TLS
-termination at the router instead, if the cluster serves Routes
+With `enabled: false`, the chart creates an OpenShift Route for all paths,
+with TLS termination at the router, instead, if the cluster serves Routes
 (`route.openshift.io/v1`); otherwise the app is only reachable within the
 cluster, and Helm prints a warning after installing.
 
@@ -406,13 +406,16 @@ they complete.
 ## Upgrades
 
 Change the values file (e.g., `config` for the config) and upgrade the
-release with the chart of the new release (which deploys its image), or with
-the `deployment` folder and `cloudRegistry.tag` set to the new image (see
-[Installation](#installation)):
+release with the chart of the new release, or with the `deployment` folder
+and `cloudRegistry.tag` set to the new image (see
+[Installation](#installation)). The chart of a release deploys its image only
+if `cloudRegistry.tag` is empty and `cloudRegistry.image` has no tag (see
+[Image](#image)), so remove a tag set for an earlier install from the values
+file:
 
 ```bash
 helm upgrade cloud-registry \
-  https://github.com/elixir-cloud-aai/cloud-registry/releases/download/v0.3.0/cloud-registry-0.3.0.tgz \
+  https://github.com/elixir-cloud-aai/cloud-registry/releases/download/vX.Y.Z/cloud-registry-X.Y.Z.tgz \
   -n <namespace> -f values-prod.yaml
 ```
 
@@ -549,9 +552,9 @@ start.) If stored services without a key have invalid URLs or the same URL
 and API type, the new version refuses to start and names them: fix or delete
 them in MongoDB (see [Stored services](https://cloud-registry.readthedocs.io/en/latest/upgrading/#stored-services)
 and [Authentication](#authentication) for credentials). See the [release
-notes](https://cloud-registry.readthedocs.io/en/latest/releases/0.3.0/) for all breaking changes; for
-deployments of the previous version, a fresh install with an empty database
-is recommended there.
+notes](https://cloud-registry.readthedocs.io/en/latest/releases/0.3.0/) for all breaking changes;
+they recommend a fresh install with an empty database for deployments of the
+previous version (FOCA 0.12).
 
 The values keys `host_name` and `cloud_registry` are renamed to `hostName`
 and `cloudRegistry` (rendering fails while the old keys are set): rename

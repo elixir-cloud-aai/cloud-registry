@@ -33,10 +33,10 @@ Project-specific rules are in `.semgrep/` (security) and `.ast-grep/`
 [actionlint](https://github.com/rhysd/actionlint) checks the workflows in
 `.github/workflows/`, and their shell scripts with
 [ShellCheck](https://www.shellcheck.net/) if it is installed (as on
-GitHub-hosted runners, so CI may find more than a local run without it). To suppress a false
-positive, add a comment with the reason to the line: `# noqa: <code>` (ruff),
-`# nosemgrep: <rule-id>`, `# ast-grep-ignore: <rule-id>` or
-`# gitleaks:allow`.
+GitHub-hosted runners, so CI may find more than a local run without it). To
+suppress a false positive, add a comment with the reason to the line:
+`# noqa: <code>` (ruff), `# nosemgrep: <rule-id>`,
+`# ast-grep-ignore: <rule-id>` or `# gitleaks:allow`.
 
 ## Documentation
 

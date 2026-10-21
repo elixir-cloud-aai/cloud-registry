@@ -28,9 +28,10 @@ _spec.loader.exec_module(hooks)
         (f"{DOCS_URL}operations", "operations.md"),
         (DOCS_URL, "index.md"),
         (f"{DOCS_URL}#contact", "index.md#contact"),
+        # Only links to branch `dev` are pointed to the given reference
         (
-            f"{REPO_URL}/blob/dev/cloud_registry/config.yaml",
-            f"{REPO_URL}/blob/dev/cloud_registry/config.yaml",
+            f"{REPO_URL}/blob/v0.3.0/cloud_registry/config.yaml",
+            f"{REPO_URL}/blob/v0.3.0/cloud_registry/config.yaml",
         ),
         (f"{REPO_URL}/releases", f"{REPO_URL}/releases"),
         # Relative links are left as they are, so that the strict build fails
@@ -42,11 +43,12 @@ def test_adapt_link(target, expected):
     assert hooks.adapt_link(target, f"{REPO_URL}/") == expected
 
 
-def test_adapt_link_ref():
+@pytest.mark.parametrize("repo_url", [REPO_URL, f"{REPO_URL}/"])
+def test_adapt_link_ref(repo_url):
     """Links to files on GitHub point to the given Git reference."""
     assert (
         hooks.adapt_link(
-            f"{REPO_URL}/blob/dev/deployment/values.yaml", REPO_URL, "0123abc"
+            f"{REPO_URL}/blob/dev/deployment/values.yaml", repo_url, "0123abc"
         )
         == f"{REPO_URL}/blob/0123abc/deployment/values.yaml"
     )
@@ -72,6 +74,12 @@ def test_readme_links_are_absolute():
     assert f"{DOCS_URL}releases/0.3.0/" in targets
     assert [
         target for target in targets if not target.startswith(("#", "https://"))
+    ] == []
+    # Links to the docs are to the version that the hook adapts
+    assert [
+        target
+        for target in targets
+        if "readthedocs.io" in target and not target.startswith(DOCS_URL)
     ] == []
 
 
