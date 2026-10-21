@@ -33,12 +33,12 @@ jobs:
         with:
           python-version: "3.10"
           cache: pip
-          cache-dependency-path: requirements*.txt
-      # mypy checks imports, so runtime requirements are needed too
-      - name: Install requirements
+          cache-dependency-path: pyproject.toml
+      # mypy checks imports, so runtime dependencies are needed too
+      - name: Install dependencies
         run: |
           pip install --upgrade pip==24.0
-          pip install -r requirements.txt -r requirements_dev.txt
+          pip install -e ".[dev]"
       - name: Cache pre-commit hook environments
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -79,13 +79,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-          cache-dependency-path: requirements*.txt
-      - name: Install requirements
+          cache-dependency-path: pyproject.toml
+      - name: Install dependencies
         run: |
           pip install --upgrade pip==24.0
-          pip install -r requirements.txt
-          pip install -r requirements_dev.txt
-          pip install -e .
+          pip install -e ".[dev]"
       - name: Calculate unit test coverage
         run: |
           coverage run --source cloud_registry -m pytest -W ignore::DeprecationWarning
@@ -123,12 +121,11 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements*.txt
-      - name: Install requirements
+          cache-dependency-path: pyproject.toml
+      - name: Install dependencies
         run: |
           pip install --upgrade pip==24.0
-          pip install -r requirements.txt -r requirements_dev.txt
-          pip install -e .
+          pip install -e ".[dev]"
       # Same Helm version as in `release.yaml`
       - name: Set up Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
@@ -159,12 +156,11 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements*.txt
-      - name: Install requirements
+          cache-dependency-path: pyproject.toml
+      - name: Install dependencies
         run: |
           pip install --upgrade pip==24.0
-          pip install -r requirements.txt -r requirements_docs.txt
-          pip install -e .
+          pip install -e ".[docs]"
       # Fails on warnings, e.g., of broken links, anchors and references
       - name: Build documentation
         run: mkdocs build --strict
@@ -294,10 +290,12 @@ jobs:
       - name: Derive version
         if: steps.head.outputs.current == 'true'
         id: version
-        # Version pinned in `requirements_dev.txt` (as a constraint, so that
-        # only setuptools-scm is installed), where Dependabot updates it
+        # With the build requirements (`build-system.requires` of
+        # `pyproject.toml`), which builds of the app use too
         run: |
-          pip install setuptools-scm -c requirements_dev.txt
+          python -c "import tomllib; print('\n'.join(tomllib.load(open('pyproject.toml', 'rb'))['build-system']['requires']))" \
+            > "${RUNNER_TEMP}/build-requirements.txt"
+          pip install -r "${RUNNER_TEMP}/build-requirements.txt"
           echo "version=$(python -m setuptools_scm)" >> "$GITHUB_OUTPUT"
       - name: Set up Docker Buildx
         if: steps.head.outputs.current == 'true'

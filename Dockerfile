@@ -12,11 +12,14 @@ LABEL software.license="https://spdx.org/licenses/Apache-2.0"
 LABEL maintainer="alexander.kanitz@alumni.ethz.ch"
 LABEL maintainer.organisation="ELIXIR Cloud & AAI"
 
-## Install dependencies first, so that code changes do not reinstall them;
-## the FOCA image runs as non-root user
+## Install dependencies (`project.dependencies` of `pyproject.toml`) first,
+## so that code changes do not reinstall them; the FOCA image runs as non-root
+## user
 USER root
-COPY requirements.txt /tmp/src/
-RUN pip install --no-cache-dir -r /tmp/src/requirements.txt
+COPY pyproject.toml /tmp/src/
+RUN python -c "import tomllib; print('\n'.join(tomllib.load(open('/tmp/src/pyproject.toml', 'rb'))['project']['dependencies']))" \
+    > /tmp/src/requirements.txt \
+  && pip install --no-cache-dir -r /tmp/src/requirements.txt
 
 ## Install app (non-editable; the base config is installed with the package,
 ## and deployments override it via `FOCA_CONFIG_OVERLAY`)
