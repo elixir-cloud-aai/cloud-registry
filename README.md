@@ -175,10 +175,11 @@ URLs in registrations must be HTTP(S) URLs with a host: the service `url`,
 email address (`mailto:`); other URLs are rejected (`400 Bad Request`, saying
 why). Links are stored as written, so they must not contain whitespace (unlike
 service URLs, which may have leading and trailing spaces), control or format
-characters (except joiners in international host names). Anyone logged in can
-register services, so clients should treat registry content as untrusted:
-escape it rather than render it as HTML, and don't follow or fetch its URLs
-blindly (e.g., to internal addresses).
+characters (except joiners in international host names), and no URLs may
+contain malformed percent-encodings. Anyone logged in can register services, so
+clients should treat registry content as untrusted: escape it rather than
+render it as HTML, and don't follow or fetch its URLs blindly (e.g., to
+internal addresses).
 
 See [Access control](#access-control) for the roles and [Verified
 services](#verified-services) for verifications. Extensions of the GA4GH

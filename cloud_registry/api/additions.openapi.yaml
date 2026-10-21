@@ -28,8 +28,8 @@ paths:
       summary: Register service.
       description: |
         Create a service resource. Services are unique by URL and API type:
-        registering a service again returns `409`. Invalid URLs, URLs
-        without scheme or host, and URLs with user info return `400`.
+        registering a service again returns `409`. Invalid URLs return `400`
+        (cf. `ExternalServiceRegister`).
       operationId: postService
       tags:
         - cloud-registry
@@ -100,8 +100,8 @@ paths:
       description: |
         Create (`201`) or update (`200`) a service resource. Services are
         unique by URL and API type: changing them to those of another service
-        returns `409`. Invalid URLs, URLs without scheme or host, and URLs
-        with user info return `400`.
+        returns `409`. Invalid URLs return `400` (cf.
+        `ExternalServiceRegister`).
       operationId: putService
       tags:
         - cloud-registry
@@ -651,7 +651,13 @@ components:
         - owner
         - maintainer
     ExternalServiceRegister:
-      description: 'GA4GH service with a URL'
+      description: |
+        GA4GH service with a URL. URLs (`url`, `organization.url`,
+        `contactUrl`, `documentationUrl`) must be HTTP(S) URLs with a host,
+        without user info, whitespace, control or format characters (except
+        joiners in international host names) or malformed percent-encodings;
+        `contactUrl` can also be a `mailto:` URL with email addresses. Others
+        return `400`.
       type: object
       required:
         - name
@@ -685,17 +691,17 @@ components:
             url:
               type: string
               format: uri
-              description: 'URL of the website of the organization (RFC 3986 format)'
+              description: 'URL of the website of the organization (RFC 3986 format; HTTP(S))'
               example: 'https://example.com'
         contactUrl:
           type: string
           format: uri
-          description: 'URL of the contact for the provider of this service, e.g. a link to a contact form (RFC 3986 format), or an email (RFC 2368 format).'
+          description: 'URL of the contact for the provider of this service, e.g. a link to a contact form (RFC 3986 format; HTTP(S)), or an email (RFC 2368 format; `mailto:`).'
           example: 'mailto:support@example.com'
         documentationUrl:
           type: string
           format: uri
-          description: 'URL of the documentation of this service (RFC 3986 format). This should help someone learn how to use your service, including any specifics required to access data, e.g. authentication.'
+          description: 'URL of the documentation of this service (RFC 3986 format; HTTP(S)). This should help someone learn how to use your service, including any specifics required to access data, e.g. authentication.'
           example: 'https://docs.myservice.example.com'
         createdAt:
           type: string
@@ -719,7 +725,7 @@ components:
           type: string
           format: uri
           description: |
-            Base URL of the service ([RFC 3986](https://tools.ietf.org/html/rfc3986) format).
+            Base URL of the service ([RFC 3986](https://tools.ietf.org/html/rfc3986) format; HTTP(S)).
 
             For REST API services, this is the URL to which all endpoints should be relative. In particular, services implementing GA4GH specifications defined in OAS format (as per the `type` field) should respond to requests constructed by appending relative paths from the specification to this base URL (e.g. `{url}/service-info`). See [API Server and Base URL](https://swagger.io/docs/specification/api-host-and-base-path/) for more information on specifying base URLs in OAS 3.
           example: 'https://api.example.com/v1'

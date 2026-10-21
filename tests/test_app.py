@@ -240,6 +240,20 @@ def _service_with(field, value):
 URL_FIELDS = ["url", "contactUrl", "documentationUrl", "organization.url"]
 
 
+@pytest.mark.parametrize("field", URL_FIELDS)
+def test_service_url_surrogate(client, admin_headers, field):
+    """URLs with unpaired surrogates, which can't be encoded, are rejected
+    (`400`), not failing later (`500`).
+    """
+    response = client.post(
+        f"{BASE}/services",
+        json=_service_with(field, "https://example.org/\ud800"),
+        headers=admin_headers,
+    )
+    _assert_error(response, 400)
+    assert client.get(f"{BASE}/services").json == []
+
+
 @pytest.mark.parametrize("method, path", [("post", ""), ("put", "/abc")])
 @pytest.mark.parametrize("field", URL_FIELDS)
 def test_service_url_not_http(client, admin_headers, method, path, field):

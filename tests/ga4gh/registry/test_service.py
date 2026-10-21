@@ -223,6 +223,11 @@ def test_normalize_url(url, normalized):
         "https://tes%zz.example.org",
         "https://tes.example.org/a%ZZ",
         "https://tes.example.org/a%2",
+        "https://tes.example.org/v1?a=%zz",
+        "https://tes.example.org/v1#%2",
+        "https://tes.example.org/\ud800",
+        "https://[fe80::1%25eth\u200d0]/v1",
+        "https://[fe80::1%25eth\u00fc]/v1",
     ],
 )
 def test_normalize_url_invalid(url):
@@ -265,6 +270,11 @@ def test_check_link(url):
         ("https://www.example.org/?q=\u200c", "control or format characters"),
         ("https://www.example.org/#\u2028", "control or format characters"),
         ("https://www\u202e.example.org", "control or format characters"),
+        ("https://www.example.org/\ud800", "control or format characters"),
+        ("https://www.example.org/a%zz", "malformed percent-encodings"),
+        ("https://www.example.org/?q=%", "malformed percent-encodings"),
+        ("https://www.example.org/#%4", "malformed percent-encodings"),
+        ("https://[fe80::1%25eth\u200c0]/docs", "need a valid host"),
         ("https://www.example.org:port", "must be valid URLs"),
         ("http://[::1/docs", "must be valid URLs"),
         ("https://www.example.org:0", "need a valid port"),
@@ -290,7 +300,13 @@ def test_check_link_invalid(url, detail):
 
 
 @pytest.mark.parametrize(
-    "url", ["mailto:support@example.org", "MAILTO:support@example.org"]
+    "url",
+    [
+        "mailto:support@example.org",
+        "MAILTO:support@example.org",
+        "mailto:a@example.org,b@bücher.example.org?subject=TES%20access",
+        "mailto:support%40tes@example.org",
+    ],
 )
 def test_check_link_schemes(url):
     """Links can have other allowed schemes, with a path but no authority."""
@@ -301,6 +317,14 @@ def test_check_link_schemes(url):
     "url, detail",
     [
         ("mailto:", "must be HTTP(S) URLs"),
+        ("mailto:support", "need valid email addresses"),
+        ("mailto:@example.org", "need valid email addresses"),
+        ("mailto:support@", "need valid email addresses"),
+        ("mailto:a@example.org,", "need valid email addresses"),
+        ("mailto:support@exa<mple.org", "need a valid host"),
+        ("mailto:support@example.org?subject=%zz", "malformed percent-encodings"),
+        ("mailto:support%@example.org", "malformed percent-encodings"),
+        ("mailto:support@example.org\ud800", "control or format characters"),
         ("mailto:#support", "must be HTTP(S) URLs"),
         ("mailto:?to=support@example.org", "must be HTTP(S) URLs"),
         ("mailto:support\u00ad@example.org", "control or format characters"),
