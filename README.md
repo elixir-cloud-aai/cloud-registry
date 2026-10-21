@@ -620,7 +620,8 @@ with Docker Compose), report `0.0.0.dev0`; the workflows pass the version to
 the image build. Images on Docker Hub (`elixircloud/cloud-registry`) are
 tagged:
 
-- `X.Y.Z`: release `X.Y.Z`; `latest`: the highest release on `main`;
+- `X.Y.Z`: release `X.Y.Z`; `latest`: the highest stable release (not an
+  alpha, beta or release candidate) on `main`;
 - `dev`: the latest commit on `dev`; `sha-<commit>`: commit `<commit>` on
   `dev` (full SHA), to deploy a fixed commit.
 
@@ -652,6 +653,8 @@ if they contain `TODO`; on re-runs, it replaces the notes of an existing
 release with them (also overwriting manual edits). No packages are published to
 PyPI. Tags of pre-releases (e.g., `vX.Y.Zrc1`, also `aN` and `bN`) create
 GitHub pre-releases, with chart version `X.Y.Z-rc1`, and never update `latest`.
+Until 1.0.0, all releases are GitHub pre-releases (never marked as the latest
+release), but `vX.Y.Z` tags still update the `latest` image.
 Images of commits on `dev` are published by the [CI workflow][checks-workflow]
 (environment `dev-images`).
 
