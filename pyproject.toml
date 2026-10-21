@@ -10,8 +10,8 @@ target-version = "py310"
 
 [tool.ruff.lint]
 # pycodestyle, Pyflakes, isort, bugbear, pyupgrade, bandit (security),
-# logging format
-select = ["E", "F", "W", "I", "B", "UP", "S", "G"]
+# logging format, pydocstyle (docstrings)
+select = ["E", "F", "W", "I", "B", "UP", "S", "G", "D"]
 
 [tool.ruff.lint.isort]
 force-sort-within-sections = true
@@ -20,8 +20,14 @@ known-first-party = ["cloud_registry", "tests"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]
 
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
 [tool.mypy]
-files = ["cloud_registry", "tests"]
+files = ["cloud_registry", "docs/hooks.py", "tests"]
+# Complete type hints: all functions annotated, generic types parametrized
+disallow_untyped_defs = true
+disallow_any_generics = true
 warn_unused_ignores = true
 
 # Connexion 2 ships no type information
