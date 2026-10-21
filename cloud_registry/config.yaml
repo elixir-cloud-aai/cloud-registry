@@ -15,6 +15,12 @@ server:
     # development, on a loopback host
     debug: False
     testing: False
+    # Size limit of request bodies, in bytes (1 MiB); larger requests (also
+    # chunked ones) are rejected with `413 Content Too Large` before
+    # authentication and parsing. Raise it together with the limits of any
+    # proxies in front of the app (the Helm chart sets the limit of
+    # ingress-nginx from it)
+    max_content_length: 1048576
 
 # Security configuration
 # Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.SecurityConfig
@@ -129,6 +135,30 @@ api:
                   swagger_ui: True
                   serve_spec: True
 
+# Service info, served at `GET /service-info` by FOCA, according to the GA4GH
+# `Service` schema (validated on startup); `version` defaults to the version
+# of the installed package (`package`)
+# Cf. https://foca.readthedocs.io/en/latest/configuration/service-info/
+service_info:
+    package: cloud-registry
+    service:
+        id: "ELIXIR_CLOUD_SERVICE_REGISTRY_1"
+        name: "ELIXIR_CLOUD"
+        type:
+            group: "org.ga4gh"
+            artifact: "service-registry"
+            version: "1.0.0"
+        description: "Service registry for the ELIXIR Cloud network."
+        organization:
+            name: "ELIXIR Cloud & AAI"
+            url: "https://elixir-cloud.dcc.sib.swiss/"
+        contactUrl: "https://elixir-cloud.dcc.sib.swiss/"
+        documentationUrl: "https://github.com/elixir-cloud-aai/cloud-registry"
+        environment: "dev"
+        # Optional timestamps (RFC 3339), served only if set, e.g.:
+        # createdAt: "2020-11-08T00:00:00Z"
+        # updatedAt: "2026-10-20T00:00:00Z"
+
 # Logging configuration
 # Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.LogConfig
 log:
@@ -149,15 +179,15 @@ log:
         level: 10
         handlers: [console]
 
+# Exception handling: problem details of exceptions, sent with the media type
+# of error responses of the GA4GH specifications (instead of FOCA's default
+# `application/problem+json`), also by the app (`cloud_registry.exceptions`)
+# Cf. https://foca.readthedocs.io/en/latest/configuration/exceptions/
 exceptions:
     mapping: cloud_registry.exceptions.exceptions
+    media_type: application/json
 
 custom:
-    # Size limit of request bodies, in bytes (default: 1 MiB); larger requests
-    # are rejected with `413 Content Too Large` before authentication and
-    # parsing. Raise it together with the limits of any proxies in front of
-    # the app (the Helm chart sets the limit of ingress-nginx from it)
-    max_content_length: 1048576
     # Refuse to start unless a group is mapped to the role `admin` (see
     # `security.access_control.group_mapping`)
     access_control:
@@ -171,26 +201,6 @@ custom:
             external_host: 0.0.0.0
             external_port: 8080
             api_path: ''
-        # Service info served at `/service-info`, according to the GA4GH
-        # `Service` schema (checked on startup); `version` defaults to the
-        # version of the installed package
-        service_info:
-            id: "ELIXIR_CLOUD_SERVICE_REGISTRY_1"
-            name: "ELIXIR_CLOUD"
-            type:
-                group: "org.ga4gh"
-                artifact: "service-registry"
-                version: "1.0.0"
-            description: "Service registry for the ELIXIR Cloud network."
-            organization:
-                name: "ELIXIR Cloud & AAI"
-                url: "https://elixir-cloud.dcc.sib.swiss/"
-            contactUrl: "https://elixir-cloud.dcc.sib.swiss/"
-            documentationUrl: "https://github.com/elixir-cloud-aai/cloud-registry"
-            environment: "dev"
-            # Optional timestamps (RFC 3339), served only if set, e.g.:
-            # createdAt: "2020-11-08T00:00:00Z"
-            # updatedAt: "2026-10-20T00:00:00Z"
         services:
             id:
                 charset: ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789

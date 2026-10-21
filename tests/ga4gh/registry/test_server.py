@@ -9,7 +9,6 @@ from cloud_registry.ga4gh.registry import server
 from cloud_registry.ga4gh.registry.server import (
     deleteService,
     getServiceById,
-    getServiceInfo,
     getServices,
     getServiceTypes,
     postService,
@@ -20,7 +19,6 @@ from tests.mock_data import (
     MOCK_PUBLIC_URL,
     MOCK_SERVICE,
     MOCK_TYPE,
-    SERVICE_INFO_CONFIG,
 )
 
 
@@ -124,14 +122,6 @@ def test_getServiceTypes_sort_order(unit_app, services):
 
     with unit_app.app_context():
         assert getServiceTypes.__wrapped__() == expected
-
-
-# GET /service-info
-def test_getServiceInfo(unit_app):
-    """Test for getting service info."""
-    with unit_app.app_context():
-        res = getServiceInfo.__wrapped__()
-        assert res == SERVICE_INFO_CONFIG
 
 
 # POST /service

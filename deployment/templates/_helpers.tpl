@@ -50,6 +50,20 @@ app's ConfigMap template).
 {{- if .Values.cloud_registry.appName -}}
 {{- fail "cloud_registry.appName was removed after the legacy charts (versions 2 and 3): resource names are derived from the release name; set fullnameOverride to choose them at installation (see deployment/README.md, Names and labels)" -}}
 {{- end -}}
+{{- /*
+Settings of the custom config replaced by FOCA's (with the FOCA 0.15
+upgrade), which the app rejects
+*/ -}}
+{{- $custom := dig "custom" dict (.Values.config | default dict) -}}
+{{- if kindIs "map" $custom -}}
+{{- if hasKey $custom "max_content_length" -}}
+{{- fail "config.custom.max_content_length was removed with the FOCA 0.15 upgrade: set config.server.max_content_length instead (see deployment/README.md, Ingress)" -}}
+{{- end -}}
+{{- $endpoints := index $custom "endpoints" -}}
+{{- if and (kindIs "map" $endpoints) (hasKey $endpoints "service_info") -}}
+{{- fail "config.custom.endpoints.service_info was removed with the FOCA 0.15 upgrade: set config.service_info.service instead (see deployment/README.md, Configuration)" -}}
+{{- end -}}
+{{- end -}}
 {{- $fullname := include "cloud-registry.fullname" . -}}
 {{- if eq $fullname (include "cloud-registry.mongodbFullname" .) -}}
 {{- fail (printf "the app and MongoDB resources would both be named %s: choose a fullnameOverride that does not end in -mongodb" $fullname) -}}
@@ -163,23 +177,23 @@ chart's `appVersion`; an image with a tag or digest is used as it is.
 {{- end -}}
 
 {{/*
-Size limit of request bodies of the app, in bytes: `custom.max_content_length`
+Size limit of request bodies of the app, in bytes: `server.max_content_length`
 of the config, by default that of the app (1 MiB; cf.
 `cloud_registry/config.yaml`). Fails unless it is a positive integer (numbers
 from values files are floats), as 0 means no limit for ingress-nginx.
 */}}
 {{- define "cloud-registry.maxContentLength" -}}
-{{- $custom := dig "custom" dict (.Values.config | default dict) -}}
-{{- if not (kindIs "map" $custom) -}}
-{{- $custom = dict -}}
+{{- $server := dig "server" dict (.Values.config | default dict) -}}
+{{- if not (kindIs "map" $server) -}}
+{{- $server = dict -}}
 {{- end -}}
 {{- $limit := 1048576 -}}
-{{- if hasKey $custom "max_content_length" -}}
-{{- $limit = index $custom "max_content_length" -}}
+{{- if hasKey $server "max_content_length" -}}
+{{- $limit = index $server "max_content_length" -}}
 {{- end -}}
 {{- $integer := or (kindIs "int" $limit) (kindIs "int64" $limit) (and (kindIs "float64" $limit) (eq $limit (floor $limit))) -}}
 {{- if not (and $integer (ge (int64 $limit) 1)) -}}
-{{- fail (printf "config.custom.max_content_length must be a positive integer (bytes), not %v" $limit) -}}
+{{- fail (printf "config.server.max_content_length must be a positive integer (bytes), not %v" $limit) -}}
 {{- end -}}
 {{- int64 $limit -}}
 {{- end -}}

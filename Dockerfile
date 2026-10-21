@@ -2,7 +2,7 @@
 ## Pinned by digest, so that rebuilds (e.g., of a release) use the same base
 ## image; Dependabot updates the tag and digest together
 ## (`.github/dependabot.yml`)
-FROM elixircloud/foca:0.14.0-py3.12@sha256:1c2ba7ea6a126d2be88c3f75c7b06a6cc6b4ac3b8b5590cd0df8460208e24da5
+FROM elixircloud/foca:0.15.0-py3.12@sha256:0d21e23d67f8b84a0bf4e2ee893024ac82344aec41a09f9f4b6440d1e108e570
 
 ##### METADATA #####
 LABEL software="Cloud Registry"

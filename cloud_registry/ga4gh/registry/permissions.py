@@ -28,10 +28,11 @@ from foca.security.access_control.enforcement import (
     RESOURCE_ROLE_PTYPE,
     get_enforcer,
 )
+from foca.utils.logging import escape_log_value
 
 from cloud_registry.exceptions import BadRequest, Conflict, NotFound
 from cloud_registry.ga4gh.registry.service import service_exists
-from cloud_registry.utils import escape_log_value, get_collection, get_custom_config
+from cloud_registry.utils import get_collection, get_custom_config
 
 logger = logging.getLogger(__name__)
 

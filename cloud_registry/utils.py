@@ -23,28 +23,6 @@ DATE_TIME = re.compile(
 )
 
 
-def escape_log_value(value: object) -> str:
-    """Escape non-printable characters of a value for logging.
-
-    Values from requests (e.g., identifiers from request paths) could forge
-    log lines with line breaks or hide text with control characters, so
-    these are replaced with their escape sequences (e.g., a line feed with
-    `\\n`).
-
-    Args:
-        value: Value to be logged.
-
-    Returns:
-        String representation of `value` with non-printable characters
-        escaped.
-    """
-    # TODO(#104): use `foca.utils.logging.escape_log_value()` (FOCA 0.15),
-    # which this copies
-    return "".join(
-        char if char.isprintable() else repr(char)[1:-1] for char in str(value)
-    )
-
-
 def get_custom_config() -> CustomConfig:
     """Get the custom configuration of the current app.
 
@@ -128,9 +106,7 @@ def get_collection(name: str) -> Collection:
 def is_date_time(value: object) -> bool:
     """Check whether a string is an RFC 3339 date-time (non-strings pass).
 
-    Used for the format `date-time` of the service info (cf.
-    `cloud_registry.ga4gh.registry.service_info.FORMAT_CHECKER`) and the
-    timestamps of registered services (cf.
+    Used for the timestamps of registered services (cf.
     `cloud_registry.ga4gh.registry.service.check_date_times()`).
     """
     if not isinstance(value, str):

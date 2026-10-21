@@ -9,6 +9,7 @@ import string
 import unicodedata
 from urllib.parse import SplitResult, quote, urlsplit, urlunsplit
 
+from foca.utils.logging import escape_log_value
 from foca.utils.misc import generate_id
 import idna
 from pymongo.errors import DuplicateKeyError
@@ -20,7 +21,6 @@ from cloud_registry.exceptions import (
     NotFound,
 )
 from cloud_registry.utils import (
-    escape_log_value,
     get_collection,
     get_custom_config,
     is_date_time,
@@ -54,8 +54,8 @@ LINK_FIELDS: dict[tuple[str, ...], frozenset[str]] = {
     ("documentationUrl",): frozenset(),
     ("organization", "url"): frozenset(),
 }
-# Fields with timestamps (`format: date-time`), which jsonschema doesn't check
-# without an optional package
+# Fields with timestamps (`format: date-time`), which Connexion's request
+# validation doesn't check without an optional package (`rfc3339-validator`)
 DATE_TIME_FIELDS = ("createdAt", "updatedAt")
 # Identifiers that can't be used for services: dot segments, which clients
 # resolve in URLs, and `types`, as `/services/types` lists the service types

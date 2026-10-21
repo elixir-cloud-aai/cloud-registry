@@ -19,7 +19,7 @@ from cloud_registry.ga4gh.registry.verification import (
     getVerifications,
     putServiceVerification,
 )
-from tests.mock_data import MOCK_ID, MOCK_SERVICE, MOCK_TYPE
+from tests.mock_data import ERROR_MEDIA_TYPE, MOCK_ID, MOCK_SERVICE, MOCK_TYPE
 
 # Time as read from the database (naive, UTC, in milliseconds)
 TIME = datetime(2026, 10, 20, 12, 34, 56, 789000)
@@ -134,7 +134,7 @@ def test_putServiceVerification_conflict(unit_app, services, checked):
     with unit_app.test_request_context():
         res = putServiceVerification(MOCK_ID, verification=checked)
     assert res.status_code == 409
-    assert res.mimetype == "application/problem+json"
+    assert res.content_type == ERROR_MEDIA_TYPE
     assert "another URL or API type" in res.json["detail"]
     assert services.find_one({"id": MOCK_ID})[VERIFIED] == TIME
 

@@ -11,6 +11,8 @@ from connexion.exceptions import (
     Unauthorized,
 )
 from flask import Response
+from foca import get_config
+from foca.utils.logging import escape_log_value
 from werkzeug.exceptions import (
     BadRequest,
     Conflict,
@@ -19,8 +21,6 @@ from werkzeug.exceptions import (
     NotFound,
     RequestEntityTooLarge,
 )
-
-from cloud_registry.utils import escape_log_value
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +171,8 @@ def _mapped(exc: Exception) -> dict:
 def _response(title: str, status: int, detail: str, **extensions: str) -> Response:
     """Build a problem details response.
 
+    Must be called in an app context.
+
     Args:
         title: Title of the problem.
         status: HTTP status code.
@@ -179,7 +181,8 @@ def _response(title: str, status: int, detail: str, **extensions: str) -> Respon
         extensions: Extension members of the problem details.
 
     Returns:
-        Problem details response.
+        Problem details response, with the media type of all error responses
+        (`exceptions.media_type`), as FOCA's.
     """
     details = {
         "title": title,
@@ -187,4 +190,8 @@ def _response(title: str, status: int, detail: str, **extensions: str) -> Respon
         "detail": shorten_detail(detail),
         **extensions,
     }
-    return Response(dumps(details), status=status, mimetype="application/problem+json")
+    return Response(
+        dumps(details),
+        status=status,
+        content_type=get_config().exceptions.media_type,
+    )

@@ -8,7 +8,6 @@ import subprocess
 import pytest
 import yaml
 
-from cloud_registry.service_models.custom_config import MAX_CONTENT_LENGTH
 from tests.gunicorn_settings import load_settings
 from tests.helm import (
     APP,
@@ -20,6 +19,7 @@ from tests.helm import (
     render_notes,
     render_with,
 )
+from tests.mock_data import MAX_CONTENT_LENGTH
 from tests.test_config import CONFIG_FILE
 
 NO_AUTH = ("--set", "mongodb.auth.enabled=false")
@@ -111,7 +111,7 @@ def test_config_change_restarts_app():
         template = _render(*args)[("Deployment", APP)]["spec"]["template"]
         return template["metadata"]["annotations"]["checksum/config"]
 
-    changed = ("--set", "config.custom.endpoints.service_info.environment=prod")
+    changed = ("--set", "config.service_info.service.environment=prod")
     assert checksum() != checksum(*changed)
 
 
@@ -398,6 +398,24 @@ def test_app_name_removed():
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render("--set", "cloud_registry.appName=cloud-registry")
     assert "fullnameOverride" in exc.value.stderr
+
+
+@pytest.mark.parametrize(
+    "removed, replacement",
+    [
+        ("config.custom.max_content_length", "config.server.max_content_length"),
+        ("config.custom.endpoints.service_info", "config.service_info.service"),
+    ],
+    ids=["max_content_length", "service_info"],
+)
+def test_custom_config_removed(removed, replacement):
+    """Settings of the custom config replaced by FOCA's (FOCA 0.15 upgrade)
+    are rejected, naming the replacement.
+    """
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render("--set-json", f'{removed}={{"name": "x"}}')
+    assert f"{removed} was removed" in exc.value.stderr
+    assert f"set {replacement} instead" in exc.value.stderr
 
 
 def test_upgrade():
@@ -873,7 +891,7 @@ def test_ingress_body_size_default():
     of the app, as in the base config.
     """
     config = yaml.safe_load(CONFIG_FILE.read_text())
-    assert config["custom"]["max_content_length"] == MAX_CONTENT_LENGTH
+    assert config["server"]["max_content_length"] == MAX_CONTENT_LENGTH
     annotations = _render()[("Ingress", APP)]["metadata"]["annotations"]
     assert annotations[BODY_SIZE] == BODY_SIZE_LIMIT
 
@@ -882,12 +900,12 @@ def test_ingress_body_size_app(tmp_path):
     """The size limit of request bodies of ingress-nginx follows that of
     the app, also from values files (which have floats).
     """
-    ingress = _render("--set", "config.custom.max_content_length=8388608")
+    ingress = _render("--set", "config.server.max_content_length=8388608")
     assert ingress[("Ingress", APP)]["metadata"]["annotations"] == {
         BODY_SIZE: "8388608"
     }
     values_file = tmp_path / "values.yaml"
-    config = {"custom": {"max_content_length": 8388608}}
+    config = {"server": {"max_content_length": 8388608}}
     values_file.write_text(yaml.safe_dump({"config": config}))
     ingress = _render("-f", str(values_file))[("Ingress", APP)]
     assert ingress["metadata"]["annotations"] == {BODY_SIZE: "8388608"}
@@ -896,9 +914,9 @@ def test_ingress_body_size_app(tmp_path):
 @pytest.mark.parametrize(
     "args",
     [
-        ("--set", "config.custom.max_content_length=null"),
-        ("--set", "config.custom.max_content_length=0"),
-        ("--set-string", "config.custom.max_content_length=1m"),
+        ("--set", "config.server.max_content_length=null"),
+        ("--set", "config.server.max_content_length=0"),
+        ("--set-string", "config.server.max_content_length=1m"),
     ],
     ids=["null", "zero", "string"],
 )
@@ -919,6 +937,17 @@ def test_ingress_body_size_custom_null():
     ingress = docs[("Ingress", APP)]
     assert ingress["metadata"]["annotations"] == {BODY_SIZE: BODY_SIZE_LIMIT}
     assert _overlay(docs)["custom"]["endpoints"]["service"]["external_host"] == "x"
+
+
+def test_server_null():
+    """`config.server: null` is like no server config: ingress-nginx gets
+    the app's default limit, and the overlay has no `server` (FOCA would
+    refuse `null`).
+    """
+    docs = _render("--set-json", "config.server=null")
+    ingress = docs[("Ingress", APP)]
+    assert ingress["metadata"]["annotations"] == {BODY_SIZE: BODY_SIZE_LIMIT}
+    assert "server" not in _overlay(docs)
 
 
 def test_ingress_body_size_annotation():

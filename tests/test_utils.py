@@ -4,7 +4,6 @@ from foca.config.access import get_app_config
 import pytest
 
 from cloud_registry.utils import (
-    escape_log_value,
     get_collection,
     get_custom_config,
     get_public_url,
@@ -77,24 +76,6 @@ def test_get_public_url_host(unit_app, host, url):
     ].endpoints.service.external_host = host
     with unit_app.test_request_context():
         assert get_public_url("/services") == url
-
-
-@pytest.mark.parametrize(
-    ("value", "escaped"),
-    [
-        ("MYSERV", "MYSERV"),
-        ("a\nb\r", "a\\nb\\r"),
-        ("a\x1b[31mb", "a\\x1b[31mb"),
-        ("\u202e", "\\u202e"),
-        ("\ud800", "\\ud800"),
-        ("Zoë", "Zoë"),
-        (None, "None"),
-    ],
-    ids=["plain", "line_breaks", "escape", "bidi", "surrogate", "unicode", "none"],
-)
-def test_escape_log_value(value, escaped):
-    """Non-printable characters are escaped, others are kept."""
-    assert escape_log_value(value) == escaped
 
 
 @pytest.mark.parametrize(

@@ -10,6 +10,7 @@ import pytest
 
 from cloud_registry.ga4gh.registry import verification as verification_module
 from tests.conftest import ADMIN, USER, make_headers
+from tests.mock_data import ERROR_MEDIA_TYPE
 
 BASE = "/ga4gh/registry/v1"
 SERVICE: dict = {
@@ -147,7 +148,7 @@ def test_verify_checked_conflict(client, service, body):
     """
     response = verify(client, checked=body)
     assert response.status_code == 409
-    assert response.mimetype == "application/problem+json"
+    assert response.content_type == ERROR_MEDIA_TYPE
     assert "another URL or API type" in response.json["detail"]
     assert verified(client) == []
     verified_at = verify(client).json["verified_at"]
@@ -189,7 +190,7 @@ def test_verify_checked_invalid_url(client, service, url, detail):
     """Invalid URLs in the body are rejected, saying why."""
     response = verify(client, checked={**checked(), "url": url})
     assert response.status_code == 400
-    assert response.mimetype == "application/problem+json"
+    assert response.content_type == ERROR_MEDIA_TYPE
     assert detail in response.json["detail"]
     assert verified(client) == []
 
@@ -219,7 +220,7 @@ def test_verify_unparsed_body(client, service, data, content_type):
         f"{BASE}/services/{service}/verification", data=data, headers=headers
     )
     assert response.status_code == 400
-    assert response.mimetype == "application/problem+json"
+    assert response.content_type == ERROR_MEDIA_TYPE
     assert verified(client) == []
 
 
@@ -328,7 +329,7 @@ def test_not_found(client):
     for method in ["get", "put", "delete"]:
         response = verification(client, "UNKNWN", method=method, user=ADMIN)
         assert response.status_code == 404
-        assert response.mimetype == "application/problem+json"
+        assert response.content_type == ERROR_MEDIA_TYPE
     assert put_service(client) == 201
     assert verification(client).status_code == 404
     assert unverify(client).status_code == 404

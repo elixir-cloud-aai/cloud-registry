@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from importlib.metadata import version
+import inspect
 import io
 import json
 import logging
@@ -10,24 +11,29 @@ import string
 
 import connexion
 from cryptography.hazmat.primitives.asymmetric import rsa
+import foca.api.service_info
 from foca.security import auth
+from pydantic import ValidationError
 import pytest
 import yaml
 
 import cloud_registry.app
 from cloud_registry.exceptions import MAX_DETAIL_LENGTH
+import cloud_registry.ga4gh.registry.server
 from cloud_registry.ga4gh.registry.service import KEY, service_key
-from cloud_registry.ga4gh.registry.service_info import InvalidServiceInfo
-from cloud_registry.service_models.custom_config import MAX_CONTENT_LENGTH
 from tests.conftest import (
     ADMIN_GROUP,
     APP_DIR,
     CONFIG_OVERLAY,
+    USER,
     make_headers,
     mock_get,
 )
+from tests.mock_data import ERROR_MEDIA_TYPE, MAX_CONTENT_LENGTH
 
 BASE = "/ga4gh/registry/v1"
+# Fields of OpenAPI Path Item Objects holding Operation Objects
+HTTP_METHODS = {"get", "put", "post", "delete", "options", "head", "patch", "trace"}
 # Public URL of the app, as configured in `config.yaml`
 PUBLIC_URL = "https://0.0.0.0:8080"
 TIMESTAMPS = {"createdAt", "updatedAt"}
@@ -212,7 +218,7 @@ def _record_idp_requests(monkeypatch) -> list:
 def _assert_too_large(response) -> None:
     """Assert that a response rejects a request body as too large."""
     _assert_error(response, 413)
-    assert response.mimetype == "application/problem+json"
+    assert response.content_type == ERROR_MEDIA_TYPE
     assert response.json["title"] == "Content Too Large"
 
 
@@ -315,10 +321,35 @@ def test_body_at_limit(client, headers, chunked):
     assert response.status_code == 201
 
 
+def test_body_content_length_invalid(client):
+    """Requests with an invalid declared size (`Content-Length`) are
+    rejected (`400`, as problem details of the app), without reading their
+    body.
+    """
+    stream = io.BytesIO(json.dumps(_service()).encode())
+    response = client.post(
+        f"{BASE}/services",
+        input_stream=stream,
+        content_type="application/json",
+        environ_overrides={"CONTENT_LENGTH": "1e3"},
+    )
+    _assert_error(response, 400)
+    assert response.content_type == ERROR_MEDIA_TYPE
+    assert stream.tell() == 0
+
+
+def test_max_content_length_default(app):
+    """Request bodies are limited to 1 MiB by default, by FOCA
+    (`server.max_content_length`).
+    """
+    assert app.app.config.foca.server.max_content_length == MAX_CONTENT_LENGTH
+    assert app.app.config["MAX_CONTENT_LENGTH"] == MAX_CONTENT_LENGTH
+
+
 def test_max_content_length_configured(monkeypatch, tmp_path, app_env, headers):
     """The size limit of request bodies is set from the config."""
     path = tmp_path / "overlay.yaml"
-    path.write_text(yaml.safe_dump({"custom": {"max_content_length": 1000}}))
+    path.write_text(yaml.safe_dump({"server": {"max_content_length": 1000}}))
     overlays = os.pathsep.join([str(CONFIG_OVERLAY), str(path)])
     monkeypatch.setenv("FOCA_CONFIG_OVERLAY", overlays)
     app = cloud_registry.app.create_app()
@@ -327,6 +358,18 @@ def test_max_content_length_configured(monkeypatch, tmp_path, app_env, headers):
     _assert_too_large(_send(client, _body(1001), headers=headers))
     _assert_too_large(_send_chunked(client, _body(1001), headers)[0])
     assert _send(client, _body(1000), headers=headers).status_code == 201
+
+
+def test_max_content_length_null(monkeypatch, tmp_path, app_env):
+    """The app refuses to start with `server.max_content_length: null`,
+    which would remove the size limit of request bodies (FOCA).
+    """
+    path = tmp_path / "overlay.yaml"
+    path.write_text(yaml.safe_dump({"server": {"max_content_length": None}}))
+    overlays = os.pathsep.join([str(CONFIG_OVERLAY), str(path)])
+    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", overlays)
+    with pytest.raises(RuntimeError, match="max_content_length"):
+        cloud_registry.app.create_app()
 
 
 def _set_field(service: dict, field: str, value: str) -> dict:
@@ -383,7 +426,7 @@ def _assert_duplicate(response, existing_id):
     and API type.
     """
     assert response.status_code == 409
-    assert response.mimetype == "application/problem+json"
+    assert response.content_type == ERROR_MEDIA_TYPE
     assert response.json["serviceId"] == existing_id
     assert existing_id in response.json["detail"]
 
@@ -448,7 +491,7 @@ def test_service_url_invalid(client, admin_headers, method, path, url, detail):
         f"{BASE}/services{path}", json=_service(url=url), headers=admin_headers
     )
     _assert_error(response, 400)
-    assert response.mimetype == "application/problem+json"
+    assert response.content_type == ERROR_MEDIA_TYPE
     assert response.json["title"] == "Bad request"
     assert detail in response.json["detail"]
     assert "Location" not in response.headers
@@ -515,7 +558,7 @@ def test_service_url_not_http(client, admin_headers, method, path, field):
         headers=admin_headers,
     )
     _assert_error(response, 400)
-    assert response.mimetype == "application/problem+json"
+    assert response.content_type == ERROR_MEDIA_TYPE
     assert "Location" not in response.headers
     assert client.get(f"{BASE}/services").json == []
 
@@ -701,19 +744,49 @@ def test_get_service_types(client, headers):
 
 
 def test_service_info(app, client):
-    """Service info is served from the config, with the package version and
-    without timestamps that aren't configured.
+    """Service info is served by FOCA from the config, with the package
+    version and without timestamps that aren't configured.
     """
-    config = app.app.config.foca.custom.endpoints.service_info
+    config = app.app.config.foca.service_info.service
     response = client.get(f"{BASE}/service-info")
     assert response.status_code == 200
     assert response.json == {**config, "version": version("cloud-registry")}
     assert not TIMESTAMPS & response.json.keys()
 
 
+def test_service_info_served_by_foca(app):
+    """`GET /service-info` is routed to FOCA's controller."""
+    rule = next(
+        rule
+        for rule in app.app.url_map.iter_rules()
+        if rule.rule == f"{BASE}/service-info"
+    )
+    # both unwrapped, as FOCA's controller is itself decorated (traffic
+    # logging)
+    view = inspect.unwrap(app.app.view_functions[rule.endpoint])
+    assert view is inspect.unwrap(foca.api.service_info.getServiceInfo)
+
+
+def test_service_info_traffic_logged(client, caplog):
+    """Requests for the service info and their responses are logged, as
+    those of the registry's other operations (by FOCA's controller, as
+    `service_info.log_traffic` is not disabled).
+    """
+    caplog.set_level(logging.INFO, logger="foca.utils.logging")
+    client.get(f"{BASE}/service-info")
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "foca.utils.logging"
+    ]
+    path = f"{BASE}/service-info"
+    assert any(m.startswith("Incoming request:") and path in m for m in messages)
+    assert any(m.startswith("Response to request") and path in m for m in messages)
+
+
 def test_service_info_configured(app, client):
     """Configured versions and timestamps are served."""
-    config = app.app.config.foca.custom.endpoints.service_info
+    config = app.app.config.foca.service_info.service
     configured = {"version": "1.2.3", "createdAt": "2020-11-08T00:00:00Z"}
     config.update(configured)
     assert client.get(f"{BASE}/service-info").json.items() >= configured.items()
@@ -727,18 +800,102 @@ def test_service_info_read_only(client, admin_headers):
     assert list(spec["paths"]["/service-info"]) == ["get"]
 
 
-def test_error_media_type(client, headers):
-    """Error responses are problem details, a media type declared in the
-    specification.
+@pytest.mark.parametrize(
+    "method, path, user, status",
+    [
+        # app exceptions, handled by FOCA
+        ("get", f"{BASE}/services/UNKNWN", USER, 404),
+        # request validation (`cloud_registry.exceptions.validation_problem()`)
+        ("post", f"{BASE}/services", USER, 400),
+        # security errors of Connexion and of FOCA's access control
+        ("post", f"{BASE}/services", None, 401),
+        ("delete", f"{BASE}/services/UNKNWN/verification", USER, 403),
+        # FOCA's permissions API
+        ("get", "/admin/access-control/permissions", None, 401),
+        ("get", "/admin/access-control/permissions", USER, 403),
+        # unknown routes and methods
+        ("get", "/unknown", None, 404),
+        ("get", f"{BASE}/unknown", USER, 404),
+        ("post", f"{BASE}/service-info", None, 405),
+    ],
+    ids=[
+        "app",
+        "validation",
+        "unauthorized",
+        "forbidden",
+        "permissions_unauthorized",
+        "permissions_forbidden",
+        "unknown_route",
+        "unknown_api_route",
+        "unknown_method",
+    ],
+)
+def test_error_media_type(client, method, path, user, status):
+    """Error responses are problem details with the media type declared by
+    the GA4GH specifications, whatever raised them.
     """
-    response = client.get(f"{BASE}/services/unknown", headers=headers)
-    assert response.status_code == 404
-    assert response.mimetype == "application/problem+json"
+    response = client.open(
+        path,
+        method=method.upper(),
+        json={} if method == "post" else None,
+        headers={} if user is None else make_headers(user),
+    )
+    assert response.status_code == status
+    assert response.content_type == ERROR_MEDIA_TYPE
+    assert response.json["status"] == status
 
-    spec = client.get(f"{BASE}/openapi.json").json
-    declared = spec["paths"]["/services/{serviceId}"]["get"]["responses"]["404"]
-    name = declared["$ref"].rsplit("/", 1)[-1]
-    assert response.mimetype in spec["components"]["responses"][name]["content"]
+
+def test_error_media_type_problem(client, headers):
+    """Problem details built by the app (`cloud_registry.exceptions.problem()`,
+    e.g., for duplicates) have the media type of all error responses.
+    """
+    existing_id = _post(client, headers)
+    response = client.post(f"{BASE}/services", json=_service(), headers=headers)
+    _assert_duplicate(response, existing_id)
+    assert response.content_type == ERROR_MEDIA_TYPE
+
+
+def test_error_media_type_internal_error(monkeypatch, client):
+    """Unexpected errors have the media type of all error responses."""
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(cloud_registry.ga4gh.registry.server, "get_collection", fail)
+    response = client.get(f"{BASE}/services")
+    _assert_error(response, 500)
+    assert response.content_type == ERROR_MEDIA_TYPE
+
+
+def _error_contents(spec: dict):
+    """Yield the operation, status and content of each error response of a
+    specification, resolving references to shared responses.
+    """
+    for path, path_item in spec["paths"].items():
+        for method, operation in path_item.items():
+            if method not in HTTP_METHODS:
+                continue
+            for status, response in operation["responses"].items():
+                if status != "default" and str(status)[0] not in "45":
+                    continue
+                if "$ref" in response:
+                    name = response["$ref"].rsplit("/", 1)[-1]
+                    response = spec["components"]["responses"][name]
+                yield f"{method.upper()} {path} {status}", response.get("content")
+
+
+def test_error_media_type_declared(client):
+    """The specification declares a body with only the media type of error
+    responses for each error response (FOCA's permissions API declares the
+    configured one, too).
+    """
+    response = client.get(f"{BASE}/openapi.json")
+    assert response.status_code == 200
+    contents = dict(_error_contents(response.json))
+    assert contents
+    for operation, content in contents.items():
+        assert content is not None, operation
+        assert list(content) == [ERROR_MEDIA_TYPE], operation
 
 
 def _refs(obj):
@@ -829,6 +986,28 @@ def test_create_app_admin_optional(monkeypatch, tmp_path, app_env, capsys):
     assert "No group is mapped to the role 'admin'" in capsys.readouterr().err
 
 
+def _service_info_overlay(service_info: dict) -> dict:
+    """Get a config overlay with service info for apps without admins."""
+    return {
+        "security": {"auth": {"audience": ["a"]}},
+        "custom": {"access_control": {"require_admin": False}},
+        "service_info": service_info,
+    }
+
+
+def test_create_app_service_info_nulls(monkeypatch, tmp_path, app_env):
+    """Fields set to `null` in a config overlay are not served."""
+    _set_overlay(
+        monkeypatch,
+        tmp_path,
+        _service_info_overlay({"service": {"contactUrl": None, "version": None}}),
+    )
+    client = cloud_registry.app.create_app().app.test_client()
+    info = client.get(f"{BASE}/service-info").json
+    assert "contactUrl" not in info
+    assert info["version"] == version("cloud-registry")
+
+
 def test_create_app_invalid_service_info(monkeypatch, tmp_path, app_env):
     """`create_app()` fails if the service info is invalid, naming the
     field.
@@ -836,18 +1015,40 @@ def test_create_app_invalid_service_info(monkeypatch, tmp_path, app_env):
     _set_overlay(
         monkeypatch,
         tmp_path,
-        {
-            "security": {"auth": {"audience": ["a"]}},
-            "custom": {
-                "access_control": {"require_admin": False},
-                "endpoints": {"service_info": {"contactUrl": "support"}},
-            },
-        },
+        _service_info_overlay({"service": {"contactUrl": "support"}}),
     )
-    with pytest.raises(
-        InvalidServiceInfo, match=r"`custom\.endpoints\.service_info\.contactUrl`"
-    ):
+    with pytest.raises(ValidationError, match=r"`service_info\.service\.contactUrl`"):
         cloud_registry.app.create_app()
+
+
+def test_create_app_service_info_in_custom(monkeypatch, tmp_path, app_env):
+    """`create_app()` fails if the service info is set in the custom config,
+    where it was set before FOCA served it (FOCA raises a `ValueError`
+    caused by the validation error).
+    """
+    overlay = _service_info_overlay({})
+    del overlay["service_info"]
+    overlay["custom"]["endpoints"] = {"service_info": {"environment": "prod"}}
+    _set_overlay(monkeypatch, tmp_path, overlay)
+    with pytest.raises(ValueError, match="custom configuration") as exc:
+        cloud_registry.app.create_app()
+    assert isinstance(exc.value.__cause__, ValidationError)
+    assert "endpoints.service_info" in str(exc.value.__cause__)
+
+
+def test_create_app_max_content_length_in_custom(monkeypatch, tmp_path, app_env):
+    """`create_app()` fails if the size limit of request bodies is set in
+    the custom config, where it was set before FOCA limited request bodies
+    (FOCA raises a `ValueError` caused by the validation error).
+    """
+    overlay = _service_info_overlay({})
+    del overlay["service_info"]
+    overlay["custom"]["max_content_length"] = 1000
+    _set_overlay(monkeypatch, tmp_path, overlay)
+    with pytest.raises(ValueError, match="custom configuration") as exc:
+        cloud_registry.app.create_app()
+    assert isinstance(exc.value.__cause__, ValidationError)
+    assert "max_content_length" in str(exc.value.__cause__)
 
 
 def test_create_app_config_missing(monkeypatch, tmp_path):
@@ -944,7 +1145,7 @@ def test_validation_error_detail(client, admin_headers, request_kwargs, detail):
     path = request_kwargs.pop("path")
     response = client.open(f"{BASE}{path}", headers=admin_headers, **request_kwargs)
     _assert_error(response, 400)
-    assert response.mimetype == "application/problem+json"
+    assert response.content_type == ERROR_MEDIA_TYPE
     assert response.json["title"] == "Bad request"
     assert detail in response.json["detail"]
 

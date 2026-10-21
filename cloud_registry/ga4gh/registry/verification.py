@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 import logging
 
 from flask import Response, request
+from foca.utils.logging import escape_log_value
 from pymongo import ReturnDocument
 from werkzeug.exceptions import HTTPException
 
@@ -36,7 +37,7 @@ from cloud_registry.ga4gh.registry.service import (
     service_exists,
     service_key,
 )
-from cloud_registry.utils import escape_log_value, get_collection
+from cloud_registry.utils import get_collection
 
 logger = logging.getLogger(__name__)
 # Projection of the fields served with verifications

@@ -219,6 +219,13 @@ unknown fields, values that are too long, extra query parameters, or bodies
 that aren't JSON) are rejected with `400 Bad Request`, with the reason in
 `detail`.
 
+Errors are [problem details][rfc-7807] (`title`, `status` and usually
+`detail`, e.g., `{"title": "Not found", "status": 404, "detail": "The
+requested resource wasn't found."}`), sent as `application/json`, as the
+GA4GH specification declares (FOCA's `exceptions.media_type`), for all errors,
+including those of authentication and access control, unknown paths and
+FOCA's permissions API.
+
 See [Access control](#access-control) for the roles and [Verified
 services](#verified-services) for verifications. Extensions of the GA4GH
 endpoints, such as pagination, search or filters, will be reconsidered with
@@ -343,14 +350,15 @@ the internet, route only `/ga4gh/registry/v1/` through a reverse proxy.
 ## Service info
 
 `GET /service-info` serves the service info from the config
-(`custom.endpoints.service_info`), without the database. On startup, the app
-checks it against the GA4GH `Service` schema and refuses to start if it is
-invalid, naming the invalid field. `version` defaults to the version of the
-installed app; `createdAt` and `updatedAt` are served only if set, and must be
-RFC 3339 date-times (e.g., `2020-11-08T00:00:00Z`). Fields and list items set
-to `null` (e.g., in a config overlay) are not served. To change the service
-info, change the config and restart the app (the Helm chart restarts it when
-the `config` value changes).
+(`service_info.service`), without the database; it is served by
+[FOCA][foca-service-info]. On startup, the service info is checked against the
+GA4GH `Service` schema, and the app refuses to start if it is invalid, naming
+the invalid field. `version` defaults to the version of the installed app
+(`service_info.package`); `createdAt` and `updatedAt` are served only if set,
+and must be RFC 3339 date-times (e.g., `2020-11-08T00:00:00Z`). Fields and list
+items set to `null` (e.g., in a config overlay) are not served. To change the
+service info, change the config and restart the app (the Helm chart restarts
+it when the `config` value changes).
 
 Previously, service info could be set via `POST /service-info` and was stored
 in the database. That endpoint is gone, and stored service info is no longer
@@ -515,16 +523,18 @@ Previously, `api_path` held the API base path itself (e.g.,
 
 ### Request size limit
 
-Request bodies are limited to `custom.max_content_length` bytes (default:
-1048576, i.e., 1 MiB). Larger requests are rejected with `413 Content Too
-Large` before the access token is checked and the body is parsed: requests
-whose `Content-Length` exceeds the limit are rejected without reading the
-body. Bodies of unknown size (`Transfer-Encoding: chunked`) are read up to one
-byte over the limit, and rejected if they are larger.
+Request bodies are limited to `server.max_content_length` bytes (default:
+1048576, i.e., 1 MiB), by [FOCA][foca-server]. Larger requests are rejected
+with `413 Content Too Large` before the access token is checked and the body
+is parsed: requests whose `Content-Length` exceeds the limit are rejected
+without reading the body (and requests with an invalid `Content-Length` with
+`400`). Bodies of unknown size (`Transfer-Encoding: chunked`) are read up to
+one byte over the limit, and rejected if they are larger. The app refuses to
+start with `null` (which would remove the limit in FOCA).
 
 Set the same limit at the ingress or reverse proxy in front of the app, so
 that it rejects larger requests itself; the Helm chart sets the limit of
-ingress-nginx from `custom.max_content_length` (see the [deployment
+ingress-nginx from `server.max_content_length` (see the [deployment
 instructions][deployment-instructions]).
 
 ### Server
@@ -719,5 +729,8 @@ etc.
 [foca-access-control]: https://foca.readthedocs.io/en/latest/access-control/
 [foca-auth]: https://foca.readthedocs.io/en/latest/authentication/
 [foca-deployment]: https://foca.readthedocs.io/en/latest/deployment/
+[rfc-7807]: https://www.rfc-editor.org/rfc/rfc7807
+[foca-service-info]: https://foca.readthedocs.io/en/latest/configuration/service-info/
+[foca-server]: https://foca.readthedocs.io/en/latest/configuration/server/
 [ls-login]: https://lifescience-ri.eu/ls-login/
 [protes]: https://github.com/elixir-cloud-aai/proTES

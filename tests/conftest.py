@@ -15,7 +15,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from flask import Flask
 from foca.config.access import set_app_config
 from foca.database import register_mongodb
-from foca.models.config import Config, MongoConfig
+from foca.models.config import Config, ExceptionConfig, MongoConfig
 from foca.security import auth
 import jwt
 import mongomock
@@ -24,7 +24,7 @@ import pytest
 from cloud_registry.app import create_app
 from cloud_registry.ga4gh.registry.service import KEY as SERVICE_KEY
 from cloud_registry.service_models.custom_config import CustomConfig
-from tests.mock_data import CUSTOM_CONFIG, DB, MONGO_CONFIG
+from tests.mock_data import CUSTOM_CONFIG, DB, ERROR_MEDIA_TYPE, MONGO_CONFIG
 
 APP_DIR = Path(__file__).parents[1] / "cloud_registry"
 # Config overlay with the settings each deployment must make (audience, admin
@@ -191,12 +191,16 @@ def unit_app():
     """Flask app with the test configuration, for unit tests.
 
     Its collections are in memory and have the unique indexes from
-    `config.yaml`.
+    `config.yaml`; error responses have the media type of `config.yaml`.
     """
     app = Flask(__name__)
     set_app_config(
         app,
-        Config(db=MongoConfig(**MONGO_CONFIG), custom=CustomConfig(**CUSTOM_CONFIG)),
+        Config(
+            db=MongoConfig(**MONGO_CONFIG),
+            exceptions=ExceptionConfig(media_type=ERROR_MEDIA_TYPE),
+            custom=CustomConfig(**CUSTOM_CONFIG),
+        ),
     )
     db = mongomock.MongoClient().db
     for name, coll_conf in app.config.foca.db.dbs[DB].collections.items():
