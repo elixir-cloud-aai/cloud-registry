@@ -18,11 +18,11 @@ from datetime import datetime, timezone
 import logging
 
 from flask import Response, request
-from foca.security.access_control import get_current_subject
 from pymongo import ReturnDocument
 from werkzeug.exceptions import HTTPException
 
 from cloud_registry.exceptions import BadRequest, Conflict, NotFound, problem
+from cloud_registry.ga4gh.registry.permissions import current_user
 from cloud_registry.ga4gh.registry.service import (
     KEY,
     VERIFIED,
@@ -214,7 +214,7 @@ def putServiceVerification(
     logger.info(
         "Service '%s' verified by '%s'.",
         escape_log_value(serviceId),
-        escape_log_value(get_current_subject()),
+        current_user(),
     )
     return _verification(service)
 
@@ -241,7 +241,7 @@ def deleteServiceVerification(serviceId: str, **kwargs) -> str:
     logger.info(
         "Verification of service '%s' removed by '%s'.",
         escape_log_value(serviceId),
-        escape_log_value(get_current_subject()),
+        current_user(),
     )
     return serviceId
 
