@@ -74,14 +74,15 @@ def adapt_links(markdown: str, repo_url: str, ref: str = "dev") -> str:
     lines = []
     in_fence = False
     for line in markdown.splitlines():
+        adapted = line
         if FENCE.match(line):
             in_fence = not in_fence
         elif not in_fence:
-            line = LINK.sub(
+            adapted = LINK.sub(
                 lambda match: f"]({adapt_link(match['target'], repo_url, ref)})",
                 line,
             )
-        lines.append(line)
+        lines.append(adapted)
     return "\n".join(lines)
 
 

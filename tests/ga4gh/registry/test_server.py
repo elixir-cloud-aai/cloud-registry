@@ -87,9 +87,8 @@ def test_getServiceById(unit_app: Flask, services: Collection[dict[str, Any]]) -
         assert res == mock_service
 
     # check whether error is raised if ID does not exist
-    with pytest.raises(NotFound):
-        with unit_app.app_context():
-            res = inspect.unwrap(getServiceById)("serv4")
+    with pytest.raises(NotFound), unit_app.app_context():
+        res = inspect.unwrap(getServiceById)("serv4")
 
 
 # GET /services/types
@@ -179,9 +178,8 @@ def test_postService_invalid_payload(
 
     The identifier is assigned by the implementation.
     """
-    with pytest.raises(BadRequest):
-        with unit_app.test_request_context(json=""):
-            inspect.unwrap(postService)()
+    with pytest.raises(BadRequest), unit_app.test_request_context(json=""):
+        inspect.unwrap(postService)()
 
 
 # DELETE /service/{serviceId}
@@ -205,9 +203,8 @@ def test_deleteService_NotFound(
     """Test for deleting a service if no service has the identifier."""
     services.insert_one(deepcopy(MOCK_SERVICE))
 
-    with unit_app.app_context():
-        with pytest.raises(NotFound):
-            inspect.unwrap(deleteService)(serviceId=MOCK_ID)
+    with unit_app.app_context(), pytest.raises(NotFound):
+        inspect.unwrap(deleteService)(serviceId=MOCK_ID)
 
 
 def test_deleteService_concurrently(
@@ -221,9 +218,8 @@ def test_deleteService_concurrently(
     I.e., a service deleted after it was found.
     """
     monkeypatch.setattr(server, "service_exists", lambda serviceId: True)
-    with unit_app.app_context():
-        with pytest.raises(NotFound):
-            inspect.unwrap(deleteService)(serviceId=MOCK_ID)
+    with unit_app.app_context(), pytest.raises(NotFound):
+        inspect.unwrap(deleteService)(serviceId=MOCK_ID)
     assert ownership == [("remove_permissions", MOCK_ID)]
 
 
@@ -257,9 +253,11 @@ def test_putService_not_admin(
     """
     monkeypatch.setattr(server, "is_admin", lambda: False)
     path = f"/services/{MOCK_ID}"
-    with unit_app.test_request_context(path, json=deepcopy(MOCK_SERVICE)):
-        with pytest.raises(NotFound):
-            inspect.unwrap(putService)(serviceId=MOCK_ID)
+    with (
+        unit_app.test_request_context(path, json=deepcopy(MOCK_SERVICE)),
+        pytest.raises(NotFound),
+    ):
+        inspect.unwrap(putService)(serviceId=MOCK_ID)
     _insert_services(services, [MOCK_ID])
     with unit_app.test_request_context(path, json=deepcopy(MOCK_SERVICE)):
         assert inspect.unwrap(putService)(serviceId=MOCK_ID) == MOCK_ID
@@ -274,6 +272,5 @@ def test_putService_invalid_payload(
 
     The identifier is provided by the client.
     """
-    with pytest.raises(BadRequest):
-        with unit_app.test_request_context(json=""):
-            inspect.unwrap(putService)(serviceId=MOCK_ID)
+    with pytest.raises(BadRequest), unit_app.test_request_context(json=""):
+        inspect.unwrap(putService)(serviceId=MOCK_ID)

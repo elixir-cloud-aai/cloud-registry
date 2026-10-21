@@ -36,7 +36,13 @@ from foca.security.access_control.enforcement import (
 )
 from foca.utils.logging import escape_log_value
 
-from cloud_registry.exceptions import BadRequest, Conflict, Forbidden, NotFound
+from cloud_registry.exceptions import (
+    BadRequest,
+    Conflict,
+    Forbidden,
+    NotFound,
+    Unauthorized,
+)
 from cloud_registry.ga4gh.registry.service import service_exists
 from cloud_registry.utils import get_collection, get_custom_config
 
@@ -97,9 +103,32 @@ def _api_base_path() -> str:
     Returns:
         Base path, e.g., `/ga4gh/registry/v1` (Connexion registers each API
         as a Flask blueprint with its base path as URL prefix).
+
+    Raises:
+        RuntimeError: The current request is not routed through a blueprint,
+            i.e., not handled by an API.
     """
-    # Requests to the API are routed through its blueprint, so it is set
-    return current_app.blueprints[request.blueprint].url_prefix or ""  # type: ignore[index]
+    if request.blueprint is None:
+        raise RuntimeError("The current request is not handled by an API")
+    return current_app.blueprints[request.blueprint].url_prefix or ""
+
+
+def _require_subject() -> str:
+    """Get the subject of the current request, which must be authenticated.
+
+    For operations that require authentication, so that their requests have
+    a subject.
+
+    Returns:
+        User identifier.
+
+    Raises:
+        Unauthorized: The current request has no subject.
+    """
+    subject = get_current_subject()
+    if subject is None:
+        raise Unauthorized
+    return subject
 
 
 def service_path(serviceId: str) -> str:
@@ -151,7 +180,10 @@ def is_admin() -> bool:
     """
     prefix = get_config().security.access_control.subject_prefix
     role_manager = get_enforcer().get_role_manager()
-    subjects = [f"{prefix}{get_current_subject()}", *get_current_groups()]
+    user_id = get_current_subject()
+    subjects = [*get_current_groups()]
+    if user_id is not None:
+        subjects.insert(0, f"{prefix}{user_id}")
     return any(role_manager.has_link(subject, "admin") for subject in subjects)
 
 
@@ -199,11 +231,12 @@ def add_owner(serviceId: str) -> None:
 
     Args:
         serviceId: Service identifier.
+
+    Raises:
+        Unauthorized: The current request has no subject.
     """
-    # Operations that change roles require authentication, so the request
-    # has a subject
     add_resource_role(
-        subject=get_current_subject(),  # type: ignore[arg-type]
+        subject=_require_subject(),
         role="owner",
         resource=service_path(serviceId),
     )
@@ -225,10 +258,11 @@ def remove_owner(serviceId: str) -> None:
 
     Args:
         serviceId: Service identifier.
+
+    Raises:
+        Unauthorized: The current request has no subject.
     """
-    # Operations that change roles require authentication, so the request
-    # has a subject
-    user_id: str = get_current_subject()  # type: ignore[assignment]
+    user_id = _require_subject()
     if remove_resource_role(
         subject=user_id, role="owner", resource=service_path(serviceId)
     ):
@@ -674,9 +708,12 @@ def getMe(**kwargs: Any) -> dict[str, Any]:
         identifier (roles of the user first). Names are only stored for
         services with roles granted to the user, as only these are listed
         with names (cf. `getServicePermissions()`).
+
+    Raises:
+        Unauthorized: The request has no subject (the endpoint requires
+            authentication, so it always has one).
     """
-    # The endpoint requires authentication, so the request has a subject
-    user_id: str = get_current_subject()  # type: ignore[assignment]
+    user_id = _require_subject()
     prefix = get_config().security.access_control.subject_prefix
     services_path = f"{_api_base_path()}/services/"
     enforcer = get_enforcer()

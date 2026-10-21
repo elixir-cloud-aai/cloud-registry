@@ -14,6 +14,7 @@ from flask.testing import FlaskClient
 from mongomock.collection import Collection as MockCollection
 import pytest
 
+from cloud_registry.exceptions import Unauthorized
 from cloud_registry.ga4gh.registry import permissions as permissions_module
 from cloud_registry.ga4gh.registry import server as server_module
 from cloud_registry.utils import get_collection
@@ -568,6 +569,42 @@ def test_no_claims_without_token(app: App) -> None:
     """Without a validated token, there are no claims."""
     with app.app.test_request_context():
         assert permissions_module._get_current_claims() == {}
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        lambda: permissions_module.add_owner("ABC"),
+        lambda: permissions_module.remove_owner("ABC"),
+        permissions_module.getMe,
+    ],
+    ids=["add_owner", "remove_owner", "getMe"],
+)
+def test_subject_required(app: App, operation: Callable[[], object]) -> None:
+    """Operations that need a subject reject requests without one."""
+    with app.app.test_request_context(), pytest.raises(Unauthorized):
+        operation()
+
+
+def test_is_admin_without_subject(app: App) -> None:
+    """Requests without a subject or groups aren't an admin's.
+
+    Also if a user named `None` is an admin.
+    """
+    with app.app.test_request_context(f"{BASE}/me"):
+        app.app.preprocess_request()
+        prefix = permissions_module.get_config().security.access_control.subject_prefix
+        permissions_module.get_enforcer().add_role_for_user(f"{prefix}None", "admin")
+        assert not permissions_module.is_admin()
+
+
+def test_api_base_path_outside_api(app: App) -> None:
+    """Requests not handled by an API have no API base path."""
+    with (
+        app.app.test_request_context("/unknown"),
+        pytest.raises(RuntimeError, match="not handled by an API"),
+    ):
+        permissions_module._api_base_path()
 
 
 def _roles(app: App, service_id: str) -> list[tuple[str, str]]:

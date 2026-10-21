@@ -122,12 +122,19 @@ def problem(exc: HTTPException, **extensions: str) -> Response:
 
     Returns:
         Problem details response.
+
+    Raises:
+        ValueError: The exception has no code or no description (e.g., a
+            plain `HTTPException`).
     """
-    # The exceptions passed here are raised with a code and a description
+    if exc.code is None or exc.description is None:
+        raise ValueError(
+            f"Problem details need an exception with a code and a description: {exc!r}"
+        )
     return _response(
         title=_mapped(exc)["title"],
-        status=exc.code,  # type: ignore[arg-type]
-        detail=exc.description,  # type: ignore[arg-type]
+        status=exc.code,
+        detail=exc.description,
         **extensions,
     )
 
