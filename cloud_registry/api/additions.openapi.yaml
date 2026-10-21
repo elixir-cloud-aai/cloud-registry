@@ -18,8 +18,12 @@ servers:
 # Read operations of the GA4GH specifications are public: the security
 # requirements set here are merged into them
 paths:
+  # Served by FOCA from the config (`service_info`); the controller set here
+  # takes precedence over the one added to all operations (`api.specs` in
+  # `config.yaml`)
   /service-info:
     get:
+      x-openapi-router-controller: foca.api.service_info
       security: []
   /services:
     get:

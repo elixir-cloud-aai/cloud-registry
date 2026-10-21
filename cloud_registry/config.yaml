@@ -129,6 +129,30 @@ api:
                   swagger_ui: True
                   serve_spec: True
 
+# Service info, served at `GET /service-info` by FOCA, according to the GA4GH
+# `Service` schema (validated on startup); `version` defaults to the version
+# of the installed package (`package`)
+# Cf. https://foca.readthedocs.io/en/latest/configuration/service-info/
+service_info:
+    package: cloud-registry
+    service:
+        id: "ELIXIR_CLOUD_SERVICE_REGISTRY_1"
+        name: "ELIXIR_CLOUD"
+        type:
+            group: "org.ga4gh"
+            artifact: "service-registry"
+            version: "1.0.0"
+        description: "Service registry for the ELIXIR Cloud network."
+        organization:
+            name: "ELIXIR Cloud & AAI"
+            url: "https://elixir-cloud.dcc.sib.swiss/"
+        contactUrl: "https://elixir-cloud.dcc.sib.swiss/"
+        documentationUrl: "https://github.com/elixir-cloud-aai/cloud-registry"
+        environment: "dev"
+        # Optional timestamps (RFC 3339), served only if set, e.g.:
+        # createdAt: "2020-11-08T00:00:00Z"
+        # updatedAt: "2026-10-20T00:00:00Z"
+
 # Logging configuration
 # Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.LogConfig
 log:
@@ -171,26 +195,6 @@ custom:
             external_host: 0.0.0.0
             external_port: 8080
             api_path: ''
-        # Service info served at `/service-info`, according to the GA4GH
-        # `Service` schema (checked on startup); `version` defaults to the
-        # version of the installed package
-        service_info:
-            id: "ELIXIR_CLOUD_SERVICE_REGISTRY_1"
-            name: "ELIXIR_CLOUD"
-            type:
-                group: "org.ga4gh"
-                artifact: "service-registry"
-                version: "1.0.0"
-            description: "Service registry for the ELIXIR Cloud network."
-            organization:
-                name: "ELIXIR Cloud & AAI"
-                url: "https://elixir-cloud.dcc.sib.swiss/"
-            contactUrl: "https://elixir-cloud.dcc.sib.swiss/"
-            documentationUrl: "https://github.com/elixir-cloud-aai/cloud-registry"
-            environment: "dev"
-            # Optional timestamps (RFC 3339), served only if set, e.g.:
-            # createdAt: "2020-11-08T00:00:00Z"
-            # updatedAt: "2026-10-20T00:00:00Z"
         services:
             id:
                 charset: ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789

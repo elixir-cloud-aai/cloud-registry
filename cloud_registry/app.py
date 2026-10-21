@@ -17,7 +17,6 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from cloud_registry.exceptions import validation_problem
 from cloud_registry.ga4gh.registry.permissions import check_admin_groups
 from cloud_registry.ga4gh.registry.service import add_service_keys
-from cloud_registry.ga4gh.registry.service_info import check_service_info
 from cloud_registry.utils import get_custom_config
 
 # Logger of Connexion's request validation
@@ -52,8 +51,8 @@ def check_streamed_size() -> None:
 def create_app() -> App:
     """Create the app from the config, with the size limit of request bodies
     and the error handler for validation errors (silencing Connexion's
-    validation log messages), check admin groups and service info, and add
-    missing keys of services.
+    validation log messages), check admin groups, and add missing keys of
+    services. FOCA validates the service info (`service_info`) of the config.
 
     Gunicorn calls this in each worker, after forking (MongoDB clients must
     not be shared across forks), so the checks run in each worker; if they
@@ -65,8 +64,10 @@ def create_app() -> App:
     Raises:
         RuntimeError: No group is mapped to the role `admin` (unless admins
             are optional), or stored services are invalid or duplicates.
-        cloud_registry.ga4gh.registry.service_info.InvalidServiceInfo: The
-            service info is invalid.
+        pydantic.ValidationError: The config is invalid, e.g., the service
+            info (naming the invalid field).
+        ValueError: The custom config (`custom`) is invalid, e.g., it still
+            sets the service info (`custom.endpoints.service_info`).
     """
     foca = Foca(
         config_file=Path(__file__).parent / "config.yaml",
@@ -96,7 +97,6 @@ def create_app() -> App:
 
     with app.app.app_context():
         check_admin_groups()
-        check_service_info()
         add_service_keys()
     return app
 

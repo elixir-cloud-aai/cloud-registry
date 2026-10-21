@@ -1,7 +1,5 @@
 """Cloud Registry custom config models."""
 
-from typing import Any
-
 from foca.models.config import FOCABaseConfig
 from foca.utils.misc import generate_id
 from pydantic import Field, PositiveInt, field_validator
@@ -127,14 +125,10 @@ class EndpointsConfig(FOCABaseConfig):
 
     Args:
         service: Service run parameters.
-        service_info: Service info, according to the GA4GH `Service` schema
-            (checked on startup); `version` defaults to the package version.
         services: Cloud registry service store parameters.
 
     Attributes:
         service: Service run parameters.
-        service_info: Service info, according to the GA4GH `Service` schema
-            (checked on startup); `version` defaults to the package version.
         services: Cloud registry service store parameters.
 
     Raises:
@@ -149,19 +143,6 @@ class EndpointsConfig(FOCABaseConfig):
         ...         external_port=8080,
         ...         api_path=''
         ...     ),
-        ...     service_info={
-        ...         'id': 'org.example.registry',
-        ...         'name': 'Registry',
-        ...         'type': {
-        ...             'group': 'org.ga4gh',
-        ...             'artifact': 'service-registry',
-        ...             'version': '1.0.0'
-        ...         },
-        ...         'organization': {
-        ...             'name': 'Example',
-        ...             'url': 'https://example.org'
-        ...         }
-        ...     },
         ...     services=ServicesConfig(
         ...         id=IdConfig(
         ...             charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
@@ -170,15 +151,11 @@ class EndpointsConfig(FOCABaseConfig):
         ...     )
         ... )
         EndpointsConfig(service=ServiceConfig(url_prefix='https', external_hos\
-t='0.0.0.0', external_port=8080, api_path=''), service_info={'id': 'org.exampl\
-e.registry', 'name': 'Registry', 'type': {'group': 'org.ga4gh', 'artifact': 's\
-ervice-registry', 'version': '1.0.0'}, 'organization': {'name': 'Example', 'ur\
-l': 'https://example.org'}}, services=ServicesConfig(id=IdConfig(charset='ABCD\
-EFGHIJKLMNOPQRSTUVWXYZ0123456789', length=6)))
+t='0.0.0.0', external_port=8080, api_path=''), services=ServicesConfig(id=IdCo\
+nfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', length=6)))
     """
 
     service: ServiceConfig
-    service_info: dict[str, Any]
     services: ServicesConfig
 
 
@@ -235,19 +212,6 @@ class CustomConfig(FOCABaseConfig):
         ...             external_port=8080,
         ...             api_path=''
         ...         ),
-        ...         service_info={
-        ...             'id': 'org.example.registry',
-        ...             'name': 'Registry',
-        ...             'type': {
-        ...                 'group': 'org.ga4gh',
-        ...                 'artifact': 'service-registry',
-        ...                 'version': '1.0.0'
-        ...             },
-        ...             'organization': {
-        ...                 'name': 'Example',
-        ...                 'url': 'https://example.org'
-        ...             }
-        ...         },
         ...         services=ServicesConfig(
         ...             id=IdConfig(
         ...                 charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
@@ -257,12 +221,10 @@ class CustomConfig(FOCABaseConfig):
         ...     )
         ... )
         CustomConfig(endpoints=EndpointsConfig(service=ServiceConfig(url_prefi\
-x='https', external_host='0.0.0.0', external_port=8080, api_path=''), service_\
-info={'id': 'org.example.registry', 'name': 'Registry', 'type': {'group': 'org\
-.ga4gh', 'artifact': 'service-registry', 'version': '1.0.0'}, 'organization': \
-{'name': 'Example', 'url': 'https://example.org'}}, services=ServicesConfig(id\
-=IdConfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', length=6))), access_\
-control=AccessControlConfig(require_admin=True), max_content_length=1048576)
+x='https', external_host='0.0.0.0', external_port=8080, api_path=''), services\
+=ServicesConfig(id=IdConfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', le\
+ngth=6))), access_control=AccessControlConfig(require_admin=True), max_content\
+_length=1048576)
     """
 
     endpoints: EndpointsConfig

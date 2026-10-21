@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from importlib.metadata import version
+import inspect
 import io
 import json
 import logging
@@ -10,14 +11,15 @@ import string
 
 import connexion
 from cryptography.hazmat.primitives.asymmetric import rsa
+import foca.api.service_info
 from foca.security import auth
+from pydantic import ValidationError
 import pytest
 import yaml
 
 import cloud_registry.app
 from cloud_registry.exceptions import MAX_DETAIL_LENGTH
 from cloud_registry.ga4gh.registry.service import KEY, service_key
-from cloud_registry.ga4gh.registry.service_info import InvalidServiceInfo
 from cloud_registry.service_models.custom_config import MAX_CONTENT_LENGTH
 from tests.conftest import (
     ADMIN_GROUP,
@@ -701,19 +703,30 @@ def test_get_service_types(client, headers):
 
 
 def test_service_info(app, client):
-    """Service info is served from the config, with the package version and
-    without timestamps that aren't configured.
+    """Service info is served by FOCA from the config, with the package
+    version and without timestamps that aren't configured.
     """
-    config = app.app.config.foca.custom.endpoints.service_info
+    config = app.app.config.foca.service_info.service
     response = client.get(f"{BASE}/service-info")
     assert response.status_code == 200
     assert response.json == {**config, "version": version("cloud-registry")}
     assert not TIMESTAMPS & response.json.keys()
 
 
+def test_service_info_served_by_foca(app):
+    """`GET /service-info` is routed to FOCA's controller."""
+    rule = next(
+        rule
+        for rule in app.app.url_map.iter_rules()
+        if rule.rule == f"{BASE}/service-info"
+    )
+    view = inspect.unwrap(app.app.view_functions[rule.endpoint])
+    assert view is foca.api.service_info.getServiceInfo
+
+
 def test_service_info_configured(app, client):
     """Configured versions and timestamps are served."""
-    config = app.app.config.foca.custom.endpoints.service_info
+    config = app.app.config.foca.service_info.service
     configured = {"version": "1.2.3", "createdAt": "2020-11-08T00:00:00Z"}
     config.update(configured)
     assert client.get(f"{BASE}/service-info").json.items() >= configured.items()
@@ -829,6 +842,28 @@ def test_create_app_admin_optional(monkeypatch, tmp_path, app_env, capsys):
     assert "No group is mapped to the role 'admin'" in capsys.readouterr().err
 
 
+def _service_info_overlay(service_info: dict) -> dict:
+    """Get a config overlay with service info for apps without admins."""
+    return {
+        "security": {"auth": {"audience": ["a"]}},
+        "custom": {"access_control": {"require_admin": False}},
+        "service_info": service_info,
+    }
+
+
+def test_create_app_service_info_nulls(monkeypatch, tmp_path, app_env):
+    """Fields set to `null` in a config overlay are not served."""
+    _set_overlay(
+        monkeypatch,
+        tmp_path,
+        _service_info_overlay({"service": {"contactUrl": None, "version": None}}),
+    )
+    client = cloud_registry.app.create_app().app.test_client()
+    info = client.get(f"{BASE}/service-info").json
+    assert "contactUrl" not in info
+    assert info["version"] == version("cloud-registry")
+
+
 def test_create_app_invalid_service_info(monkeypatch, tmp_path, app_env):
     """`create_app()` fails if the service info is invalid, naming the
     field.
@@ -836,18 +871,25 @@ def test_create_app_invalid_service_info(monkeypatch, tmp_path, app_env):
     _set_overlay(
         monkeypatch,
         tmp_path,
-        {
-            "security": {"auth": {"audience": ["a"]}},
-            "custom": {
-                "access_control": {"require_admin": False},
-                "endpoints": {"service_info": {"contactUrl": "support"}},
-            },
-        },
+        _service_info_overlay({"service": {"contactUrl": "support"}}),
     )
-    with pytest.raises(
-        InvalidServiceInfo, match=r"`custom\.endpoints\.service_info\.contactUrl`"
-    ):
+    with pytest.raises(ValidationError, match=r"`service_info\.service\.contactUrl`"):
         cloud_registry.app.create_app()
+
+
+def test_create_app_service_info_in_custom(monkeypatch, tmp_path, app_env):
+    """`create_app()` fails if the service info is set in the custom config,
+    where it was set before FOCA served it (FOCA raises a `ValueError`
+    caused by the validation error).
+    """
+    overlay = _service_info_overlay({})
+    del overlay["service_info"]
+    overlay["custom"]["endpoints"] = {"service_info": {"environment": "prod"}}
+    _set_overlay(monkeypatch, tmp_path, overlay)
+    with pytest.raises(ValueError, match="custom configuration") as exc:
+        cloud_registry.app.create_app()
+    assert isinstance(exc.value.__cause__, ValidationError)
+    assert "endpoints.service_info" in str(exc.value.__cause__)
 
 
 def test_create_app_config_missing(monkeypatch, tmp_path):

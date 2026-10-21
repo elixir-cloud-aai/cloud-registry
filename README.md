@@ -343,14 +343,15 @@ the internet, route only `/ga4gh/registry/v1/` through a reverse proxy.
 ## Service info
 
 `GET /service-info` serves the service info from the config
-(`custom.endpoints.service_info`), without the database. On startup, the app
-checks it against the GA4GH `Service` schema and refuses to start if it is
-invalid, naming the invalid field. `version` defaults to the version of the
-installed app; `createdAt` and `updatedAt` are served only if set, and must be
-RFC 3339 date-times (e.g., `2020-11-08T00:00:00Z`). Fields and list items set
-to `null` (e.g., in a config overlay) are not served. To change the service
-info, change the config and restart the app (the Helm chart restarts it when
-the `config` value changes).
+(`service_info.service`), without the database; it is served by
+[FOCA][foca-service-info]. On startup, the service info is checked against the
+GA4GH `Service` schema, and the app refuses to start if it is invalid, naming
+the invalid field. `version` defaults to the version of the installed app
+(`service_info.package`); `createdAt` and `updatedAt` are served only if set,
+and must be RFC 3339 date-times (e.g., `2020-11-08T00:00:00Z`). Fields and list
+items set to `null` (e.g., in a config overlay) are not served. To change the
+service info, change the config and restart the app (the Helm chart restarts
+it when the `config` value changes).
 
 Previously, service info could be set via `POST /service-info` and was stored
 in the database. That endpoint is gone, and stored service info is no longer
@@ -719,5 +720,6 @@ etc.
 [foca-access-control]: https://foca.readthedocs.io/en/latest/access-control/
 [foca-auth]: https://foca.readthedocs.io/en/latest/authentication/
 [foca-deployment]: https://foca.readthedocs.io/en/latest/deployment/
+[foca-service-info]: https://foca.readthedocs.io/en/latest/configuration/service-info/
 [ls-login]: https://lifescience-ri.eu/ls-login/
 [protes]: https://github.com/elixir-cloud-aai/proTES

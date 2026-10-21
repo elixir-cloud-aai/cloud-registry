@@ -111,7 +111,7 @@ def test_config_change_restarts_app():
         template = _render(*args)[("Deployment", APP)]["spec"]["template"]
         return template["metadata"]["annotations"]["checksum/config"]
 
-    changed = ("--set", "config.custom.endpoints.service_info.environment=prod")
+    changed = ("--set", "config.service_info.service.environment=prod")
     assert checksum() != checksum(*changed)
 
 

@@ -29,26 +29,6 @@ SERVICE_CONFIG = {
 }
 # Public URL of the app with `SERVICE_CONFIG`
 MOCK_PUBLIC_URL = "http://1.2.3.4:80/registry"
-SERVICE_INFO_CONFIG = {
-    "contactUrl": "mailto:support@example.com",
-    "createdAt": "2019-06-04T12:58:19Z",
-    "description": "This service provides...",
-    "documentationUrl": "https://docs.myservice.example.com",
-    "environment": "test",
-    "id": "org.ga4gh.myservice",
-    "name": "My project",
-    "organization": {
-        "name": "My organization",
-        "url": "https://example.com",
-    },
-    "type": {
-        "artifact": "beacon",
-        "group": "org.ga4gh",
-        "version": "1.0.0",
-    },
-    "updatedAt": "2019-06-04T12:58:19Z",
-    "version": "1.0.0",
-}
 SERVICES_CONFIG = {
     "id": {
         "charset": CHARSET,
@@ -57,7 +37,6 @@ SERVICES_CONFIG = {
 }
 ENDPOINT_CONFIG = {
     "service": SERVICE_CONFIG,
-    "service_info": SERVICE_INFO_CONFIG,
     "services": SERVICES_CONFIG,
 }
 CUSTOM_CONFIG = {"endpoints": ENDPOINT_CONFIG}

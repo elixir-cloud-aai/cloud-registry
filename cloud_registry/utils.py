@@ -106,9 +106,7 @@ def get_collection(name: str) -> Collection:
 def is_date_time(value: object) -> bool:
     """Check whether a string is an RFC 3339 date-time (non-strings pass).
 
-    Used for the format `date-time` of the service info (cf.
-    `cloud_registry.ga4gh.registry.service_info.FORMAT_CHECKER`) and the
-    timestamps of registered services (cf.
+    Used for the timestamps of registered services (cf.
     `cloud_registry.ga4gh.registry.service.check_date_times()`).
     """
     if not isinstance(value, str):

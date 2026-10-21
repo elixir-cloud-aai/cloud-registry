@@ -21,7 +21,10 @@ config on startup (via `FOCA_CONFIG_OVERLAY`):
 The overlay requires an image built with FOCA 0.14 or later (e.g.,
 `elixircloud/cloud-registry:20261020` or later, any `dev` or `sha-<commit>`
 image, or any release from 0.3.0 on, the first one tagged from Git; see its
-[release notes](../docs/releases/0.3.0.md)); older images ignore it.
+[release notes](../docs/releases/0.3.0.md)); older images ignore it. The
+service info (`config.service_info`) requires an image built with FOCA 0.15
+(any `dev` or `sha-<commit>` image since the upgrade, or any release from
+0.3.0 on); older images set it in `config.custom.endpoints.service_info`.
 
 Each deployment must set the audience (`config.security.auth.audience`;
 rendering fails without it, as the app would refuse to start, unless
@@ -47,10 +50,10 @@ config:
 ```
 
 The service info served at `/service-info` is set via
-`config.custom.endpoints.service_info` (mappings are merged, so set only the
-fields to change, e.g., `environment: prod`, and set optional fields of the
-default to `null` to remove them, e.g., `contactUrl: null`). Pods are restarted
-when the ConfigMap changes, and the app refuses to start if the service info is
+`config.service_info.service` (mappings are merged, so set only the fields to
+change, e.g., `environment: prod`, and set optional fields of the default to
+`null` to remove them, e.g., `contactUrl: null`). Pods are restarted when the
+ConfigMap changes, and the app refuses to start if the service info is
 invalid.
 
 Do not edit the ConfigMap with `kubectl edit`: Helm overwrites it on the next

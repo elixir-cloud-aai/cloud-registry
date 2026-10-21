@@ -159,10 +159,10 @@ class TestChartOverlay:
             "-f",
             str(CHART / "ci" / "test-values.yaml"),
             "--set",
-            "config.custom.endpoints.service_info.environment=prod",
+            "config.service_info.service.environment=prod",
         )
         config = _load_config(tmp_path, monkeypatch, overlay)
-        info = config.custom.endpoints.service_info
+        info = config.service_info.service
         assert info["environment"] == "prod"
         assert info["id"] == "ELIXIR_CLOUD_SERVICE_REGISTRY_1"
 

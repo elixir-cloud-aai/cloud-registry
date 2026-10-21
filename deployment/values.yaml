@@ -36,15 +36,14 @@ config: {}
 #     handlers:
 #       console:
 #         level: 20
-#   custom:
-#     endpoints:
-#       # Service info (GA4GH `Service` schema, checked on startup); the
-#       # version defaults to the app version
-#       service_info:
-#         organization:
-#           name: "My organization"
-#           url: "https://example.org"
-#         environment: "prod"
+#   # Service info (GA4GH `Service` schema, checked on startup); the version
+#   # defaults to the app version
+#   service_info:
+#     service:
+#       organization:
+#         name: "My organization"
+#         url: "https://example.org"
+#       environment: "prod"
 
 cloud_registry:
   # Image repository; may include a tag or digest instead of setting `tag`
