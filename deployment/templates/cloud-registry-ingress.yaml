@@ -1,15 +1,22 @@
 {{ if .Values.cloud_registry.ingress.enabled }}
 {{- $ingress := .Values.cloud_registry.ingress -}}
 {{- /*
-Annotations from `ingress.annotations` take precedence over those requesting
-a certificate from cert-manager.
+Annotations from `ingress.annotations` take precedence over those set by the
+chart: the app's size limit of request bodies for ingress-nginx (in bytes),
+and those requesting a certificate from cert-manager; `null` removes them.
 */ -}}
-{{- $annotations := dict -}}
+{{- $annotations := dict "nginx.ingress.kubernetes.io/proxy-body-size" (include "cloud-registry.maxContentLength" .) -}}
 {{- if $ingress.https.enabled -}}
 {{- $_ := set $annotations "cert-manager.io/cluster-issuer" $ingress.https.issuer -}}
 {{- $_ := set $annotations "kubernetes.io/tls-acme" "true" -}}
 {{- end -}}
-{{- $annotations = mergeOverwrite $annotations (deepCopy ($ingress.annotations | default dict)) }}
+{{- range $key, $value := $ingress.annotations | default dict -}}
+{{- if kindIs "invalid" $value -}}
+{{- $_ := unset $annotations $key -}}
+{{- else -}}
+{{- $_ := set $annotations $key $value -}}
+{{- end -}}
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

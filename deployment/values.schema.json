@@ -47,8 +47,10 @@
           "description": "Security context of the container (runAsUser and runAsGroup are omitted on OpenShift)"
         },
         "tmpSizeLimit": {
-          "type": ["string", "null"],
-          "description": "Size limit of the emptyDir at /tmp (a quantity, e.g., 64Mi); none if null"
+          "type": ["string", "integer", "null"],
+          "pattern": "^([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([KMGTPE]i|[mkMGTPE]|[eE][+-]?[0-9]+)?$",
+          "minimum": 1,
+          "description": "Size limit of the emptyDir at /tmp: a Kubernetes quantity (e.g., 64Mi) or a number of bytes; none if null"
         }
       }
     },
@@ -84,8 +86,8 @@
             },
             "annotations": {
               "type": ["object", "null"],
-              "additionalProperties": {"type": "string"},
-              "description": "Annotations of the Ingress; take precedence over those set for https"
+              "additionalProperties": {"type": ["string", "null"]},
+              "description": "Annotations of the Ingress; take precedence over those set by the chart, null removes them"
             },
             "https": {
               "type": "object",
@@ -112,8 +114,10 @@
           "description": "Security context of the container (runAsUser and runAsGroup are omitted on OpenShift)"
         },
         "tmpSizeLimit": {
-          "type": ["string", "null"],
-          "description": "Size limit of the emptyDir at /tmp (a quantity, e.g., 64Mi); none if null"
+          "type": ["string", "integer", "null"],
+          "pattern": "^([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([KMGTPE]i|[mkMGTPE]|[eE][+-]?[0-9]+)?$",
+          "minimum": 1,
+          "description": "Size limit of the emptyDir at /tmp: a Kubernetes quantity (e.g., 64Mi) or a number of bytes; none if null"
         }
       }
     }

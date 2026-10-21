@@ -65,14 +65,11 @@ cloud_registry:
     # empty
     className: ""
     # Annotations of the Ingress, e.g., for the ingress controller; they take
-    # precedence over those set for `https`. Mappings are merged with these
-    # defaults; set an annotation to `null` to remove it
-    annotations:
-      # Size limit of request bodies for ingress-nginx, as the app's
-      # (`config.custom.max_content_length`, 1 MiB by default); change them
-      # together, and set the limit of other ingress controllers in their
-      # own way (see deployment/README.md, Ingress)
-      nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+    # precedence over those set by the chart: for `https`, and
+    # `nginx.ingress.kubernetes.io/proxy-body-size`, the size limit of request
+    # bodies of the app (`config.custom.max_content_length`) for
+    # ingress-nginx. `null` removes an annotation set by the chart
+    annotations: {}
     https:
       # Request a certificate from cert-manager (via `issuer`, a
       # ClusterIssuer) and serve HTTPS
@@ -99,7 +96,7 @@ cloud_registry:
       cpu: 100m
       memory: 128Mi
   # Size limit of the `emptyDir` at `/tmp` (the pod is evicted if it is
-  # exceeded); `null` for none
+  # exceeded): a quantity (e.g., `64Mi`) or a number of bytes; `null` for none
   tmpSizeLimit: 64Mi
 
 mongodb:
@@ -147,5 +144,5 @@ mongodb:
       cpu: 200m
       memory: 512Mi
   # Size limit of the `emptyDir` at `/tmp` (the pod is evicted if it is
-  # exceeded); `null` for none
+  # exceeded): a quantity (e.g., `64Mi`) or a number of bytes; `null` for none
   tmpSizeLimit: 64Mi

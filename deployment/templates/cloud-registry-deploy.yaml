@@ -89,8 +89,4 @@ spec:
           name: {{ printf "%s-config" (include "cloud-registry.fullname" .) | quote }}
         name: config
       - name: tmp
-        emptyDir:
-          {{- with .Values.cloud_registry.tmpSizeLimit }}
-          sizeLimit: {{ . | quote }}
-          {{- else }} {}
-          {{- end }}
+        {{- include "cloud-registry.emptyDir" .Values.cloud_registry.tmpSizeLimit | nindent 8 }}

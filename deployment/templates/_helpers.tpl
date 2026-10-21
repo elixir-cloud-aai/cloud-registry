@@ -161,3 +161,27 @@ chart's `appVersion`; an image with a tag or digest is used as it is.
 {{- printf "%s:%s" $image ($tag | default .Chart.AppVersion) -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Size limit of request bodies of the app, in bytes: `custom.max_content_length`
+of the config, by default that of the app (1 MiB; cf.
+`cloud_registry/config.yaml`).
+*/}}
+{{- define "cloud-registry.maxContentLength" -}}
+{{- $config := .Values.config | default dict -}}
+{{- dig "custom" "max_content_length" 1048576 $config | int64 -}}
+{{- end -}}
+
+{{/*
+`emptyDir` volume source with an optional size limit (a quantity string or a
+number of bytes; numbers from values files are floats, so they are rendered
+as integers); none if `null`.
+*/}}
+{{- define "cloud-registry.emptyDir" -}}
+{{- if kindIs "invalid" . -}}
+emptyDir: {}
+{{- else -}}
+emptyDir:
+  sizeLimit: {{ ternary . (int64 . | toString) (kindIs "string" .) | quote }}
+{{- end -}}
+{{- end -}}

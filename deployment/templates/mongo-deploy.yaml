@@ -86,11 +86,7 @@ spec:
         persistentVolumeClaim:
           claimName: {{ include "cloud-registry.mongodbFullname" . | quote }}
       - name: tmp
-        emptyDir:
-          {{- with .Values.mongodb.tmpSizeLimit }}
-          sizeLimit: {{ . | quote }}
-          {{- else }} {}
-          {{- end }}
+        {{- include "cloud-registry.emptyDir" .Values.mongodb.tmpSizeLimit | nindent 8 }}
       - name: configdb
         emptyDir: {}
       {{- if .Values.mongodb.auth.enabled }}
