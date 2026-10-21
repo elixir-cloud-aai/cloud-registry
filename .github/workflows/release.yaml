@@ -8,7 +8,8 @@
 # it exists (the run fails if it contains `TODO`), otherwise generated.
 # Publishing runs in the `release` environment (required reviewer, Docker
 # Hub secrets). Release tags are immutable (tag ruleset). See "Versioning
-# and releases" in README.md.
+# and releases" in README.md. Until 1.0.0, all releases are GitHub
+# pre-releases (but stable ones still update the `latest` image).
 
 name: Release
 
@@ -258,7 +259,7 @@ jobs:
           # On reruns, complete an existing release instead of failing
           if gh release view "${TAG}" > /dev/null 2>&1; then
               gh release upload "${TAG}" dist/* --clobber
-              edit=(--latest="${LATEST}")
+              edit=(--prerelease="${PRERELEASE}" --latest="${LATEST}")
               if [[ -f "${notes_file}" ]]; then
                   edit+=(--notes-file "${notes_file}")
               fi
