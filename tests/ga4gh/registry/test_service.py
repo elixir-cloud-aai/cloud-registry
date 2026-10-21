@@ -17,6 +17,7 @@ from cloud_registry.ga4gh.registry.service import (
     add_service_keys,
     check_link,
     check_links,
+    check_strings,
     normalize_url,
     service_key,
 )
@@ -228,6 +229,9 @@ def test_normalize_url(url, normalized):
         "https://tes.example.org/\ud800",
         "https://[fe80::1%25eth\u200d0]/v1",
         "https://[fe80::1%25eth\u00fc]/v1",
+        "https://[fe80::1%25]/v1",
+        "https://[fe80::1%eth0]/v1",
+        "https://[fe80::1%]/v1",
     ],
 )
 def test_normalize_url_invalid(url):
@@ -306,6 +310,8 @@ def test_check_link_invalid(url, detail):
         "MAILTO:support@example.org",
         "mailto:a@example.org,b@bücher.example.org?subject=TES%20access",
         "mailto:support%40tes@example.org",
+        f"mailto:a@{'x' * 63}.example.org",
+        "mailto:a@x-1.EXAMPLE.org",
     ],
 )
 def test_check_link_schemes(url):
@@ -321,7 +327,21 @@ def test_check_link_schemes(url):
         ("mailto:@example.org", "need valid email addresses"),
         ("mailto:support@", "need valid email addresses"),
         ("mailto:a@example.org,", "need valid email addresses"),
-        ("mailto:support@exa<mple.org", "need a valid host"),
+        ("mailto:support@exa<mple.org", "with a domain name"),
+        ("mailto:a@b@example.org", "need valid email addresses"),
+        ("mailto:a@x'onclick=alert(1)", "with a domain name"),
+        ("mailto:a@-x.org", "with a domain name"),
+        ("mailto:a@x-.org", "with a domain name"),
+        ("mailto:a@%FF", "with a domain name"),
+        ("mailto:a@::1%25eth0", "with a domain name"),
+        ("mailto:a@.", "with a domain name"),
+        ("mailto:a@example.org.", "with a domain name"),
+        ("mailto:a@localhost", "with a domain name"),
+        ("mailto:a@192.0.2.1", "with a domain name"),
+        ("mailto:a@[192.0.2.1]", "with a domain name"),
+        (f"mailto:a@{'x' * 64}.org", "with a domain name"),
+        (f"mailto:a@{'x.' * 127}org", "with a domain name"),
+        ("mailto:a@b\u00fc\u0301\u0300--.org", "with a domain name"),
         ("mailto:support@example.org?subject=%zz", "malformed percent-encodings"),
         ("mailto:support%@example.org", "malformed percent-encodings"),
         ("mailto:support@example.org\ud800", "control or format characters"),
@@ -374,6 +394,35 @@ def test_check_links_invalid(data, field):
     with pytest.raises(InvalidService) as exc_info:
         check_links(data)
     assert f"'{field}'" in exc_info.value.description
+
+
+@pytest.mark.parametrize(
+    "value", [{}, {"a": ["b", {"c": "d"}]}, "\U0001f600", {"\u00fc": 1}]
+)
+def test_check_strings(value):
+    """Strings without unpaired surrogates, at any depth, are accepted."""
+    check_strings(value)
+
+
+@pytest.mark.parametrize(
+    "value, field",
+    [
+        ("\ud800", "The request body"),
+        ({"name": "x\udfff"}, "'name'"),
+        ({"type": {"group": "\ud800"}}, "'type.group'"),
+        ({"type": {"\ud800": "x"}}, "'type'"),
+        ({"a": [1, ["\ud800"]]}, "'a[1][0]'"),
+        ({"\ud800": "x"}, "The request body"),
+    ],
+)
+def test_check_strings_invalid(value, field):
+    """Strings and keys with unpaired surrogates are rejected, naming the
+    field.
+    """
+    with pytest.raises(InvalidService) as exc_info:
+        check_strings(value)
+    assert exc_info.value.description.startswith(field)
+    assert "unpaired surrogates" in exc_info.value.description
 
 
 def test_normalize_host_invalid_ipv6():

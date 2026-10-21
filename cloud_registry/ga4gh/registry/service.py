@@ -47,8 +47,10 @@ LINK_FIELDS: dict[tuple[str, ...], frozenset[str]] = {
 PERCENT_ENCODED = re.compile(r"%([0-9A-Fa-f]{2})")
 # Percent signs not starting a percent-encoding
 MALFORMED_PERCENT = re.compile(r"%(?![0-9A-Fa-f]{2})")
-# IPv6 zone identifiers (RFC 6874), after `%`
+# IPv6 zone identifiers (RFC 6874), after `%25`
 ZONE_ID = re.compile(r"(?:[A-Za-z0-9\-._~]|%[0-9A-Fa-f]{2})+")
+# Labels of domain names (letters, digits, hyphens; RFC 1123, section 2.1)
+LDH_LABEL = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
 # Registered names (RFC 3986, section 3.2.2)
 REG_NAME = re.compile(r"(?:[A-Za-z0-9\-._~!$&'()*+,;=]|%[0-9A-Fa-f]{2})*")
 # RFC 3986, section 2.3
@@ -102,6 +104,37 @@ def normalize_url(url: str) -> str:
     if parts.port is not None and parts.port != DEFAULT_PORTS[scheme]:
         host = f"{host}:{parts.port}"
     return urlunsplit((scheme, host, _normalize_path(parts.path), "", ""))
+
+
+def check_strings(value: object, field: str = "") -> None:
+    """Check that the strings of a request body can be stored.
+
+    Unpaired surrogates (e.g., from JSON escapes like `\\ud800`) can't be
+    encoded (UTF-8), so they fail when stored or logged.
+
+    Args:
+        value: Request body, or part of it.
+        field: Path of `value` in the body (e.g., `type.group`), for error
+            messages.
+
+    Raises:
+        InvalidService: A string, or a key, has unpaired surrogates.
+    """
+    if isinstance(value, dict):
+        for key, item in value.items():
+            check_strings(key, field=field)
+            check_strings(item, field=f"{field}.{key}" if field else str(key))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            check_strings(item, field=f"{field}[{index}]")
+    elif isinstance(value, str):
+        try:
+            value.encode()
+        except UnicodeEncodeError as exc:
+            where = f"'{field}'" if field else "The request body"
+            raise InvalidService(
+                f"{where} must not contain unpaired surrogates."
+            ) from exc
 
 
 def check_link(url: object, field: str, schemes: frozenset[str] = frozenset()) -> None:
@@ -209,14 +242,48 @@ def _check_addresses(path: str, subject: str) -> None:
         subject: Subject of error messages.
 
     Raises:
-        InvalidService: An address has no local part or an invalid or no
-            domain (cf. `_normalize_host()`).
+        InvalidService: An address has no local part, one with `@` (unless
+            percent-encoded), or no domain name (cf. `_check_domain()`).
     """
     for address in path.split(","):
         local, _, domain = address.rpartition("@")
-        if not local or not domain:
+        if not local or "@" in local or not domain:
             raise InvalidService(f"{subject} need valid email addresses.")
-        _normalize_host(domain, subject=subject)
+        _check_domain(domain, subject=subject)
+
+
+def _check_domain(domain: str, subject: str) -> None:
+    """Check the domain of an email address.
+
+    Args:
+        domain: Domain.
+        subject: Subject of error messages.
+
+    Raises:
+        InvalidService: The domain is not a domain name (e.g., an IP address,
+            or not valid per IDNA 2008): after IDNA encoding, it needs at
+            least two labels of letters, digits and hyphens (1-63 characters,
+            no leading or trailing hyphen), and at most 253 characters.
+    """
+    message = f"{subject} need email addresses with a domain name."
+    try:
+        ipaddress.ip_address(domain)
+    except ValueError:
+        pass
+    else:
+        raise InvalidService(message)
+    if not domain.isascii():
+        try:
+            domain = idna.encode(domain, uts46=True, transitional=False).decode()
+        except idna.IDNAError as exc:
+            raise InvalidService(message) from exc
+    labels = domain.split(".")
+    if (
+        len(domain) > 253
+        or len(labels) < 2
+        or not all(LDH_LABEL.fullmatch(label) for label in labels)
+    ):
+        raise InvalidService(message)
 
 
 def _split_http_url(url: str, subject: str) -> tuple[SplitResult, str]:
@@ -269,17 +336,20 @@ def _normalize_host(host: str, subject: str) -> str:
 
     Raises:
         InvalidService: The host is invalid or empty, e.g., an IPv6 address
-            with an invalid zone identifier.
+            with a `%` not followed by `25` and a zone identifier (`ZONE_ID`,
+            non-empty).
     """
     if ":" in host:
-        address, _, zone = host.partition("%")
+        address, percent, zone = host.partition("%")
         try:
             address = ipaddress.IPv6Address(address).compressed
         except ValueError as exc:
             raise InvalidService(f"{subject} need a valid host: {exc}.") from exc
-        if zone and not ZONE_ID.fullmatch(zone):
+        if not percent:
+            return f"[{address}]"
+        if not zone.startswith("25") or not ZONE_ID.fullmatch(zone[2:]):
             raise InvalidService(f"{subject} need a valid host: '{host}'.")
-        return f"[{address}%{zone}]" if zone else f"[{address}]"
+        return f"[{address}%{zone}]"
     if not host.isascii():
         try:
             host = idna.encode(host, uts46=True, transitional=False).decode()
@@ -421,13 +491,14 @@ class RegisterService:
                 again if it changed concurrently (cf. `_replace()`).
 
         Raises:
-            InvalidService: The URL or API type of the service, or the URL of
-                a link, is invalid.
+            InvalidService: The URL or API type of the service, the URL of a
+                link, or a string (cf. `check_strings()`) is invalid.
             DuplicateService: Another service with the same URL and API type
                 is registered.
             InternalServerError: The service could not be registered within
                 the retries.
         """
+        check_strings(self.data)
         key = service_key(self.data)
         check_links(self.data)
         self._check_duplicate(key=key)

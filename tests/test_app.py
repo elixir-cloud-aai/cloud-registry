@@ -240,6 +240,29 @@ def _service_with(field, value):
 URL_FIELDS = ["url", "contactUrl", "documentationUrl", "organization.url"]
 
 
+@pytest.mark.parametrize("method, path", [("post", ""), ("put", "/abc")])
+@pytest.mark.parametrize(
+    "service, field",
+    [
+        (_service(name="My \ud800 TES"), "name"),
+        (
+            _service(type={"group": "org.\udfff", "artifact": "tes", "version": "1"}),
+            "type.group",
+        ),
+    ],
+)
+def test_service_surrogate(client, admin_headers, method, path, service, field):
+    """Services with unpaired surrogates in any string, which can't be
+    stored, are rejected (`400`), naming the field.
+    """
+    response = getattr(client, method)(
+        f"{BASE}/services{path}", json=service, headers=admin_headers
+    )
+    _assert_error(response, 400)
+    assert f"'{field}'" in response.json["detail"]
+    assert client.get(f"{BASE}/services").json == []
+
+
 @pytest.mark.parametrize("field", URL_FIELDS)
 def test_service_url_surrogate(client, admin_headers, field):
     """URLs with unpaired surrogates, which can't be encoded, are rejected

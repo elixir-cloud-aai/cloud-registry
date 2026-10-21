@@ -317,8 +317,9 @@ Services stored before this check get their key on startup; only services
 without a key are checked again. If some of them have invalid URLs, or the same
 URL and API type as another one, the app refuses to start and names all of
 them. Invalid URLs include some that were accepted before: URLs with schemes
-other than `http` and `https`, whitespace or control characters, or port 0. Fix
-or delete them in the database, e.g., with `mongosh` (see the [deployment
+other than `http` and `https`, whitespace or control characters, malformed
+percent-encodings (also in queries and fragments), or port 0. Fix or delete
+them in the database, e.g., with `mongosh` (see the [deployment
 instructions][deployment-instructions] for access to the database of a Helm
 deployment):
 
