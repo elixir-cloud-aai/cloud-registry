@@ -1,4 +1,9 @@
-"""App factory, and entry point for development (`python -m cloud_registry.app`)."""
+"""App factory, and entry point for development.
+
+The image serves the app with Gunicorn (`cloud_registry.app:create_app()`, see
+`cloud_registry.gunicorn_config`); `python -m cloud_registry.app` runs it with
+Flask's development server.
+"""
 
 from pathlib import Path
 
