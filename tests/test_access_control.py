@@ -761,6 +761,23 @@ def test_invalid_group_permissions(client):
     ]
 
 
+@pytest.mark.parametrize("path", ["groups", "groups/"])
+def test_group_permissions_without_group(client, path):
+    """Group roles without a group are not found, and are not taken as roles
+    of a user `groups` (which would also count as another owner).
+    """
+    service_id = register(client)
+    url = f"{BASE}/services/{service_id}/permissions/{path}"
+    response = client.put(url, json={"role": "owner"}, headers=headers(ALICE))
+    assert response.status_code == 404
+    assert response.json["status"] == 404
+    assert permission_list(client, service_id) == [
+        {"user_id": ALICE, "name": NAMES[ALICE], "role": "owner"}
+    ]
+    assert revoke(client, service_id, ALICE) == 409
+    assert client.delete(url, headers=headers(ALICE)).status_code == 404
+
+
 def test_group_with_slash(client):
     """Groups may contain slashes (e.g., URLs), URL-encoded in the path."""
     service_id = register(client)
