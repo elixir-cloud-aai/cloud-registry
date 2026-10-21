@@ -753,6 +753,23 @@ def test_service_info_served_by_foca(app):
     assert view is inspect.unwrap(foca.api.service_info.getServiceInfo)
 
 
+def test_service_info_traffic_logged(client, caplog):
+    """Requests for the service info and their responses are logged, as
+    those of the registry's other operations (by FOCA's controller, as
+    `service_info.log_traffic` is not disabled).
+    """
+    caplog.set_level(logging.INFO, logger="foca.utils.logging")
+    client.get(f"{BASE}/service-info")
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "foca.utils.logging"
+    ]
+    path = f"{BASE}/service-info"
+    assert any(m.startswith("Incoming request:") and path in m for m in messages)
+    assert any(m.startswith("Response to request") and path in m for m in messages)
+
+
 def test_service_info_configured(app, client):
     """Configured versions and timestamps are served."""
     config = app.app.config.foca.service_info.service
