@@ -3,15 +3,16 @@
 import importlib.util
 import io
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts/release_version.py"
 
 # `scripts/` is not a package, so the script is loaded from its file
-_spec = importlib.util.spec_from_file_location(
-    "release_version", ROOT / "scripts/release_version.py"
-)
+_spec = importlib.util.spec_from_file_location("release_version", SCRIPT)
 assert _spec and _spec.loader
 release_version = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(release_version)
@@ -40,6 +41,7 @@ def test_parse_tag(
     assert release.chart_version == chart_version
     assert release.stable is stable
     assert release.prerelease is prerelease
+    assert ".".join(map(str, release.number)) == chart_version.partition("-")[0]
 
 
 @pytest.mark.parametrize(
@@ -179,3 +181,49 @@ def test_main_usage(capsys: pytest.CaptureFixture[str]) -> None:
         release_version.main(["outputs"])
     assert exc_info.value.code == 2
     assert "usage:" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("args", "stdin", "returncode", "stdout", "stderr"),
+    [
+        (
+            ["outputs", "v1.2.3rc1"],
+            "",
+            0,
+            "version=1.2.3rc1\nchart_version=1.2.3-rc1\nstable=false\n"
+            "prerelease=true\n",
+            "",
+        ),
+        (["latest", "v1.2.3"], "v1.2.2\nv1.2.3\n", 0, "latest=true\n", ""),
+        (
+            ["outputs", "1.2.3"],
+            "",
+            1,
+            "",
+            "::error::Tag '1.2.3' is not a release version (e.g., v1.2.3 or"
+            " v1.2.3rc1)\n",
+        ),
+    ],
+)
+def test_script(
+    tmp_path: Path,
+    args: list[str],
+    stdin: str,
+    returncode: int,
+    stdout: str,
+    stderr: str,
+) -> None:
+    """The script runs as the release workflow calls it."""
+    result = subprocess.run(  # noqa: S603 (fixed arguments, no shell)
+        [sys.executable, "-I", str(SCRIPT), *args],
+        input=stdin,
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        check=False,
+    )
+    assert (result.returncode, result.stdout, result.stderr) == (
+        returncode,
+        stdout,
+        stderr,
+    )

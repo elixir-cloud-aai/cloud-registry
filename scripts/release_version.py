@@ -137,11 +137,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("command", choices=["outputs", "latest"])
     parser.add_argument("tag", help="release tag, e.g., v1.2.3 or v1.2.3rc1")
     args = parser.parse_args(argv)
+    # Read before `try`, so that only invalid tags give its error (decoding
+    # errors are `ValueError`s too)
+    tags = sys.stdin.read().splitlines() if args.command == "latest" else []
     try:
         if args.command == "outputs":
             lines = parse_tag(args.tag).outputs()
         else:
-            latest = is_latest(args.tag, sys.stdin.read().splitlines())
+            latest = is_latest(args.tag, tags)
             lines = [f"latest={str(latest).lower()}"]
     except ValueError as error:
         print(f"::error::{error}", file=sys.stderr)
