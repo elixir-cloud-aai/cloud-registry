@@ -8,7 +8,8 @@
 # it exists (the run fails if it contains `TODO`), otherwise generated.
 # Publishing runs in the `release` environment (required reviewer, Docker
 # Hub secrets). Release tags are immutable (tag ruleset). See "Versioning
-# and releases" in README.md.
+# and releases" in README.md. Until 1.0.0, all releases are GitHub
+# pre-releases (but stable ones still update the `latest` image).
 
 name: Release
 
@@ -37,6 +38,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       prerelease: ${{ steps.version.outputs.prerelease }}
+      stable: ${{ steps.version.outputs.stable }}
       sha: ${{ steps.version.outputs.sha }}
     steps:
       - name: Check out repository
@@ -62,7 +64,8 @@ jobs:
               echo "::error::Tag '${TAG}' is not a release version (e.g., v1.2.3 or v1.2.3rc1)"
               exit 1
           fi
-          base="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+          major="${BASH_REMATCH[1]}"
+          base="${major}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
           pre="${BASH_REMATCH[4]}"
           # Annotated, with a signature that GitHub verified
           if [[ "$(git cat-file -t "refs/tags/${TAG}")" != "tag" ]]; then
@@ -84,7 +87,15 @@ jobs:
               echo "sha=$(git rev-parse HEAD)"
               # Charts need SemVer: `1.2.3rc1` becomes `1.2.3-rc1`
               echo "chart_version=${base}${pre:+-${pre}}"
+              # `stable`: not an alpha, beta or release candidate (decides
+              # `latest`); `prerelease`: GitHub pre-release, also for all
+              # releases before 1.0.0
               if [[ -n "${pre}" ]]; then
+                  echo "stable=false"
+              else
+                  echo "stable=true"
+              fi
+              if [[ -n "${pre}" || "${major}" == "0" ]]; then
                   echo "prerelease=true"
               else
                   echo "prerelease=false"
@@ -209,7 +220,7 @@ jobs:
         id: latest
         env:
           TAG: ${{ github.ref_name }}
-          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+          STABLE: ${{ needs.prepare.outputs.stable }}
         run: |
           git fetch --quiet --force --tags origin \
               "+refs/heads/main:refs/remotes/origin/main"
@@ -217,7 +228,7 @@ jobs:
           highest="$(git tag -l 'v*' --merged origin/main --sort=-v:refname \
               | grep -E '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' \
               | head -n 1 || true)"
-          if [[ "${PRERELEASE}" == "false" && "${highest}" == "${TAG}" ]]; then
+          if [[ "${STABLE}" == "true" && "${highest}" == "${TAG}" ]]; then
               echo "latest=true" >> "${GITHUB_OUTPUT}"
           else
               echo "latest=false" >> "${GITHUB_OUTPUT}"
@@ -240,10 +251,15 @@ jobs:
           # Curated notes of the release commit if there are any, otherwise
           # notes generated from the merged pull requests
           notes_file="docs/releases/${VERSION}.md"
+          # GitHub never marks pre-releases as the latest release, so don't
+          # ask it to
+          if [[ "${PRERELEASE}" == "true" ]]; then
+              LATEST=false
+          fi
           # On reruns, complete an existing release instead of failing
           if gh release view "${TAG}" > /dev/null 2>&1; then
               gh release upload "${TAG}" dist/* --clobber
-              edit=(--latest="${LATEST}")
+              edit=(--prerelease="${PRERELEASE}" --latest="${LATEST}")
               if [[ -f "${notes_file}" ]]; then
                   edit+=(--notes-file "${notes_file}")
               fi
