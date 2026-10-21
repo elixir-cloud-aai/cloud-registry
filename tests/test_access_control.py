@@ -1,12 +1,17 @@
-"""Tests for access control, with the app created from its config (cf.
-`tests/conftest.py`).
+"""Tests for access control, with the app created from its config.
+
+The app and its fixtures are set up in `tests/conftest.py`.
 """
 
+from collections.abc import Callable
 from copy import deepcopy
 from itertools import count
+from typing import Any
 from urllib.parse import quote
 
-import mongomock
+from connexion import App
+from flask.testing import FlaskClient
+from mongomock.collection import Collection as MockCollection
 import pytest
 
 from cloud_registry.ga4gh.registry import permissions as permissions_module
@@ -15,7 +20,7 @@ from cloud_registry.utils import get_collection
 from tests.conftest import ADMIN, ENTITLEMENTS, NAMES, TEAM_GROUP, USER, make_headers
 
 BASE = "/ga4gh/registry/v1"
-SERVICE = {
+SERVICE: dict[str, Any] = {
     "name": "My TES",
     "type": {"group": "org.ga4gh", "artifact": "tes", "version": "1.1.0"},
     "organization": {"name": "My organization", "url": "https://example.org"},
@@ -31,8 +36,15 @@ DAVE, ERIN = "dave@example.org", "erin@example.org"
 OTHER_GROUP = ENTITLEMENTS[BOB][0]
 
 
-def headers(user=None):
-    """Request headers with an access token for a user; none if `None`."""
+def headers(user: str | None = None) -> dict[str, str]:
+    """Get request headers with an access token for a user.
+
+    Args:
+        user: User identifier; no token if `None`.
+
+    Returns:
+        Request headers.
+    """
     return {} if user is None else make_headers(user)
 
 
@@ -40,29 +52,66 @@ def headers(user=None):
 URLS = count()
 
 
-def register(client, user=ALICE):
-    """Register a service (with a new URL) as a user; return its identifier."""
+def register(client: FlaskClient, user: str = ALICE) -> str:
+    """Register a service (with a new URL) as a user.
+
+    Args:
+        client: Test client of the app.
+        user: User who registers the service.
+
+    Returns:
+        Identifier of the registered service.
+    """
     service = {**_service(), "url": f"https://tes{next(URLS)}.example.org"}
     response = client.post(f"{BASE}/services", json=service, headers=headers(user))
-    assert response.status_code == 201, response.json
-    return response.json
+    assert response.status_code == 201, response.get_json()
+    service_id: str = response.get_json()
+    return service_id
 
 
-def _service():
+def _service() -> dict[str, Any]:
+    """Get a copy of the test service.
+
+    Returns:
+        The test service, without identifier.
+    """
     return deepcopy(SERVICE)
 
 
-def permission_list(client, service_id, user=ADMIN):
-    """Roles granted on a service, as listed (users and groups)."""
+def permission_list(
+    client: FlaskClient, service_id: str, user: str = ADMIN
+) -> list[dict[str, Any]]:
+    """Get the roles granted on a service, as listed (users and groups).
+
+    Args:
+        client: Test client of the app.
+        service_id: Service identifier.
+        user: User who lists the roles.
+
+    Returns:
+        Roles on the service.
+    """
     response = client.get(
         f"{BASE}/services/{service_id}/permissions", headers=headers(user)
     )
-    assert response.status_code == 200, response.json
-    return response.json
+    assert response.status_code == 200, response.get_json()
+    roles: list[dict[str, Any]] = response.get_json()
+    return roles
 
 
-def permissions(client, service_id, user=ADMIN):
-    """Roles granted to users on a service."""
+def permissions(
+    client: FlaskClient, service_id: str, user: str = ADMIN
+) -> list[tuple[str, str]]:
+    """Get the roles granted to users on a service.
+
+    Args:
+        client: Test client of the app.
+        service_id: Service identifier.
+        user: User who lists the roles.
+
+    Returns:
+        User identifiers and roles, sorted.
+    """
     return sorted(
         (p["user_id"], p["role"])
         for p in permission_list(client, service_id, user)
@@ -70,8 +119,19 @@ def permissions(client, service_id, user=ADMIN):
     )
 
 
-def group_permissions(client, service_id, user=ADMIN):
-    """Roles granted to groups on a service."""
+def group_permissions(
+    client: FlaskClient, service_id: str, user: str = ADMIN
+) -> list[tuple[str, str]]:
+    """Get the roles granted to groups on a service.
+
+    Args:
+        client: Test client of the app.
+        service_id: Service identifier.
+        user: User who lists the roles.
+
+    Returns:
+        Groups and roles, sorted.
+    """
     return sorted(
         (p["group"], p["role"])
         for p in permission_list(client, service_id, user)
@@ -79,7 +139,21 @@ def group_permissions(client, service_id, user=ADMIN):
     )
 
 
-def grant(client, service_id, user, role, as_user=ALICE):
+def grant(
+    client: FlaskClient, service_id: str, user: str, role: str, as_user: str = ALICE
+) -> int:
+    """Grant a user a role on a service.
+
+    Args:
+        client: Test client of the app.
+        service_id: Service identifier.
+        user: User who gets the role.
+        role: Role to grant.
+        as_user: User who grants the role.
+
+    Returns:
+        Status code of the response.
+    """
     return client.put(
         f"{BASE}/services/{service_id}/permissions/{user}",
         json={"role": role},
@@ -87,19 +161,39 @@ def grant(client, service_id, user, role, as_user=ALICE):
     ).status_code
 
 
-def update(client, service_id, user):
+def update(client: FlaskClient, service_id: str, user: str) -> int:
+    """Replace a service with the test service, as a user.
+
+    Args:
+        client: Test client of the app.
+        service_id: Service identifier.
+        user: User who replaces the service.
+
+    Returns:
+        Status code of the response.
+    """
     return client.put(
         f"{BASE}/services/{service_id}", json=_service(), headers=headers(user)
     ).status_code
 
 
-def delete(client, service_id, user):
+def delete(client: FlaskClient, service_id: str, user: str) -> int:
+    """Delete a service, as a user.
+
+    Args:
+        client: Test client of the app.
+        service_id: Service identifier.
+        user: User who deletes the service.
+
+    Returns:
+        Status code of the response.
+    """
     return client.delete(
         f"{BASE}/services/{service_id}", headers=headers(user)
     ).status_code
 
 
-def test_public_read(client):
+def test_public_read(client: FlaskClient) -> None:
     """Anyone can read services, service types and service info."""
     service_id = register(client)
     for path in [
@@ -113,7 +207,7 @@ def test_public_read(client):
     assert client.get(f"{BASE}/services/UNKNWN").status_code == 404
 
 
-def test_write_requires_authentication(client):
+def test_write_requires_authentication(client: FlaskClient) -> None:
     """Writing requires a token."""
     service_id = register(client)
     assert client.post(f"{BASE}/services", json=_service()).status_code == 401
@@ -124,7 +218,7 @@ def test_write_requires_authentication(client):
     assert client.get(f"{BASE}/me").status_code == 401
 
 
-def test_creator_is_owner(client):
+def test_creator_is_owner(client: FlaskClient) -> None:
     """Any authenticated user can register a service and becomes its owner."""
     service_id = register(client, user=BOB)
     assert permissions(client, service_id) == [(BOB, "owner")]
@@ -132,7 +226,7 @@ def test_creator_is_owner(client):
     assert delete(client, service_id, BOB) == 200
 
 
-def test_others_forbidden(client):
+def test_others_forbidden(client: FlaskClient) -> None:
     """Other users can neither modify a service nor its permissions."""
     service_id = register(client)
     assert update(client, service_id, BOB) == 403
@@ -145,7 +239,7 @@ def test_others_forbidden(client):
     assert client.get(f"{BASE}/services/{service_id}").status_code == 200
 
 
-def test_admin(client):
+def test_admin(client: FlaskClient) -> None:
     """Admins (via entitlement from user info) can modify anything."""
     service_id = register(client)
     assert update(client, service_id, ADMIN) == 200
@@ -153,7 +247,7 @@ def test_admin(client):
     assert delete(client, service_id, ADMIN) == 200
 
 
-def test_maintainer(client):
+def test_maintainer(client: FlaskClient) -> None:
     """Maintainers can update, but not delete a service or manage access."""
     service_id = register(client)
     assert grant(client, service_id, BOB, "maintainer") == 200
@@ -167,7 +261,7 @@ def test_maintainer(client):
     ]
 
 
-def test_owners_manage_permissions(client):
+def test_owners_manage_permissions(client: FlaskClient) -> None:
     """Owners can grant, change and revoke roles of other users."""
     service_id = register(client)
     assert grant(client, service_id, CAROL, "owner") == 200
@@ -188,7 +282,7 @@ def test_owners_manage_permissions(client):
     assert delete(client, service_id, CAROL) == 200
 
 
-def test_invalid_permissions(client):
+def test_invalid_permissions(client: FlaskClient) -> None:
     """Invalid roles, unknown services and missing roles are rejected."""
     service_id = register(client)
     assert grant(client, service_id, BOB, "admin") == 400
@@ -202,14 +296,14 @@ def test_invalid_permissions(client):
     assert response.status_code == 404
 
 
-def test_put_create(client):
+def test_put_create(client: FlaskClient) -> None:
     """Only admins can register services with chosen identifiers."""
     assert update(client, "MYSERV", ALICE) == 403
     assert update(client, "MYSERV", ADMIN) == 201
     assert permissions(client, "MYSERV") == [(ADMIN, "owner")]
 
 
-def test_permissions_removed_with_service(client):
+def test_permissions_removed_with_service(client: FlaskClient) -> None:
     """Roles on a service are revoked when it is deleted."""
     service_id = register(client)
     assert grant(client, service_id, BOB, "maintainer") == 200
@@ -220,19 +314,42 @@ def test_permissions_removed_with_service(client):
     assert update(client, service_id, BOB) == 403
 
 
-def revoke(client, service_id, user, as_user=ALICE):
+def revoke(
+    client: FlaskClient, service_id: str, user: str, as_user: str = ALICE
+) -> int:
+    """Revoke the roles of a user on a service.
+
+    Args:
+        client: Test client of the app.
+        service_id: Service identifier.
+        user: User whose roles are revoked.
+        as_user: User who revokes the roles.
+
+    Returns:
+        Status code of the response.
+    """
     return client.delete(
         f"{BASE}/services/{service_id}/permissions/{user}", headers=headers(as_user)
     ).status_code
 
 
-def me(client, user):
+def me(client: FlaskClient, user: str) -> dict[str, Any]:
+    """Get the current user (`GET /me`), as a user.
+
+    Args:
+        client: Test client of the app.
+        user: User who sends the request.
+
+    Returns:
+        The user's identifier, admin status and roles on services.
+    """
     response = client.get(f"{BASE}/me", headers=headers(user))
-    assert response.status_code == 200, response.json
-    return response.json
+    assert response.status_code == 200, response.get_json()
+    current: dict[str, Any] = response.get_json()
+    return current
 
 
-def test_me(client):
+def test_me(client: FlaskClient) -> None:
     """Users get their identifier, admin status and roles on services."""
     first, second = register(client), register(client)
     assert grant(client, first, BOB, "maintainer") == 200
@@ -255,15 +372,24 @@ def test_me(client):
     assert me(client, BOB)["services"] == []
 
 
-def _names(client, service_id):
+def _names(client: FlaskClient, service_id: str) -> dict[str, str | None]:
+    """Get the display names of the users with roles on a service.
+
+    Args:
+        client: Test client of the app.
+        service_id: Service identifier.
+
+    Returns:
+        Display names by user identifier; `None` for unknown names.
+    """
     response = client.get(
         f"{BASE}/services/{service_id}/permissions",
         headers=headers(ADMIN),
     )
-    return {p["user_id"]: p.get("name") for p in response.json if "user_id" in p}
+    return {p["user_id"]: p.get("name") for p in response.get_json() if "user_id" in p}
 
 
-def test_permission_names(client):
+def test_permission_names(client: FlaskClient) -> None:
     """Display names are shown once users have used the registry."""
     service_id = register(client)
     assert grant(client, service_id, BOB, "maintainer") == 200
@@ -283,9 +409,10 @@ def test_permission_names(client):
     }
 
 
-def test_last_owner(client):
-    """The last owner of a service cannot be removed or downgraded, not even
-    by admins.
+def test_last_owner(client: FlaskClient) -> None:
+    """The last owner of a service cannot be removed or downgraded.
+
+    Not even by admins.
     """
     service_id = register(client)
     assert revoke(client, service_id, ALICE) == 409
@@ -301,9 +428,10 @@ def test_last_owner(client):
     assert permissions(client, service_id) == [(CAROL, "owner")]
 
 
-def test_names_per_service(client):
-    """Names are only shown for users who used the registry with their role
-    on the service, and are removed with the role.
+def test_names_per_service(client: FlaskClient) -> None:
+    """Names are only shown for users who used the registry with their role.
+
+    The role must be on the service, and names are removed with the role.
     """
     me(client, BOB)  # before being granted a role
     service_id = register(client)
@@ -317,10 +445,10 @@ def test_names_per_service(client):
 
 
 @pytest.mark.parametrize("change", ["revoke", "downgrade"])
-def test_last_owner_restored(client, monkeypatch, change):
-    """If concurrent changes removed all owners, the removed owner is
-    restored.
-    """
+def test_last_owner_restored(
+    client: FlaskClient, monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    """If concurrent changes removed all owners, the removed owner is restored."""
     service_id = register(client)
     # skip the check before the change, so that only the check afterwards can
     # keep the service from losing its last owner (as when concurrent
@@ -333,9 +461,12 @@ def test_last_owner_restored(client, monkeypatch, change):
     assert permissions(client, service_id) == [(ALICE, "owner")]
 
 
-def test_stale_roles_cleared(client, monkeypatch):
-    """Roles left on the identifier of a deleted service don't apply to a new
-    service with that identifier.
+def test_stale_roles_cleared(
+    client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Roles left on the identifier of a deleted service don't apply to a new one.
+
+    The new service has that identifier.
     """
     service_id = register(client)
     assert grant(client, service_id, BOB, "owner") == 200
@@ -347,7 +478,7 @@ def test_stale_roles_cleared(client, monkeypatch):
     assert permissions(client, service_id) == [(ADMIN, "owner")]
 
 
-def test_invalid_identifier_rolled_back(client):
+def test_invalid_identifier_rolled_back(client: FlaskClient) -> None:
     """Services whose owner can't be stored are not registered."""
     response = client.put(
         f"{BASE}/services/a,b", json=_service(), headers=headers(ADMIN)
@@ -357,7 +488,7 @@ def test_invalid_identifier_rolled_back(client):
     assert client.get(f"{BASE}/services/a,b").status_code == 404
 
 
-def test_stale_name_not_shown(app, client):
+def test_stale_name_not_shown(app: App, client: FlaskClient) -> None:
     """A name stored before a role is granted is not shown with the role."""
     service_id = register(client)
     with app.app.app_context():
@@ -368,12 +499,13 @@ def test_stale_name_not_shown(app, client):
     assert _names(client, service_id)[BOB] is None
 
 
-def test_owner_failure_rolled_back(client, monkeypatch):
-    """Services whose owner can't be stored for other reasons are not
-    registered either.
-    """
+def test_owner_failure_rolled_back(
+    client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Services whose owner can't be stored for other reasons aren't registered."""
 
-    def fail(serviceId):
+    def fail(serviceId: str) -> None:
+        """Fail to store the owner."""
         raise RuntimeError("database unavailable")
 
     monkeypatch.setattr(server_module, "add_owner", fail)
@@ -384,12 +516,15 @@ def test_owner_failure_rolled_back(client, monkeypatch):
     assert client.get(f"{BASE}/services/MYSERV").status_code == 404
 
 
-def test_failed_grant_reduces_rights(client, monkeypatch):
+def test_failed_grant_reduces_rights(
+    client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """If granting a role fails, the user's other roles are revoked already."""
     service_id = register(client)
     assert grant(client, service_id, BOB, "owner") == 200
 
-    def fail(**kwargs):
+    def fail(**kwargs: Any) -> bool:
+        """Fail to grant the role."""
         raise RuntimeError("database unavailable")
 
     with monkeypatch.context() as patch:
@@ -398,25 +533,27 @@ def test_failed_grant_reduces_rights(client, monkeypatch):
     assert permissions(client, service_id) == [(ALICE, "owner")]
 
 
-def test_permissions_of_unknown_service(client):
+def test_permissions_of_unknown_service(client: FlaskClient) -> None:
     """Permissions of unknown services are not found."""
     response = client.get(f"{BASE}/services/UNKNWN/permissions", headers=headers(ADMIN))
     assert response.status_code == 404
 
 
-def test_revoke_invalid_user_id(client):
+def test_revoke_invalid_user_id(client: FlaskClient) -> None:
     """Roles of invalid user identifiers are not found."""
     service_id = register(client)
     assert revoke(client, service_id, "bob,x") == 404
 
 
-def test_owner_not_restored_on_deleted_service(client, monkeypatch):
+def test_owner_not_restored_on_deleted_service(
+    client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """No owner is restored for a service deleted concurrently."""
     service_id = register(client)
     calls = []
 
-    def exists_once(serviceId):
-        # The service exists for the first check only.
+    def exists_once(serviceId: str) -> bool:
+        """Report that the service exists for the first check only."""
         calls.append(serviceId)
         return len(calls) == 1
 
@@ -427,14 +564,22 @@ def test_owner_not_restored_on_deleted_service(client, monkeypatch):
     assert permissions(client, service_id) == []
 
 
-def test_no_claims_without_token(app):
+def test_no_claims_without_token(app: App) -> None:
     """Without a validated token, there are no claims."""
     with app.app.test_request_context():
         assert permissions_module._get_current_claims() == {}
 
 
-def _roles(app, service_id):
-    """Roles granted on a service, also if it doesn't exist."""
+def _roles(app: App, service_id: str) -> list[tuple[str, str]]:
+    """Get the roles granted on a service, also if it doesn't exist.
+
+    Args:
+        app: Connexion app.
+        service_id: Service identifier.
+
+    Returns:
+        Subjects and roles, sorted.
+    """
     with app.app.test_request_context(f"{BASE}/services/{service_id}"):
         app.app.preprocess_request()
         return sorted(
@@ -442,9 +587,17 @@ def _roles(app, service_id):
         )
 
 
-def before_first_call(patch, method, collection, callback):
-    """Run a callback once, before the first call of a method of `mongomock`
-    collections on a collection (e.g., to interleave another request).
+def before_first_call(
+    patch: pytest.MonkeyPatch,
+    method: str,
+    collection: str,
+    callback: Callable[[], None],
+) -> list[bool]:
+    """Run a callback once, before the first call of a collection method.
+
+    The method is one of `mongomock` collections, and the callback runs before
+    its first call on a given collection (e.g., to interleave another
+    request).
 
     Args:
         patch: Monkeypatch (context) to patch the method with.
@@ -455,16 +608,17 @@ def before_first_call(patch, method, collection, callback):
     Returns:
         List that is non-empty once the callback ran.
     """
-    original = getattr(mongomock.collection.Collection, method)
-    fired = []
+    original = getattr(MockCollection, method)
+    fired: list[bool] = []
 
-    def wrapper(self, *args, **kwargs):
+    def wrapper(self: MockCollection, *args: Any, **kwargs: Any) -> Any:
+        """Run the callback before the first call on the collection."""
         if self.name == collection and not fired:
             fired.append(True)
             callback()
         return original(self, *args, **kwargs)
 
-    patch.setattr(mongomock.collection.Collection, method, wrapper)
+    patch.setattr(MockCollection, method, wrapper)
     return fired
 
 
@@ -473,15 +627,23 @@ def before_first_call(patch, method, collection, callback):
     [(BOB, 404, []), (ADMIN, 201, [(ADMIN, "owner")])],
     ids=["maintainer", "admin"],
 )
-def test_put_racing_delete(app, client, monkeypatch, user, status, roles):
-    """A service deleted while it is replaced is only registered again by
-    admins: others get `404`, and don't become owners.
+def test_put_racing_delete(
+    app: App,
+    client: FlaskClient,
+    monkeypatch: pytest.MonkeyPatch,
+    user: str,
+    status: int,
+    roles: list[tuple[str, str]],
+) -> None:
+    """A service deleted while it is replaced is only registered again by admins.
+
+    Others get `404`, and don't become owners.
     """
     service_id = register(client)
     assert grant(client, service_id, BOB, "maintainer") == 200
 
-    def delete_service():
-        # the owner deletes the service after it was read for the update
+    def delete_service() -> None:
+        """Delete the service, as the owner after it was read for the update."""
         permissions_module.remove_permissions(service_id)
         get_collection("services").delete_one({"id": service_id})
 
@@ -494,17 +656,27 @@ def test_put_racing_delete(app, client, monkeypatch, user, status, roles):
     assert client.get(f"{BASE}/services/{service_id}").status_code == expected
 
 
-def test_create_racing_delete(app, client, monkeypatch, caplog):
-    """The owner role (and name) of the creator of a new service deleted
-    while its owner is stored is revoked again (`404`); roles granted by
-    others on the identifier (e.g., to the owner of a service registered
-    again with it) are kept.
+def test_create_racing_delete(
+    app: App,
+    client: FlaskClient,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The creator's owner role on a service deleted meanwhile is revoked again.
+
+    The owner role (and name) of the creator of a new service deleted while
+    its owner is stored is revoked (`404`); roles granted by others on the
+    identifier (e.g., to the owner of a service registered again with it) are
+    kept.
     """
 
-    def delete_service():
-        # the service is deleted before its owner role is checked (its roles
-        # were revoked before the owner role was granted); and another
-        # request grants a role on the identifier
+    def delete_service() -> None:
+        """Delete the service, and grant a role on its identifier.
+
+        The service is deleted before its owner role is checked (its roles
+        were revoked before the owner role was granted), and another request
+        grants a role on the identifier.
+        """
         get_collection("services").delete_one({"id": "MYSERV"})
         permissions_module.add_resource_role(
             subject=BOB,
@@ -524,9 +696,12 @@ def test_create_racing_delete(app, client, monkeypatch, caplog):
     assert client.get(f"{BASE}/services/MYSERV").status_code == 404
 
 
-def test_put_stale_role(app, client, monkeypatch):
-    """Roles left on the identifier of a deleted service don't let users
-    other than admins register it again.
+def test_put_stale_role(
+    app: App, client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Roles left on the identifier of a deleted service don't allow registering.
+
+    Users other than admins can't register the service again with them.
     """
     service_id = register(client)
     assert grant(client, service_id, BOB, "maintainer") == 200
@@ -538,33 +713,37 @@ def test_put_stale_role(app, client, monkeypatch):
     assert client.get(f"{BASE}/services/{service_id}").status_code == 404
 
 
-def test_roles_removed_before_delete(app, client, monkeypatch):
-    """Roles on a service are revoked before it is deleted, so that no role
-    is left on a deleted service if deleting it fails.
+def test_roles_removed_before_delete(
+    app: App, client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Roles on a service are revoked before it is deleted.
+
+    So no role is left on a deleted service if deleting it fails.
     """
     service_id = register(client)
     assert grant(client, service_id, BOB, "maintainer") == 200
 
-    def fail(self, *args, **kwargs):
+    def fail(self: MockCollection, *args: Any, **kwargs: Any) -> None:
+        """Fail to delete the service."""
         raise RuntimeError("database unavailable")
 
     with monkeypatch.context() as patch:
-        patch.setattr(mongomock.collection.Collection, "delete_one", fail)
+        patch.setattr(MockCollection, "delete_one", fail)
         assert delete(client, service_id, ALICE) == 500
     assert _roles(app, service_id) == []
     assert client.get(f"{BASE}/services/{service_id}").status_code == 200
 
 
-def test_grant_racing_delete(app, client, monkeypatch):
-    """A role granted on a service that is deleted meanwhile is revoked
-    again (`404`).
-    """
+def test_grant_racing_delete(
+    app: App, client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A role granted on a service deleted meanwhile is revoked again (`404`)."""
     service_id = register(client)
     add_resource_role = permissions_module.add_resource_role
     deleted = []
 
-    def delete_first(**kwargs):
-        # the service is deleted after its existence was checked
+    def delete_first(**kwargs: Any) -> bool:
+        """Delete the service after its existence was checked, then grant."""
         deleted.append(True)
         permissions_module.remove_permissions(service_id)
         get_collection("services").delete_one({"id": service_id})
@@ -577,15 +756,20 @@ def test_grant_racing_delete(app, client, monkeypatch):
     assert _roles(app, service_id) == []
 
 
-def test_delete_racing_grant(app, client, monkeypatch):
-    """Roles granted while a service is deleted (after its roles were
-    revoked) are revoked with it.
+def test_delete_racing_grant(
+    app: App, client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Roles granted while a service is deleted are revoked with it.
+
+    The roles are granted after the service's roles were revoked.
     """
     service_id = register(client)
 
-    def grant_role():
-        # a role is granted after the roles were revoked, and the grant's
-        # check found the service still registered
+    def grant_role() -> None:
+        """Grant a role after the roles were revoked.
+
+        The grant's check found the service still registered.
+        """
         permissions_module.add_resource_role(
             subject=BOB,
             role="owner",
@@ -602,7 +786,7 @@ def test_delete_racing_grant(app, client, monkeypatch):
 PERMISSIONS_API = "/admin/access-control/permissions"
 
 
-def test_permissions_api_admin_only(client):
+def test_permissions_api_admin_only(client: FlaskClient) -> None:
     """FOCA's permissions API is for admins only."""
     assert client.get(PERMISSIONS_API).status_code == 401
     assert client.get(PERMISSIONS_API, headers=headers(ALICE)).status_code == 403
@@ -613,19 +797,20 @@ def test_permissions_api_admin_only(client):
     response = client.get(PERMISSIONS_API, headers=headers(ADMIN))
     assert response.status_code == 200
     # the configured policies are listed
-    assert response.json["pagination"]["total"] > 0
+    assert response.get_json()["pagination"]["total"] > 0
 
 
-def test_admin_via_permissions_api(client):
-    """Users granted the role `admin` via the permissions API are admins,
-    and `GET /me` says so, until the role is revoked.
+def test_admin_via_permissions_api(client: FlaskClient) -> None:
+    """Users granted the role `admin` via the permissions API are admins.
+
+    `GET /me` says so, until the role is revoked.
     """
     service_id = register(client)
     assert me(client, CAROL)["admin"] is False
     rule = {"policy_type": "g", "rule": {"v0": f"user:{CAROL}", "v1": "admin"}}
     response = client.post(PERMISSIONS_API, json=rule, headers=headers(ADMIN))
     assert response.status_code == 200
-    rule_id = response.json
+    rule_id = response.get_json()
     assert me(client, CAROL)["admin"] is True
     assert update(client, service_id, CAROL) == 200
     response = client.delete(f"{PERMISSIONS_API}/{rule_id}", headers=headers(ADMIN))
@@ -634,9 +819,12 @@ def test_admin_via_permissions_api(client):
     assert update(client, service_id, CAROL) == 403
 
 
-def test_role_changes_logged(client, caplog):
-    """Changes of roles are logged: who changed which role of whom on which
-    service.
+def test_role_changes_logged(
+    client: FlaskClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Changes of roles are logged.
+
+    The messages say who changed which role of whom on which service.
     """
     caplog.set_level("INFO", logger=permissions_module.__name__)
     service_id = register(client)
@@ -661,26 +849,62 @@ def test_role_changes_logged(client, caplog):
     assert f"Service '{service_id}' deleted by '{ADMIN}'." in caplog.text
 
 
-def group_path(service_id, group):
-    """Path of the roles of a group on a service (URL-encoded group)."""
+def group_path(service_id: str, group: str) -> str:
+    """Get the path of the roles of a group on a service.
+
+    Args:
+        service_id: Service identifier.
+        group: Group, URL-encoded in the path.
+
+    Returns:
+        Path of the group's roles.
+    """
     return f"{BASE}/services/{service_id}/permissions/groups/{quote(group, safe='')}"
 
 
-def grant_group(client, service_id, group, role, as_user=ALICE):
+def grant_group(
+    client: FlaskClient, service_id: str, group: str, role: str, as_user: str = ALICE
+) -> int:
+    """Grant a group a role on a service.
+
+    Args:
+        client: Test client of the app.
+        service_id: Service identifier.
+        group: Group that gets the role.
+        role: Role to grant.
+        as_user: User who grants the role.
+
+    Returns:
+        Status code of the response.
+    """
     return client.put(
         group_path(service_id, group), json={"role": role}, headers=headers(as_user)
     ).status_code
 
 
-def revoke_group(client, service_id, group, as_user=ALICE):
+def revoke_group(
+    client: FlaskClient, service_id: str, group: str, as_user: str = ALICE
+) -> int:
+    """Revoke the roles of a group on a service.
+
+    Args:
+        client: Test client of the app.
+        service_id: Service identifier.
+        group: Group whose roles are revoked.
+        as_user: User who revokes the roles.
+
+    Returns:
+        Status code of the response.
+    """
     return client.delete(
         group_path(service_id, group), headers=headers(as_user)
     ).status_code
 
 
-def test_group_roles(client):
-    """Owners can grant roles to groups they are a member of; all members of
-    the group then have the role.
+def test_group_roles(client: FlaskClient) -> None:
+    """Owners can grant roles to groups they are a member of.
+
+    All members of the group then have the role.
     """
     service_id = register(client)
     response = client.put(
@@ -689,7 +913,7 @@ def test_group_roles(client):
         headers=headers(ALICE),
     )
     assert response.status_code == 200
-    assert response.json == {"group": TEAM_GROUP, "role": "owner"}
+    assert response.get_json() == {"group": TEAM_GROUP, "role": "owner"}
     # user and group roles are listed together, and distinguishable
     assert permission_list(client, service_id) == [
         {"user_id": ALICE, "name": NAMES[ALICE], "role": "owner"},
@@ -712,7 +936,7 @@ def test_group_roles(client):
     assert response.status_code == 403
     response = client.delete(group_path(service_id, TEAM_GROUP), headers=headers(ALICE))
     assert response.status_code == 200
-    assert response.json == TEAM_GROUP
+    assert response.get_json() == TEAM_GROUP
     assert group_permissions(client, service_id) == []
     assert update(client, service_id, ERIN) == 403
     # the roles of groups are revoked with the service
@@ -722,9 +946,10 @@ def test_group_roles(client):
     assert group_permissions(client, service_id) == []
 
 
-def test_group_membership_required(client):
-    """Owners cannot grant roles to groups they are not a member of; admins
-    can grant roles to any group. Any owner can revoke roles of groups.
+def test_group_membership_required(client: FlaskClient) -> None:
+    """Owners cannot grant roles to groups they are not a member of.
+
+    Admins can grant roles to any group. Any owner can revoke roles of groups.
     """
     service_id = register(client)
     assert grant_group(client, service_id, OTHER_GROUP, "maintainer") == 403
@@ -745,10 +970,8 @@ def test_group_membership_required(client):
     assert group_permissions(client, service_id) == [(OTHER_GROUP, "maintainer")]
 
 
-def test_invalid_group_permissions(client):
-    """Invalid roles and groups, unknown services and missing roles are
-    rejected.
-    """
+def test_invalid_group_permissions(client: FlaskClient) -> None:
+    """Invalid roles and groups, unknown services and missing roles are rejected."""
     service_id = register(client)
     assert grant_group(client, service_id, TEAM_GROUP, "admin") == 400
     assert grant_group(client, service_id, "a,b", "owner", ADMIN) == 400
@@ -762,15 +985,19 @@ def test_invalid_group_permissions(client):
 
 
 @pytest.mark.parametrize("path", ["groups", "groups/"])
-def test_group_permissions_without_group(app, client, path):
-    """Group roles without a group are not found, and are not taken as roles
-    of a user `groups` (which would also count as another owner).
+def test_group_permissions_without_group(
+    app: App, client: FlaskClient, path: str
+) -> None:
+    """Group roles without a group are not found.
+
+    Nor are they taken as roles of a user `groups` (which would also count as
+    another owner).
     """
     service_id = register(client)
     url = f"{BASE}/services/{service_id}/permissions/{path}"
     response = client.put(url, json={"role": "owner"}, headers=headers(ALICE))
     assert response.status_code == 404
-    assert response.json["status"] == 404
+    assert response.get_json()["status"] == 404
     assert permission_list(client, service_id) == [
         {"user_id": ALICE, "name": NAMES[ALICE], "role": "owner"}
     ]
@@ -789,7 +1016,7 @@ def test_group_permissions_without_group(app, client, path):
     ]
 
 
-def test_group_with_slash(client):
+def test_group_with_slash(client: FlaskClient) -> None:
     """Groups may contain slashes (e.g., URLs), URL-encoded in the path."""
     service_id = register(client)
     group = "https://idp.example.org/groups/team?x=1#y"
@@ -799,7 +1026,7 @@ def test_group_with_slash(client):
     assert group_permissions(client, service_id) == []
 
 
-def test_users_and_groups_distinct(client):
+def test_users_and_groups_distinct(client: FlaskClient) -> None:
     """A user whose identifier starts with `group:` is not a group."""
     service_id = register(client)
     user = quote(f"group:{TEAM_GROUP}", safe="")
@@ -813,10 +1040,11 @@ def test_users_and_groups_distinct(client):
     assert revoke_group(client, service_id, TEAM_GROUP) == 404
 
 
-def test_group_last_owner(client):
-    """Groups count as owners: the last user owner can be removed while a
-    group is owner, and the last owner group can't be removed or
-    downgraded, not even by admins.
+def test_group_last_owner(client: FlaskClient) -> None:
+    """Groups count as owners.
+
+    The last user owner can be removed while a group is owner, and the last
+    owner group can't be removed or downgraded, not even by admins.
     """
     service_id = register(client)
     assert grant_group(client, service_id, TEAM_GROUP, "owner") == 200
@@ -838,10 +1066,10 @@ def test_group_last_owner(client):
 
 
 @pytest.mark.parametrize("change", ["revoke", "downgrade"])
-def test_last_owner_group_restored(client, monkeypatch, change):
-    """If concurrent changes removed all owners, the removed owner group is
-    restored.
-    """
+def test_last_owner_group_restored(
+    client: FlaskClient, monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    """If concurrent changes removed all owners, the owner group is restored."""
     service_id = register(client)
     assert grant_group(client, service_id, TEAM_GROUP, "owner") == 200
     assert revoke(client, service_id, ALICE) == 200
@@ -855,15 +1083,15 @@ def test_last_owner_group_restored(client, monkeypatch, change):
     assert group_permissions(client, service_id) == [(TEAM_GROUP, "owner")]
 
 
-def test_group_grant_racing_delete(app, client, monkeypatch):
-    """A role granted to a group on a service that is deleted meanwhile is
-    revoked again (`404`).
-    """
+def test_group_grant_racing_delete(
+    app: App, client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A group's role on a service deleted meanwhile is revoked again (`404`)."""
     service_id = register(client)
     add_resource_role = permissions_module.add_resource_role
 
-    def delete_first(**kwargs):
-        # the service is deleted after its existence was checked
+    def delete_first(**kwargs: Any) -> bool:
+        """Delete the service after its existence was checked, then grant."""
         permissions_module.remove_permissions(service_id)
         get_collection("services").delete_one({"id": service_id})
         return add_resource_role(**kwargs)
@@ -874,7 +1102,7 @@ def test_group_grant_racing_delete(app, client, monkeypatch):
     assert _roles(app, service_id) == []
 
 
-def test_me_group_roles(client):
+def test_me_group_roles(client: FlaskClient) -> None:
     """`GET /me` also lists the roles users have through groups."""
     first, second = register(client), register(client)
     assert grant_group(client, first, TEAM_GROUP, "maintainer") == 200
@@ -899,7 +1127,9 @@ def test_me_group_roles(client):
     assert _names(client, first) == {ALICE: NAMES[ALICE]}
 
 
-def test_group_role_changes_logged(client, caplog):
+def test_group_role_changes_logged(
+    client: FlaskClient, caplog: pytest.LogCaptureFixture
+) -> None:
     """Changes of roles of groups are logged like those of users."""
     caplog.set_level("INFO", logger=permissions_module.__name__)
     service_id = register(client)
