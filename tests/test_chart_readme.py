@@ -2,6 +2,8 @@
 
 import importlib.util
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -9,10 +11,10 @@ ROOT = Path(__file__).resolve().parents[1]
 DOCS = "https://cloud-registry.readthedocs.io/en"
 REPO = "https://github.com/elixir-cloud-aai/cloud-registry"
 
+SCRIPT = ROOT / "scripts/chart_readme.py"
+
 # `scripts/` is not a package, so the script is loaded from its file
-_spec = importlib.util.spec_from_file_location(
-    "chart_readme", ROOT / "scripts/chart_readme.py"
-)
+_spec = importlib.util.spec_from_file_location("chart_readme", SCRIPT)
 assert _spec and _spec.loader
 chart_readme = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(chart_readme)
@@ -71,6 +73,12 @@ def test_version_links(markdown: str, expected: str) -> None:
         f"{REPO}/tree/dev/deployment",
         f"{REPO}/raw/dev/deployment/values.yaml",
         f"{REPO}/blob/dev",
+        f"{DOCS}/stable/",
+        f"{REPO}/blob/main/README.md",
+        f"{REPO}/blob/HEAD/README.md",
+        f"{REPO}/edit/dev/README.md",
+        f"{REPO}/commits/dev",
+        f"{REPO}/blame/main/README.md",
         "https://raw.githubusercontent.com/elixir-cloud-aai/cloud-registry/dev/x",
         "https://raw.githubusercontent.com/elixir-cloud-aai/cloud-registry/refs/heads/dev/x",
     ],
@@ -121,21 +129,92 @@ def test_main(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
 def test_main_unversioned(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """Links left unversioned fail with an error annotation per line."""
     readme = tmp_path / "README.md"
-    readme.write_text(f"[a]({DOCS}/latest/)\n[b]({REPO}/tree/dev/b)\n")
+    readme.write_text(
+        f"[a]({DOCS}/latest/)\n[b]({REPO}/tree/dev/b)\n"
+        "[c](http://cloud-registry.readthedocs.io/en/latest/)\n"
+    )
     assert chart_readme.main([str(readme), "v1.2.3"]) == 1
+    # The other links are rewritten anyway
+    assert readme.read_text().startswith(f"[a]({DOCS}/v1.2.3/)\n")
+    message = (
+        f"::error file={readme},line={{}}::Link to a version that moves (e.g.,"
+        " latest docs, branch dev) left in the packaged README: {}\n"
+    )
     assert capsys.readouterr().err == (
-        f"::error file={readme},line=2::Link to the latest docs or to branch"
-        f" `dev` left in the packaged README: [b]({REPO}/tree/dev/b)\n"
+        message.format(2, f"[b]({REPO}/tree/dev/b)")
+        + message.format(3, "[c](http://cloud-registry.readthedocs.io/en/latest/)")
     )
 
 
-@pytest.mark.parametrize("tag", ["1.2.3", "latest", "dev", "v1.2.3/../x", ""])
+@pytest.mark.parametrize(
+    "tag", ["1.2.3", "latest", "dev", "v1.2.3/../x", "v1..2", "v1.2.3/", ""]
+)
 def test_main_invalid_tag(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], tag: str
 ) -> None:
-    """Tags that are no version tags are rejected, and the README unchanged."""
+    """Tags that would change the paths of links are rejected."""
     readme = tmp_path / "README.md"
     readme.write_text(f"[a]({DOCS}/latest/)\n")
     assert chart_readme.main([str(readme), tag]) == 1
     assert readme.read_text() == f"[a]({DOCS}/latest/)\n"
     assert capsys.readouterr().err == f"::error::Tag '{tag}' is not a version tag\n"
+
+
+@pytest.mark.parametrize(
+    ("markdown", "tag", "returncode", "expected", "stderr"),
+    [
+        (f"[a]({DOCS}/latest/)\n", "v1.2.3rc1", 0, f"[a]({DOCS}/v1.2.3rc1/)\n", ""),
+        (
+            f"[a]({REPO}/tree/dev/a)\n",
+            "v1.2.3",
+            1,
+            f"[a]({REPO}/tree/dev/a)\n",
+            "::error file=README.md,line=1::Link to a version that moves (e.g.,"
+            " latest docs, branch dev) left in the packaged README:"
+            f" [a]({REPO}/tree/dev/a)\n",
+        ),
+        (
+            f"[a]({DOCS}/latest/)\n",
+            "1.2.3",
+            1,
+            f"[a]({DOCS}/latest/)\n",
+            "::error::Tag '1.2.3' is not a version tag\n",
+        ),
+    ],
+)
+def test_script(
+    tmp_path: Path,
+    markdown: str,
+    tag: str,
+    returncode: int,
+    expected: str,
+    stderr: str,
+) -> None:
+    """The script runs as the release workflow calls it."""
+    (tmp_path / "README.md").write_text(markdown)
+    result = subprocess.run(  # noqa: S603 (fixed arguments, no shell)
+        [sys.executable, "-I", str(SCRIPT), "README.md", tag],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        check=False,
+    )
+    assert (result.returncode, result.stdout, result.stderr) == (
+        returncode,
+        "",
+        stderr,
+    )
+    assert (tmp_path / "README.md").read_text() == expected
+
+
+def test_script_usage(tmp_path: Path) -> None:
+    """Calls without a README and a tag fail with the usage."""
+    result = subprocess.run(  # noqa: S603 (fixed arguments, no shell)
+        [sys.executable, "-I", str(SCRIPT), "README.md"],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert "usage:" in result.stderr

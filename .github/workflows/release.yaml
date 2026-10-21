@@ -119,17 +119,17 @@ jobs:
       # `appVersion` (the default image tag) is the release version. The
       # chart is packaged from a copy whose README links to the docs and files
       # of the release instead of the latest docs and branch `dev` (see
-      # `scripts/chart_readme.py`; fails if any such link is left)
+      # `scripts/chart_readme.py`; fails if any link to a version that moves
+      # is left)
       - name: Package chart
         env:
-          TAG: ${{ github.ref_name }}
           VERSION: ${{ steps.version.outputs.version }}
           CHART_VERSION: ${{ steps.version.outputs.chart_version }}
         run: |
           helm lint deployment --strict -f deployment/ci/test-values.yaml
-          chart="${RUNNER_TEMP}/chart"
+          chart="$(mktemp -d)/cloud-registry"
           cp -R deployment "${chart}"
-          python scripts/chart_readme.py "${chart}/README.md" "${TAG}"
+          python scripts/chart_readme.py "${chart}/README.md" "v${VERSION}"
           helm package "${chart}" \
               --version "${CHART_VERSION}" --app-version "${VERSION}" -d dist
           package="dist/cloud-registry-${CHART_VERSION}.tgz"

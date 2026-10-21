@@ -108,10 +108,10 @@ workflow](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/.github/wo
 passed for it (a run for the push of the commit to `dev`; if CI hasn't
 finished or failed, re-run the release workflow once it passed). It packages
 the Helm chart with the release version as `version` and `appVersion` (the
-default image tag), and with the links of its README to the latest docs and
-to files on branch `dev` pointed to the docs and files of the release
-(`/en/vX.Y.Z/`, `blob/vX.Y.Z/`), failing if any such link is left
-(`scripts/chart_readme.py`; the README in the repository is unchanged).
+default image tag). In the packaged README, links to the latest docs and to
+files on branch `dev` point to the release (`/en/vX.Y.Z/`, `blob/vX.Y.Z/`);
+the release fails if any link to a version that moves is left
+(`scripts/chart_readme.py`). The README in the repository is unchanged.
 After approval in the `release` environment, it builds
 the image, checks that the app reports the release version, pushes exactly
 that image tagged `X.Y.Z` (and `latest`, if it is the highest stable release
