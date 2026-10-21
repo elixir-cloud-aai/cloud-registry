@@ -191,8 +191,10 @@ class TestChartOverlay:
             ("--set-json", 'config.security.auth.audience=[" "]'),
             ("--set-json", "config.security.auth.audience=null"),
             ("--set", "config.security.auth.verify_audience=true"),
+            ("--set-string", "config.security.auth.verify_audience=true"),
+            ("--set-json", 'config.security.auth.issuers=["https://x.org/"]'),
         ],
-        ids=["missing", "empty", "blank", "null", "verified"],
+        ids=["missing", "empty", "blank", "null", "verified", "string", "issuers"],
     )
     def test_audience_required(self, args):
         """Rendering fails without an audience, as the app would refuse to
@@ -202,18 +204,42 @@ class TestChartOverlay:
             _render_overlay("--set", "host_name=example.org", *args, audience=None)
         assert "config.security.auth.audience must" in exc.value.stderr
 
-    def test_audience_optional(self):
-        """Without audience validation, no audience is needed, as for the
-        app.
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ("--set", "config.security.auth.verify_audience=false"),
+            ("--set-string", "config.security.auth.verify_audience=false"),
+            ("--set-string", "config.security.auth.verify_audience=False"),
+            ("--set-string", "config.security.auth.verify_audience=no"),
+            ("--set", "config.security.auth.verify_audience=0"),
+        ],
+        ids=["disabled", "string", "capitalized", "no", "zero"],
+    )
+    def test_audience_optional(self, tmp_path, monkeypatch, args):
+        """Without audience validation, no audience is needed, as for the app
+        (which parses `verify_audience` as pydantic does booleans).
+        """
+        overlay = _render_overlay(
+            "--set", "host_name=example.org", *args, audience=None
+        )
+        # without the test overlay, which sets an audience
+        path = tmp_path / "overlay.yaml"
+        path.write_text(yaml.safe_dump(overlay))
+        monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(path))
+        assert _parse_config().security.auth.audience is None
+
+    def test_audience_optional_without_issuers(self):
+        """Without trusted issuers, no audience is needed, as for FOCA (which
+        then also requires access control to be disabled).
         """
         overlay = _render_overlay(
             "--set",
             "host_name=example.org",
-            "--set",
-            "config.security.auth.verify_audience=false",
+            "--set-json",
+            "config.security.auth.issuers=[]",
             audience=None,
         )
-        assert overlay["security"]["auth"] == {"verify_audience": False}
+        assert overlay["security"]["auth"] == {"issuers": []}
 
     def test_audience(self, tmp_path, monkeypatch):
         """The audience is passed to the app."""
