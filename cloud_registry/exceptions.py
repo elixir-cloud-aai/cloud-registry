@@ -24,10 +24,10 @@ from cloud_registry.utils import escape_log_value
 
 logger = logging.getLogger(__name__)
 
-# Maximum length of reasons in validation problem details (and their log
-# messages); longer ones are shortened in the middle (keeping, e.g., the
-# field names at their end), as validators quote rejected values, which can
-# be as large as the request body
+# Maximum length of details in problem details responses (and of reasons in
+# their log messages); longer ones are shortened in the middle (keeping,
+# e.g., the field names at their end), as they may quote rejected values,
+# which can be as large as the request body
 MAX_DETAIL_LENGTH = 500
 
 # exceptions raised in app context
@@ -90,6 +90,24 @@ exceptions = {
 }
 
 
+def shorten_detail(detail: str) -> str:
+    """Shorten a detail to `MAX_DETAIL_LENGTH` characters, keeping its
+    start and end.
+
+    Args:
+        detail: Description of a problem.
+
+    Returns:
+        The detail if it is not longer than `MAX_DETAIL_LENGTH`, otherwise
+        its first and last characters (`MAX_DETAIL_LENGTH` in total),
+        joined by "…".
+    """
+    if len(detail) <= MAX_DETAIL_LENGTH:
+        return detail
+    head = MAX_DETAIL_LENGTH // 2
+    return f"{detail[:head]}…{detail[head - MAX_DETAIL_LENGTH :]}"
+
+
 def problem(exc: HTTPException, **extensions: str) -> Response:
     """Build a problem details response with the description of an exception.
 
@@ -125,8 +143,8 @@ def validation_problem(exc: BadRequestProblem | ExtraParameterProblem) -> Respon
 
     Returns:
         Problem details response (`400`), with the reason as `detail`
-        (shortened to `MAX_DETAIL_LENGTH` characters and "…"), or
-        the mapped details if there is none.
+        (shortened, cf. `shorten_detail()`), or the mapped details if there
+        is none.
     """
     mapped = _mapped(exc)
     detail = exc.detail
@@ -134,10 +152,7 @@ def validation_problem(exc: BadRequestProblem | ExtraParameterProblem) -> Respon
         detail = "; ".join(str(item) for item in detail)
     if not isinstance(detail, str) or not detail:
         detail = mapped["detail"]
-    if len(detail) > MAX_DETAIL_LENGTH:
-        head = MAX_DETAIL_LENGTH // 2
-        detail = f"{detail[:head]}…{detail[head - MAX_DETAIL_LENGTH :]}"
-    logger.info("Request rejected: %s", escape_log_value(detail))
+    logger.info("Request rejected: %s", escape_log_value(shorten_detail(detail)))
     return _response(title=mapped["title"], status=mapped["status"], detail=detail)
 
 
@@ -159,11 +174,17 @@ def _response(title: str, status: int, detail: str, **extensions: str) -> Respon
     Args:
         title: Title of the problem.
         status: HTTP status code.
-        detail: Description of the problem.
+        detail: Description of the problem; shortened, as it may quote
+            values of the request (cf. `shorten_detail()`).
         extensions: Extension members of the problem details.
 
     Returns:
         Problem details response.
     """
-    details = {"title": title, "status": status, "detail": detail, **extensions}
+    details = {
+        "title": title,
+        "status": status,
+        "detail": shorten_detail(detail),
+        **extensions,
+    }
     return Response(dumps(details), status=status, mimetype="application/problem+json")

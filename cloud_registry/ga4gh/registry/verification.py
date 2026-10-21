@@ -21,7 +21,13 @@ from flask import Response, request
 from pymongo import ReturnDocument
 from werkzeug.exceptions import HTTPException
 
-from cloud_registry.exceptions import BadRequest, Conflict, NotFound, problem
+from cloud_registry.exceptions import (
+    BadRequest,
+    Conflict,
+    NotFound,
+    problem,
+    shorten_detail,
+)
 from cloud_registry.ga4gh.registry.permissions import current_user
 from cloud_registry.ga4gh.registry.service import (
     KEY,
@@ -137,7 +143,7 @@ def _not_verified(serviceId: str, exc: HTTPException) -> Response:
     logger.info(
         "Service '%s' not verified: %s",
         escape_log_value(serviceId),
-        escape_log_value(exc.description),
+        escape_log_value(shorten_detail(str(exc.description))),
     )
     return problem(exc)
 

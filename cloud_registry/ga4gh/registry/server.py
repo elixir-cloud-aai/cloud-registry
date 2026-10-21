@@ -5,7 +5,7 @@ import logging
 from flask import Response, request
 from foca.utils.logging import log_traffic
 
-from cloud_registry.exceptions import BadRequest, NotFound, problem
+from cloud_registry.exceptions import BadRequest, NotFound, problem, shorten_detail
 from cloud_registry.ga4gh.registry.permissions import (
     add_owner,
     current_user,
@@ -207,10 +207,16 @@ def _register_service(
     try:
         service.register_metadata()
     except InvalidService as exc:
-        logger.info("Service not registered: %s", escape_log_value(exc.description))
+        logger.info(
+            "Service not registered: %s",
+            escape_log_value(shorten_detail(exc.description)),
+        )
         return problem(exc)
     except DuplicateService as exc:
-        logger.info("Service not registered: %s", escape_log_value(exc.description))
+        logger.info(
+            "Service not registered: %s",
+            escape_log_value(shorten_detail(exc.description)),
+        )
         return problem(exc, serviceId=exc.existing_id)
     if service.verification_removed:
         logger.info(

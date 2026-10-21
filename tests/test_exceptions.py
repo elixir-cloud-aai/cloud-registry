@@ -5,7 +5,13 @@ import json
 from connexion.exceptions import BadRequestProblem, ExtraParameterProblem
 import pytest
 
-from cloud_registry.exceptions import MAX_DETAIL_LENGTH, validation_problem
+from cloud_registry.exceptions import (
+    MAX_DETAIL_LENGTH,
+    BadRequest,
+    problem,
+    shorten_detail,
+    validation_problem,
+)
 from cloud_registry.utils import escape_log_value
 
 
@@ -47,3 +53,36 @@ def test_validation_problem_long_detail(caplog):
     )
     assert json.loads(response.get_data())["detail"] == truncated
     assert caplog.messages == [f"Request rejected: {escape_log_value(truncated)}"]
+
+
+@pytest.mark.parametrize(
+    "length, shortened",
+    [(MAX_DETAIL_LENGTH, False), (MAX_DETAIL_LENGTH + 1, True)],
+    ids=["max", "longer"],
+)
+def test_shorten_detail_boundary(length, shortened):
+    """Details up to `MAX_DETAIL_LENGTH` characters are kept; longer ones
+    are shortened to that many characters and "…".
+    """
+    detail = "x" * length
+    result = shorten_detail(detail)
+    assert (result != detail) is shortened
+    assert len(result) == min(length, MAX_DETAIL_LENGTH + 1)
+    assert result.endswith("x")
+
+
+def test_validation_problem_long_messages():
+    """Messages of form data are shortened together."""
+    exc = BadRequestProblem(detail=["a" * MAX_DETAIL_LENGTH, "b: no int"])
+    detail = json.loads(validation_problem(exc).get_data())["detail"]
+    assert len(detail) == MAX_DETAIL_LENGTH + 1
+    assert detail.startswith("a")
+    assert detail.endswith("a; b: no int")
+
+
+def test_problem_long_description():
+    """Descriptions of other problems are shortened, too."""
+    exc = BadRequest(description=f"{'a' * 10000} is invalid")
+    detail = json.loads(problem(exc).get_data())["detail"]
+    assert len(detail) == MAX_DETAIL_LENGTH + 1
+    assert detail.endswith("a is invalid")
