@@ -14,7 +14,7 @@ from cloud_registry.ga4gh.registry.service import (
     RegisterService,
 )
 from cloud_registry.ga4gh.registry.service_info import get_service_info
-from cloud_registry.utils import get_collection, get_public_url
+from cloud_registry.utils import escape_log_value, get_collection, get_public_url
 
 logger = logging.getLogger(__name__)
 # Response for a registered service: its identifier, status `201` and its URL
@@ -172,10 +172,10 @@ def _register_service(
     try:
         service.register_metadata()
     except InvalidService as exc:
-        logger.info("Service not registered: %s", exc.description)
+        logger.info("Service not registered: %s", escape_log_value(exc.description))
         return problem(exc)
     except DuplicateService as exc:
-        logger.info("Service not registered: %s", exc.description)
+        logger.info("Service not registered: %s", escape_log_value(exc.description))
         return problem(exc, serviceId=exc.existing_id)
     if service.was_created:
         try:
@@ -186,7 +186,7 @@ def _register_service(
         except ValueError as exc:
             # FOCA rejects values that can't be stored in policy rules (e.g.,
             # service identifiers with commas)
-            logger.info("Can't store owner role: %s", exc)
+            logger.info("Can't store owner role: %s", escape_log_value(exc))
             _unregister_service(service)
             raise BadRequest from exc
         except Exception:

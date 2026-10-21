@@ -28,7 +28,7 @@ from foca.security.access_control.enforcement import (
 
 from cloud_registry.exceptions import BadRequest, Conflict, NotFound
 from cloud_registry.ga4gh.registry.service import service_exists
-from cloud_registry.utils import get_collection, get_custom_config
+from cloud_registry.utils import escape_log_value, get_collection, get_custom_config
 
 logger = logging.getLogger(__name__)
 
@@ -218,7 +218,11 @@ def _check_other_owners(resource: str, userId: str) -> None:
             the service.
     """
     if _owners(resource) == [userId]:
-        logger.info("User '%s' is the last owner of '%s'", userId, resource)
+        logger.info(
+            "User '%s' is the last owner of '%s'",
+            escape_log_value(userId),
+            escape_log_value(resource),
+        )
         raise Conflict
 
 
@@ -245,7 +249,11 @@ def _restore_owner_if_none(serviceId: str, resource: str, userId: str) -> None:
         if not service_exists(serviceId):
             raise NotFound
         add_resource_role(subject=userId, role="owner", resource=resource)
-        logger.info("Restored owner '%s' of '%s'", userId, resource)
+        logger.info(
+            "Restored owner '%s' of '%s'",
+            escape_log_value(userId),
+            escape_log_value(resource),
+        )
         raise Conflict
 
 
@@ -297,7 +305,7 @@ def putServicePermission(serviceId: str, userId: str, **kwargs) -> dict:
     # FOCA rejects values that can't be stored in policy rules (e.g., user
     # identifiers with commas)
     except ValueError as exc:
-        logger.info("Invalid permission: %s", exc)
+        logger.info("Invalid permission: %s", escape_log_value(exc))
         raise BadRequest from exc
     return {"user_id": userId, "role": role}
 

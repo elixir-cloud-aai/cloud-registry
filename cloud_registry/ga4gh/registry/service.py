@@ -14,7 +14,7 @@ import idna
 from pymongo.errors import DuplicateKeyError
 
 from cloud_registry.exceptions import BadRequest, Conflict, InternalServerError
-from cloud_registry.utils import get_collection, get_custom_config
+from cloud_registry.utils import escape_log_value, get_collection, get_custom_config
 
 logger = logging.getLogger(__name__)
 # Internal field identifying a service by its normalized URL and API type
@@ -524,13 +524,17 @@ class RegisterService:
                     self._check_duplicate(key=key)
                     continue
                 self.was_created = True
-                logger.info("Added service with id '%s'.", self.data["id"])
+                logger.info(
+                    "Added service with id '%s'.", escape_log_value(self.data["id"])
+                )
                 break
             else:
                 raise InternalServerError
         logger.debug(
             "Entry in 'services' collection: %s",
-            self.db_coll.find_one({"id": self.data["id"]}, PROJECTION),
+            escape_log_value(
+                self.db_coll.find_one({"id": self.data["id"]}, PROJECTION)
+            ),
         )
 
     def _replace(self, key: str, retries: int) -> None:
@@ -588,12 +592,17 @@ class RegisterService:
                 # otherwise, the service itself was (e.g., by a concurrent
                 # upsert with the identifier), so it is read again
                 self._check_duplicate(key=key)
-                logger.debug("Service '%s' added concurrently.", self.data["id"])
+                logger.debug(
+                    "Service '%s' added concurrently.",
+                    escape_log_value(self.data["id"]),
+                )
                 continue
             if result.matched_count or result.upserted_id is not None:
                 self.was_created = result.upserted_id is not None
                 return
-            logger.debug("Service '%s' changed concurrently.", self.data["id"])
+            logger.debug(
+                "Service '%s' changed concurrently.", escape_log_value(self.data["id"])
+            )
         raise InternalServerError
 
     def _check_duplicate(self, key: str) -> None:
@@ -652,7 +661,7 @@ def add_service_keys() -> None:
             problems.append(f"'{service['id']}': same URL and API type as another")
             continue
         if result.modified_count:
-            logger.info("Added key to service '%s'.", service["id"])
+            logger.info("Added key to service '%s'.", escape_log_value(service["id"]))
     if problems:
         raise RuntimeError(
             "Fix or delete these services (cf. 'Duplicate services' in the "

@@ -30,7 +30,7 @@ from cloud_registry.ga4gh.registry.service import (
     service_exists,
     service_key,
 )
-from cloud_registry.utils import get_collection
+from cloud_registry.utils import escape_log_value, get_collection
 
 logger = logging.getLogger(__name__)
 # Projection of the fields served with verifications
@@ -134,7 +134,11 @@ def _not_verified(serviceId: str, exc: HTTPException) -> Response:
     Returns:
         Problem details response.
     """
-    logger.info("Service '%s' not verified: %s", serviceId, exc.description)
+    logger.info(
+        "Service '%s' not verified: %s",
+        escape_log_value(serviceId),
+        escape_log_value(exc.description),
+    )
     return problem(exc)
 
 
@@ -207,7 +211,11 @@ def putServiceVerification(
         if not service_exists(serviceId):
             raise NotFound
         return _not_verified(serviceId, VerificationConflict())
-    logger.info("Service '%s' verified by '%s'.", serviceId, get_current_subject())
+    logger.info(
+        "Service '%s' verified by '%s'.",
+        escape_log_value(serviceId),
+        escape_log_value(get_current_subject()),
+    )
     return _verification(service)
 
 
@@ -232,8 +240,8 @@ def deleteServiceVerification(serviceId: str, **kwargs) -> str:
         raise NotFound
     logger.info(
         "Verification of service '%s' removed by '%s'.",
-        serviceId,
-        get_current_subject(),
+        escape_log_value(serviceId),
+        escape_log_value(get_current_subject()),
     )
     return serviceId
 
