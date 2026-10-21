@@ -129,6 +129,8 @@ def deleteService(serviceId: str, **kwargs) -> str:
     res = db_collection_service.delete_one({"id": serviceId})
     if not res.deleted_count:
         raise NotFound
+    # a no-op unless a role was granted during the deletion (logged only if
+    # roles are revoked)
     remove_permissions(serviceId)
     logger.info(
         "Service '%s' deleted by '%s'.", escape_log_value(serviceId), current_user()
