@@ -16,8 +16,6 @@ from cloud_registry.exceptions import validation_problem
 from cloud_registry.ga4gh.registry.permissions import check_admin_groups
 from cloud_registry.ga4gh.registry.service import add_service_keys
 
-logger = logging.getLogger(__name__)
-
 # Logger of Connexion's request validation
 VALIDATION_LOGGER = "connexion.decorators.validation"
 
@@ -25,8 +23,8 @@ VALIDATION_LOGGER = "connexion.decorators.validation"
 def create_app() -> App:
     """Create the app from the config, with the error handler for validation
     errors (silencing Connexion's validation log messages), check admin
-    groups, warn if request bodies are not limited in size, and add missing
-    keys of services. FOCA validates the service info (`service_info`) of the
+    groups, require a size limit of request bodies, and add missing keys of
+    services. FOCA validates the service info (`service_info`) of the
     config, and limits the size of request bodies
     (`server.max_content_length`).
 
@@ -38,8 +36,10 @@ def create_app() -> App:
         Connexion app.
 
     Raises:
-        RuntimeError: No group is mapped to the role `admin` (unless admins
-            are optional), or stored services are invalid or duplicates.
+        RuntimeError: Request bodies are not limited in size
+            (`server.max_content_length` is null), no group is mapped to the
+            role `admin` (unless admins are optional), or stored services
+            are invalid or duplicates.
         pydantic.ValidationError: The config is invalid, e.g., the service
             info (naming the invalid field).
         ValueError: The custom config (`custom`) is invalid, e.g., it still
@@ -64,11 +64,12 @@ def create_app() -> App:
 
     with app.app.app_context():
         check_admin_groups()
-        # `null` removes FOCA's size limit of request bodies
+        # `null` would remove FOCA's size limit of request bodies, so that
+        # bodies of any size are read before the access token is checked
         if get_config().server.max_content_length is None:
-            logger.warning(
-                "Request bodies are not limited in size "
-                "(`server.max_content_length` is null)"
+            raise RuntimeError(
+                "Request bodies must be limited in size: set "
+                "`server.max_content_length` (bytes), not null"
             )
         add_service_keys()
     return app
