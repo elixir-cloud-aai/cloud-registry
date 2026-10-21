@@ -466,6 +466,29 @@ that it rejects larger requests itself; the Helm chart sets the limit of
 ingress-nginx from `custom.max_content_length` (see the [deployment
 instructions][deployment-instructions]).
 
+### Server
+
+The image serves the app with [Gunicorn][gunicorn] on port 8080, with
+settings for a small container in
+[`cloud_registry/gunicorn_config.py`][gunicorn-config]: one worker process
+with 4 threads, workers restarted if they don't respond for 30 seconds, 20
+seconds to finish requests on shutdown, idle keep-alive connections closed
+after 5 seconds, and Gunicorn's size limits of the request line and headers.
+To change them, set `GUNICORN_CMD_ARGS` to [Gunicorn
+options][gunicorn-settings] (e.g., `--workers 2 --threads 8`); Docker Compose
+passes it on from the host, and the Helm chart sets it from its
+`cloud_registry.gunicorn` values.
+
+Each worker loads the whole app (about 55 MiB of memory), with its own
+database client, and runs the startup checks (e.g., of the service info and
+the admin groups); if they fail, Gunicorn exits. `server.host` and
+`server.port` of the config apply only to Flask's development server
+(`python -m cloud_registry.app`), which is not for production.
+
+Serve the app behind a reverse proxy that buffers requests (e.g.,
+ingress-nginx, as with the Helm chart): Gunicorn's threads read requests
+themselves, so slow clients can tie them up.
+
 ## Development
 
 Development needs Python 3.10 or later, and [Helm][helm] for the tests of the
@@ -483,7 +506,9 @@ pytest
 
 The tests need no database (they use `mongomock`). To try changes in the
 running app, rebuild it with `docker compose up --build -d` (see
-[Deployment](#deployment)).
+[Deployment](#deployment)). `python -m cloud_registry.app` runs the app with
+Flask's development server instead of Gunicorn (see [Server](#server)); it
+needs a MongoDB at `db.host` of the config.
 
 Run `pre-commit` in the environment with the dev requirements: the mypy and
 ast-grep hooks use the installed packages. The first run sets up the other
@@ -596,6 +621,9 @@ etc.
 [docker-compose]: <https://docs.docker.com/compose/install/>
 [docs-api]: <https://cloud-registry.readthedocs.io/en/latest/>
 [git]: <https://git-scm.com/book/en/v2/Getting-Started-Installing-Git>
+[gunicorn]: <https://gunicorn.org/>
+[gunicorn-config]: cloud_registry/gunicorn_config.py
+[gunicorn-settings]: <https://gunicorn.org/reference/settings/>
 [helm]: <https://helm.sh/>
 [license]: LICENSE
 [license-apache]: <https://www.apache.org/licenses/LICENSE-2.0>

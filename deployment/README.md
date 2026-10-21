@@ -14,8 +14,9 @@ config on startup (via `FOCA_CONFIG_OVERLAY`):
 - `config` overrides keys of the base config; it takes precedence over the
   generated values. Mappings are merged recursively, all other values
   (including lists) replace those of the base config. Do not change
-  `server.port` (the chart's Service expects port 8080) or `db.host` (unless
-  the app is to use another MongoDB).
+  `db.host` (unless the app is to use another MongoDB); `server.host` and
+  `server.port` have no effect, as they apply to the development server only
+  (see [Server](#server)).
 
 The overlay requires an image built with FOCA 0.14 or later (e.g.,
 `elixircloud/cloud-registry:20261020` or later, any `dev` or `sha-<commit>`
@@ -198,6 +199,37 @@ mongodb:
 If the storage manages the permissions of the volume itself, `fsGroup: null`
 removes `fsGroup`.
 
+## Server
+
+The image serves the app with Gunicorn on port 8080 (see "Server" in the
+[README](../README.md#server)). The chart passes the settings in
+`cloud_registry.gunicorn` to it (via `GUNICORN_CMD_ARGS`); the defaults are
+the image's:
+
+```yaml
+cloud_registry:
+  gunicorn:
+    workers: 1          # worker processes
+    threads: 4          # threads per worker, i.e., requests served at once
+    timeout: 30         # seconds until unresponsive workers are restarted
+    gracefulTimeout: 20 # seconds to finish requests on shutdown
+    keepalive: 5        # seconds until idle keep-alive connections are closed
+    extraArgs: []       # further options, e.g., ["--access-logfile", "-"]
+```
+
+Each worker loads the whole app (about 55 MiB of memory; the default memory
+limit, 128 MiB, fits one), so raise `cloud_registry.resources` before
+raising `workers`, or raise `threads` instead. Each worker runs the app's
+startup checks; if they fail, Gunicorn exits and the container restarts
+(see the logs: `kubectl logs deploy/<app> -n <namespace> --previous`). The
+pod's termination grace period is 10 seconds longer than `gracefulTimeout`,
+so that workers can finish their requests on shutdown. With the read-only
+root file system, Gunicorn keeps the heartbeat files of its workers in
+`/dev/shm` (or in the `/tmp` volume if `/dev/shm` isn't writable).
+Gunicorn's threads read requests themselves, so serve the app through a
+proxy that buffers requests (ingress-nginx does by default), so that slow
+clients can't tie them up.
+
 ## Upgrades
 
 Change the values file (e.g., `cloud_registry.tag` for a new image or
@@ -336,7 +368,9 @@ for credentials).
   every 10 seconds, so `kubectl rollout status deploy/cloud-registry -n
   <namespace>` waits until it can serve requests; up to 5 minutes are
   allowed for the start (startup probe); restarted after failing for a
-  minute afterwards (liveness probe).
+  minute afterwards (liveness probe). Probes are served by the app's
+  Gunicorn threads like other requests (with a timeout of 5 seconds), so
+  they fail if all threads stay busy, e.g., with slow requests.
 - **MongoDB:** ready once it accepts connections; up to 30 minutes are
   allowed for the start (startup probe), as MongoDB only listens on localhost
   while it initializes an empty data directory, and recovery after an
