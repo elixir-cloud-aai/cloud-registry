@@ -111,12 +111,14 @@ paths:
           in: path
           description: |
             Identifier of service to register/update; `.` and `..` are not
-            allowed, as they are path segments of their own in URLs.
+            allowed, as they are path segments of their own in URLs, and
+            neither is `types`, as `/services/types` lists the service types.
           required: true
           schema:
             type: string
-            # anything but `.` and `..` (dot segments in URLs)
-            pattern: '^(?!\.\.?$)'
+            # anything but `.` and `..` (dot segments in URLs) and `types`
+            # (`GET /services/types`)
+            pattern: '^(?!(\.\.?|types)$)'
       requestBody:
         description: Service metadata.
         required: true

@@ -642,6 +642,28 @@ def test_put_dot_segment_id(client, admin_headers, service_id):
     assert client.get(f"{BASE}/services").json == []
 
 
+@pytest.mark.parametrize("service_id", ["types", "%74ypes"])
+def test_put_types_id(client, admin_headers, service_id):
+    """The identifier `types` is rejected, as its URL is that of the service
+    types (`GET /services/types`).
+    """
+    response = client.put(
+        f"{BASE}/services/{service_id}", json=_service(), headers=admin_headers
+    )
+    _assert_error(response, 400)
+    assert client.get(f"{BASE}/services").json == []
+
+
+@pytest.mark.parametrize("service_id", ["Types", "types.", "atypes"])
+def test_put_types_like_id(client, admin_headers, service_id):
+    """Identifiers other than `types` are accepted, and can be fetched."""
+    response = client.put(
+        f"{BASE}/services/{service_id}", json=_service(), headers=admin_headers
+    )
+    assert response.status_code == 201
+    assert client.get(f"{BASE}/services/{service_id}").json["id"] == service_id
+
+
 @pytest.mark.parametrize("service_id", ["...", ".a", "a."])
 def test_put_dotted_id(client, admin_headers, service_id):
     """Identifiers with dots that aren't dot segments are accepted."""

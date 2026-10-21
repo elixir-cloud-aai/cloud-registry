@@ -53,6 +53,10 @@ LINK_FIELDS: dict[tuple[str, ...], frozenset[str]] = {
 # Fields with timestamps (`format: date-time`), which jsonschema doesn't check
 # without an optional package
 DATE_TIME_FIELDS = ("createdAt", "updatedAt")
+# Identifiers that can't be used for services: dot segments, which clients
+# resolve in URLs, and `types`, as `/services/types` lists the service types
+# (cf. the pattern of `serviceId` of `PUT` in `additions.openapi.yaml`)
+RESERVED_IDS = frozenset({".", "..", "types"})
 PERCENT_ENCODED = re.compile(r"%([0-9A-Fa-f]{2})")
 # Percent signs not starting a percent-encoding
 MALFORMED_PERCENT = re.compile(r"%(?![0-9A-Fa-f]{2})")
@@ -558,8 +562,7 @@ class RegisterService:
                 self.data["id"] = generate_id(
                     charset=self.id_charset, length=self.id_length
                 )
-                # dot segments, which clients resolve in URLs
-                if self.data["id"] in (".", ".."):
+                if self.data["id"] in RESERVED_IDS:
                     continue
                 try:
                     # insert a new dict, as `insert_one()` adds an `_id` field
