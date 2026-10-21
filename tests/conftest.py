@@ -7,18 +7,29 @@ in-memory database and the identity provider by a mock; they have no network
 access.
 """
 
+from collections.abc import Iterator
 from pathlib import Path
 import socket
 import time
+from typing import Any
 
+from connexion import App
 from cryptography.hazmat.primitives.asymmetric import rsa
 from flask import Flask
-from foca.config.access import set_app_config
+from flask.testing import FlaskClient
+from foca.config.access import get_app_config, set_app_config
 from foca.database import register_mongodb
-from foca.models.config import Config, ExceptionConfig, MongoConfig
+from foca.models.config import (
+    CollectionConfig,
+    Config,
+    ExceptionConfig,
+    MongoConfig,
+)
 from foca.security import auth
 import jwt
 import mongomock
+from pymongo import MongoClient
+from pymongo.collection import Collection
 import pytest
 
 from cloud_registry.app import create_app
@@ -66,23 +77,54 @@ KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 class MockResponse:
     """Mock response of `requests.get()`."""
 
-    def __init__(self, data, status_code=200):
+    def __init__(self, data: dict[str, Any], status_code: int = 200) -> None:
+        """Create a response.
+
+        Args:
+            data: JSON body.
+            status_code: HTTP status code.
+        """
         self.data = data
         self.status_code = status_code
 
-    def raise_for_status(self):
+    def raise_for_status(self) -> None:
+        """Raise an error for error status codes, as `requests` does.
+
+        Raises:
+            requests.HTTPError: The status code is 400 or higher.
+        """
         if self.status_code >= 400:
             raise auth.requests.HTTPError(str(self.status_code))
 
-    def json(self):
+    def json(self) -> dict[str, Any]:
+        """Get the JSON body.
+
+        Returns:
+            The JSON body.
+        """
         return self.data
 
 
-def mock_get(url, headers=None, **kwargs):
+def mock_get(
+    url: str, headers: dict[str, str] | None = None, **kwargs: Any
+) -> MockResponse:
     """Mock `requests.get()` for the identity provider.
 
     Serves the discovery, JWK set and user info endpoints; other requests
     fail.
+
+    Args:
+        url: Requested URL.
+        headers: Request headers; with an access token for user info.
+        kwargs: Other arguments of `requests.get()`; ignored.
+
+    Returns:
+        Response of the endpoint; status `401` for user info requests with
+        an invalid access token.
+
+    Raises:
+        requests.ConnectionError: The URL is not an endpoint of the identity
+            provider.
     """
     if url.rstrip("/") == f"{ISSUER}.well-known/openid-configuration":
         return MockResponse(
@@ -96,6 +138,7 @@ def mock_get(url, headers=None, **kwargs):
         jwk = jwt.algorithms.RSAAlgorithm.to_jwk(KEY.public_key(), as_dict=True)
         return MockResponse({"keys": [{**jwk, "kid": "rsa1", "use": "sig"}]})
     if url == USERINFO_URI:
+        assert headers is not None
         token = headers["Authorization"].removeprefix("Bearer ")
         try:
             claims = jwt.decode(
@@ -111,8 +154,16 @@ def mock_get(url, headers=None, **kwargs):
     raise auth.requests.ConnectionError(f"Unexpected request in tests: {url}")
 
 
-def make_headers(user=USER, key=KEY):
-    """Request headers with an access token for a user, signed with `key`."""
+def make_headers(user: str = USER, key: rsa.RSAPrivateKey = KEY) -> dict[str, str]:
+    """Get request headers with an access token for a user.
+
+    Args:
+        user: User identifier (`sub` claim).
+        key: Key that signs the token.
+
+    Returns:
+        Request headers.
+    """
     now = int(time.time())
     token = jwt.encode(
         {
@@ -131,25 +182,35 @@ def make_headers(user=USER, key=KEY):
 
 
 @pytest.fixture
-def mongo_client(monkeypatch):
+def mongo_client(monkeypatch: pytest.MonkeyPatch) -> MongoClient[dict[str, Any]]:
     """In-memory MongoDB client used by the app."""
-    client = mongomock.MongoClient()
+    client: MongoClient[dict[str, Any]] = mongomock.MongoClient()
     monkeypatch.setattr(register_mongodb, "MongoClient", lambda *args, **kwargs: client)
     return client
 
 
-def _no_network(sock, address):
+def _no_network(sock: socket.socket, address: object) -> None:
+    """Replace `socket.socket.connect()`, to block network access.
+
+    Args:
+        sock: Socket to connect.
+        address: Address to connect to.
+
+    Raises:
+        OSError: Always.
+    """
     raise OSError(f"Network access blocked in tests: {address}")
 
 
-def _clear_auth_caches():
-    # FOCA caches the identity provider's responses
-    for cache in [auth._oidc_configs, auth._jwk_sets, auth._userinfo_cache]:
-        cache.clear()
+def _clear_auth_caches() -> None:
+    """Clear FOCA's caches of the identity provider's responses."""
+    auth._oidc_configs.clear()
+    auth._jwk_sets.clear()
+    auth._userinfo_cache.clear()
 
 
 @pytest.fixture
-def mock_idp(monkeypatch):
+def mock_idp(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Mock identity provider."""
     monkeypatch.setattr(auth.requests, "get", mock_get)
     _clear_auth_caches()
@@ -158,40 +219,61 @@ def mock_idp(monkeypatch):
 
 
 @pytest.fixture
-def app_env(monkeypatch, mongo_client, mock_idp):
-    """Environment for creating the app from `config.yaml` and the test
-    overlay, without network.
+def app_env(
+    monkeypatch: pytest.MonkeyPatch,
+    mongo_client: MongoClient[dict[str, Any]],
+    mock_idp: None,
+) -> None:
+    """Environment for creating the app, without network.
+
+    The app is created from `config.yaml` and the test overlay.
     """
     monkeypatch.setattr(socket.socket, "connect", _no_network)
     monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(CONFIG_OVERLAY))
 
 
 @pytest.fixture
-def app(app_env):
+def app(app_env: None) -> App:
     """App created from `config.yaml` and the test overlay."""
     return create_app()
 
 
 @pytest.fixture
-def client(app):
+def client(app: App) -> FlaskClient:
     """Test client of the app."""
     return app.app.test_client()
 
 
 @pytest.fixture
-def headers():
+def headers() -> dict[str, str]:
     """Request headers with a valid access token."""
     return make_headers()
 
 
 @pytest.fixture
-def admin_headers():
+def admin_headers() -> dict[str, str]:
     """Request headers with a valid access token of an admin."""
     return make_headers(user=ADMIN)
 
 
+def _collections(app: Flask) -> dict[str, CollectionConfig]:
+    """Get the configs of the collections of the service store of an app.
+
+    Args:
+        app: Flask app with FOCA's config.
+
+    Returns:
+        Configs of the collections, by name.
+    """
+    mongo = get_app_config(app).db
+    assert mongo is not None and mongo.dbs is not None
+    collections = mongo.dbs[DB].collections
+    assert collections is not None
+    return collections
+
+
 @pytest.fixture
-def unit_app():
+def unit_app() -> Flask:
     """Flask app with the test configuration, for unit tests.
 
     Its collections are in memory and have the unique indexes from
@@ -200,22 +282,25 @@ def unit_app():
     app = Flask(__name__)
     set_app_config(
         app,
-        Config(
-            db=MongoConfig(**MONGO_CONFIG),
-            exceptions=ExceptionConfig(media_type=ERROR_MEDIA_TYPE),
-            custom=CustomConfig(**CUSTOM_CONFIG),
+        Config.model_validate(
+            {
+                "db": MongoConfig.model_validate(MONGO_CONFIG),
+                "exceptions": ExceptionConfig(media_type=ERROR_MEDIA_TYPE),
+                "custom": CustomConfig.model_validate(CUSTOM_CONFIG),
+            }
         ),
     )
-    db = mongomock.MongoClient().db
-    for name, coll_conf in app.config.foca.db.dbs[DB].collections.items():
-        coll_conf.client = db[name]
+    client: MongoClient[dict[str, Any]] = mongomock.MongoClient()
+    for name, coll_conf in _collections(app).items():
+        coll_conf.client = client.db[name]
         coll_conf.client.create_index("id", unique=True)
-    services = app.config.foca.db.dbs[DB].collections["services"].client
-    services.create_index(SERVICE_KEY, unique=True, sparse=True)
+    client.db["services"].create_index(SERVICE_KEY, unique=True, sparse=True)
     return app
 
 
 @pytest.fixture
-def services(unit_app):
+def services(unit_app: Flask) -> Collection[dict[str, Any]]:
     """`services` collection of `unit_app`."""
-    return unit_app.config.foca.db.dbs[DB].collections["services"].client
+    collection = _collections(unit_app)["services"].client
+    assert collection is not None
+    return collection
