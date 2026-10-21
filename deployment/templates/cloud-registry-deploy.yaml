@@ -75,7 +75,7 @@ spec:
           name: config
           readOnly: true
         # Writable, as the root file system is read-only by default (e.g., for
-        # temporary files of large uploads)
+        # temporary files of uploads), up to `cloud_registry.tmpSizeLimit`
         - mountPath: /tmp
           name: tmp
       dnsPolicy: ClusterFirst
@@ -88,5 +88,5 @@ spec:
       - configMap:
           name: {{ printf "%s-config" (include "cloud-registry.fullname" .) | quote }}
         name: config
-      - emptyDir: {}
-        name: tmp
+      - name: tmp
+        {{- include "cloud-registry.emptyDir" .Values.cloud_registry.tmpSizeLimit | nindent 8 }}

@@ -129,10 +129,30 @@ By default, the chart creates an Ingress for `host_name`
 (`cloud_registry.ingress`):
 
 - `className` sets the Ingress class (default: the cluster's default class);
-- `annotations` sets annotations, e.g., for the ingress controller;
+- `annotations` sets annotations, e.g., for the ingress controller; they
+  take precedence over those set by the chart (see below), and `null`
+  removes one of them;
 - `https.enabled` requests a certificate from cert-manager (via the
   ClusterIssuer `https.issuer`, by annotations that `annotations` can
   override) and serves HTTPS with it.
+
+The app rejects request bodies over `config.custom.max_content_length` bytes
+(default: 1 MiB; see [Request size limit](../README.md#request-size-limit)).
+The Ingress sets the same limit for ingress-nginx, in bytes
+(`nginx.ingress.kubernetes.io/proxy-body-size`), so that larger requests are
+rejected before they reach the app; to raise the limit, e.g., to 8 MiB, set
+only the app's:
+
+```yaml
+config:
+  custom:
+    max_content_length: 8388608
+```
+
+Set `cloud_registry.ingress.annotations` to give ingress-nginx another limit,
+or set the annotation to `null` to remove it. Other ingress controllers, and
+OpenShift Routes, ignore the annotation; check their documentation for how to
+limit request bodies. Without such a limit, only the app's applies.
 
 With `enabled: false`, the chart creates an OpenShift Route with TLS
 termination at the router instead, if the cluster serves Routes
@@ -149,6 +169,11 @@ file system; they write to `emptyDir` volumes (`/tmp`; for MongoDB also
 so the chart sets that user and group (`runAsUser`, `runAsGroup`), and
 `fsGroup` makes the data volume writable for it (unless the storage ignores
 `fsGroup`).
+
+The `/tmp` volumes are limited to 64 MiB each by `tmpSizeLimit` of
+`cloud_registry` and `mongodb` (a positive Kubernetes quantity, e.g., `64Mi`,
+or a number of bytes; `null` removes the limit); the kubelet evicts pods that
+exceed it.
 
 On OpenShift (detected by the API `security.openshift.io/v1`), the chart
 omits `runAsUser`, `runAsGroup` and `fsGroup`, as OpenShift assigns them from

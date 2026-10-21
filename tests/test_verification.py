@@ -167,6 +167,9 @@ def test_verify_checked_not_found(client):
         {"type": SERVICE["type"]},
         {**checked(), "name": "My TES"},
         {**checked(), "type": {"group": "org.ga4gh", "artifact": "tes"}},
+        # longer than the length limits
+        {**checked(), "url": "https://tes.example.org/" + "a" * 2025},
+        {**checked(), "type": {**SERVICE["type"], "artifact": "a" * 257}},
     ],
 )
 def test_verify_checked_invalid(client, service, body):

@@ -11,7 +11,11 @@ cluster) and the host of the release's MongoDB Service.
 As the app on startup, refuse to render without a group mapped to the role
 `admin`, unless admins are explicitly not required.
 */ -}}
-{{- $config := .Values.config | default dict -}}
+{{- $config := deepCopy (.Values.config | default dict) -}}
+{{- /* `custom: null` is like no custom config */ -}}
+{{- if not (kindIs "map" (get $config "custom")) -}}
+{{- $_ := unset $config "custom" -}}
+{{- end -}}
 {{- $mapping := dig "security" "access_control" "group_mapping" dict $config -}}
 {{- $requireAdmin := dig "custom" "access_control" "require_admin" true $config -}}
 {{- if and $requireAdmin (not (has "admin" (values $mapping))) -}}
@@ -33,4 +37,4 @@ metadata:
     {{- include "cloud-registry.labels" (dict "root" . "component" "app") | nindent 4 }}
 data:
   overlay.yaml: |
-    {{- mergeOverwrite $generated (deepCopy (.Values.config | default dict)) | toYaml | nindent 4 }}
+    {{- mergeOverwrite $generated $config | toYaml | nindent 4 }}

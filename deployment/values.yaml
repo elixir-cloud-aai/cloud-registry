@@ -65,7 +65,10 @@ cloud_registry:
     # empty
     className: ""
     # Annotations of the Ingress, e.g., for the ingress controller; they take
-    # precedence over those set for `https`
+    # precedence over those set by the chart: for `https`, and
+    # `nginx.ingress.kubernetes.io/proxy-body-size`, the size limit of request
+    # bodies of the app (`config.custom.max_content_length`) for
+    # ingress-nginx. `null` removes an annotation set by the chart
     annotations: {}
     https:
       # Request a certificate from cert-manager (via `issuer`, a
@@ -92,6 +95,9 @@ cloud_registry:
     requests:
       cpu: 100m
       memory: 128Mi
+  # Size limit of the `emptyDir` at `/tmp` (the pod is evicted if it is
+  # exceeded): a quantity (e.g., `64Mi`) or a number of bytes; `null` for none
+  tmpSizeLimit: 64Mi
 
 mongodb:
   # MongoDB 8.0 refuses to start on Linux kernels 6.19 to 7.0.13
@@ -137,3 +143,6 @@ mongodb:
     requests:
       cpu: 200m
       memory: 512Mi
+  # Size limit of the `emptyDir` at `/tmp` (the pod is evicted if it is
+  # exceeded): a quantity (e.g., `64Mi`) or a number of bytes; `null` for none
+  tmpSizeLimit: 64Mi
