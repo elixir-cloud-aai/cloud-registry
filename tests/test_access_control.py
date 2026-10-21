@@ -11,14 +11,22 @@ from urllib.parse import quote
 
 from connexion import App
 from flask.testing import FlaskClient
-from mongomock.collection import Collection as MockCollection
+from pymongo.collection import Collection
 import pytest
 
 from cloud_registry.exceptions import Unauthorized
 from cloud_registry.ga4gh.registry import permissions as permissions_module
 from cloud_registry.ga4gh.registry import server as server_module
 from cloud_registry.utils import get_collection
-from tests.conftest import ADMIN, ENTITLEMENTS, NAMES, TEAM_GROUP, USER, make_headers
+from tests.conftest import (
+    ADMIN,
+    COLLECTION_CLASS,
+    ENTITLEMENTS,
+    NAMES,
+    TEAM_GROUP,
+    USER,
+    make_headers,
+)
 
 BASE = "/ga4gh/registry/v1"
 SERVICE: dict[str, Any] = {
@@ -632,30 +640,30 @@ def before_first_call(
 ) -> list[bool]:
     """Run a callback once, before the first call of a collection method.
 
-    The method is one of `mongomock` collections, and the callback runs before
-    its first call on a given collection (e.g., to interleave another
-    request).
+    The method is one of the collections of the tests (`COLLECTION_CLASS`),
+    and the callback runs before its first call on a given collection (e.g.,
+    to interleave another request).
 
     Args:
         patch: Monkeypatch (context) to patch the method with.
-        method: Name of the method of `mongomock.collection.Collection`.
+        method: Name of the method of `COLLECTION_CLASS`.
         collection: Name of the collection.
         callback: Function to call, without arguments.
 
     Returns:
         List that is non-empty once the callback ran.
     """
-    original = getattr(MockCollection, method)
+    original = getattr(COLLECTION_CLASS, method)
     fired: list[bool] = []
 
-    def wrapper(self: MockCollection, *args: Any, **kwargs: Any) -> Any:
+    def wrapper(self: Collection[Any], *args: Any, **kwargs: Any) -> Any:
         """Run the callback before the first call on the collection."""
         if self.name == collection and not fired:
             fired.append(True)
             callback()
         return original(self, *args, **kwargs)
 
-    patch.setattr(MockCollection, method, wrapper)
+    patch.setattr(COLLECTION_CLASS, method, wrapper)
     return fired
 
 
@@ -760,12 +768,12 @@ def test_roles_removed_before_delete(
     service_id = register(client)
     assert grant(client, service_id, BOB, "maintainer") == 200
 
-    def fail(self: MockCollection, *args: Any, **kwargs: Any) -> None:
+    def fail(self: Collection[Any], *args: Any, **kwargs: Any) -> None:
         """Fail to delete the service."""
         raise RuntimeError("database unavailable")
 
     with monkeypatch.context() as patch:
-        patch.setattr(MockCollection, "delete_one", fail)
+        patch.setattr(COLLECTION_CLASS, "delete_one", fail)
         assert delete(client, service_id, ALICE) == 500
     assert _roles(app, service_id) == []
     assert client.get(f"{BASE}/services/{service_id}").status_code == 200
