@@ -160,6 +160,50 @@ jobs:
         run: |
           curl --fail --silent --show-error --output /dev/null \
             --header 'Accept: application/json' "${PROBE_ENDPOINT}"
+      # The tests use mongomock, so check database-backed endpoints against
+      # MongoDB here. Writes need tokens of the trusted issuer (LS Login), so
+      # a verified service is inserted into the database directly
+      - name: Check API with MongoDB
+        run: |
+          docker compose exec -T mongodb mongosh --quiet serviceStore --eval '
+            db.services.insertOne({
+              id: "SMOKE1",
+              name: "Smoke test",
+              type: {group: "org.ga4gh", artifact: "tes", version: "1.1.0"},
+              organization: {name: "Example", url: "https://example.org"},
+              version: "1.0.0",
+              url: "https://tes.example.org/ga4gh/tes/v1",
+              _verifiedAt: ISODate("2026-10-20T12:34:56.789Z")
+            })'
+          api="${PROBE_ENDPOINT%/ui/}"
+          body="${RUNNER_TEMP}/body.json"
+          # Request a path; check the status and that the JSON body matches
+          # a jq filter
+          check() {
+            local method="$1" path="$2" status="$3" filter="$4" actual
+            actual="$(curl --silent --show-error --output "${body}" \
+              --write-out '%{http_code}' -X "${method}" \
+              --header 'Accept: application/json' "${api}${path}")"
+            if [ "${actual}" != "${status}" ] \
+                || ! jq -e "${filter}" "${body}" > /dev/null; then
+              echo "::error::${method} ${path}: status ${actual}, expected ${status} and ${filter}"
+              cat "${body}"
+              return 1
+            fi
+          }
+          verified_at='"2026-10-20T12:34:56.789Z"'
+          check GET /services 200 \
+            'map(.id) == ["SMOKE1"] and (.[0] | has("_verifiedAt") or has("_id") | not)'
+          check GET /services/SMOKE1 200 '.id == "SMOKE1" and (has("_verifiedAt") | not)'
+          check GET /services/types 200 \
+            '. == [{"group": "org.ga4gh", "artifact": "tes", "version": "1.1.0"}]'
+          check GET /services/SMOKE1/verification 200 ".verified_at == ${verified_at}"
+          check GET /verifications 200 \
+            "map(.service_id) == [\"SMOKE1\"] and .[0].verified_at == ${verified_at}"
+          check GET /services/UNKNWN 404 '.status == 404'
+          check GET /service-info 200 '.type.artifact == "service-registry"'
+          check POST /services 401 '.status == 401'
+          check GET /me 401 '.status == 401'
       - name: Check app version
         run: |
           actual="$(docker compose exec -T cloud-registry python -c \
