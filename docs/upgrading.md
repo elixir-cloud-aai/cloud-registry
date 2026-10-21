@@ -59,3 +59,11 @@ Then start the app again; it adds the missing keys.
 Services that already have a key (stored by `dev` images built before URLs
 were checked) are not checked on startup: if their URLs are now invalid, they
 are still served, but can only be updated with a valid URL.
+
+Services stored with `http` URLs (accepted before `https` became the only
+[allowed scheme](configuration.md#service-url-schemes) by default) are still
+served, but can only be updated with an allowed scheme; the app warns of them
+on startup, naming them. Have their owners (or admins) update them with an
+`https` URL via the API (`PUT /services/{serviceId}`), which also updates
+their keys, or delete them; or allow `http` (not recommended, as clients
+would send access tokens unencrypted).

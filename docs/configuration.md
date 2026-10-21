@@ -27,9 +27,9 @@ refuses to start:
 Docker Compose mounts
 [`config.dev.yaml`](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/config.dev.yaml),
 an overlay for local development that accepts tokens for any audience and
-requires no admins. To override more values locally, put them in
-`config.local.yaml` and mount it in a `docker-compose.override.yaml` (both are
-ignored by Git):
+`http` service URLs, and requires no admins. To override more values locally,
+put them in `config.local.yaml` and mount it in a
+`docker-compose.override.yaml` (both are ignored by Git):
 
 ```yaml
 services:
@@ -52,6 +52,27 @@ Set `api_path` to the path prefix in front of the API base path when the app
 is served behind a reverse proxy under a subpath (e.g., `registry`), or leave
 it empty. Previously, `api_path` held the API base path itself; see
 [Upgrading](upgrading.md#public-urls).
+
+## Service URL schemes
+
+Clients send requests to the registered services, often with access tokens,
+so service URLs (`url`) must use one of the schemes listed in
+`custom.endpoints.services.url_schemes`: `https` only by default; `http` must
+be allowed explicitly (e.g., `[http, https]`). Registrations (`POST
+/services`, `PUT /services/{serviceId}`) of services with other schemes are
+rejected with `400 Bad Request`, naming the allowed schemes. Only `http` and
+`https` can be listed, and the list must not be empty. Links
+(`documentationUrl`, `organization.url`) can be HTTP(S) URLs either way, and
+`contactUrl` also a `mailto:` URL (see [Registrations](api.md#registrations)).
+The Docker Compose setup allows `http` too, in
+[`config.dev.yaml`](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/config.dev.yaml),
+e.g., for services running locally; the Helm chart keeps the default (set
+`config.custom.endpoints.services.url_schemes` to change it).
+
+On startup, the app warns of stored services whose URLs use other schemes
+(e.g., `http` URLs registered while `http` was allowed, or before this
+check): they are still served, but can only be updated with an allowed
+scheme (see [Upgrading](upgrading.md#stored-services)).
 
 ## Request size limit
 

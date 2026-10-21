@@ -1,5 +1,6 @@
 """Controller for registering services."""
 
+from collections.abc import Collection
 from copy import deepcopy
 import ipaddress
 import json
@@ -127,6 +128,24 @@ def normalize_url(url: str) -> str:
     if parts.port is not None and parts.port != DEFAULT_PORTS[scheme]:
         host = f"{host}:{parts.port}"
     return urlunsplit((scheme, host, _normalize_path(parts.path), "", ""))
+
+
+def check_url_scheme(url: str, schemes: Collection[str]) -> None:
+    """Check that a service URL uses one of the allowed schemes.
+
+    Args:
+        url: Service URL, valid (cf. `normalize_url()`); leading and trailing
+            spaces are ignored.
+        schemes: Allowed schemes, lowercase (cf.
+            `custom.endpoints.services.url_schemes`).
+
+    Raises:
+        InvalidService: The scheme of the URL is not one of `schemes`
+            (case-insensitive).
+    """
+    if urlsplit(url.strip(" ")).scheme.lower() not in schemes:
+        allowed = ", ".join(f"'{scheme}'" for scheme in sorted(schemes))
+        raise InvalidService(f"Service URLs must use an allowed scheme: {allowed}.")
 
 
 def check_strings(value: object, field: str = "") -> None:
@@ -521,6 +540,7 @@ class RegisterService:
             id_charset: A string of allowed characters for generating service
                 identifiers.
             id_length: Length of generated service identifiers.
+            url_schemes: Schemes allowed in service URLs.
             db_coll: Database collection for storing service objects.
         """
         endpoint_conf = get_custom_config().endpoints
@@ -532,6 +552,7 @@ class RegisterService:
         self.verification_removed = False
         self.id_charset: str = endpoint_conf.services.id.charset
         self.id_length = int(endpoint_conf.services.id.length)
+        self.url_schemes = frozenset(endpoint_conf.services.url_schemes)
         self.db_coll = get_collection("services")
 
     def register_metadata(self, retries: int = 9) -> None:
@@ -547,7 +568,8 @@ class RegisterService:
         Raises:
             InvalidService: The URL or API type of the service, the URL of a
                 link, a timestamp (cf. `check_date_times()`) or a string (cf.
-                `check_strings()`) is invalid.
+                `check_strings()`) is invalid, or the scheme of the service
+                URL is not allowed (cf. `check_url_scheme()`).
             DuplicateService: Another service with the same URL and API type
                 is registered.
             InternalServerError: The service could not be registered within
@@ -558,6 +580,7 @@ class RegisterService:
         """
         check_strings(self.data)
         key = service_key(self.data)
+        check_url_scheme(self.data["url"], schemes=self.url_schemes)
         check_links(self.data)
         check_date_times(self.data)
         self._check_duplicate(key=key)
@@ -739,4 +762,40 @@ def add_service_keys() -> None:
         raise RuntimeError(
             "Fix or delete these services (cf. https://cloud-registry.readthedocs.io"
             f"/en/latest/upgrading/#stored-services): {'; '.join(problems)}"
+        )
+
+
+def warn_url_schemes() -> None:
+    """Warn of stored services whose URLs use schemes that are not allowed.
+
+    For example, `http` URLs registered before `https` became the only
+    scheme allowed by default (`custom.endpoints.services.url_schemes`).
+    Such services are still served, but can only be updated with an allowed
+    scheme. Services with URLs that aren't strings or valid URLs (cf.
+    `normalize_url()`) are skipped.
+    """
+    schemes = frozenset(get_custom_config().endpoints.services.url_schemes)
+    ids = []
+    for service in get_collection("services").find(
+        {}, {"_id": False, "id": True, "url": True}
+    ):
+        url = service.get("url")
+        if not isinstance(url, str):
+            continue
+        try:
+            normalize_url(url)
+        except InvalidService:
+            # invalid URLs stored before URLs were checked can't be updated
+            # unchanged anyway (cf. "Stored services" in `docs/upgrading.md`)
+            continue
+        try:
+            check_url_scheme(url, schemes=schemes)
+        except InvalidService:
+            ids.append(f"'{service['id']}'")
+    if ids:
+        logger.warning(
+            "Services with URL schemes not allowed "
+            "(`custom.endpoints.services.url_schemes`) are still served, but "
+            "can only be updated with an allowed scheme; update or delete them: %s",
+            escape_log_value(", ".join(ids)),
         )
