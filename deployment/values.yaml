@@ -14,7 +14,7 @@ fullnameOverride: ""
 # Public host name of the app; sets `custom.endpoints.service.external_host`
 # in the app config, with URL scheme `https` and port 443 (override them via
 # `config.custom.endpoints.service`)
-host_name: ""
+hostName: ""
 
 # App config overriding the base config in the image (`cloud_registry/config.yaml`
 # of the image's version); mappings are merged recursively, other values
@@ -45,7 +45,7 @@ config: {}
 #         url: "https://example.org"
 #       environment: "prod"
 
-cloud_registry:
+cloudRegistry:
   # Image repository; may include a tag or digest instead of setting `tag`
   # (e.g., `elixircloud/cloud-registry:0.3.0`)
   image: elixircloud/cloud-registry
@@ -57,7 +57,7 @@ cloud_registry:
   # Path of the app's startup, readiness and liveness probes; change it if
   # the config disables the Swagger UI
   probePath: /ga4gh/registry/v1/ui/
-  # Ingress for `host_name`; if disabled, an OpenShift Route is created
+  # Ingress for `hostName`; if disabled, an OpenShift Route is created
   # instead, if the cluster serves Routes (see deployment/README.md, Ingress)
   ingress:
     enabled: true

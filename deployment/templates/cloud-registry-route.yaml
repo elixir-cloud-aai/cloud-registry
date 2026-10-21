@@ -6,7 +6,7 @@ metadata:
   labels:
     {{- include "cloud-registry.labels" (dict "root" . "component" "app") | nindent 4 }}
 spec:
-  host: {{ .Values.host_name | quote }}
+  host: {{ .Values.hostName | quote }}
   port:
     targetPort: http
   tls:

@@ -1,5 +1,5 @@
-{{ if .Values.cloud_registry.ingress.enabled }}
-{{- $ingress := .Values.cloud_registry.ingress -}}
+{{ if .Values.cloudRegistry.ingress.enabled }}
+{{- $ingress := .Values.cloudRegistry.ingress -}}
 {{- /*
 Annotations from `ingress.annotations` take precedence over those set by the
 chart: the app's size limit of request bodies for ingress-nginx (in bytes),
@@ -32,7 +32,7 @@ spec:
   ingressClassName: {{ . | quote }}
   {{- end }}
   rules:
-  - host: {{ .Values.host_name | quote }}
+  - host: {{ .Values.hostName | quote }}
     http:
       paths:
       - path: /
@@ -45,7 +45,7 @@ spec:
 {{- if $ingress.https.enabled }}
   tls:
   - hosts:
-    - {{ .Values.host_name | quote }}
+    - {{ .Values.hostName | quote }}
     secretName: {{ printf "%s-ingress-secret" (include "cloud-registry.fullname" .) | quote }}
 {{- end }}
 {{ end }}

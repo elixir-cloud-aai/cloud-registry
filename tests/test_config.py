@@ -130,8 +130,8 @@ class TestChartOverlay:
     """Tests for the config overlay rendered by the Helm chart."""
 
     def test_host_name(self, tmp_path, monkeypatch):
-        """`host_name` sets the public URL."""
-        overlay = _render_overlay("--set", "host_name=registry.example.org")
+        """`hostName` sets the public URL."""
+        overlay = _render_overlay("--set", "hostName=registry.example.org")
         config = _load_config(tmp_path, monkeypatch, overlay)
         service = config.custom.endpoints.service
         assert (service.url_prefix, service.external_host, service.external_port) == (
@@ -169,14 +169,14 @@ class TestChartOverlay:
     def test_admin_group_required(self):
         """Rendering fails without a group mapped to the role `admin`."""
         with pytest.raises(subprocess.CalledProcessError) as exc:
-            _render_overlay("--set", "host_name=example.org", admin_group=None)
+            _render_overlay("--set", "hostName=example.org", admin_group=None)
         assert "must map a group to the role admin" in exc.value.stderr
 
     def test_admin_group_optional(self):
         """Without admin groups, rendering works if admins are not required."""
         overlay = _render_overlay(
             "--set",
-            "host_name=example.org",
+            "hostName=example.org",
             "--set",
             "config.custom.access_control.require_admin=false",
             admin_group=None,
@@ -214,7 +214,7 @@ class TestChartOverlay:
         start (FOCA requires one for trusted issuers).
         """
         with pytest.raises(subprocess.CalledProcessError) as exc:
-            _render_overlay("--set", "host_name=example.org", *args, audience=None)
+            _render_overlay("--set", "hostName=example.org", *args, audience=None)
         assert "config.security.auth.audience must" in exc.value.stderr
 
     @pytest.mark.parametrize(
@@ -232,9 +232,7 @@ class TestChartOverlay:
         """Without audience validation, no audience is needed, as for the app
         (which parses `verify_audience` as pydantic does booleans).
         """
-        overlay = _render_overlay(
-            "--set", "host_name=example.org", *args, audience=None
-        )
+        overlay = _render_overlay("--set", "hostName=example.org", *args, audience=None)
         # without the test overlay, which sets an audience
         path = tmp_path / "overlay.yaml"
         path.write_text(yaml.safe_dump(overlay))
@@ -243,40 +241,40 @@ class TestChartOverlay:
 
     def test_audience(self, tmp_path, monkeypatch):
         """The audience is passed to the app."""
-        overlay = _render_overlay("--set", "host_name=example.org")
+        overlay = _render_overlay("--set", "hostName=example.org")
         config = _load_config(tmp_path, monkeypatch, overlay)
         assert config.security.auth.audience == [AUDIENCE]
 
     def test_admin_group(self, tmp_path, monkeypatch):
         """The admin group is passed to the app."""
-        overlay = _render_overlay("--set", "host_name=example.org")
+        overlay = _render_overlay("--set", "hostName=example.org")
         config = _load_config(tmp_path, monkeypatch, overlay)
         assert config.security.access_control.group_mapping[ADMIN_GROUP] == "admin"
 
     def test_host_name_required(self):
-        """Rendering fails without `host_name`."""
+        """Rendering fails without `hostName`."""
         with pytest.raises(subprocess.CalledProcessError) as exc:
             _render_overlay()
-        assert "host_name must be set" in exc.value.stderr
+        assert "hostName must be set" in exc.value.stderr
 
     @pytest.mark.parametrize(
         "value",
         [
             "config=foo",
-            "host_name=1",
-            "cloud_registry.ingress.className=1",
-            "cloud_registry.ingress.annotations.a=1",
-            "cloud_registry.ingress.class=nginx",
-            "cloud_registry.ingress.https.secret=tls",
-            "cloud_registry.tmpSizeLimit=64MB",
-            "cloud_registry.tmpSizeLimit=",
-            "cloud_registry.tmpSizeLimit=0",
+            "hostName=1",
+            "cloudRegistry.ingress.className=1",
+            "cloudRegistry.ingress.annotations.a=1",
+            "cloudRegistry.ingress.class=nginx",
+            "cloudRegistry.ingress.https.secret=tls",
+            "cloudRegistry.tmpSizeLimit=64MB",
+            "cloudRegistry.tmpSizeLimit=",
+            "cloudRegistry.tmpSizeLimit=0",
             "mongodb.tmpSizeLimit=1K",
             "mongodb.tmpSizeLimit=0Mi",
         ],
         ids=[
             "config",
-            "host_name",
+            "hostName",
             "ingress_class_name",
             "ingress_annotation",
             "ingress_unknown",
@@ -291,12 +289,12 @@ class TestChartOverlay:
     def test_values_schema(self, value):
         """Values of the wrong type are rejected."""
         with pytest.raises(subprocess.CalledProcessError) as exc:
-            _render_overlay("--set", "host_name=example.org", "--set", value)
+            _render_overlay("--set", "hostName=example.org", "--set", value)
         assert "values don't meet the specifications of the schema" in exc.value.stderr
 
     def test_deployment_mounts_overlay(self):
         """The app reads the overlay from the mounted ConfigMap."""
-        docs = render("--set", "host_name=example.org")
+        docs = render("--set", "hostName=example.org")
         configmap = _get_overlay_configmap(docs)
         pod = next(
             doc

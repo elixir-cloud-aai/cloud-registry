@@ -513,7 +513,7 @@ services:
 
 Public URLs, e.g., in `Location` headers, are built from
 `custom.endpoints.service` (scheme, host and port). The Helm chart sets them
-from its `host_name` value; other deployments must set them, as the defaults
+from its `hostName` value; other deployments must set them, as the defaults
 (`https://0.0.0.0:8080`) aren't reachable (the Docker Compose setup sets
 `http://localhost:8080` in [`config.dev.yaml`][config-dev]). Set `api_path` to
 the path prefix in front of the API base path when the app is served behind a
@@ -552,7 +552,7 @@ proxy may reuse a connection just as Gunicorn closes it, and the request
 fails (`502`). To change the settings, set `GUNICORN_CMD_ARGS` to [Gunicorn
 options][gunicorn-settings] (e.g., `--workers 2 --threads 8`); Docker Compose
 passes it on from the host, and the Helm chart sets it from its
-`cloud_registry.gunicorn` values.
+`cloudRegistry.gunicorn` values.
 
 Each worker loads the whole app (about 55 MiB of memory), with its own
 database client, and runs the startup checks (e.g., of the service info and

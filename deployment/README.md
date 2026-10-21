@@ -8,8 +8,8 @@ renders a config overlay into the `<app>-config` ConfigMap (see
 [Names and labels](#names-and-labels)), which FOCA merges into the base
 config on startup (via `FOCA_CONFIG_OVERLAY`):
 
-- `host_name` sets the public URL of the app
-  (`custom.endpoints.service`: `https://<host_name>:443`);
+- `hostName` sets the public URL of the app
+  (`custom.endpoints.service`: `https://<hostName>:443`);
 - `db.host` is set to the release's MongoDB Service (`<app>-mongodb`);
 - `config` overrides keys of the base config; it takes precedence over the
   generated values. Mappings are merged recursively, all other values
@@ -37,7 +37,7 @@ values of each deployment in its own values file outside this repository
 example:
 
 ```yaml
-host_name: registry.example.org
+hostName: registry.example.org
 config:
   security:
     auth:
@@ -62,8 +62,8 @@ upgrade. As `config` is stored in a ConfigMap, it must not contain secrets
 
 ## Image
 
-The app image is `cloud_registry.image` (default
-`elixircloud/cloud-registry`) with tag `cloud_registry.tag`, which defaults to
+The app image is `cloudRegistry.image` (default
+`elixircloud/cloud-registry`) with tag `cloudRegistry.tag`, which defaults to
 the chart's `appVersion`. Charts attached to [GitHub
 releases](https://github.com/elixir-cloud-aai/cloud-registry/releases) have
 the release version as `version` and `appVersion`, so they deploy the image of
@@ -74,13 +74,13 @@ tag of a release (e.g., `0.3.0`) or of a commit on `dev` (`sha-<commit>`, the
 full commit SHA) in the values file:
 
 ```yaml
-cloud_registry:
+cloudRegistry:
   tag: sha-0123456789abcdef0123456789abcdef01234567
 ```
 
-`cloud_registry.image` may also include a tag or digest (e.g.,
+`cloudRegistry.image` may also include a tag or digest (e.g.,
 `elixircloud/cloud-registry:0.3.0`, as in earlier chart versions); then
-`cloud_registry.tag` must be empty. See "Versioning and releases" in the
+`cloudRegistry.tag` must be empty. See "Versioning and releases" in the
 [README](../README.md#versioning-and-releases) for the image tags.
 
 ## Installation
@@ -131,8 +131,8 @@ kubectl get pods -n <namespace> -l app.kubernetes.io/instance=cloud-registry
 
 ## Ingress
 
-By default, the chart creates an Ingress for `host_name`
-(`cloud_registry.ingress`):
+By default, the chart creates an Ingress for `hostName`
+(`cloudRegistry.ingress`):
 
 - `className` sets the Ingress class (default: the cluster's default class);
 - `annotations` sets annotations, e.g., for the ingress controller; they
@@ -155,7 +155,7 @@ config:
     max_content_length: 8388608
 ```
 
-Set `cloud_registry.ingress.annotations` to give ingress-nginx another limit,
+Set `cloudRegistry.ingress.annotations` to give ingress-nginx another limit,
 or set the annotation to `null` to remove it. Other ingress controllers, and
 OpenShift Routes, ignore the annotation; check their documentation for how to
 limit request bodies. Without such a limit, only the app's applies.
@@ -178,7 +178,7 @@ it redirect requests that the proxy in front marks as HTTP
 redirected, in a loop):
 
 ```yaml
-cloud_registry:
+cloudRegistry:
   ingress:
     annotations:
       nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
@@ -195,7 +195,7 @@ concurrent connections; excess requests get `503`, or the status set by the
 controller's `limit-req-status-code`):
 
 ```yaml
-cloud_registry:
+cloudRegistry:
   ingress:
     annotations:
       nginx.ingress.kubernetes.io/limit-rps: "10"
@@ -230,7 +230,7 @@ Neither pod gets a service account token (`automountServiceAccountToken:
 false`), as neither calls the Kubernetes API.
 
 The `/tmp` volumes are limited to 64 MiB each by `tmpSizeLimit` of
-`cloud_registry` and `mongodb` (a positive Kubernetes quantity, e.g., `64Mi`,
+`cloudRegistry` and `mongodb` (a positive Kubernetes quantity, e.g., `64Mi`,
 or a number of bytes; `null` removes the limit); the kubelet evicts pods that
 exceed it.
 
@@ -240,7 +240,7 @@ the namespace's range and its default security context constraints reject
 other IDs.
 
 The contexts are set in the values (`podSecurityContext` and
-`securityContext` of `cloud_registry` and `mongodb`); mappings are merged
+`securityContext` of `cloudRegistry` and `mongodb`); mappings are merged
 with the defaults, and `null` removes a default. Outside OpenShift, MongoDB
 needs `runAsUser`: without it, the image starts as root, which
 `runAsNonRoot` rejects (the pod fails with `CreateContainerConfigError`).
@@ -261,11 +261,11 @@ removes `fsGroup`.
 
 The image serves the app with Gunicorn on port 8080 (see "Server" in the
 [README](../README.md#server)). The chart passes the settings in
-`cloud_registry.gunicorn` to it (via `GUNICORN_CMD_ARGS`); the defaults are
+`cloudRegistry.gunicorn` to it (via `GUNICORN_CMD_ARGS`); the defaults are
 the image's:
 
 ```yaml
-cloud_registry:
+cloudRegistry:
   gunicorn:
     workers: 1          # worker processes
     threads: 4          # threads per worker, i.e., requests served at once
@@ -282,7 +282,7 @@ create its own MongoDB client after forking) or `--graceful-timeout` (set
 abbreviated or as `--option=value`.
 
 Each worker loads the whole app (about 55 MiB of memory; the default memory
-limit, 128 MiB, fits one), so raise `cloud_registry.resources` before
+limit, 128 MiB, fits one), so raise `cloudRegistry.resources` before
 raising `workers`, or raise `threads` instead. Each worker runs the app's
 startup checks; if they fail, Gunicorn exits and the container restarts
 (see the logs: `kubectl logs deploy/<app> -n <namespace> --previous`).
@@ -297,7 +297,7 @@ connections wait in the worker's poller, not in its threads.
 
 On SIGTERM, Gunicorn stops accepting connections at once, while the ingress
 controller and the Service may still send requests to the pod for a few
-seconds. So the app keeps serving for `cloud_registry.preStopSleepSeconds`
+seconds. So the app keeps serving for `cloudRegistry.preStopSleepSeconds`
 (default 5; `0` removes the `preStop` hook) before it shuts down, then
 workers get `gracefulTimeout` seconds to finish their requests. The pod's
 termination grace period is the sum of both plus 10 seconds. While the
@@ -314,7 +314,7 @@ they complete.
 
 ## Upgrades
 
-Change the values file (e.g., `cloud_registry.tag` for a new image or
+Change the values file (e.g., `cloudRegistry.tag` for a new image or
 `config` for the config) and upgrade the release from the `deployment`
 folder:
 
@@ -397,14 +397,16 @@ Deployment is called after `cloud_registry.appName`, by default
    ```
 
 5. Update the values file: remove `cloud_registry.appName` (rendering fails
-   while it is set; `fullnameOverride` sets the names instead). From chart
-   version 2, move any changes made to the `app-config` ConfigMap to
-   `config`, and create the Secret with the MongoDB credentials (see
-   [Authentication](#authentication)); from chart version 3, keep
-   `mongodb.auth.existingSecret`. MongoDB creates the users from the Secret
-   on its first start with the new, empty volume. Dumps of newer MongoDB
-   versions (e.g., `mongo:noble` of chart version 2) may not restore into
-   the chart's default version (see [Version](#version)); set
+   while it is set; `fullnameOverride` sets the names instead), and rename
+   `host_name` to `hostName` and `cloud_registry` to `cloudRegistry`
+   (camelCase, following Helm's conventions; rendering fails while the old
+   keys are set). From chart version 2, move any changes made to the
+   `app-config` ConfigMap to `config`, and create the Secret with the MongoDB
+   credentials (see [Authentication](#authentication)); from chart version 3,
+   keep `mongodb.auth.existingSecret`. MongoDB creates the users from the
+   Secret on its first start with the new, empty volume. Dumps of newer
+   MongoDB versions (e.g., `mongo:noble` of chart version 2) may not restore
+   into the chart's default version (see [Version](#version)); set
    `mongodb.image` to the dumped version if needed.
 
 6. Install the current chart (see [Installation](#installation)), stop its
@@ -455,11 +457,17 @@ for credentials). See the [release notes](../docs/releases/0.3.0.md) for all
 breaking changes; for the ELIXIR deployment, a fresh install with an empty
 database is recommended there.
 
+The values keys `host_name` and `cloud_registry` are renamed to `hostName`
+and `cloudRegistry` (rendering fails while the old keys are set): rename
+them in the values file, and upgrade with it (`-f`), not with
+`--reuse-values`, which would bring back the old keys stored in the release
+(use `--reset-values` if needed).
+
 ## Probes
 
 - **App:** ready once it serves its Swagger UI (`/ga4gh/registry/v1/ui/`;
   it needs neither authentication nor the database; set
-  `cloud_registry.probePath` if the config disables the Swagger UI), checked
+  `cloudRegistry.probePath` if the config disables the Swagger UI), checked
   every 10 seconds, so `kubectl rollout status deploy/cloud-registry -n
   <namespace>` waits until it can serve requests; up to 5 minutes are
   allowed for the start (startup probe); restarted after failing for a

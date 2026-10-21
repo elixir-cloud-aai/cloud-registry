@@ -23,7 +23,7 @@ from tests.mock_data import MAX_CONTENT_LENGTH
 from tests.test_config import CONFIG_FILE
 
 NO_AUTH = ("--set", "mongodb.auth.enabled=false")
-NO_INGRESS = ("--set", "cloud_registry.ingress.enabled=false")
+NO_INGRESS = ("--set", "cloudRegistry.ingress.enabled=false")
 # The cluster serves OpenShift Routes
 ROUTE_API = ("--api-versions", "route.openshift.io/v1")
 INIT_SCRIPT = f"{MONGODB}-init-script"
@@ -48,7 +48,7 @@ def _render(*args: str, **kwargs) -> dict:
     """Render the chart and index the documents by kind and name."""
     return {
         (doc["kind"], doc["metadata"]["name"]): doc
-        for doc in render("--set", "host_name=x", *args, **kwargs)
+        for doc in render("--set", "hostName=x", *args, **kwargs)
     }
 
 
@@ -156,19 +156,19 @@ def test_image_of_packaged_chart(tmp_path, chart_version, app_version):
 @pytest.mark.parametrize(
     ("args", "image"),
     [
-        (("--set", "cloud_registry.tag=sha-abc"), "elixircloud/cloud-registry:sha-abc"),
+        (("--set", "cloudRegistry.tag=sha-abc"), "elixircloud/cloud-registry:sha-abc"),
         (
-            ("--set", "cloud_registry.image=registry.example.org:5000/cr"),
+            ("--set", "cloudRegistry.image=registry.example.org:5000/cr"),
             f"registry.example.org:5000/cr:{APP_VERSION}",
         ),
         # Image references with a tag or digest, as in earlier chart versions
-        (("--set", "cloud_registry.image=host:5000/cr:1.0"), "host:5000/cr:1.0"),
+        (("--set", "cloudRegistry.image=host:5000/cr:1.0"), "host:5000/cr:1.0"),
         (
-            ("--set", "cloud_registry.image=elixircloud/cloud-registry:20261020"),
+            ("--set", "cloudRegistry.image=elixircloud/cloud-registry:20261020"),
             "elixircloud/cloud-registry:20261020",
         ),
         (
-            ("--set", f"cloud_registry.image=cr@sha256:{'0' * 64}"),
+            ("--set", f"cloudRegistry.image=cr@sha256:{'0' * 64}"),
             f"cr@sha256:{'0' * 64}",
         ),
     ],
@@ -183,11 +183,11 @@ def test_image_tag_conflict():
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render(
             "--set",
-            "cloud_registry.image=elixircloud/cloud-registry:0.3.0",
+            "cloudRegistry.image=elixircloud/cloud-registry:0.3.0",
             "--set",
-            "cloud_registry.tag=dev",
+            "cloudRegistry.tag=dev",
         )
-    assert "cloud_registry.tag must not be set" in exc.value.stderr
+    assert "cloudRegistry.tag must not be set" in exc.value.stderr
 
 
 def test_mongodb_pinned_and_recreated():
@@ -224,7 +224,7 @@ def test_startup_windows():
 
 def test_probe_path():
     """The path of the app's probes can be changed."""
-    docs = _render("--set", "cloud_registry.probePath=/health")
+    docs = _render("--set", "cloudRegistry.probePath=/health")
     app = _container(docs, APP)
     for probe in PROBES:
         assert app[probe]["httpGet"]["path"] == "/health"
@@ -234,7 +234,7 @@ def test_probe_path():
 def test_probe_path_invalid(path):
     """Probe paths must be set and absolute."""
     with pytest.raises(subprocess.CalledProcessError) as exc:
-        _render("--set", f"cloud_registry.probePath={path}")
+        _render("--set", f"cloudRegistry.probePath={path}")
     assert "probePath" in exc.value.stderr
 
 
@@ -340,7 +340,7 @@ def test_numeric_strings():
     """Values that look like numbers or booleans are rendered as strings."""
     docs = _render(
         "--set-string",
-        "fullnameOverride=123,cloud_registry.ingress.className=true,host_name=1",
+        "fullnameOverride=123,cloudRegistry.ingress.className=true,hostName=1",
         "--set-string",
         "mongodb.auth.existingSecret=456",
         mongodb_secret=None,
@@ -393,11 +393,33 @@ def test_releases_disjoint():
     assert len(set(selectors)) == 4
 
 
-def test_app_name_removed():
-    """The removed `cloud_registry.appName` is rejected."""
+@pytest.mark.parametrize("key", ["cloud_registry", "cloudRegistry"])
+def test_app_name_removed(key):
+    """The removed `appName` of the legacy charts is rejected, also under the
+    renamed key.
+    """
     with pytest.raises(subprocess.CalledProcessError) as exc:
-        _render("--set", "cloud_registry.appName=cloud-registry")
+        _render("--set", f"{key}.appName=cloud-registry")
+    assert f"{key}.appName was removed" in exc.value.stderr
     assert "fullnameOverride" in exc.value.stderr
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "value"),
+    [
+        ("host_name", "hostName", '"registry.example.org"'),
+        ("cloud_registry", "cloudRegistry", '{"tag": "0.3.0"}'),
+        ("cloud_registry", "cloudRegistry", "{}"),
+    ],
+    ids=["host_name", "cloud_registry", "cloud_registry-empty"],
+)
+def test_renamed_keys(old, new, value):
+    """Keys renamed to camelCase (Helm conventions) are rejected, naming the
+    new key, as they would otherwise be ignored.
+    """
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render("--set-json", f"{old}={value}")
+    assert f"{old} was renamed to {new}" in exc.value.stderr
 
 
 @pytest.mark.parametrize(
@@ -460,7 +482,7 @@ def test_upgrade_legacy(owner, labels, fails):
         '{{- include "cloud-registry.failIfLegacy" (dict "root" . "kind"'
         f' "PersistentVolumeClaim" "resource" (fromJson {literal})) }}}}'
     )
-    args = ({"legacy-test.yaml": template}, "--set", "host_name=x")
+    args = ({"legacy-test.yaml": template}, "--set", "hostName=x")
     if fails:
         with pytest.raises(subprocess.CalledProcessError) as exc:
             render_with(*args)
@@ -546,7 +568,7 @@ def _tmp_volume(docs: dict, name: str) -> dict:
 
 
 @pytest.mark.parametrize(
-    ("name", "values"), [(APP, "cloud_registry"), (MONGODB, "mongodb")]
+    ("name", "values"), [(APP, "cloudRegistry"), (MONGODB, "mongodb")]
 )
 def test_tmp_size_limit(tmp_path, name, values):
     """The size limit of the temporary directory can be changed (to a
@@ -599,7 +621,7 @@ def test_gunicorn_values(tmp_path):
         "extraArgs": ["--access-logfile", "-", "--access-logformat", "%(h)s %(r)s"],
     }
     values_file = tmp_path / "values.yaml"
-    values_file.write_text(yaml.safe_dump({"cloud_registry": {"gunicorn": values}}))
+    values_file.write_text(yaml.safe_dump({"cloudRegistry": {"gunicorn": values}}))
     docs = _render("-f", str(values_file))
     cfg = load_settings(_gunicorn_args(docs)).cfg
     assert (cfg.workers, cfg.threads, cfg.timeout) == (2, 8, 60)
@@ -611,36 +633,36 @@ def test_gunicorn_values(tmp_path):
     ("args", "error"),
     [
         (
-            ("--set", "cloud_registry.gunicorn.workers=0"),
-            "'/cloud_registry/gunicorn/workers': minimum",
+            ("--set", "cloudRegistry.gunicorn.workers=0"),
+            "'/cloudRegistry/gunicorn/workers': minimum",
         ),
         (
-            ("--set-json", "cloud_registry.gunicorn.threads=1.5"),
-            "'/cloud_registry/gunicorn/threads': got number, want integer",
+            ("--set-json", "cloudRegistry.gunicorn.threads=1.5"),
+            "'/cloudRegistry/gunicorn/threads': got number, want integer",
         ),
         (
-            ("--set-string", "cloud_registry.gunicorn.timeout=30"),
-            "'/cloud_registry/gunicorn/timeout': got string, want integer",
+            ("--set-string", "cloudRegistry.gunicorn.timeout=30"),
+            "'/cloudRegistry/gunicorn/timeout': got string, want integer",
         ),
         (
-            ("--set", "cloud_registry.gunicorn.gracefulTimeout=null"),
-            "'/cloud_registry/gunicorn': missing property 'gracefulTimeout'",
+            ("--set", "cloudRegistry.gunicorn.gracefulTimeout=null"),
+            "'/cloudRegistry/gunicorn': missing property 'gracefulTimeout'",
         ),
         (
-            ("--set", "cloud_registry.gunicorn.keepalive=-1"),
-            "'/cloud_registry/gunicorn/keepalive': minimum",
+            ("--set", "cloudRegistry.gunicorn.keepalive=-1"),
+            "'/cloudRegistry/gunicorn/keepalive': minimum",
         ),
         (
-            ("--set-json", """cloud_registry.gunicorn.extraArgs=["--name='x'"]"""),
-            "'/cloud_registry/gunicorn/extraArgs/0': ",
+            ("--set-json", """cloudRegistry.gunicorn.extraArgs=["--name='x'"]"""),
+            "'/cloudRegistry/gunicorn/extraArgs/0': ",
         ),
         (
-            ("--set", "cloud_registry.gunicorn.preload=true"),
-            "'/cloud_registry/gunicorn': additional properties 'preload'",
+            ("--set", "cloudRegistry.gunicorn.preload=true"),
+            "'/cloudRegistry/gunicorn': additional properties 'preload'",
         ),
         (
-            ("--set", "cloud_registry.gunicorn=null"),
-            "'/cloud_registry': missing property 'gunicorn'",
+            ("--set", "cloudRegistry.gunicorn=null"),
+            "'/cloudRegistry': missing property 'gunicorn'",
         ),
     ],
     ids=[
@@ -666,7 +688,7 @@ def test_gunicorn_invalid(args, error):
 def _render_extra_args(*extra_args: str) -> dict:
     """Render the chart with further Gunicorn options."""
     return _render(
-        "--set-json", f"cloud_registry.gunicorn.extraArgs={json.dumps(extra_args)}"
+        "--set-json", f"cloudRegistry.gunicorn.extraArgs={json.dumps(extra_args)}"
     )
 
 
@@ -701,7 +723,7 @@ def test_gunicorn_reserved_args(extra_args):
     )
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render_extra_args(*extra_args)
-    assert "cloud_registry.gunicorn.extraArgs must not set" in exc.value.stderr
+    assert "cloudRegistry.gunicorn.extraArgs must not set" in exc.value.stderr
     assert repr(extra_args[0]).strip("'") in exc.value.stderr
 
 
@@ -761,7 +783,7 @@ def test_pre_stop_values(tmp_path):
     values_file.write_text(
         yaml.safe_dump(
             {
-                "cloud_registry": {
+                "cloudRegistry": {
                     "preStopSleepSeconds": 15,
                     "gunicorn": {"gracefulTimeout": 45},
                 }
@@ -772,7 +794,7 @@ def test_pre_stop_values(tmp_path):
     command = _container(docs, APP)["lifecycle"]["preStop"]["exec"]["command"]
     assert command[-1] == "import time; time.sleep(15)"
     assert _grace_period(docs) == 15 + 45 + 10
-    docs = _render("--set", "cloud_registry.preStopSleepSeconds=0")
+    docs = _render("--set", "cloudRegistry.preStopSleepSeconds=0")
     assert "lifecycle" not in _container(docs, APP)
     assert _grace_period(docs) == 20 + 10
 
@@ -780,15 +802,15 @@ def test_pre_stop_values(tmp_path):
 @pytest.mark.parametrize(
     ("value", "error"),
     [
-        ("-1", "'/cloud_registry/preStopSleepSeconds': minimum"),
-        ("1.5", "'/cloud_registry/preStopSleepSeconds': got number, want integer"),
-        ("null", "'/cloud_registry': missing property 'preStopSleepSeconds'"),
+        ("-1", "'/cloudRegistry/preStopSleepSeconds': minimum"),
+        ("1.5", "'/cloudRegistry/preStopSleepSeconds': got number, want integer"),
+        ("null", "'/cloudRegistry': missing property 'preStopSleepSeconds'"),
     ],
 )
 def test_pre_stop_invalid(value, error):
     """The delay must be a non-negative integer."""
     with pytest.raises(subprocess.CalledProcessError) as exc:
-        _render("--set-json", f"cloud_registry.preStopSleepSeconds={value}")
+        _render("--set-json", f"cloudRegistry.preStopSleepSeconds={value}")
     assert error in exc.value.stderr
 
 
@@ -803,9 +825,9 @@ def test_security_context_user_ids():
         "--api-versions",
         "security.openshift.io/v1",
         "--set",
-        "cloud_registry.podSecurityContext.runAsUser=1000",
+        "cloudRegistry.podSecurityContext.runAsUser=1000",
         "--set",
-        "cloud_registry.securityContext.runAsUser=1000",
+        "cloudRegistry.securityContext.runAsUser=1000",
         "--set",
         "mongodb.securityContext.runAsGroup=999",
     )
@@ -822,7 +844,7 @@ def test_security_context_values():
     """Security contexts can be changed via the values."""
     docs = _render(
         "--set",
-        "cloud_registry.securityContext.readOnlyRootFilesystem=false",
+        "cloudRegistry.securityContext.readOnlyRootFilesystem=false",
         "--set",
         "mongodb.podSecurityContext.fsGroup=null",
     )
@@ -867,11 +889,11 @@ def test_ingress_options():
     """
     ingress = _render(
         "--set",
-        "cloud_registry.ingress.className=nginx",
+        "cloudRegistry.ingress.className=nginx",
         "--set",
-        "cloud_registry.ingress.https.enabled=true",
+        "cloudRegistry.ingress.https.enabled=true",
         "--set-json",
-        'cloud_registry.ingress.annotations={"a.example.org/b": "c",'
+        'cloudRegistry.ingress.annotations={"a.example.org/b": "c",'
         ' "kubernetes.io/tls-acme": "false"}',
     )[("Ingress", APP)]
     assert ingress["spec"]["ingressClassName"] == "nginx"
@@ -957,7 +979,7 @@ def test_ingress_body_size_annotation():
 
     def render(limit):
         annotations = json.dumps({BODY_SIZE: limit})
-        args = ("--set-json", f"cloud_registry.ingress.annotations={annotations}")
+        args = ("--set-json", f"cloudRegistry.ingress.annotations={annotations}")
         return _render(*args)[("Ingress", APP)]
 
     ingress = render("8m")
@@ -988,7 +1010,7 @@ def test_route():
     ("args", "exposed", "tls_note"),
     [
         ((), True, True),
-        (("--set", "cloud_registry.ingress.https.enabled=true"), True, False),
+        (("--set", "cloudRegistry.ingress.https.enabled=true"), True, False),
         (ROUTE_API, True, True),
         ((*NO_INGRESS, *ROUTE_API), True, False),
         (NO_INGRESS, False, False),
@@ -1000,7 +1022,7 @@ def test_notes(args, exposed, tls_note):
     request, noting if the Ingress has no TLS, or warn and show a port
     forward if the app is not exposed.
     """
-    notes = render_notes("--set", "host_name=x", "--namespace", "registry", *args)
+    notes = render_notes("--set", "hostName=x", "--namespace", "registry", *args)
     url = "https://x" if exposed else "http://localhost:8080"
     assert f'curl -X GET "{url}/ga4gh/registry/v1/service-info"' in notes
     assert ("WARNING" in notes) is not exposed

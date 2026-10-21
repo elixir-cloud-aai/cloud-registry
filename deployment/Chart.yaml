@@ -8,5 +8,5 @@ type: application
 # (`vX.Y.Z`, see "Versioning and releases" in README.md).
 version: 0.0.0
 # `appVersion` is the default image tag, so the chart in the repository
-# deploys the `dev` image unless `cloud_registry.tag` is set
+# deploys the `dev` image unless `cloudRegistry.tag` is set
 appVersion: "dev"

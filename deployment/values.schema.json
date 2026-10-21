@@ -23,7 +23,7 @@
       "type": "string",
       "description": "Replaces the name of the app's resources (MongoDB's get the suffix -mongodb); set at installation only"
     },
-    "host_name": {
+    "hostName": {
       "type": "string",
       "description": "Public host name of the app"
     },
@@ -76,7 +76,7 @@
         }
       }
     },
-    "cloud_registry": {
+    "cloudRegistry": {
       "type": "object",
       "required": ["image", "probePath", "preStopSleepSeconds", "gunicorn"],
       "properties": {

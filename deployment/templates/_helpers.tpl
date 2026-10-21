@@ -37,7 +37,7 @@ Whether an OpenShift Route is created ("true") or not (empty): without an
 Ingress, if the cluster serves Routes.
 */}}
 {{- define "cloud-registry.routeEnabled" -}}
-{{- if and (not .Values.cloud_registry.ingress.enabled) (.Capabilities.APIVersions.Has "route.openshift.io/v1") -}}
+{{- if and (not .Values.cloudRegistry.ingress.enabled) (.Capabilities.APIVersions.Has "route.openshift.io/v1") -}}
 true
 {{- end -}}
 {{- end -}}
@@ -47,8 +47,20 @@ Checks of the values and the release; renders nothing. Included once (in the
 app's ConfigMap template).
 */}}
 {{- define "cloud-registry.validate" -}}
-{{- if .Values.cloud_registry.appName -}}
-{{- fail "cloud_registry.appName was removed after the legacy charts (versions 2 and 3): resource names are derived from the release name; set fullnameOverride to choose them at installation (see deployment/README.md, Names and labels)" -}}
+{{- range $key := list "cloud_registry" "cloudRegistry" -}}
+{{- $values := index $.Values $key -}}
+{{- if and (kindIs "map" $values) (index $values "appName") -}}
+{{- fail (printf "%s.appName was removed after the legacy charts (versions 2 and 3): resource names are derived from the release name; set fullnameOverride to choose them at installation (see deployment/README.md, Names and labels)" $key) -}}
+{{- end -}}
+{{- end -}}
+{{- /*
+Keys renamed to camelCase, following Helm's conventions; the old keys would
+otherwise be ignored
+*/ -}}
+{{- range $old, $new := dict "host_name" "hostName" "cloud_registry" "cloudRegistry" -}}
+{{- if hasKey $.Values $old -}}
+{{- fail (printf "%s was renamed to %s (camelCase, following Helm conventions): rename it in the values file, and upgrade without --reuse-values (see deployment/README.md, To app version 0.3.0)" $old $new) -}}
+{{- end -}}
 {{- end -}}
 {{- /*
 Settings of the custom config replaced by FOCA's (with the FOCA 0.15
@@ -160,15 +172,15 @@ alphabetical order.
 {{- end -}}
 
 {{/*
-App image: `cloud_registry.image` with `cloud_registry.tag`, by default the
+App image: `cloudRegistry.image` with `cloudRegistry.tag`, by default the
 chart's `appVersion`; an image with a tag or digest is used as it is.
 */}}
 {{- define "cloud-registry.image" -}}
-{{- $image := .Values.cloud_registry.image -}}
-{{- $tag := .Values.cloud_registry.tag -}}
+{{- $image := .Values.cloudRegistry.image -}}
+{{- $tag := .Values.cloudRegistry.tag -}}
 {{- if or (contains "@" $image) (regexMatch ":[^/]+$" $image) -}}
 {{- if $tag -}}
-{{- fail "cloud_registry.tag must not be set if cloud_registry.image includes a tag or digest" -}}
+{{- fail "cloudRegistry.tag must not be set if cloudRegistry.image includes a tag or digest" -}}
 {{- end -}}
 {{- $image -}}
 {{- else -}}
@@ -213,13 +225,13 @@ emptyDir:
 {{- end -}}
 
 {{/*
-Gunicorn options (`GUNICORN_CMD_ARGS`) from `cloud_registry.gunicorn`: the
+Gunicorn options (`GUNICORN_CMD_ARGS`) from `cloudRegistry.gunicorn`: the
 numbers (floats from values files) as integers, followed by `extraArgs`, each
 in single quotes, as Gunicorn splits the options like shell words (the schema
 rejects single quotes in them).
 */}}
 {{- define "cloud-registry.gunicornArgs" -}}
-{{- $g := .Values.cloud_registry.gunicorn -}}
+{{- $g := .Values.cloudRegistry.gunicorn -}}
 {{- $args := list
   "--workers" (int $g.workers)
   "--threads" (int $g.threads)
@@ -235,7 +247,7 @@ rejects single quotes in them).
 {{- end -}}
 
 {{/*
-Fail if an item of `cloud_registry.gunicorn.extraArgs` sets an option that
+Fail if an item of `cloudRegistry.gunicorn.extraArgs` sets an option that
 the chart or the app relies on: `--bind`/`-b` (the chart's ports),
 `--preload` (MongoDB clients must be created after forking) or
 `--graceful-timeout` (the termination grace period is derived from
@@ -257,7 +269,7 @@ values for Gunicorn, not options, so they pass.
 {{- $reserved = true -}}
 {{- end -}}
 {{- if $reserved -}}
-{{- fail (printf "cloud_registry.gunicorn.extraArgs must not set --bind/-b (the chart's ports are 8080), --preload (MongoDB clients must be created after forking) or --graceful-timeout (set gracefulTimeout instead): %s" .) -}}
+{{- fail (printf "cloudRegistry.gunicorn.extraArgs must not set --bind/-b (the chart's ports are 8080), --preload (MongoDB clients must be created after forking) or --graceful-timeout (set gracefulTimeout instead): %s" .) -}}
 {{- end -}}
 {{- end -}}
 
@@ -268,5 +280,5 @@ Gunicorn to stop its workers and exit before it is killed.
 */}}
 {{- define "cloud-registry.terminationGracePeriod" -}}
 {{- $margin := 10 -}}
-{{- add (int .Values.cloud_registry.preStopSleepSeconds) (int .Values.cloud_registry.gunicorn.gracefulTimeout) $margin -}}
+{{- add (int .Values.cloudRegistry.preStopSleepSeconds) (int .Values.cloudRegistry.gunicorn.gracefulTimeout) $margin -}}
 {{- end -}}
