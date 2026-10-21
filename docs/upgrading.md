@@ -55,3 +55,7 @@ db.getSiblingDB("serviceStore").services.updateOne({id: "<id>"}, {$set: {url: "<
 ```
 
 Then start the app again; it adds the missing keys.
+
+Services that already have a key (stored by `dev` images built before URLs
+were checked) are not checked on startup: if their URLs are now invalid, they
+are still served, but can only be updated with a valid URL.

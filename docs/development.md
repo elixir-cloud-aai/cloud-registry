@@ -7,7 +7,7 @@ tests of the chart (skipped without it). To set up a development environment
 ```bash
 pip install -e ".[dev]"  # the app, with the dev dependencies
 pre-commit install  # run the checks on every commit
-pre-commit run --all-files  # ruff, mypy, semgrep, ast-grep
+pre-commit run --all-files  # ruff, mypy, semgrep, ast-grep, actionlint
 pre-commit run --all-files --hook-stage manual gitleaks-all  # secrets
 pytest
 ```
@@ -28,10 +28,14 @@ The checks are configured in
 and
 [`pyproject.toml`](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/pyproject.toml).
 Project-specific rules are in `.semgrep/` (security) and `.ast-grep/`
-(anti-patterns such as HTTP status codes as strings). To suppress a false
-positive, add a comment with the reason to the line: `# noqa: <code>` (ruff),
-`# nosemgrep: <rule-id>`, `# ast-grep-ignore: <rule-id>` or
-`# gitleaks:allow`.
+(anti-patterns such as HTTP status codes as strings).
+[actionlint](https://github.com/rhysd/actionlint) checks the workflows in
+`.github/workflows/`, and their shell scripts with
+[ShellCheck](https://www.shellcheck.net/) if it is installed (as on
+GitHub-hosted runners, so CI may find more than a local run without it). To
+suppress a false positive, add a comment with the reason to the line:
+`# noqa: <code>` (ruff), `# nosemgrep: <rule-id>`,
+`# ast-grep-ignore: <rule-id>` or `# gitleaks:allow`.
 
 ## Documentation
 
@@ -128,9 +132,20 @@ update the `latest` image. These and, until 1.0.0, all other releases are
 GitHub pre-releases (never marked as the latest release). Images of commits
 on `dev` are published by the CI workflow (environment `dev-images`).
 
+In curated notes, link all changes of the release as the compare view from
+the previous release's tag (e.g.,
+`https://github.com/elixir-cloud-aai/cloud-registry/compare/vA.B.C...vX.Y.Z`)
+rather than naming a range of pull requests, which goes stale when more pull
+requests are merged before the release.
+
 Maintainers: the workflows rely on these repository settings: environment
 `dev-images` limited to branch `dev`; environment `release` with a required
 reviewer; a tag ruleset for `v*` that restricts who may create them and
 prevents moving or deleting them; `main` protected against non-fast-forward
 pushes; and the Docker Hub secrets (`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`,
 `DOCKERHUB_ORG`) only in the two environments, not as repository secrets.
+
+The CI workflow (which tests the chart) and the release workflow (which
+packages it) install the same Helm version (`version:` of `azure/setup-helm`
+in `checks.yaml` and `release.yaml`). Dependabot updates the action, but not
+that version: bump it by hand, in both workflows together.

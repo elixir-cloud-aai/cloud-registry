@@ -8,6 +8,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO_URL = "https://github.com/elixir-cloud-aai/cloud-registry"
+DOCS_URL = "https://cloud-registry.readthedocs.io/en/latest/"
 
 # `docs/` is not a package, so the hooks are loaded from their file
 _spec = importlib.util.spec_from_file_location("docs_hooks", ROOT / "docs/hooks.py")
@@ -22,38 +23,64 @@ _spec.loader.exec_module(hooks)
         ("#names-and-labels", "#names-and-labels"),
         ("https://helm.sh/docs/", "https://helm.sh/docs/"),
         ("mailto:admin@example.org", "mailto:admin@example.org"),
-        ("../docs/configuration.md#server", "configuration.md#server"),
-        ("../docs/releases/0.3.0.md", "releases/0.3.0.md"),
+        (f"{DOCS_URL}configuration/#server", "configuration.md#server"),
+        (f"{DOCS_URL}releases/0.3.0/", "releases/0.3.0.md"),
+        (f"{DOCS_URL}operations", "operations.md"),
+        (DOCS_URL, "index.md"),
+        (f"{DOCS_URL}#contact", "index.md#contact"),
+        # Only links to branch `dev` are pointed to the given reference
         (
-            "../cloud_registry/config.yaml",
-            f"{REPO_URL}/blob/dev/cloud_registry/config.yaml",
+            f"{REPO_URL}/blob/v0.3.0/cloud_registry/config.yaml",
+            f"{REPO_URL}/blob/v0.3.0/cloud_registry/config.yaml",
         ),
-        ("values.yaml", f"{REPO_URL}/blob/dev/deployment/values.yaml"),
+        (f"{REPO_URL}/releases", f"{REPO_URL}/releases"),
+        # Relative links are left as they are, so that the strict build fails
+        ("values.yaml", "values.yaml"),
     ],
 )
 def test_adapt_link(target, expected):
-    """Links are adapted to the docs, or to files on GitHub."""
+    """Links are adapted to pages of the docs, or to files on GitHub."""
     assert hooks.adapt_link(target, f"{REPO_URL}/") == expected
 
 
-def test_adapt_link_ref():
+@pytest.mark.parametrize("repo_url", [REPO_URL, f"{REPO_URL}/"])
+def test_adapt_link_ref(repo_url):
     """Links to files on GitHub point to the given Git reference."""
     assert (
-        hooks.adapt_link("values.yaml", REPO_URL, "0123abc")
+        hooks.adapt_link(
+            f"{REPO_URL}/blob/dev/deployment/values.yaml", repo_url, "0123abc"
+        )
         == f"{REPO_URL}/blob/0123abc/deployment/values.yaml"
     )
 
 
 def test_adapt_links_skips_code_blocks():
     """Links in fenced code blocks are left as they are."""
-    markdown = "See [a](values.yaml).\n\n```bash\necho '[b](values.yaml)'\n```\n"
+    link = f"{DOCS_URL}configuration/"
+    markdown = f"See [a]({link}).\n\n```bash\necho '[b]({link})'\n```\n"
     assert hooks.adapt_links(markdown, REPO_URL).splitlines() == [
-        f"See [a]({REPO_URL}/blob/dev/deployment/values.yaml).",
+        "See [a](configuration.md).",
         "",
         "```bash",
-        "echo '[b](values.yaml)'",
+        f"echo '[b]({link})'",
         "```",
     ]
+
+
+def test_readme_links_are_absolute():
+    """The chart's README has no relative links (they break in the package)."""
+    readme = (ROOT / "deployment/README.md").read_text(encoding="utf-8")
+    targets = hooks.LINK.findall(readme)
+    assert f"{DOCS_URL}releases/0.3.0/" in targets
+    assert [
+        target for target in targets if not target.startswith(("#", "https://"))
+    ] == []
+    # Links to the docs are to the version that the hook adapts
+    assert [
+        target
+        for target in targets
+        if "readthedocs.io" in target and not target.startswith(DOCS_URL)
+    ] == []
 
 
 def _render(markdown):
@@ -69,7 +96,8 @@ def test_on_page_markdown_includes_readme(monkeypatch):
     markdown = _render(f"<!-- comment -->\n{hooks.INCLUDE}\n")
     assert markdown.startswith("<!-- comment -->\n# Helm chart\n")
     assert hooks.INCLUDE not in markdown
-    assert "](../" not in markdown
+    assert f"]({DOCS_URL}" not in markdown
+    assert "](releases/0.3.0.md)" in markdown
     assert f"]({REPO_URL}/blob/dev/cloud_registry/config.yaml)" in markdown
 
 
