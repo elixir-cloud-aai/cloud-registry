@@ -92,6 +92,28 @@ the base config sets `security.access_control.keep_group_subjects` (all values
 of the group claim are used as subjects, besides the admin group mapping);
 don't unset it in overlays (the app warns on startup if it is unset).
 
+!!! warning
+    All members of an owner group are owners: they can list the identifiers
+    and names of all users with roles on the service
+    (`GET /services/<id>/permissions`), and remove the other owners, users
+    and groups. Don't grant roles to broad groups, e.g., to all members of a
+    virtual organization (VO) or of a large community, but to groups of the
+    team that runs the service.
+
+### Group membership changes
+
+The registry reads group memberships from LS Login's user info, which FOCA
+caches per token for up to `security.auth.cache_ttl` seconds (default: 300,
+but not beyond the token's expiry; per worker process). So users removed
+from a group keep its roles, also the role `admin`, for up to 5 minutes, and
+users added to a group get them only after that time (or with a new token).
+To shorten the delay, lower `cache_ttl` (which also sets how long the
+issuers' discovery documents and keys are cached), or set
+`security.auth.validate_userinfo: true`, which fetches the user info for
+every request with a token (and so also rejects revoked tokens), at the cost
+of a request to LS Login each time (see FOCA's
+[authentication](https://foca.readthedocs.io/en/latest/authentication/)).
+
 ## Admins
 
 Members of the groups that the deployment maps to the role `admin`

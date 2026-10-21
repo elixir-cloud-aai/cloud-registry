@@ -1,17 +1,18 @@
 """MkDocs hooks: include the README of the Helm chart in the deployment page.
 
-The chart's `deployment/README.md` is kept next to the chart and is written to
-be read on GitHub, so its relative links point from `deployment/` to files of
-the repository. This hook replaces the line `--8<-- "deployment/README.md"` in
+The chart's `deployment/README.md` is kept next to the chart and is also
+packaged with it, where relative links to other files of the repository don't
+resolve, so its links are absolute: to pages of the docs (`DOCS_URL`, the
+latest version on Read the Docs) and to files of the repository on GitHub (at
+branch `dev`). This hook replaces the line `--8<-- "deployment/README.md"` in
 pages with the README, with its links adapted to the docs: links to pages of
-the docs (`../docs/<page>.md`) become links to these pages, which MkDocs then
-checks, and links to other files of the repository become links to them on
-GitHub (`repo_url`, at the commit that Read the Docs builds, so that the
-files match the version of the docs, otherwise at branch `dev`). Only inline
-links (`[text](target)`) outside fenced code blocks are adapted; use no other
-link forms in the README (the strict build fails on them, as their targets
-aren't found), and no nested fences (every line starting with ``` or ~~~
-opens or closes a block).
+the docs become links to these pages, which MkDocs then checks, and links to
+files on GitHub point to the commit that Read the Docs builds, so that the
+files match the version of the docs. Only inline links (`[text](target)`)
+outside fenced code blocks are adapted; use no other link forms in the README,
+nor relative links (the strict build fails on them, as their targets aren't
+found), and no nested fences (every line starting with ``` or ~~~ opens or
+closes a block).
 """
 
 import os
@@ -20,11 +21,11 @@ import re
 
 INCLUDE = '--8<-- "deployment/README.md"'
 README = Path("deployment/README.md")
+# Base URL of the docs that the README links to
+DOCS_URL = "https://cloud-registry.readthedocs.io/en/latest/"
 
 # Targets of inline links (`[text](target)`)
 LINK = re.compile(r"\]\((?P<target>[^)\s]+)\)")
-# Targets with a URL scheme (e.g., `https:`, `mailto:`)
-SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 # Opening and closing lines of fenced code blocks
 FENCE = re.compile(r"^\s*(```|~~~)")
 
@@ -38,18 +39,18 @@ def adapt_link(target: str, repo_url: str, ref: str = "dev") -> str:
         ref: Git reference (branch, tag or commit) of files on GitHub.
 
     Returns:
-        The target relative to the page in the docs (`docs/<page>.md`), or the
-        URL of the file on GitHub; unchanged for anchors and absolute URLs.
+        For pages of the docs (`DOCS_URL<page>/#<anchor>`), the page relative
+        to the docs (`<page>.md#<anchor>`); for files of the repository on
+        GitHub at branch `dev`, their URL at `ref`; other targets unchanged.
     """
-    if target.startswith("#") or SCHEME.match(target):
-        return target
-    if target.startswith("../docs/"):
-        return target.removeprefix("../docs/")
-    if target.startswith("../"):
-        path = target.removeprefix("../")
-    else:
-        path = f"deployment/{target}"
-    return f"{repo_url.rstrip('/')}/blob/{ref}/{path}"
+    if target.startswith(DOCS_URL):
+        page, hash_, anchor = target.removeprefix(DOCS_URL).partition("#")
+        return f"{page.rstrip('/') or 'index'}.md{hash_}{anchor}"
+    repo_url = repo_url.rstrip("/")
+    blob = f"{repo_url}/blob/dev/"
+    if target.startswith(blob):
+        return f"{repo_url}/blob/{ref}/{target.removeprefix(blob)}"
+    return target
 
 
 def adapt_links(markdown: str, repo_url: str, ref: str = "dev") -> str:

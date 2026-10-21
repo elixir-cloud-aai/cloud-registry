@@ -44,4 +44,5 @@ The request returns the identifier of the rule; `DELETE` on
 mapping for admins, as it is configured with the deployment; roles granted via
 the API are stored in the database. The API is served like the registry's
 endpoints (e.g., the Helm chart's Ingress routes all paths); to keep it off
-the internet, route only `/ga4gh/registry/v1/` through a reverse proxy.
+the internet, route only `/ga4gh/registry/v1/` through a reverse proxy (see
+[Ingress](deployment.md#ingress) for the Helm chart).

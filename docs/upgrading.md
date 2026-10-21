@@ -42,7 +42,10 @@ Services stored before the check of [duplicate
 services](api.md#duplicate-services) get their key on startup; only services
 without a key are checked again. If some of them have invalid URLs, or the same
 URL and API type as another one, the app refuses to start and names all of
-them. Invalid URLs include some that were accepted before: URLs with schemes
+them. Services that already have a key are not checked again, e.g., those
+stored by `dev` images between the checks of duplicates and of URLs: if their
+URLs are now invalid, they are still served, but can only be updated with a
+valid URL. Invalid URLs include some that were accepted before: URLs with schemes
 other than `http` and `https`, whitespace or control characters, malformed
 percent-encodings (also in queries and fragments), or port 0. Fix or delete
 them in the database, e.g., with `mongosh` (see

@@ -80,12 +80,15 @@ Requests that don't match the API specification (e.g., missing or unknown
 fields, values that are too long, extra query parameters, or bodies that
 aren't JSON) are rejected with `400 Bad Request`, with the reason in `detail`.
 
-Errors are [problem details](https://www.rfc-editor.org/rfc/rfc7807) (`title`,
-`status` and usually `detail`, e.g., `{"title": "Not found", "status": 404,
-"detail": "The requested resource wasn't found."}`), sent as
-`application/json`, as the GA4GH specification declares (FOCA's
-`exceptions.media_type`), for all errors, including those of authentication
-and access control, unknown paths and FOCA's permissions API.
+Errors handled by the app are [problem
+details](https://www.rfc-editor.org/rfc/rfc7807) (`title`, `status` and
+usually `detail`, e.g., `{"title": "Not found", "status": 404, "detail": "The
+requested resource wasn't found."}`), sent as `application/json`, as the
+GA4GH specification declares (FOCA's `exceptions.media_type`), including
+those of authentication and access control, unknown paths and FOCA's
+permissions API. Gunicorn rejects malformed requests itself, before they
+reach the app (e.g., with an invalid `Content-Length`, or a request line or
+headers over its limits), with HTML error pages.
 
 See [Access control](access-control.md) for the roles and [Verified
 services](#verified-services) for verifications. Extensions of the GA4GH

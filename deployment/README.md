@@ -3,7 +3,7 @@
 ## Configuration
 
 The image contains the app's complete base config
-([`cloud_registry/config.yaml`](../cloud_registry/config.yaml)). The chart
+([`cloud_registry/config.yaml`](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/cloud_registry/config.yaml)). The chart
 renders a config overlay into the `<app>-config` ConfigMap (see
 [Names and labels](#names-and-labels)), which FOCA merges into the base
 config on startup (via `FOCA_CONFIG_OVERLAY`):
@@ -18,13 +18,12 @@ config on startup (via `FOCA_CONFIG_OVERLAY`):
   `server.port` have no effect, as they apply to the development server only
   (see [Server](#server)).
 
-The overlay requires an image built with FOCA 0.14 or later (e.g.,
-`elixircloud/cloud-registry:20261020` or later, any `dev` or `sha-<commit>`
-image, or any release from 0.3.0 on, the first one tagged from Git; see its
-[release notes](../docs/releases/0.3.0.md)); older images ignore it. The
-service info (`config.service_info`) requires an image built with FOCA 0.15
-(any `dev` or `sha-<commit>` image since the upgrade, or any release from
-0.3.0 on); older images set it in `config.custom.endpoints.service_info`.
+The chart supports only images built with FOCA 0.15 or later: any release
+from 0.3.0 on (the first one tagged from Git; see its [release
+notes](https://cloud-registry.readthedocs.io/en/latest/releases/0.3.0/)), or `dev` and `sha-<commit>` images of
+commits since the upgrade to FOCA 0.15. Older images ignore the overlay or
+the service info (`config.service_info`), and the chart rejects their way of
+setting it (`config.custom.endpoints.service_info`).
 
 Each deployment must set the audience (`config.security.auth.audience`;
 rendering fails without it, as the app would refuse to start, unless
@@ -49,6 +48,13 @@ config:
         "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN:ADMIN#aai.lifescience-ri.eu": admin
 ```
 
+Users removed from a group keep its roles (also `admin`) for up to
+`config.security.auth.cache_ttl` seconds (default: 300), as FOCA caches the
+user info with the group memberships per token; set
+`config.security.auth.validate_userinfo: true` or a lower `cache_ttl` to
+shorten the delay (see [Group membership
+changes](https://cloud-registry.readthedocs.io/en/latest/access-control/#group-membership-changes)).
+
 The service info served at `/service-info` is set via
 `config.service_info.service` (mappings are merged, so set only the fields to
 change, e.g., `environment: prod`, and set optional fields of the default to
@@ -69,7 +75,7 @@ releases](https://github.com/elixir-cloud-aai/cloud-registry/releases) have
 the release version as `version` and `appVersion`, so they deploy the image of
 their release (`X.Y.Z`). In the repository, both are placeholders, and
 `appVersion` is `dev`: the chart deploys the latest image of branch `dev`,
-which changes with every commit. For deployments from the repository, set the
+which changes with every commit. Deployments from the repository must set the
 tag of a release (e.g., `0.3.0`) or of a commit on `dev` (`sha-<commit>`, the
 full commit SHA) in the values file:
 
@@ -81,14 +87,26 @@ cloudRegistry:
 `cloudRegistry.image` may also include a tag or digest (e.g.,
 `elixircloud/cloud-registry:0.3.0`, as in earlier chart versions); then
 `cloudRegistry.tag` must be empty. See [Versioning and
-releases](../docs/development.md#versioning-and-releases) for the image tags.
+releases](https://cloud-registry.readthedocs.io/en/latest/development/#versioning-and-releases) for the image tags.
 
 ## Installation
 
 Create the Secret with the MongoDB credentials (see
 [Authentication](#authentication)) and set its name in the values file
-(`mongodb.auth.existingSecret`), then install the chart from the
-`deployment` folder:
+(`mongodb.auth.existingSecret`), then install the chart of a
+[release](https://github.com/elixir-cloud-aai/cloud-registry/releases)
+(`cloud-registry-X.Y.Z.tgz`, attached to the release `vX.Y.Z`), e.g., of
+0.3.0:
+
+```bash
+helm install cloud-registry \
+  https://github.com/elixir-cloud-aai/cloud-registry/releases/download/v0.3.0/cloud-registry-0.3.0.tgz \
+  -n <namespace> -f values-prod.yaml
+```
+
+To install the chart from the `deployment` folder of the repository instead
+(e.g., to test changes of the chart), set `cloudRegistry.tag` (see
+[Image](#image)), as the chart deploys the moving `dev` image otherwise:
 
 ```bash
 helm install cloud-registry . -n <namespace> -f values-prod.yaml
@@ -132,7 +150,14 @@ kubectl get pods -n <namespace> -l app.kubernetes.io/instance=cloud-registry
 ## Ingress
 
 By default, the chart creates an Ingress for `hostName`
-(`cloudRegistry.ingress`):
+(`cloudRegistry.ingress`) that routes all paths (`/`) to the app, including
+FOCA's permissions API (`/admin/access-control/`, for admins only; see
+[Permissions API](https://cloud-registry.readthedocs.io/en/latest/operations/#permissions-api)). To keep that API off
+the internet, block `/admin/` in the proxy in front of the cluster, or
+disable the chart's Ingress (`enabled: false`; see also [OpenShift
+Route](#openshift-route)) and create one of your own that routes only
+`/ga4gh/registry/v1/` to the app's Service (port `http`). The Ingress is
+configured with:
 
 - `className` sets the Ingress class (default: the cluster's default class);
 - `annotations` sets annotations, e.g., for the ingress controller; they
@@ -144,7 +169,7 @@ By default, the chart creates an Ingress for `hostName`
 
 The app rejects request bodies over `config.server.max_content_length` bytes
 (default: 1 MiB; see [Request size
-limit](../docs/configuration.md#request-size-limit)). The Ingress sets the
+limit](https://cloud-registry.readthedocs.io/en/latest/configuration/#request-size-limit)). The Ingress sets the
 same limit for ingress-nginx, in bytes
 (`nginx.ingress.kubernetes.io/proxy-body-size`), so that larger requests are
 rejected before they reach the app; to raise the limit, e.g., to 8 MiB, set
@@ -326,7 +351,7 @@ isolation" in the Kubernetes documentation).
 ## Server
 
 The image serves the app with Gunicorn on port 8080 (see
-[Server](../docs/configuration.md#server) in the app's configuration). The
+[Server](https://cloud-registry.readthedocs.io/en/latest/configuration/#server) in the app's configuration). The
 chart passes the settings in `cloudRegistry.gunicorn` to it (via
 `GUNICORN_CMD_ARGS`); the defaults are the image's:
 
@@ -380,12 +405,15 @@ they complete.
 
 ## Upgrades
 
-Change the values file (e.g., `cloudRegistry.tag` for a new image or
-`config` for the config) and upgrade the release from the `deployment`
-folder:
+Change the values file (e.g., `config` for the config) and upgrade the
+release with the chart of the new release (which deploys its image), or with
+the `deployment` folder and `cloudRegistry.tag` set to the new image (see
+[Installation](#installation)):
 
 ```bash
-helm upgrade cloud-registry . -n <namespace> -f values-prod.yaml
+helm upgrade cloud-registry \
+  https://github.com/elixir-cloud-aai/cloud-registry/releases/download/v0.3.0/cloud-registry-0.3.0.tgz \
+  -n <namespace> -f values-prod.yaml
 ```
 
 The app pods are replaced when the config changes. `helm ls -n <namespace>`
@@ -510,17 +538,20 @@ ones:
 
 ```bash
 kubectl scale deploy/cloud-registry -n <namespace> --replicas=0
-helm upgrade cloud-registry . -n <namespace> -f values-prod.yaml
+helm upgrade cloud-registry \
+  https://github.com/elixir-cloud-aai/cloud-registry/releases/download/v0.3.0/cloud-registry-0.3.0.tgz \
+  -n <namespace> -f values-prod.yaml
 ```
 
 (Releases of the legacy charts are uninstalled and reinstalled instead, see
 above; after restoring their data, the new version adds the keys on its first
-start.) If stored services have invalid URLs or the same URL and API type,
-the new version refuses to start and names them: fix or delete them in
-MongoDB (see [Stored services](../docs/upgrading.md#stored-services) and
-[Authentication](#authentication) for credentials). See the [release
-notes](../docs/releases/0.3.0.md) for all breaking changes; for the ELIXIR
-deployment, a fresh install with an empty database is recommended there.
+start.) If stored services without a key have invalid URLs or the same URL
+and API type, the new version refuses to start and names them: fix or delete
+them in MongoDB (see [Stored services](https://cloud-registry.readthedocs.io/en/latest/upgrading/#stored-services)
+and [Authentication](#authentication) for credentials). See the [release
+notes](https://cloud-registry.readthedocs.io/en/latest/releases/0.3.0/) for all breaking changes; for
+deployments of the previous version, a fresh install with an empty database
+is recommended there.
 
 The values keys `host_name` and `cloud_registry` are renamed to `hostName`
 and `cloudRegistry` (rendering fails while the old keys are set): rename
