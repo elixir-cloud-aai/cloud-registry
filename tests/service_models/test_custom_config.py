@@ -3,12 +3,7 @@
 from pydantic import ValidationError
 import pytest
 
-from cloud_registry.service_models.custom_config import (
-    MAX_CONTENT_LENGTH,
-    CustomConfig,
-    IdConfig,
-)
-from tests.mock_data import CUSTOM_CONFIG
+from cloud_registry.service_models.custom_config import IdConfig
 
 
 def test_id_config():
@@ -42,16 +37,3 @@ def test_id_config_invalid_length(length):
     """Lengths that identifiers cannot be generated with are rejected."""
     with pytest.raises(ValidationError):
         IdConfig(charset="ABC123", length=length)
-
-
-def test_max_content_length_default():
-    """Request bodies are limited to 1 MiB by default."""
-    assert MAX_CONTENT_LENGTH == 1024 * 1024
-    assert CustomConfig(**CUSTOM_CONFIG).max_content_length == MAX_CONTENT_LENGTH
-
-
-@pytest.mark.parametrize("limit", [0, -1, "1m"])
-def test_max_content_length_invalid(limit):
-    """Size limits of request bodies must be positive numbers of bytes."""
-    with pytest.raises(ValidationError):
-        CustomConfig(**CUSTOM_CONFIG, max_content_length=limit)

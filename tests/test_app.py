@@ -21,7 +21,6 @@ import cloud_registry.app
 from cloud_registry.exceptions import MAX_DETAIL_LENGTH
 import cloud_registry.ga4gh.registry.server
 from cloud_registry.ga4gh.registry.service import KEY, service_key
-from cloud_registry.service_models.custom_config import MAX_CONTENT_LENGTH
 from tests.conftest import (
     ADMIN_GROUP,
     APP_DIR,
@@ -30,7 +29,7 @@ from tests.conftest import (
     make_headers,
     mock_get,
 )
-from tests.mock_data import ERROR_MEDIA_TYPE
+from tests.mock_data import ERROR_MEDIA_TYPE, MAX_CONTENT_LENGTH
 
 BASE = "/ga4gh/registry/v1"
 # Public URL of the app, as configured in `config.yaml`
@@ -320,10 +319,35 @@ def test_body_at_limit(client, headers, chunked):
     assert response.status_code == 201
 
 
+def test_body_content_length_invalid(client):
+    """Requests with an invalid declared size (`Content-Length`) are
+    rejected (`400`, as problem details of the app), without reading their
+    body.
+    """
+    stream = io.BytesIO(json.dumps(_service()).encode())
+    response = client.post(
+        f"{BASE}/services",
+        input_stream=stream,
+        content_type="application/json",
+        environ_overrides={"CONTENT_LENGTH": "1e3"},
+    )
+    _assert_error(response, 400)
+    assert response.content_type == ERROR_MEDIA_TYPE
+    assert stream.tell() == 0
+
+
+def test_max_content_length_default(app):
+    """Request bodies are limited to 1 MiB by default, by FOCA
+    (`server.max_content_length`).
+    """
+    assert app.app.config.foca.server.max_content_length == MAX_CONTENT_LENGTH
+    assert app.app.config["MAX_CONTENT_LENGTH"] == MAX_CONTENT_LENGTH
+
+
 def test_max_content_length_configured(monkeypatch, tmp_path, app_env, headers):
     """The size limit of request bodies is set from the config."""
     path = tmp_path / "overlay.yaml"
-    path.write_text(yaml.safe_dump({"custom": {"max_content_length": 1000}}))
+    path.write_text(yaml.safe_dump({"server": {"max_content_length": 1000}}))
     overlays = os.pathsep.join([str(CONFIG_OVERLAY), str(path)])
     monkeypatch.setenv("FOCA_CONFIG_OVERLAY", overlays)
     app = cloud_registry.app.create_app()
@@ -983,6 +1007,21 @@ def test_create_app_service_info_in_custom(monkeypatch, tmp_path, app_env):
         cloud_registry.app.create_app()
     assert isinstance(exc.value.__cause__, ValidationError)
     assert "endpoints.service_info" in str(exc.value.__cause__)
+
+
+def test_create_app_max_content_length_in_custom(monkeypatch, tmp_path, app_env):
+    """`create_app()` fails if the size limit of request bodies is set in
+    the custom config, where it was set before FOCA limited request bodies
+    (FOCA raises a `ValueError` caused by the validation error).
+    """
+    overlay = _service_info_overlay({})
+    del overlay["service_info"]
+    overlay["custom"]["max_content_length"] = 1000
+    _set_overlay(monkeypatch, tmp_path, overlay)
+    with pytest.raises(ValueError, match="custom configuration") as exc:
+        cloud_registry.app.create_app()
+    assert isinstance(exc.value.__cause__, ValidationError)
+    assert "max_content_length" in str(exc.value.__cause__)
 
 
 def test_create_app_config_missing(monkeypatch, tmp_path):

@@ -41,7 +41,7 @@ keepalive = 75
 
 # Size limits of the request line and headers (Gunicorn's defaults, set
 # explicitly); larger requests are rejected (`400`). The size limit of request
-# bodies is set by the app (`custom.max_content_length`)
+# bodies is set by the app (`server.max_content_length`)
 limit_request_line = 4094
 limit_request_fields = 100
 limit_request_field_size = 8190

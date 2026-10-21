@@ -17,7 +17,8 @@ LABEL maintainer.organisation="ELIXIR Cloud & AAI"
 ## TODO(#104): FOCA 0.15.0 is not released yet: `requirements.txt` installs its
 ## release candidate from Git (replacing the base image's FOCA 0.14.0), so Git
 ## is installed for the build and removed again; the build fails unless FOCA
-## 0.15 (with `foca.api.service_info`) is installed. Once FOCA 0.15.0 is
+## 0.15 (with `foca.api.service_info`, and limiting request bodies without
+## `Content-Length`, `_check_body_size()`) is installed. Once FOCA 0.15.0 is
 ## released, require it in `requirements.txt`, install the requirements with
 ## `pip` only and change the base image to a FOCA 0.15.0 image (if published)
 USER root
@@ -27,7 +28,8 @@ RUN apt-get update \
   && pip install --no-cache-dir -r /tmp/src/requirements.txt \
   && apt-get purge -y --auto-remove git \
   && rm -rf /var/lib/apt/lists/* \
-  && python -c "import foca.api.service_info"
+  && python -c "import foca.api.service_info" \
+  && python -c "from foca.factories.connexion_app import _check_body_size"
 
 ## Install app (non-editable; the base config is installed with the package,
 ## and deployments override it via `FOCA_CONFIG_OVERLAY`)

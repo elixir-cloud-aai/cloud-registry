@@ -31,7 +31,7 @@
       "type": ["object", "null"],
       "description": "App config overriding the base config in the image",
       "properties": {
-        "custom": {
+        "server": {
           "type": ["object", "null"],
           "properties": {
             "max_content_length": {

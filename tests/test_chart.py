@@ -8,7 +8,6 @@ import subprocess
 import pytest
 import yaml
 
-from cloud_registry.service_models.custom_config import MAX_CONTENT_LENGTH
 from tests.gunicorn_settings import load_settings
 from tests.helm import (
     APP,
@@ -20,6 +19,7 @@ from tests.helm import (
     render_notes,
     render_with,
 )
+from tests.mock_data import MAX_CONTENT_LENGTH
 from tests.test_config import CONFIG_FILE
 
 NO_AUTH = ("--set", "mongodb.auth.enabled=false")
@@ -873,7 +873,7 @@ def test_ingress_body_size_default():
     of the app, as in the base config.
     """
     config = yaml.safe_load(CONFIG_FILE.read_text())
-    assert config["custom"]["max_content_length"] == MAX_CONTENT_LENGTH
+    assert config["server"]["max_content_length"] == MAX_CONTENT_LENGTH
     annotations = _render()[("Ingress", APP)]["metadata"]["annotations"]
     assert annotations[BODY_SIZE] == BODY_SIZE_LIMIT
 
@@ -882,12 +882,12 @@ def test_ingress_body_size_app(tmp_path):
     """The size limit of request bodies of ingress-nginx follows that of
     the app, also from values files (which have floats).
     """
-    ingress = _render("--set", "config.custom.max_content_length=8388608")
+    ingress = _render("--set", "config.server.max_content_length=8388608")
     assert ingress[("Ingress", APP)]["metadata"]["annotations"] == {
         BODY_SIZE: "8388608"
     }
     values_file = tmp_path / "values.yaml"
-    config = {"custom": {"max_content_length": 8388608}}
+    config = {"server": {"max_content_length": 8388608}}
     values_file.write_text(yaml.safe_dump({"config": config}))
     ingress = _render("-f", str(values_file))[("Ingress", APP)]
     assert ingress["metadata"]["annotations"] == {BODY_SIZE: "8388608"}
@@ -896,9 +896,9 @@ def test_ingress_body_size_app(tmp_path):
 @pytest.mark.parametrize(
     "args",
     [
-        ("--set", "config.custom.max_content_length=null"),
-        ("--set", "config.custom.max_content_length=0"),
-        ("--set-string", "config.custom.max_content_length=1m"),
+        ("--set", "config.server.max_content_length=null"),
+        ("--set", "config.server.max_content_length=0"),
+        ("--set-string", "config.server.max_content_length=1m"),
     ],
     ids=["null", "zero", "string"],
 )

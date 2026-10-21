@@ -4,9 +4,6 @@ from foca.models.config import FOCABaseConfig
 from foca.utils.misc import generate_id
 from pydantic import Field, PositiveInt, field_validator
 
-# Default size limit of request bodies, in bytes (1 MiB)
-MAX_CONTENT_LENGTH = 1024 * 1024
-
 
 class ServiceConfig(FOCABaseConfig):
     """Model for configuration parameters to set up a service.
@@ -190,14 +187,10 @@ class CustomConfig(FOCABaseConfig):
     Args:
         endpoints: Endpoint service configurations for cloud registry.
         access_control: Access control settings of the app.
-        max_content_length: Size limit of request bodies, in bytes; larger
-            requests are rejected with `413`, before authentication.
 
     Attributes:
         endpoints: Endpoint service configurations for cloud registry.
         access_control: Access control settings of the app.
-        max_content_length: Size limit of request bodies, in bytes; larger
-            requests are rejected with `413`, before authentication.
 
     Raises:
         pydantic.ValidationError: The class was instantianted with an illegal
@@ -223,10 +216,8 @@ class CustomConfig(FOCABaseConfig):
         CustomConfig(endpoints=EndpointsConfig(service=ServiceConfig(url_prefi\
 x='https', external_host='0.0.0.0', external_port=8080, api_path=''), services\
 =ServicesConfig(id=IdConfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', le\
-ngth=6))), access_control=AccessControlConfig(require_admin=True), max_content\
-_length=1048576)
+ngth=6))), access_control=AccessControlConfig(require_admin=True))
     """
 
     endpoints: EndpointsConfig
     access_control: AccessControlConfig = Field(default_factory=AccessControlConfig)
-    max_content_length: PositiveInt = MAX_CONTENT_LENGTH

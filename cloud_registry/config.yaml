@@ -15,6 +15,12 @@ server:
     # development, on a loopback host
     debug: False
     testing: False
+    # Size limit of request bodies, in bytes (1 MiB); larger requests (also
+    # chunked ones) are rejected with `413 Content Too Large` before
+    # authentication and parsing. Raise it together with the limits of any
+    # proxies in front of the app (the Helm chart sets the limit of
+    # ingress-nginx from it)
+    max_content_length: 1048576
 
 # Security configuration
 # Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.SecurityConfig
@@ -182,11 +188,6 @@ exceptions:
     media_type: application/json
 
 custom:
-    # Size limit of request bodies, in bytes (default: 1 MiB); larger requests
-    # are rejected with `413 Content Too Large` before authentication and
-    # parsing. Raise it together with the limits of any proxies in front of
-    # the app (the Helm chart sets the limit of ingress-nginx from it)
-    max_content_length: 1048576
     # Refuse to start unless a group is mapped to the role `admin` (see
     # `security.access_control.group_mapping`)
     access_control:

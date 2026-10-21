@@ -67,7 +67,7 @@ cloud_registry:
     # Annotations of the Ingress, e.g., for the ingress controller; they take
     # precedence over those set by the chart: for `https`, and
     # `nginx.ingress.kubernetes.io/proxy-body-size`, the size limit of request
-    # bodies of the app (`config.custom.max_content_length`) for
+    # bodies of the app (`config.server.max_content_length`) for
     # ingress-nginx. `null` removes an annotation set by the chart
     annotations: {}
     https:

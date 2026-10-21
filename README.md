@@ -523,16 +523,17 @@ Previously, `api_path` held the API base path itself (e.g.,
 
 ### Request size limit
 
-Request bodies are limited to `custom.max_content_length` bytes (default:
-1048576, i.e., 1 MiB). Larger requests are rejected with `413 Content Too
-Large` before the access token is checked and the body is parsed: requests
-whose `Content-Length` exceeds the limit are rejected without reading the
-body. Bodies of unknown size (`Transfer-Encoding: chunked`) are read up to one
-byte over the limit, and rejected if they are larger.
+Request bodies are limited to `server.max_content_length` bytes (default:
+1048576, i.e., 1 MiB), by [FOCA][foca-server]. Larger requests are rejected
+with `413 Content Too Large` before the access token is checked and the body
+is parsed: requests whose `Content-Length` exceeds the limit are rejected
+without reading the body (and requests with an invalid `Content-Length` with
+`400`). Bodies of unknown size (`Transfer-Encoding: chunked`) are read up to
+one byte over the limit, and rejected if they are larger.
 
 Set the same limit at the ingress or reverse proxy in front of the app, so
 that it rejects larger requests itself; the Helm chart sets the limit of
-ingress-nginx from `custom.max_content_length` (see the [deployment
+ingress-nginx from `server.max_content_length` (see the [deployment
 instructions][deployment-instructions]).
 
 ### Server
@@ -729,5 +730,6 @@ etc.
 [foca-deployment]: https://foca.readthedocs.io/en/latest/deployment/
 [rfc-7807]: https://www.rfc-editor.org/rfc/rfc7807
 [foca-service-info]: https://foca.readthedocs.io/en/latest/configuration/service-info/
+[foca-server]: https://foca.readthedocs.io/en/latest/configuration/server/
 [ls-login]: https://lifescience-ri.eu/ls-login/
 [protes]: https://github.com/elixir-cloud-aai/proTES

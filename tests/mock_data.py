@@ -3,6 +3,9 @@
 DB = "serviceStore"
 # Media type of error responses, as in `config.yaml` (`exceptions.media_type`)
 ERROR_MEDIA_TYPE = "application/json"
+# Size limit of request bodies, in bytes, as in `config.yaml`
+# (`server.max_content_length`)
+MAX_CONTENT_LENGTH = 1024 * 1024
 MOCK_ID = "mock_id"
 MOCK_ID_ONE_CHAR = "A"
 CHARSET = "0123456789"

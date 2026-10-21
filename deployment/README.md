@@ -142,8 +142,9 @@ By default, the chart creates an Ingress for `host_name`
   ClusterIssuer `https.issuer`, by annotations that `annotations` can
   override) and serves HTTPS with it.
 
-The app rejects request bodies over `config.custom.max_content_length` bytes
-(default: 1 MiB; see [Request size limit](../README.md#request-size-limit)).
+The app rejects request bodies over `config.server.max_content_length` bytes
+(default: 1 MiB; see [Request size limit](../README.md#request-size-limit);
+images built with FOCA 0.14 set it in `config.custom.max_content_length`).
 The Ingress sets the same limit for ingress-nginx, in bytes
 (`nginx.ingress.kubernetes.io/proxy-body-size`), so that larger requests are
 rejected before they reach the app; to raise the limit, e.g., to 8 MiB, set
@@ -151,7 +152,7 @@ only the app's:
 
 ```yaml
 config:
-  custom:
+  server:
     max_content_length: 8388608
 ```
 
