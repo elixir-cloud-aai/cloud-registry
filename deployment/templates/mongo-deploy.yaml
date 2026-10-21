@@ -22,6 +22,8 @@ spec:
     spec:
       # The pod doesn't call the Kubernetes API
       automountServiceAccountToken: false
+      # No `<SERVICE>_PORT` etc. variables of the Services in the namespace
+      enableServiceLinks: false
       containers:
       - image: {{ .Values.mongodb.image }}
         imagePullPolicy: Always
