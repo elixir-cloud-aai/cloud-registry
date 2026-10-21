@@ -98,15 +98,53 @@ jobs:
           files: ./coverage.xml
           fail_ci_if_error: ${{ github.event_name == 'push' }}
           verbose: true
+  # The other test jobs use mongomock; this one runs all tests against
+  # MongoDB (`MONGODB_TEST_URI`, see `tests/conftest.py`), the version of
+  # `docker-compose.yaml` (8.0 doesn't start on some kernels of the runners:
+  # https://jira.mongodb.org/browse/SERVER-121912)
+  test_mongodb:
+    name: Run tests (MongoDB 7.0)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports: ["27017:27017"]
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping: 1}).ok'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      MONGODB_TEST_URI: mongodb://localhost:27017
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip==24.0
+          pip install -e ".[dev]"
+      - name: Run tests
+        run: pytest -W ignore::DeprecationWarning
   # Stable check name for branch protection, independent of the matrix
   tests_passed:
     name: Run tests
     runs-on: ubuntu-latest
     if: always()
-    needs: [test]
+    needs: [test, test_mongodb]
     steps:
       - name: Check that all test jobs passed
-        run: test "${{ needs.test.result }}" = "success"
+        run: |
+          test "${{ needs.test.result }}" = "success"
+          test "${{ needs.test_mongodb.result }}" = "success"
   helm:
     name: Check Helm chart
     runs-on: ubuntu-latest
@@ -184,8 +222,8 @@ jobs:
         run: |
           curl --fail --silent --show-error --output /dev/null \
             --header 'Accept: application/json' "${PROBE_ENDPOINT}"
-      # The tests use mongomock, so check database-backed endpoints against
-      # MongoDB here. Writes need tokens of the trusted issuer (LS Login), so
+      # Check database-backed endpoints of the app as deployed (the tests
+      # check them against MongoDB, too: `test_mongodb`). Writes need tokens of the trusted issuer (LS Login), so
       # a verified service is inserted into the database directly
       - name: Check API with MongoDB
         run: |
