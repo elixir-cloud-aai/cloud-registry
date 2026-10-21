@@ -132,9 +132,14 @@ the app refuses to start if it is invalid, naming the invalid field. `version`
 defaults to the version of the installed app (`service_info.package`);
 `createdAt` and `updatedAt` are served only if set, and must be RFC 3339
 date-times (e.g., `2020-11-08T00:00:00Z`). The defaults describe the app, not a
-deployment: deployments set their own `id` (unique, e.g., in reverse domain
-name notation), `name`, `description`, `organization`, `contactUrl` and
-`environment` (the default is `dev`). Fields and list items set to `null`
+deployment: `id` (`org.example.cloud-registry`) and `organization` (`Example
+Organization`, `https://example.org`) are placeholders with reserved example
+domains, and there is no `contactUrl`. Deployments set their own `id` (unique,
+e.g., in reverse domain name notation), `name`, `description`, `organization`,
+`contactUrl` and `environment` (the default is `dev`); while `id` or the name
+or URL of `organization` are the placeholders, the app logs a warning on
+startup, naming the fields to set (also with Docker Compose, whose
+development config keeps them). Fields and list items set to `null`
 (e.g., in a config overlay) are not served. To change the service info, change
 the config and restart the app (the Helm chart restarts it when the `config`
 value changes). Previously, service info was set via the API; see
