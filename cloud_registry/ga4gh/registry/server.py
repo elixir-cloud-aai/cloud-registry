@@ -10,6 +10,7 @@ from cloud_registry.ga4gh.registry.permissions import (
     add_owner,
     current_user,
     is_admin,
+    remove_owner,
     remove_permissions,
 )
 from cloud_registry.ga4gh.registry.service import (
@@ -235,9 +236,10 @@ def _register_service(
             raise
         # The service may have been deleted (with its roles) before its owner
         # was stored, which would leave the role on a deleted service (cf.
-        # `permissions._grant()`)
+        # `permissions._grant()`); only the role granted here is revoked, as
+        # the identifier may be registered again meanwhile
         if not service_exists(service.data["id"]):
-            remove_permissions(service.data["id"])
+            remove_owner(service.data["id"])
             raise NotFound
         path = f"{collection_path.rstrip('/')}/{service.data['id']}"
         return service.data["id"], 201, {"Location": get_public_url(path)}

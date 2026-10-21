@@ -192,6 +192,27 @@ def add_owner(serviceId: str) -> None:
     remember_current_user([serviceId])
 
 
+def remove_owner(serviceId: str) -> None:
+    """Revoke the owner role of the subject of the current request on a
+    service, and their name stored for it (e.g., if the service they
+    registered was deleted meanwhile). Other roles on the service (e.g., of
+    the owner of a service registered again with the identifier) are kept.
+
+    Args:
+        serviceId: Service identifier.
+    """
+    user_id: str = get_current_subject()  # type: ignore[assignment]
+    if remove_resource_role(
+        subject=user_id, role="owner", resource=service_path(serviceId)
+    ):
+        logger.info(
+            "Role 'owner' on deleted service '%s' revoked from its creator '%s'.",
+            escape_log_value(serviceId),
+            current_user(),
+        )
+    _forget_names(serviceId, user_id)
+
+
 def remove_permissions(serviceId: str) -> None:
     """Revoke all roles granted on a service.
 

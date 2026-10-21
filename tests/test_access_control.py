@@ -472,21 +472,29 @@ def test_put_racing_delete(app, client, monkeypatch, user, status, roles):
 
 
 def test_create_racing_delete(app, client, monkeypatch):
-    """The owner role (and name) of a new service deleted while its owner is
-    stored is revoked again (`404`).
+    """The owner role (and name) of the creator of a new service deleted
+    while its owner is stored is revoked again (`404`); roles granted by
+    others on the identifier (e.g., to the owner of a service registered
+    again with it) are kept.
     """
 
     def delete_service():
         # the service is deleted (with its roles) after its owner role was
-        # granted, before the owner's name is stored
+        # granted, before the owner's name is stored; and another request
+        # grants a role on the identifier
         permissions_module.remove_permissions("MYSERV")
         get_collection("services").delete_one({"id": "MYSERV"})
+        permissions_module.add_resource_role(
+            subject=BOB,
+            role="owner",
+            resource=permissions_module.service_path("MYSERV"),
+        )
 
     with monkeypatch.context() as patch:
         fired = before_first_call(patch, "update_one", "user_names", delete_service)
         assert update(client, "MYSERV", ADMIN) == 404
     assert fired
-    assert _roles(app, "MYSERV") == []
+    assert _roles(app, "MYSERV") == [(BOB, "owner")]
     with app.app.app_context():
         names = get_collection("user_names")
         assert names.count_documents({"service_id": "MYSERV"}) == 0
