@@ -1,10 +1,10 @@
 # FOCA configuration
 # Available in app context as attributes of `foca.get_config()`
 # Automatically validated via FOCA
-# Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html
+# Cf. https://foca.readthedocs.io/en/latest/configuration/
 
 # Server configuration
-# Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.ServerConfig
+# Cf. https://foca.readthedocs.io/en/latest/configuration/server/
 # `host` and `port` apply to the development server
 # (`python -m cloud_registry.app`) only: the image serves the app with
 # Gunicorn on port 8080 (`--bind`, see `cloud_registry/gunicorn_config.py`)
@@ -23,7 +23,8 @@ server:
     max_content_length: 1048576
 
 # Security configuration
-# Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.SecurityConfig
+# Cf. https://foca.readthedocs.io/en/latest/configuration/auth/ and
+# https://foca.readthedocs.io/en/latest/configuration/access-control/
 security:
     auth:
         add_key_to_claims: True
@@ -90,7 +91,7 @@ security:
             # only admins may verify services
 
 # Database configuration
-# Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.DBConfig
+# Cf. https://foca.readthedocs.io/en/latest/configuration/db/
 db:
     # MongoDB service of Docker Compose; the Helm chart sets the MongoDB
     # Service of the release
@@ -123,7 +124,7 @@ db:
                             'unique': True
 
 # API configuration
-# Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.APIConfig
+# Cf. https://foca.readthedocs.io/en/latest/configuration/api/
 api:
     specs:
         - path:
@@ -167,7 +168,7 @@ service_info:
         # updatedAt: "2026-10-20T00:00:00Z"
 
 # Logging configuration
-# Cf. https://foca.readthedocs.io/en/latest/modules/foca.models.html#foca.models.config.LogConfig
+# Cf. https://foca.readthedocs.io/en/latest/configuration/log/
 log:
     version: 1
     disable_existing_loggers: False
