@@ -62,9 +62,9 @@ releases](development.md#versioning-and-releases)).
 4. Once the checks pass and all conversations are resolved, the maintainers
    squash-merge the pull request into `dev`.
 
-Keep pull requests focused: if a change can't be summarized in a title of
-50 characters, split it into several pull requests. Feature branches are unstable: don't build on other people's
-branches without talking to them first.
+Keep pull requests focused: if a change can't be summarized in a title of 50
+characters, split it into several pull requests. Feature branches are unstable:
+don't build on other people's branches without talking to them first.
 
 ## Commit messages and pull request titles
 
@@ -95,9 +95,10 @@ Pull request titles, which become the commit messages on `dev`, follow the
 | `chore` | other maintenance, e.g., `.gitignore` |
 | `revert` | reverts of earlier commits |
 
-Use `feat`, `fix`, `perf`, `refactor` and `style` only for changes of what
-is deployed: the app (`cloud_registry/`) and its Helm chart (`deployment/`). Commit messages on feature branches may follow the
-same format, which makes the history easier to review.
+Use `feat`, `fix`, `perf`, `refactor` and `style` only for changes of what is
+deployed: the app (`cloud_registry/`) and its Helm chart (`deployment/`).
+Commit messages on feature branches may follow the same format, which makes the
+history easier to review.
 
 ## Python guidelines
 
@@ -131,7 +132,8 @@ checked in reviews.
   (`disallow_untyped_defs`, `disallow_any_generics`).
 - **Tests:** [pytest](https://docs.pytest.org/), with coverage measured by
   [coverage](https://coverage.readthedocs.io/): keep it at 100% of
-  `cloud_registry` (Codecov checks pull requests). Add tests that fail
+  `cloud_registry` (Codecov reports changes of the coverage on pull
+  requests; reviews check that it stays at 100%). Add tests that fail
   without your change.
 - **Further checks:** [ast-grep](https://ast-grep.github.io/) (rules in
   `.ast-grep/`, with tests), [semgrep](https://semgrep.dev/) (security rules
@@ -139,8 +141,8 @@ checked in reviews.
   and [actionlint](https://github.com/rhysd/actionlint) (workflows), and
   pre-commit's checks of YAML, whitespace, merge conflicts and large files.
 
-Suppress a finding only if it is a false positive or can't be avoided, on
-its line, preferably with the reason (see [Development](development.md)).
+Suppress a finding only if it is a false positive or can't be avoided, on its
+line, with a comment with the reason (see [Development](development.md)).
 
 ## Documentation
 

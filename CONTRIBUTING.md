@@ -13,8 +13,8 @@ On-Cloud](https://elixir-cloud-aai.github.io/contribute/); in short:
 - Title pull requests as [Conventional
   Commits](https://www.conventionalcommits.org/)
   (`<type>[(<scope>)][!]: <description>`, at most 50 characters).
-- Keep the checks green: tests with 100% coverage, docstrings, type hints and
-  the pre-commit hooks; update the documentation.
+- Keep the checks green and the coverage at 100%, with docstrings, type hints
+  and the pre-commit hooks; update the documentation.
 
 **See [Contributing in the
 documentation](https://cloud-registry.readthedocs.io/en/latest/contributing/)

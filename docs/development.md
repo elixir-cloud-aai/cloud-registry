@@ -1,5 +1,9 @@
 # Development
 
+See [Contributing](contributing.md) for how to contribute, including the
+Python guidelines; this page describes the development setup, the checks, the
+documentation and the releases.
+
 Development needs Python 3.10 or later, and [Helm](https://helm.sh/) for the
 tests of the chart (skipped without it). To set up a development environment
 (e.g., in a virtual environment) and run the checks that CI runs:
@@ -36,8 +40,7 @@ GitHub-hosted runners, so CI may find more than a local run without it). To
 suppress a false positive, add a comment with the reason to the line:
 `# noqa: <code>` (ruff), `# type: ignore[<code>]` (mypy),
 `# nosemgrep: <rule-id>`, `# ast-grep-ignore: <rule-id>` or
-`# gitleaks:allow`. See [Contributing](contributing.md) for how to contribute,
-including the Python guidelines.
+`# gitleaks:allow`.
 
 ## Documentation
 
