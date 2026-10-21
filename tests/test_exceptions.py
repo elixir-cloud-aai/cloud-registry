@@ -5,7 +5,8 @@ import json
 from connexion.exceptions import BadRequestProblem, ExtraParameterProblem
 import pytest
 
-from cloud_registry.exceptions import validation_problem
+from cloud_registry.exceptions import MAX_DETAIL_LENGTH, validation_problem
+from cloud_registry.utils import escape_log_value
 
 
 @pytest.mark.parametrize(
@@ -30,3 +31,19 @@ def test_validation_problem(exc, detail):
     assert body["title"] == "Bad request"
     assert body["status"] == 400
     assert body["detail"].startswith(detail)
+
+
+def test_validation_problem_long_detail(caplog):
+    """Long reasons (e.g., quoting a large rejected value) are shortened in
+    the middle in responses and logs, and escaped in logs.
+    """
+    exc = BadRequestProblem(detail=f"'\n{'a' * 10000}' is too long - 'name'")
+    with caplog.at_level("INFO", logger="cloud_registry.exceptions"):
+        response = validation_problem(exc)
+    head = MAX_DETAIL_LENGTH // 2
+    tail = "' is too long - 'name'"
+    truncated = (
+        f"'\n{'a' * (head - 2)}…{'a' * (MAX_DETAIL_LENGTH - head - len(tail))}{tail}"
+    )
+    assert json.loads(response.get_data())["detail"] == truncated
+    assert caplog.messages == [f"Request rejected: {escape_log_value(truncated)}"]

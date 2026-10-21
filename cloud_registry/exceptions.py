@@ -24,6 +24,12 @@ from cloud_registry.utils import escape_log_value
 
 logger = logging.getLogger(__name__)
 
+# Maximum length of reasons in validation problem details (and their log
+# messages); longer ones are shortened in the middle (keeping, e.g., the
+# field names at their end), as validators quote rejected values, which can
+# be as large as the request body
+MAX_DETAIL_LENGTH = 500
+
 # exceptions raised in app context
 exceptions = {
     Exception: {
@@ -118,7 +124,8 @@ def validation_problem(exc: BadRequestProblem | ExtraParameterProblem) -> Respon
             list of them for form data).
 
     Returns:
-        Problem details response (`400`), with the reason as `detail`, or
+        Problem details response (`400`), with the reason as `detail`
+        (shortened to `MAX_DETAIL_LENGTH` characters and "…"), or
         the mapped details if there is none.
     """
     mapped = _mapped(exc)
@@ -127,6 +134,9 @@ def validation_problem(exc: BadRequestProblem | ExtraParameterProblem) -> Respon
         detail = "; ".join(str(item) for item in detail)
     if not isinstance(detail, str) or not detail:
         detail = mapped["detail"]
+    if len(detail) > MAX_DETAIL_LENGTH:
+        head = MAX_DETAIL_LENGTH // 2
+        detail = f"{detail[:head]}…{detail[head - MAX_DETAIL_LENGTH :]}"
     logger.info("Request rejected: %s", escape_log_value(detail))
     return _response(title=mapped["title"], status=mapped["status"], detail=detail)
 

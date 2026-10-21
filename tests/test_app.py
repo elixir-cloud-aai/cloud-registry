@@ -14,6 +14,7 @@ import pytest
 import yaml
 
 import cloud_registry.app
+from cloud_registry.exceptions import MAX_DETAIL_LENGTH
 from cloud_registry.ga4gh.registry.service import KEY, service_key
 from cloud_registry.ga4gh.registry.service_info import InvalidServiceInfo
 from cloud_registry.service_models.custom_config import MAX_CONTENT_LENGTH
@@ -945,3 +946,16 @@ def test_validation_error_detail(client, admin_headers, request_kwargs, detail):
     assert response.mimetype == "application/problem+json"
     assert response.json["title"] == "Bad request"
     assert detail in response.json["detail"]
+
+
+def test_validation_error_detail_large_body(client, admin_headers):
+    """Reasons quoting large rejected values are shortened, keeping the
+    field name.
+    """
+    response = client.post(
+        f"{BASE}/services", headers=admin_headers, json=_service(name="a" * 900_000)
+    )
+    _assert_error(response, 400)
+    assert len(response.json["detail"]) == MAX_DETAIL_LENGTH + 1
+    assert "…" in response.json["detail"]
+    assert response.json["detail"].endswith("is too long - 'name'")
