@@ -1,6 +1,7 @@
 # Only send the files needed at runtime to the build context
 *
 !cloud_registry/
+!LICENSE
 !pyproject.toml
 !README.md
 !requirements.txt
