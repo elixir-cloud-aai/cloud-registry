@@ -1,8 +1,13 @@
 """Unit tests for `cloud_registry.utils`."""
 
+from typing import Any
+
+from flask import Flask
 from foca.config.access import get_app_config
+from pymongo.collection import Collection
 import pytest
 
+from cloud_registry.service_models.custom_config import CustomConfig
 from cloud_registry.utils import (
     get_collection,
     get_custom_config,
@@ -11,21 +16,48 @@ from cloud_registry.utils import (
 )
 
 
-def test_get_custom_config(unit_app):
+def _extra(app: Flask) -> dict[str, Any]:
+    """Get the extra fields of the config of an app, e.g., the custom config.
+
+    Args:
+        app: Flask app with FOCA's config.
+
+    Returns:
+        Extra fields of the config.
+    """
+    extra = get_app_config(app).model_extra
+    assert extra is not None
+    return extra
+
+
+def _custom_config(app: Flask) -> CustomConfig:
+    """Get the custom config of an app.
+
+    Args:
+        app: Flask app with FOCA's config.
+
+    Returns:
+        Custom config.
+    """
+    with app.app_context():
+        return get_custom_config()
+
+
+def test_get_custom_config(unit_app: Flask) -> None:
     """The custom config of the current app is returned."""
     with unit_app.app_context():
         config = get_custom_config()
-    assert config is get_app_config(unit_app).model_extra["custom"]
+    assert config is _extra(unit_app)["custom"]
 
 
-def test_get_custom_config_missing(unit_app):
+def test_get_custom_config_missing(unit_app: Flask) -> None:
     """A missing custom config raises an error."""
-    del get_app_config(unit_app).model_extra["custom"]
+    del _extra(unit_app)["custom"]
     with unit_app.app_context(), pytest.raises(RuntimeError):
         get_custom_config()
 
 
-def test_get_collection(unit_app, services):
+def test_get_collection(unit_app: Flask, services: Collection[dict[str, Any]]) -> None:
     """Configured collections of the service store are returned."""
     with unit_app.app_context():
         assert get_collection("services") is services
@@ -43,12 +75,16 @@ def test_get_collection(unit_app, services):
         ("", "", "", "http://1.2.3.4:80/"),
     ],
 )
-def test_get_public_url(unit_app, api_path, root, path, url):
-    """Public URLs have the configured path prefix in front of the root path
-    of the app and the path, percent-encoded, and no trailing slash, except
-    for the root of the host (empty path).
+def test_get_public_url(
+    unit_app: Flask, api_path: str, root: str, path: str, url: str
+) -> None:
+    """Public URLs have the configured path prefix in front of the path.
+
+    The prefix is followed by the root path of the app and the path,
+    percent-encoded, with no trailing slash, except for the root of the host
+    (empty path).
     """
-    get_app_config(unit_app).model_extra["custom"].endpoints.service.api_path = api_path
+    _custom_config(unit_app).endpoints.service.api_path = api_path
     with unit_app.test_request_context(base_url=f"http://localhost{root}"):
         assert get_public_url(path) == url
 
@@ -67,13 +103,12 @@ def test_get_public_url(unit_app, api_path, root, path, url):
         ("example.org:8443", "http://example.org:8443:80/registry/services"),
     ],
 )
-def test_get_public_url_host(unit_app, host, url):
-    """IPv6 addresses are bracketed in public URLs (with encoded zone IDs),
-    unless configured so.
+def test_get_public_url_host(unit_app: Flask, host: str, url: str) -> None:
+    """IPv6 addresses are bracketed in public URLs, with encoded zone IDs.
+
+    Unless they are configured so.
     """
-    get_app_config(unit_app).model_extra[
-        "custom"
-    ].endpoints.service.external_host = host
+    _custom_config(unit_app).endpoints.service.external_host = host
     with unit_app.test_request_context():
         assert get_public_url("/services") == url
 
@@ -99,7 +134,7 @@ def test_get_public_url_host(unit_app, host, url):
         "none",
     ],
 )
-def test_is_date_time(value):
+def test_is_date_time(value: object) -> None:
     """RFC 3339 date-times are valid; non-strings are left to type checks."""
     assert is_date_time(value)
 
@@ -135,6 +170,6 @@ def test_is_date_time(value):
         "empty",
     ],
 )
-def test_is_date_time_invalid(value):
+def test_is_date_time_invalid(value: object) -> None:
     """Other strings are invalid."""
     assert not is_date_time(value)

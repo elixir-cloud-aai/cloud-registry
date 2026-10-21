@@ -1,8 +1,11 @@
 """Unit tests for `cloud_registry.exceptions`."""
 
+from collections.abc import Iterator
 import json
 
 from connexion.exceptions import BadRequestProblem, ExtraParameterProblem
+from flask import Flask
+from foca.config.access import get_app_config
 from foca.utils.logging import escape_log_value
 import pytest
 
@@ -17,7 +20,7 @@ from tests.mock_data import ERROR_MEDIA_TYPE
 
 
 @pytest.fixture(autouse=True)
-def app_context(unit_app):
+def app_context(unit_app: Flask) -> Iterator[None]:
     """Problem details are built in an app context (for their media type)."""
     with unit_app.app_context():
         yield
@@ -28,11 +31,13 @@ def app_context(unit_app):
     [ERROR_MEDIA_TYPE, "application/problem+json"],
     ids=["json", "problem"],
 )
-def test_problem_media_type(unit_app, media_type):
-    """Problem details built by the app have the configured media type of
-    error responses (`exceptions.media_type`), as FOCA's.
+def test_problem_media_type(unit_app: Flask, media_type: str) -> None:
+    """Problem details built by the app have the configured media type.
+
+    That is, the media type of error responses (`exceptions.media_type`), as
+    FOCA's.
     """
-    unit_app.config.foca.exceptions.media_type = media_type
+    get_app_config(unit_app).exceptions.media_type = media_type
     assert problem(BadRequest()).content_type == media_type
     assert validation_problem(BadRequestProblem()).content_type == media_type
 
@@ -48,9 +53,12 @@ def test_problem_media_type(unit_app, media_type):
     ],
     ids=["message", "messages", "none", "empty", "extra_parameter"],
 )
-def test_validation_problem(exc, detail):
-    """Validation errors give `400` with their reason, or the mapped
-    details if they have none.
+def test_validation_problem(
+    exc: BadRequestProblem | ExtraParameterProblem, detail: str
+) -> None:
+    """Validation errors give `400` with their reason.
+
+    Or with the mapped details, if they have none.
     """
     response = validation_problem(exc)
     assert response.status_code == 400
@@ -61,9 +69,11 @@ def test_validation_problem(exc, detail):
     assert body["detail"].startswith(detail)
 
 
-def test_validation_problem_long_detail(caplog):
-    """Long reasons (e.g., quoting a large rejected value) are shortened in
-    the middle in responses and logs, and escaped in logs.
+def test_validation_problem_long_detail(caplog: pytest.LogCaptureFixture) -> None:
+    """Long reasons are shortened in the middle in responses and logs.
+
+    E.g., reasons quoting a large rejected value; they are also escaped in
+    logs.
     """
     exc = BadRequestProblem(detail=f"'\n{'a' * 10000}' is too long - 'name'")
     with caplog.at_level("INFO", logger="cloud_registry.exceptions"):
@@ -81,9 +91,10 @@ def test_validation_problem_long_detail(caplog):
     [(MAX_DETAIL_LENGTH, False), (MAX_DETAIL_LENGTH + 1, True)],
     ids=["max", "longer"],
 )
-def test_shorten_detail_boundary(length, shortened):
-    """Details up to `MAX_DETAIL_LENGTH` characters are kept; longer ones
-    are shortened to that many characters, including "…".
+def test_shorten_detail_boundary(length: int, shortened: bool) -> None:
+    """Details up to `MAX_DETAIL_LENGTH` characters are kept.
+
+    Longer ones are shortened to that many characters, including "…".
     """
     detail = "x" * length
     result = shorten_detail(detail)
@@ -92,7 +103,7 @@ def test_shorten_detail_boundary(length, shortened):
     assert result.endswith("x")
 
 
-def test_validation_problem_long_messages():
+def test_validation_problem_long_messages() -> None:
     """Messages of form data are shortened together."""
     exc = BadRequestProblem(detail=["a" * MAX_DETAIL_LENGTH, "b: no int"])
     detail = json.loads(validation_problem(exc).get_data())["detail"]
@@ -101,7 +112,7 @@ def test_validation_problem_long_messages():
     assert detail.endswith("a; b: no int")
 
 
-def test_problem_long_description():
+def test_problem_long_description() -> None:
     """Descriptions of other problems are shortened, too."""
     exc = BadRequest(description=f"{'a' * 10000} is invalid")
     detail = json.loads(problem(exc).get_data())["detail"]

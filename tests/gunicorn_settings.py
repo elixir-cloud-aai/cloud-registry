@@ -12,8 +12,15 @@ DOCKERFILE = Path(__file__).parents[1] / "Dockerfile"
 
 
 def dockerfile_instruction(name: str) -> str:
-    """Get the arguments of the last instruction of the Dockerfile with this
-    name, with continued lines joined.
+    """Get the arguments of the last instruction of the Dockerfile by name.
+
+    Continued lines are joined.
+
+    Args:
+        name: Name of the instruction (e.g., `CMD`).
+
+    Returns:
+        Arguments of the instruction.
     """
     text = DOCKERFILE.read_text().replace("\\\n", " ")
     (*_, args) = re.findall(rf"^{name}\s+(.+)$", text, flags=re.MULTILINE)
@@ -21,14 +28,21 @@ def dockerfile_instruction(name: str) -> str:
 
 
 def image_command() -> list[str]:
-    """Get the command of the image (`CMD`, in exec form)."""
-    return json.loads(dockerfile_instruction("CMD"))
+    """Get the command of the image (`CMD`, in exec form).
+
+    Returns:
+        Command and arguments.
+    """
+    command: list[str] = json.loads(dockerfile_instruction("CMD"))
+    return command
 
 
 def load_settings(cmd_args: str | None = None) -> WSGIApplication:
-    """Load Gunicorn's settings as the image's command does, optionally with
-    `GUNICORN_CMD_ARGS`; restores the arguments, environment and current
-    directory afterwards (Gunicorn changes to its `chdir` setting).
+    """Load Gunicorn's settings as the image's command does.
+
+    Optionally with `GUNICORN_CMD_ARGS`; restores the arguments, environment
+    and current directory afterwards (Gunicorn changes to its `chdir`
+    setting).
 
     Args:
         cmd_args: Value of `GUNICORN_CMD_ARGS`; unset if `None`.

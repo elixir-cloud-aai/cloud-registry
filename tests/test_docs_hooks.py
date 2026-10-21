@@ -38,13 +38,13 @@ _spec.loader.exec_module(hooks)
         ("values.yaml", "values.yaml"),
     ],
 )
-def test_adapt_link(target, expected):
+def test_adapt_link(target: str, expected: str) -> None:
     """Links are adapted to pages of the docs, or to files on GitHub."""
     assert hooks.adapt_link(target, f"{REPO_URL}/") == expected
 
 
 @pytest.mark.parametrize("repo_url", [REPO_URL, f"{REPO_URL}/"])
-def test_adapt_link_ref(repo_url):
+def test_adapt_link_ref(repo_url: str) -> None:
     """Links to files on GitHub point to the given Git reference."""
     assert (
         hooks.adapt_link(
@@ -54,7 +54,7 @@ def test_adapt_link_ref(repo_url):
     )
 
 
-def test_adapt_links_skips_code_blocks():
+def test_adapt_links_skips_code_blocks() -> None:
     """Links in fenced code blocks are left as they are."""
     link = f"{DOCS_URL}configuration/"
     markdown = f"See [a]({link}).\n\n```bash\necho '[b]({link})'\n```\n"
@@ -67,7 +67,7 @@ def test_adapt_links_skips_code_blocks():
     ]
 
 
-def test_readme_links_are_absolute():
+def test_readme_links_are_absolute() -> None:
     """The chart's README has no relative links (they break in the package)."""
     readme = (ROOT / "deployment/README.md").read_text(encoding="utf-8")
     targets = hooks.LINK.findall(readme)
@@ -83,14 +83,26 @@ def test_readme_links_are_absolute():
     ] == []
 
 
-def _render(markdown):
+def _render(markdown: str) -> str:
+    """Run the hook on the Markdown of a page, with the repository's settings.
+
+    Args:
+        markdown: Markdown of the page.
+
+    Returns:
+        The Markdown returned by the hook.
+    """
     config = SimpleNamespace(
         config_file_path=str(ROOT / "mkdocs.yml"), repo_url=REPO_URL
     )
-    return hooks.on_page_markdown(markdown, page=None, config=config, files=None)
+    # the hooks are loaded from their file, so their types are unknown
+    rendered: str = hooks.on_page_markdown(
+        markdown, page=None, config=config, files=None
+    )
+    return rendered
 
 
-def test_on_page_markdown_includes_readme(monkeypatch):
+def test_on_page_markdown_includes_readme(monkeypatch: pytest.MonkeyPatch) -> None:
     """The include line is replaced with the chart's README."""
     monkeypatch.delenv("READTHEDOCS_GIT_COMMIT_HASH", raising=False)
     markdown = _render(f"<!-- comment -->\n{hooks.INCLUDE}\n")
@@ -101,14 +113,14 @@ def test_on_page_markdown_includes_readme(monkeypatch):
     assert f"]({REPO_URL}/blob/dev/cloud_registry/config.yaml)" in markdown
 
 
-def test_on_page_markdown_read_the_docs_commit(monkeypatch):
+def test_on_page_markdown_read_the_docs_commit(monkeypatch: pytest.MonkeyPatch) -> None:
     """On Read the Docs, links to files point to the commit of the build."""
     monkeypatch.setenv("READTHEDOCS_GIT_COMMIT_HASH", "0123abc")
     markdown = _render(f"{hooks.INCLUDE}\n")
     assert f"]({REPO_URL}/blob/0123abc/cloud_registry/config.yaml)" in markdown
 
 
-def test_on_page_markdown_without_include():
+def test_on_page_markdown_without_include() -> None:
     """Other pages are left as they are."""
     markdown = f"# Page\n\nSee `{hooks.INCLUDE}`.\n"
     assert _render(markdown) == markdown
