@@ -587,9 +587,14 @@ def test_subject_required(app: App, operation: Callable[[], object]) -> None:
 
 
 def test_is_admin_without_subject(app: App) -> None:
-    """Requests without a subject or groups aren't an admin's."""
+    """Requests without a subject or groups aren't an admin's.
+
+    Also if a user named `None` is an admin.
+    """
     with app.app.test_request_context(f"{BASE}/me"):
         app.app.preprocess_request()
+        prefix = permissions_module.get_config().security.access_control.subject_prefix
+        permissions_module.get_enforcer().add_role_for_user(f"{prefix}None", "admin")
         assert not permissions_module.is_admin()
 
 

@@ -130,7 +130,7 @@ class _NoDescription(HTTPException):
 @pytest.mark.parametrize(
     "exc", [HTTPException(), _NoDescription()], ids=["no_code", "no_description"]
 )
-def test_problem_without_code(exc: HTTPException) -> None:
+def test_problem_incomplete_exception(exc: HTTPException) -> None:
     """Problem details need an exception with a code and a description."""
     with pytest.raises(ValueError, match="code and a description"):
         problem(exc)

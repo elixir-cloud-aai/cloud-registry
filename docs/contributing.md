@@ -118,9 +118,8 @@ checked in reviews.
   pycodestyle, Pyflakes, isort, flake8-bugbear, flake8-comprehensions,
   flake8-simplify, Pylint, Ruff's own rules, pyupgrade, bandit (security),
   logging format and pydocstyle, also for the tests (`pyproject.toml`, where
-  each ignored rule says why). Prefer
-  explicit checks to suppressions (`# noqa`, `# type: ignore`); justify the
-  rare exceptions in the comment.
+  each ignored rule says why). Prefer explicit checks to suppressions
+  (`# noqa`, `# type: ignore`); justify the rare exceptions in the comment.
 - **Docstrings:** Google-style docstrings at all levels: packages, modules,
   classes, methods and functions, also private ones and tests, with a
   one-line summary and, where applicable, the sections `Args`, `Returns` (or
