@@ -31,14 +31,16 @@ REPOSITORY = "elixir-cloud-aai/cloud-registry"
 DOCS = f"https://{DOCS_HOST}/en/"
 FILES = f"https://github.com/{REPOSITORY}/blob/"
 
-# Links to versions that move (also forms that aren't rewritten, and `stable`
-# and branch `main`), which must not be left in the packaged README
+# Links to versions that move (also forms that aren't rewritten, `stable`,
+# branch `main` and the latest release), which must not be left in the
+# packaged README
 _MOVING = r"(?![\w.-])"
 UNVERSIONED = re.compile(
     rf"{re.escape(DOCS_HOST)}/(?:en/)?(?:latest|stable){_MOVING}"
     rf"|github\.com/{re.escape(REPOSITORY)}/"
     rf"(?:blob|tree|raw|edit|blame|commits)/(?:refs/heads/)?(?:dev|main|HEAD)"
     rf"{_MOVING}"
+    rf"|github\.com/{re.escape(REPOSITORY)}/releases/latest{_MOVING}"
     rf"|raw\.githubusercontent\.com/{re.escape(REPOSITORY)}/"
     rf"(?:refs/heads/)?(?:dev|main|HEAD){_MOVING}",
     re.ASCII | re.IGNORECASE,
