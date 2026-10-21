@@ -19,15 +19,18 @@ import yaml
 
 import cloud_registry.app
 from cloud_registry.exceptions import MAX_DETAIL_LENGTH
+import cloud_registry.ga4gh.registry.server
 from cloud_registry.ga4gh.registry.service import KEY, service_key
 from cloud_registry.service_models.custom_config import MAX_CONTENT_LENGTH
 from tests.conftest import (
     ADMIN_GROUP,
     APP_DIR,
     CONFIG_OVERLAY,
+    USER,
     make_headers,
     mock_get,
 )
+from tests.mock_data import ERROR_MEDIA_TYPE
 
 BASE = "/ga4gh/registry/v1"
 # Public URL of the app, as configured in `config.yaml`
@@ -214,7 +217,7 @@ def _record_idp_requests(monkeypatch) -> list:
 def _assert_too_large(response) -> None:
     """Assert that a response rejects a request body as too large."""
     _assert_error(response, 413)
-    assert response.mimetype == "application/problem+json"
+    assert response.content_type == ERROR_MEDIA_TYPE
     assert response.json["title"] == "Content Too Large"
 
 
@@ -385,7 +388,7 @@ def _assert_duplicate(response, existing_id):
     and API type.
     """
     assert response.status_code == 409
-    assert response.mimetype == "application/problem+json"
+    assert response.content_type == ERROR_MEDIA_TYPE
     assert response.json["serviceId"] == existing_id
     assert existing_id in response.json["detail"]
 
@@ -450,7 +453,7 @@ def test_service_url_invalid(client, admin_headers, method, path, url, detail):
         f"{BASE}/services{path}", json=_service(url=url), headers=admin_headers
     )
     _assert_error(response, 400)
-    assert response.mimetype == "application/problem+json"
+    assert response.content_type == ERROR_MEDIA_TYPE
     assert response.json["title"] == "Bad request"
     assert detail in response.json["detail"]
     assert "Location" not in response.headers
@@ -517,7 +520,7 @@ def test_service_url_not_http(client, admin_headers, method, path, field):
         headers=admin_headers,
     )
     _assert_error(response, 400)
-    assert response.mimetype == "application/problem+json"
+    assert response.content_type == ERROR_MEDIA_TYPE
     assert "Location" not in response.headers
     assert client.get(f"{BASE}/services").json == []
 
@@ -740,18 +743,106 @@ def test_service_info_read_only(client, admin_headers):
     assert list(spec["paths"]["/service-info"]) == ["get"]
 
 
-def test_error_media_type(client, headers):
-    """Error responses are problem details, a media type declared in the
-    specification.
-    """
-    response = client.get(f"{BASE}/services/unknown", headers=headers)
-    assert response.status_code == 404
-    assert response.mimetype == "application/problem+json"
+# Fields of OpenAPI Path Item Objects holding Operation Objects
+HTTP_METHODS = {"get", "put", "post", "delete", "options", "head", "patch", "trace"}
 
-    spec = client.get(f"{BASE}/openapi.json").json
-    declared = spec["paths"]["/services/{serviceId}"]["get"]["responses"]["404"]
-    name = declared["$ref"].rsplit("/", 1)[-1]
-    assert response.mimetype in spec["components"]["responses"][name]["content"]
+
+@pytest.mark.parametrize(
+    "method, path, user, status",
+    [
+        # app exceptions, handled by FOCA
+        ("get", f"{BASE}/services/UNKNWN", USER, 404),
+        # request validation (`cloud_registry.exceptions.validation_problem()`)
+        ("post", f"{BASE}/services", USER, 400),
+        # security errors of Connexion and of FOCA's access control
+        ("post", f"{BASE}/services", None, 401),
+        ("delete", f"{BASE}/services/UNKNWN/verification", USER, 403),
+        # FOCA's permissions API
+        ("get", "/admin/access-control/permissions", None, 401),
+        ("get", "/admin/access-control/permissions", USER, 403),
+        # unknown routes and methods
+        ("get", "/unknown", None, 404),
+        ("get", f"{BASE}/unknown", USER, 404),
+        ("post", f"{BASE}/service-info", None, 405),
+    ],
+    ids=[
+        "app",
+        "validation",
+        "unauthorized",
+        "forbidden",
+        "permissions_unauthorized",
+        "permissions_forbidden",
+        "unknown_route",
+        "unknown_api_route",
+        "unknown_method",
+    ],
+)
+def test_error_media_type(client, method, path, user, status):
+    """Error responses are problem details with the media type declared by
+    the GA4GH specifications, whatever raised them.
+    """
+    response = client.open(
+        path,
+        method=method.upper(),
+        json={} if method == "post" else None,
+        headers={} if user is None else make_headers(user),
+    )
+    assert response.status_code == status
+    assert response.content_type == ERROR_MEDIA_TYPE
+    assert response.json["status"] == status
+
+
+def test_error_media_type_problem(client, headers):
+    """Problem details built by the app (`cloud_registry.exceptions.problem()`,
+    e.g., for duplicates) have the media type of all error responses.
+    """
+    existing_id = _post(client, headers)
+    response = client.post(f"{BASE}/services", json=_service(), headers=headers)
+    _assert_duplicate(response, existing_id)
+    assert response.content_type == ERROR_MEDIA_TYPE
+
+
+def test_error_media_type_internal_error(monkeypatch, client):
+    """Unexpected errors have the media type of all error responses."""
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(cloud_registry.ga4gh.registry.server, "get_collection", fail)
+    response = client.get(f"{BASE}/services")
+    _assert_error(response, 500)
+    assert response.content_type == ERROR_MEDIA_TYPE
+
+
+def _error_contents(spec: dict):
+    """Yield the operation, status and content of each error response of a
+    specification, resolving references to shared responses.
+    """
+    for path, path_item in spec["paths"].items():
+        for method, operation in path_item.items():
+            if method not in HTTP_METHODS:
+                continue
+            for status, response in operation["responses"].items():
+                if status != "default" and str(status)[0] not in "45":
+                    continue
+                if "$ref" in response:
+                    name = response["$ref"].rsplit("/", 1)[-1]
+                    response = spec["components"]["responses"][name]
+                yield f"{method.upper()} {path} {status}", response.get("content")
+
+
+def test_error_media_type_declared(client):
+    """The specification declares a body with only the media type of error
+    responses for each error response (FOCA's permissions API declares the
+    configured one, too).
+    """
+    response = client.get(f"{BASE}/openapi.json")
+    assert response.status_code == 200
+    contents = dict(_error_contents(response.json))
+    assert contents
+    for operation, content in contents.items():
+        assert content is not None, operation
+        assert list(content) == [ERROR_MEDIA_TYPE], operation
 
 
 def _refs(obj):
@@ -986,7 +1077,7 @@ def test_validation_error_detail(client, admin_headers, request_kwargs, detail):
     path = request_kwargs.pop("path")
     response = client.open(f"{BASE}{path}", headers=admin_headers, **request_kwargs)
     _assert_error(response, 400)
-    assert response.mimetype == "application/problem+json"
+    assert response.content_type == ERROR_MEDIA_TYPE
     assert response.json["title"] == "Bad request"
     assert detail in response.json["detail"]
 

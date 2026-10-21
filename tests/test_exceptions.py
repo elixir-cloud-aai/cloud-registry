@@ -13,6 +13,28 @@ from cloud_registry.exceptions import (
     shorten_detail,
     validation_problem,
 )
+from tests.mock_data import ERROR_MEDIA_TYPE
+
+
+@pytest.fixture(autouse=True)
+def app_context(unit_app):
+    """Problem details are built in an app context (for their media type)."""
+    with unit_app.app_context():
+        yield
+
+
+@pytest.mark.parametrize(
+    "media_type",
+    [ERROR_MEDIA_TYPE, "application/problem+json"],
+    ids=["json", "problem"],
+)
+def test_problem_media_type(unit_app, media_type):
+    """Problem details built by the app have the configured media type of
+    error responses (`exceptions.media_type`), as FOCA's.
+    """
+    unit_app.config.foca.exceptions.media_type = media_type
+    assert problem(BadRequest()).content_type == media_type
+    assert validation_problem(BadRequestProblem()).content_type == media_type
 
 
 @pytest.mark.parametrize(
@@ -32,7 +54,7 @@ def test_validation_problem(exc, detail):
     """
     response = validation_problem(exc)
     assert response.status_code == 400
-    assert response.mimetype == "application/problem+json"
+    assert response.content_type == ERROR_MEDIA_TYPE
     body = json.loads(response.get_data())
     assert body["title"] == "Bad request"
     assert body["status"] == 400

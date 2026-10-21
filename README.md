@@ -219,6 +219,13 @@ unknown fields, values that are too long, extra query parameters, or bodies
 that aren't JSON) are rejected with `400 Bad Request`, with the reason in
 `detail`.
 
+Errors are [problem details][rfc-7807] (`title`, `status` and usually
+`detail`, e.g., `{"title": "Not found", "status": 404, "detail": "The
+requested resource wasn't found."}`), sent as `application/json`, as the
+GA4GH specification declares (FOCA's `exceptions.media_type`), for all errors,
+including those of authentication and access control, unknown paths and
+FOCA's permissions API.
+
 See [Access control](#access-control) for the roles and [Verified
 services](#verified-services) for verifications. Extensions of the GA4GH
 endpoints, such as pagination, search or filters, will be reconsidered with
@@ -720,6 +727,7 @@ etc.
 [foca-access-control]: https://foca.readthedocs.io/en/latest/access-control/
 [foca-auth]: https://foca.readthedocs.io/en/latest/authentication/
 [foca-deployment]: https://foca.readthedocs.io/en/latest/deployment/
+[rfc-7807]: https://www.rfc-editor.org/rfc/rfc7807
 [foca-service-info]: https://foca.readthedocs.io/en/latest/configuration/service-info/
 [ls-login]: https://lifescience-ri.eu/ls-login/
 [protes]: https://github.com/elixir-cloud-aai/proTES

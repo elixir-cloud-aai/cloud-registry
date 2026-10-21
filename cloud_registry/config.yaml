@@ -173,8 +173,13 @@ log:
         level: 10
         handlers: [console]
 
+# Exception handling: problem details of exceptions, sent with the media type
+# of error responses of the GA4GH specifications (instead of FOCA's default
+# `application/problem+json`), also by the app (`cloud_registry.exceptions`)
+# Cf. https://foca.readthedocs.io/en/latest/configuration/exceptions/
 exceptions:
     mapping: cloud_registry.exceptions.exceptions
+    media_type: application/json
 
 custom:
     # Size limit of request bodies, in bytes (default: 1 MiB); larger requests

@@ -1,6 +1,8 @@
 """Mock data for testing."""
 
 DB = "serviceStore"
+# Media type of error responses, as in `config.yaml` (`exceptions.media_type`)
+ERROR_MEDIA_TYPE = "application/json"
 MOCK_ID = "mock_id"
 MOCK_ID_ONE_CHAR = "A"
 CHARSET = "0123456789"
