@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import string
+from typing import Any
 import unicodedata
 from urllib.parse import SplitResult, quote, urlsplit, urlunsplit
 
@@ -84,6 +85,11 @@ class DuplicateService(Conflict):
     """
 
     def __init__(self, existing_id: str) -> None:
+        """Create the exception for a service with the same URL and API type.
+
+        Args:
+            existing_id: Identifier of the registered service.
+        """
         super().__init__(
             f"A service with the same URL and API type is registered: '{existing_id}'."
         )
@@ -124,9 +130,9 @@ def normalize_url(url: str) -> str:
 
 
 def check_strings(value: object, field: str = "") -> None:
-    """Check that the strings of a request body can be stored.
+    r"""Check that the strings of a request body can be stored.
 
-    Unpaired surrogates (e.g., from JSON escapes like `\\ud800`) can't be
+    Unpaired surrogates (e.g., from JSON escapes like `\ud800`) can't be
     encoded (UTF-8), so they fail when stored or logged.
 
     Args:
@@ -154,7 +160,7 @@ def check_strings(value: object, field: str = "") -> None:
             ) from exc
 
 
-def check_date_times(data: dict) -> None:
+def check_date_times(data: dict[str, Any]) -> None:
     """Check that the timestamps of a service are RFC 3339 date-times.
 
     Args:
@@ -205,7 +211,7 @@ def check_link(url: object, field: str, schemes: frozenset[str] = frozenset()) -
     _split_http_url(url, subject=subject)
 
 
-def check_links(data: dict) -> None:
+def check_links(data: dict[str, Any]) -> None:
     """Check the URLs of the links of a service (cf. `LINK_FIELDS`).
 
     Args:
@@ -256,8 +262,7 @@ def _check_characters(
 
 
 def _check_percent_encodings(text: str, subject: str) -> None:
-    """Check that the percent signs in a URL, or part of it, start
-    percent-encodings.
+    """Check that the percent signs in a URL, or part of it, start percent-encodings.
 
     Args:
         text: URL, or part of it.
@@ -271,8 +276,9 @@ def _check_percent_encodings(text: str, subject: str) -> None:
 
 
 def _check_addresses(path: str, subject: str) -> None:
-    """Check the email addresses of a `mailto:` URL (minimally, not as of
-    RFC 5322).
+    """Check the email addresses of a `mailto:` URL, minimally.
+
+    The addresses are not checked as of RFC 5322.
 
     Args:
         path: Path of the URL, with comma-separated addresses.
@@ -424,7 +430,7 @@ def _normalize_path(path: str) -> str:
     return "".join(f"/{segment}" for segment in segments)
 
 
-def _decode_unreserved(match: re.Match) -> str:
+def _decode_unreserved(match: re.Match[str]) -> str:
     """Decode a percent-encoded character if it is unreserved.
 
     Args:
@@ -438,7 +444,7 @@ def _decode_unreserved(match: re.Match) -> str:
     return char if char in UNRESERVED else match.group(0).upper()
 
 
-def service_key(data: dict) -> str:
+def service_key(data: dict[str, Any]) -> str:
     """Get the key identifying a service by its URL and API type.
 
     Args:
@@ -487,7 +493,7 @@ class RegisterService:
 
     def __init__(
         self,
-        data: dict,
+        data: dict[str, Any],
         id: str | None = None,
         allow_create: bool = True,
     ) -> None:
@@ -631,7 +637,7 @@ class RegisterService:
             if stored is None and not self.allow_create:
                 raise NotFound
             replacement = {**self.data, KEY: key}
-            query: dict = {"id": self.data["id"]}
+            query: dict[str, Any] = {"id": self.data["id"]}
             if stored is not None:
                 # the fields as read; missing if they were (e.g., services
                 # without key, cf. `add_service_keys()`)
@@ -680,7 +686,7 @@ class RegisterService:
         Raises:
             DuplicateService: Another service has the key.
         """
-        query: dict = {KEY: key}
+        query: dict[str, Any] = {KEY: key}
         if self.data["id"] is not None:
             query["id"] = {"$ne": self.data["id"]}
         existing = self.db_coll.find_one(query, {"_id": False, "id": True})
@@ -689,8 +695,9 @@ class RegisterService:
 
 
 def add_service_keys() -> None:
-    """Add keys to services registered without one, e.g., before keys were
-    introduced.
+    """Add keys to services registered without one.
+
+    For example, to services registered before keys were introduced.
 
     Concurrent runs of this function are safe (e.g., in each worker of the
     app on startup): keys added by another run are kept. Services registered

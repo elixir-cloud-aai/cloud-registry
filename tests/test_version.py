@@ -19,34 +19,35 @@ ROOT = Path(__file__).parents[1]
 GIT = shutil.which("git")
 
 
-def test_installed_version():
+def test_installed_version() -> None:
     """The installed package has a valid PEP 440 version."""
     installed = version("cloud-registry")
     assert str(Version(installed)) == installed
 
 
-def test_fallback_version():
+def test_fallback_version() -> None:
     """Builds without Git metadata get a development version."""
     config = tomllib.loads((ROOT / "pyproject.toml").read_text())
     fallback = Version(config["tool"]["setuptools_scm"]["fallback_version"])
     assert fallback.is_devrelease
 
 
-def test_pretend_version(monkeypatch, tmp_path):
+def test_pretend_version(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """The version passed to Docker builds is used without Git metadata."""
     monkeypatch.setenv("SETUPTOOLS_SCM_PRETEND_VERSION", "1.2.3rc1")
     assert setuptools_scm.get_version(root=str(tmp_path)) == "1.2.3rc1"
 
 
 @pytest.mark.skipif(GIT is None, reason="git not installed")
-def test_version_from_tag(monkeypatch, tmp_path):
+def test_version_from_tag(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """The version of a tagged commit is the tag without the `v`."""
     assert GIT is not None
     for name in ("SETUPTOOLS_SCM_PRETEND_VERSION", "GIT_DIR", "GIT_WORK_TREE"):
         monkeypatch.delenv(name, raising=False)
 
     def git(*args: str) -> None:
-        subprocess.run(  # noqa: S603
+        """Run Git in the temporary repository."""
+        subprocess.run(  # noqa: S603 (fixed arguments, no shell)
             [GIT, "-C", str(tmp_path), "-c", "user.name=test"]
             + ["-c", "user.email=test@example.org", "-c", "commit.gpgsign=false"]
             + ["-c", "tag.gpgsign=false", *args],

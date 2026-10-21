@@ -1,9 +1,11 @@
 """Tests for the resources of the Helm chart."""
 
 import json
+from pathlib import Path
 import re
 import shlex
 import subprocess
+from typing import Any
 
 import pytest
 import yaml
@@ -15,6 +17,7 @@ from tests.helm import (
     HELM,
     MONGODB,
     MONGODB_SECRET,
+    Manifest,
     render,
     render_notes,
     render_with,
@@ -43,24 +46,50 @@ APP_ENV = {"FOCA_CONFIG_OVERLAY", "GUNICORN_CMD_ARGS"}
 # Default image tag
 APP_VERSION = yaml.safe_load((CHART / "Chart.yaml").read_text())["appVersion"]
 
+# Rendered manifests, by kind and name
+Docs = dict[tuple[str, str], Manifest]
+
 pytestmark = pytest.mark.skipif(HELM is None, reason="helm not installed")
 
 
-def _render(*args: str, **kwargs) -> dict:
-    """Render the chart and index the documents by kind and name."""
+def _render(*args: str, **kwargs: Any) -> Docs:
+    """Render the chart and index the documents by kind and name.
+
+    Args:
+        args: Arguments of `helm template`.
+        kwargs: Keyword arguments of `tests.helm.render()`.
+
+    Returns:
+        The rendered manifests, by kind and name.
+    """
     return {
         (doc["kind"], doc["metadata"]["name"]): doc
         for doc in render("--set", "hostName=x", *args, **kwargs)
     }
 
 
-def _container(docs: dict, name: str) -> dict:
-    """Get the container of a Deployment."""
+def _container(docs: Docs, name: str) -> dict[str, Any]:
+    """Get the container of a Deployment.
+
+    Args:
+        docs: Rendered manifests.
+        name: Name of the Deployment.
+
+    Returns:
+        The (first) container of the Deployment's pods.
+    """
     return docs[("Deployment", name)]["spec"]["template"]["spec"]["containers"][0]
 
 
-def _secret_refs(container: dict) -> dict:
-    """Map environment variables to the Secret keys they are taken from."""
+def _secret_refs(container: dict[str, Any]) -> dict[str, tuple[str, str]]:
+    """Map environment variables to the Secret keys they are taken from.
+
+    Args:
+        container: Container spec.
+
+    Returns:
+        Name and key of the Secret, by environment variable.
+    """
     return {
         var["name"]: (
             var["valueFrom"]["secretKeyRef"]["name"],
@@ -71,21 +100,44 @@ def _secret_refs(container: dict) -> dict:
     }
 
 
-def _literal_env(container: dict) -> set:
-    """Get the names of environment variables with literal values."""
+def _literal_env(container: dict[str, Any]) -> set[str]:
+    """Get the names of environment variables with literal values.
+
+    Args:
+        container: Container spec.
+
+    Returns:
+        Names of the variables.
+    """
     return {var["name"] for var in container.get("env", []) if "valueFrom" not in var}
 
 
-def _startup_window(container: dict) -> int:
-    """Get the seconds a container may take to start before it is restarted."""
+def _startup_window(container: dict[str, Any]) -> int:
+    """Get the seconds a container may take to start before it is restarted.
+
+    Args:
+        container: Container spec.
+
+    Returns:
+        Seconds until the startup probe fails.
+    """
     probe = container["startupProbe"]
     return probe.get("initialDelaySeconds", 0) + (
         probe["periodSeconds"] * probe["failureThreshold"]
     )
 
 
-def _init_script_volumes(docs: dict) -> tuple[list, list]:
-    """Get the init script volumes and mounts of the MongoDB Deployment."""
+def _init_script_volumes(
+    docs: Docs,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Get the init script volumes and mounts of the MongoDB Deployment.
+
+    Args:
+        docs: Rendered manifests.
+
+    Returns:
+        Volumes and volume mounts of the init script.
+    """
     pod = docs[("Deployment", MONGODB)]["spec"]["template"]["spec"]
     volumes = [vol for vol in pod["volumes"] if vol["name"] == "init-script"]
     mounts = [
@@ -96,20 +148,40 @@ def _init_script_volumes(docs: dict) -> tuple[list, list]:
     return volumes, mounts
 
 
-def _pod(docs: dict, name: str) -> dict:
-    """Get the pod spec of a Deployment."""
+def _pod(docs: Docs, name: str) -> dict[str, Any]:
+    """Get the pod spec of a Deployment.
+
+    Args:
+        docs: Rendered manifests.
+        name: Name of the Deployment.
+
+    Returns:
+        The pod spec.
+    """
     return docs[("Deployment", name)]["spec"]["template"]["spec"]
 
 
-def _overlay(docs: dict, app: str = APP) -> dict:
-    """Get the config overlay of the app."""
-    return yaml.safe_load(docs[("ConfigMap", f"{app}-config")]["data"]["overlay.yaml"])
+def _overlay(docs: Docs, app: str = APP) -> dict[str, Any]:
+    """Get the config overlay of the app.
+
+    Args:
+        docs: Rendered manifests.
+        app: Name of the app's resources.
+
+    Returns:
+        The config overlay.
+    """
+    overlay: dict[str, Any] = yaml.safe_load(
+        docs[("ConfigMap", f"{app}-config")]["data"]["overlay.yaml"]
+    )
+    return overlay
 
 
-def test_config_change_restarts_app():
+def test_config_change_restarts_app() -> None:
     """Changing the config (e.g., the service info) restarts the app."""
 
     def checksum(*args: str) -> str:
+        """Render the chart and get the checksum of the app's config."""
         template = _render(*args)[("Deployment", APP)]["spec"]["template"]
         return template["metadata"]["annotations"]["checksum/config"]
 
@@ -117,14 +189,23 @@ def test_config_change_restarts_app():
     assert checksum() != checksum(*changed)
 
 
-def _app_image(*args: str, **kwargs) -> str:
-    """Render the chart and get the app image."""
+def _app_image(*args: str, **kwargs: Any) -> str:
+    """Render the chart and get the app image.
+
+    Args:
+        args: Arguments of `helm template`.
+        kwargs: Keyword arguments of `tests.helm.render()`.
+
+    Returns:
+        The image of the app's container.
+    """
     return _container(_render(*args, **kwargs), "cloud-registry")["image"]
 
 
-def test_image_defaults_to_app_version():
-    """Without a tag, the image of the chart's `appVersion` is deployed (`dev`
-    for the chart in the repository).
+def test_image_defaults_to_app_version() -> None:
+    """Without a tag, the image of the chart's `appVersion` is deployed.
+
+    That is `dev` for the chart in the repository.
     """
     assert _app_image() == f"elixircloud/cloud-registry:{APP_VERSION}"
 
@@ -140,12 +221,15 @@ def test_image_defaults_to_app_version():
         ("0.3.0-rc1", "0.3.0rc1"),
     ],
 )
-def test_image_of_packaged_chart(tmp_path, chart_version, app_version):
-    """Released charts deploy the image of their version, as set by the
-    release workflow.
+def test_image_of_packaged_chart(
+    tmp_path: Path, chart_version: str, app_version: str
+) -> None:
+    """Released charts deploy the image of their version.
+
+    The release workflow sets it.
     """
     assert HELM is not None
-    subprocess.run(  # noqa: S603
+    subprocess.run(  # noqa: S603 (argument list, no shell)
         [HELM, "package", str(CHART), "--version", chart_version]
         + ["--app-version", app_version, "-d", str(tmp_path)],
         capture_output=True,
@@ -175,12 +259,12 @@ def test_image_of_packaged_chart(tmp_path, chart_version, app_version):
         ),
     ],
 )
-def test_image_set(args, image):
+def test_image_set(args: tuple[str, ...], image: str) -> None:
     """The image and its tag can be set."""
     assert _app_image(*args) == image
 
 
-def test_image_tag_conflict():
+def test_image_tag_conflict() -> None:
     """A tag cannot be set for an image that has one."""
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render(
@@ -192,7 +276,7 @@ def test_image_tag_conflict():
     assert "cloudRegistry.tag must not be set" in exc.value.stderr
 
 
-def test_mongodb_pinned_and_recreated():
+def test_mongodb_pinned_and_recreated() -> None:
     """MongoDB is pinned to a minor version and replaced, not rolled."""
     docs = _render()
     image = _container(docs, MONGODB)["image"]
@@ -202,7 +286,7 @@ def test_mongodb_pinned_and_recreated():
     assert docs[("Deployment", MONGODB)]["spec"]["strategy"] == {"type": "Recreate"}
 
 
-def test_probes():
+def test_probes() -> None:
     """App and MongoDB have probes on their ports."""
     docs = _render()
     app = _container(docs, APP)
@@ -213,7 +297,7 @@ def test_probes():
         assert mongodb[probe]["tcpSocket"] == {"port": 27017}
 
 
-def test_startup_windows():
+def test_startup_windows() -> None:
     """App and MongoDB may take 5 and 30 minutes to start, respectively."""
     docs = _render()
     app = _container(docs, APP)
@@ -224,7 +308,7 @@ def test_startup_windows():
         assert "initialDelaySeconds" not in container["livenessProbe"]
 
 
-def test_probe_path():
+def test_probe_path() -> None:
     """The path of the app's probes can be changed."""
     docs = _render("--set", "cloudRegistry.probePath=/health")
     app = _container(docs, APP)
@@ -233,17 +317,15 @@ def test_probe_path():
 
 
 @pytest.mark.parametrize("path", ["health", "null"])
-def test_probe_path_invalid(path):
+def test_probe_path_invalid(path: str) -> None:
     """Probe paths must be set and absolute."""
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render("--set", f"cloudRegistry.probePath={path}")
     assert "probePath" in exc.value.stderr
 
 
-def test_auth_disabled():
-    """Without authentication, no Secret, credentials or init script are
-    needed.
-    """
+def test_auth_disabled() -> None:
+    """Without authentication, no Secret, credentials or init script are needed."""
     docs = _render(*NO_AUTH, mongodb_secret=None)
     for name in (APP, MONGODB):
         assert not _secret_refs(_container(docs, name))
@@ -253,7 +335,7 @@ def test_auth_disabled():
     assert _init_script_volumes(docs) == ([], [])
 
 
-def test_auth_enabled():
+def test_auth_enabled() -> None:
     """Authentication is on by default, with credentials from the Secret only."""
     docs = _render()
     app = _container(docs, APP)
@@ -284,7 +366,7 @@ def test_auth_enabled():
 
 
 @pytest.mark.parametrize("args", [(), ("--set", "mongodb.auth.existingSecret=")])
-def test_auth_requires_secret(args):
+def test_auth_requires_secret(args: tuple[str, ...]) -> None:
     """Authentication (the default) without a Secret fails."""
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render(*args, mongodb_secret=None)
@@ -299,7 +381,7 @@ def test_auth_requires_secret(args):
         ("prod", "prod-cloud-registry"),
     ],
 )
-def test_names(release, app):
+def test_names(release: str, app: str) -> None:
     """Resource names are derived from the release name."""
     # The app's NetworkPolicy is opt-in, so it is enabled to cover all kinds
     docs = _render(*APP_POLICY, release=release)
@@ -321,7 +403,7 @@ def test_names(release, app):
 @pytest.mark.parametrize(
     ("release", "app"), [("prod", "prod-foo"), ("foo-prod", "foo-prod")]
 )
-def test_name_override(release, app):
+def test_name_override(release: str, app: str) -> None:
     """`nameOverride` replaces the chart name in names and labels."""
     docs = _render("--set", "nameOverride=foo", release=release)
     assert ("Deployment", app) in docs
@@ -330,9 +412,10 @@ def test_name_override(release, app):
         assert doc["metadata"]["labels"]["app.kubernetes.io/name"] == "foo"
 
 
-def test_fullname_override():
-    """`fullnameOverride` sets the names; long names are truncated, so that
-    Service names are DNS labels, without collisions.
+def test_fullname_override() -> None:
+    """`fullnameOverride` sets the names; long names are truncated.
+
+    So Service names are DNS labels, without collisions.
     """
     docs = _render("--set", "fullnameOverride=registry")
     assert {name for _, name in docs} >= {"registry", "registry-mongodb"}
@@ -341,7 +424,7 @@ def test_fullname_override():
     assert names == {"x" * 63, "x" * 55 + "-mongodb"}
 
 
-def test_numeric_strings():
+def test_numeric_strings() -> None:
     """Values that look like numbers or booleans are rendered as strings."""
     docs = _render(
         "--set-string",
@@ -372,19 +455,18 @@ def test_numeric_strings():
     assert set(env.values()) == {"456"}
 
 
-def test_fullname_override_collision():
-    """Names under which app and MongoDB resources would collide are
-    rejected.
-    """
+def test_fullname_override_collision() -> None:
+    """Names under which app and MongoDB resources would collide are rejected."""
     name = "x" * 55 + "-mongodb"
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render("--set", f"fullnameOverride={name}")
     assert f"would both be named {name}" in exc.value.stderr
 
 
-def test_releases_disjoint():
-    """Two releases in one namespace share no resource names, and neither
-    selects the pods of the other.
+def test_releases_disjoint() -> None:
+    """Two releases in one namespace share no resource names or pods.
+
+    Neither selects the pods of the other.
     """
     first = _render(*APP_POLICY, release="first")
     second = _render(*APP_POLICY, release="second")
@@ -399,9 +481,10 @@ def test_releases_disjoint():
 
 
 @pytest.mark.parametrize("key", ["cloud_registry", "cloudRegistry"])
-def test_app_name_removed(key):
-    """The removed `appName` of the legacy charts is rejected, also under the
-    renamed key.
+def test_app_name_removed(key: str) -> None:
+    """The removed `appName` of the legacy charts is rejected.
+
+    Also under the renamed key.
     """
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render("--set", f"{key}.appName=cloud-registry")
@@ -418,9 +501,10 @@ def test_app_name_removed(key):
     ],
     ids=["host_name", "cloud_registry", "cloud_registry-empty"],
 )
-def test_renamed_keys(old, new, value):
-    """Keys renamed to camelCase (Helm conventions) are rejected, naming the
-    new key, as they would otherwise be ignored.
+def test_renamed_keys(old: str, new: str, value: str) -> None:
+    """Keys renamed to camelCase (Helm conventions) are rejected.
+
+    The error names the new key, as they would otherwise be ignored.
     """
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render("--set-json", f"{old}={value}")
@@ -435,9 +519,10 @@ def test_renamed_keys(old, new, value):
     ],
     ids=["max_content_length", "service_info"],
 )
-def test_custom_config_removed(removed, replacement):
-    """Settings of the custom config replaced by FOCA's (FOCA 0.15 upgrade)
-    are rejected, naming the replacement.
+def test_custom_config_removed(removed: str, replacement: str) -> None:
+    """Settings of the custom config replaced by FOCA's are rejected.
+
+    Replaced in the FOCA 0.15 upgrade; the error names the replacement.
     """
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render("--set-json", f'{removed}={{"name": "x"}}')
@@ -445,7 +530,7 @@ def test_custom_config_removed(removed, replacement):
     assert f"set {replacement} instead" in exc.value.stderr
 
 
-def test_upgrade():
+def test_upgrade() -> None:
     """Upgrades render (the cluster is not looked up by `helm template`)."""
     assert ("Deployment", APP) in _render("--is-upgrade")
 
@@ -469,10 +554,12 @@ HELM_LABELS = {"app.kubernetes.io/managed-by": "Helm"}
     ],
     ids=["legacy", "legacy-labels", "other-release", "unmanaged", "current"],
 )
-def test_upgrade_legacy(owner, labels, fails):
-    """Upgrades fail if the release has MongoDB resources of a legacy chart
-    (version 2 or 3), which the upgrade would delete; checked with a resource as
-    returned by `lookup`, which finds nothing in `helm template`.
+def test_upgrade_legacy(owner: str, labels: dict[str, str], fails: bool) -> None:
+    """Upgrades fail if the release has MongoDB resources of a legacy chart.
+
+    Legacy charts are versions 2 and 3, whose resources the upgrade would
+    delete; checked with a resource as returned by `lookup`, which finds
+    nothing in `helm template`.
     """
     resource = {
         "metadata": {
@@ -500,7 +587,7 @@ def test_upgrade_legacy(owner, labels, fails):
     ("name", "component"),
     [("prod-cloud-registry", "app"), ("prod-cloud-registry-mongodb", "mongodb")],
 )
-def test_labels(name, component):
+def test_labels(name: str, component: str) -> None:
     """Deployments and Services select the pods by the standard labels."""
     docs = _render(release="prod")
     selector = {
@@ -514,7 +601,7 @@ def test_labels(name, component):
     assert docs[("Service", name)]["spec"]["selector"] == selector
 
 
-def test_labels_all():
+def test_labels_all() -> None:
     """All resources have the standard labels."""
     docs = _render(*APP_POLICY, release="prod")
     chart = yaml.safe_load((CHART / "Chart.yaml").read_text())
@@ -532,10 +619,11 @@ def test_labels_all():
     ("name", "writable"),
     [(APP, {TMP}), (MONGODB, {TMP, "/data/configdb", "/data/db"})],
 )
-def test_security_context(name, writable):
-    """Containers run as non-root, without privileges, without a service
-    account token or service links and with a read-only root file system;
-    directories they write to are volumes.
+def test_security_context(name: str, writable: set[str]) -> None:
+    """Containers run as non-root and without privileges.
+
+    Also without a service account token or service links and with a
+    read-only root file system; directories they write to are volumes.
     """
     docs = _render()
     pod = _pod(docs, name)
@@ -559,14 +647,23 @@ def test_security_context(name, writable):
     assert set(mounts) == writable
     data = mounts.pop("/data/db", None)
     if name == MONGODB:
+        assert data is not None
         assert data["persistentVolumeClaim"] == {"claimName": MONGODB}
     assert mounts.pop(TMP)["emptyDir"] == {"sizeLimit": TMP_SIZE_LIMIT}
     for volume in mounts.values():
         assert volume["emptyDir"] == {}
 
 
-def _tmp_volume(docs: dict, name: str) -> dict:
-    """Get the volume of a Deployment mounted at `/tmp`."""
+def _tmp_volume(docs: Docs, name: str) -> dict[str, Any]:
+    """Get the volume of a Deployment mounted at `/tmp`.
+
+    Args:
+        docs: Rendered manifests.
+        name: Name of the Deployment.
+
+    Returns:
+        The volume.
+    """
     pod = _pod(docs, name)
     (mount,) = [
         m for m in pod["containers"][0]["volumeMounts"] if m["mountPath"] == TMP
@@ -578,10 +675,11 @@ def _tmp_volume(docs: dict, name: str) -> dict:
 @pytest.mark.parametrize(
     ("name", "values"), [(APP, "cloudRegistry"), (MONGODB, "mongodb")]
 )
-def test_tmp_size_limit(tmp_path, name, values):
-    """The size limit of the temporary directory can be changed (to a
-    quantity or a number of bytes, also from values files, which have
-    floats) or removed.
+def test_tmp_size_limit(tmp_path: Path, name: str, values: str) -> None:
+    """The size limit of the temporary directory can be changed or removed.
+
+    It can be changed to a quantity or a number of bytes, also from values
+    files, which have floats.
     """
     docs = _render("--set", f"{values}.tmpSizeLimit=1.5Gi")
     assert _tmp_volume(docs, name)["emptyDir"] == {"sizeLimit": "1.5Gi"}
@@ -595,19 +693,33 @@ def test_tmp_size_limit(tmp_path, name, values):
     assert _tmp_volume(docs, name)["emptyDir"] == {}
 
 
-def _gunicorn_args(docs: dict) -> str:
-    """Get the Gunicorn options of the app (`GUNICORN_CMD_ARGS`)."""
+def _gunicorn_args(docs: Docs) -> str:
+    """Get the Gunicorn options of the app (`GUNICORN_CMD_ARGS`).
+
+    Args:
+        docs: Rendered manifests.
+
+    Returns:
+        The options.
+    """
     env = _container(docs, APP)["env"]
     (args,) = [var["value"] for var in env if var["name"] == "GUNICORN_CMD_ARGS"]
     return args
 
 
-def _grace_period(docs: dict) -> int:
-    """Get the termination grace period of the app's pod."""
+def _grace_period(docs: Docs) -> int:
+    """Get the termination grace period of the app's pod.
+
+    Args:
+        docs: Rendered manifests.
+
+    Returns:
+        The grace period, in seconds.
+    """
     return _pod(docs, APP)["terminationGracePeriodSeconds"]
 
 
-def test_gunicorn_defaults():
+def test_gunicorn_defaults() -> None:
     """By default, Gunicorn gets the image's settings."""
     docs = _render()
     cfg = load_settings(_gunicorn_args(docs)).cfg
@@ -616,9 +728,11 @@ def test_gunicorn_defaults():
         assert getattr(cfg, name) == getattr(image, name), name
 
 
-def test_gunicorn_values(tmp_path):
-    """Gunicorn's settings can be changed (also from values files, which
-    have floats), with further options, which may contain spaces.
+def test_gunicorn_values(tmp_path: Path) -> None:
+    """Gunicorn's settings can be changed, with further options.
+
+    Also from values files, which have floats; further options may contain
+    spaces.
     """
     values = {
         "workers": 2,
@@ -684,17 +798,26 @@ def test_gunicorn_values(tmp_path):
         "null",
     ],
 )
-def test_gunicorn_invalid(args, error):
-    """Gunicorn's settings must be integers in their ranges, further options
-    must not contain single quotes, and other settings are rejected.
+def test_gunicorn_invalid(args: tuple[str, ...], error: str) -> None:
+    """Gunicorn's settings must be integers in their ranges.
+
+    Further options must not contain single quotes, and other settings are
+    rejected.
     """
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render(*args)
     assert error in exc.value.stderr
 
 
-def _render_extra_args(*extra_args: str) -> dict:
-    """Render the chart with further Gunicorn options."""
+def _render_extra_args(*extra_args: str) -> Docs:
+    """Render the chart with further Gunicorn options.
+
+    Args:
+        extra_args: Further Gunicorn options (`cloudRegistry.gunicorn.extraArgs`).
+
+    Returns:
+        The rendered manifests, by kind and name.
+    """
     return _render(
         "--set-json", f"cloudRegistry.gunicorn.extraArgs={json.dumps(extra_args)}"
     )
@@ -716,12 +839,14 @@ def _render_extra_args(*extra_args: str) -> dict:
         ("--graceful", "60"),
     ],
 )
-def test_gunicorn_reserved_args(extra_args):
-    """Further options must not change the address (the chart's ports),
-    preload the app (MongoDB clients must be created after forking) or set
-    the graceful timeout (the grace period is derived from
-    `gracefulTimeout`), also abbreviated (as Gunicorn accepts them) or with
-    attached values; Gunicorn itself would apply them.
+def test_gunicorn_reserved_args(extra_args: tuple[str, ...]) -> None:
+    """Further options must not change reserved settings.
+
+    They must not change the address (the chart's ports), preload the app
+    (MongoDB clients must be created after forking) or set the graceful
+    timeout (the grace period is derived from `gracefulTimeout`), also
+    abbreviated (as Gunicorn accepts them) or with attached values; Gunicorn
+    itself would apply them.
     """
     cfg = load_settings(shlex.join(extra_args)).cfg
     assert (cfg.bind, cfg.preload_app, cfg.graceful_timeout) != (
@@ -735,10 +860,11 @@ def test_gunicorn_reserved_args(extra_args):
     assert repr(extra_args[0]).strip("'") in exc.value.stderr
 
 
-def test_gunicorn_other_args():
-    """Other further options are passed on, also short ones and option values
-    that look like reserved options (which Gunicorn takes as values, as they
-    contain spaces or follow `=`).
+def test_gunicorn_other_args() -> None:
+    """Other further options are passed on.
+
+    Also short ones and option values that look like reserved options (which
+    Gunicorn takes as values, as they contain spaces or follow `=`).
     """
     extra_args = (
         "-R",
@@ -754,10 +880,11 @@ def test_gunicorn_other_args():
     assert (cfg.bind, cfg.preload_app) == (["0.0.0.0:8080"], False)
 
 
-def test_gunicorn_port():
-    """The app's container port, its probes and the Service's target port
-    are the port Gunicorn listens on (the image's command; the app config's
-    `server.port` applies to the development server only).
+def test_gunicorn_port() -> None:
+    """The app's container, probe and Service ports are Gunicorn's port.
+
+    Gunicorn listens on the port of the image's command; the app config's
+    `server.port` applies to the development server only.
     """
     (bind,) = load_settings().cfg.bind
     port = int(bind.rpartition(":")[2])
@@ -771,11 +898,12 @@ def test_gunicorn_port():
     assert service_port["targetPort"] in (port, "http")
 
 
-def test_pre_stop_default():
-    """By default, the app keeps serving for 5 seconds after its pod is
-    deleted (until the ingress controller removes it from its endpoints),
-    and the termination grace period covers that, Gunicorn's graceful
-    timeout and a margin of 10 seconds.
+def test_pre_stop_default() -> None:
+    """By default, the app keeps serving for 5 seconds after its pod is deleted.
+
+    That is until the ingress controller removes it from its endpoints; the
+    termination grace period covers that, Gunicorn's graceful timeout and a
+    margin of 10 seconds.
     """
     docs = _render()
     hook = _container(docs, APP)["lifecycle"]["preStop"]
@@ -783,9 +911,11 @@ def test_pre_stop_default():
     assert _grace_period(docs) == 5 + 20 + 10
 
 
-def test_pre_stop_values(tmp_path):
-    """The delay can be changed (also from values files, which have floats)
-    or removed (`0`); the grace period follows it and the graceful timeout.
+def test_pre_stop_values(tmp_path: Path) -> None:
+    """The delay before stopping can be changed or removed (`0`).
+
+    Also from values files, which have floats; the grace period follows it
+    and the graceful timeout.
     """
     values_file = tmp_path / "values.yaml"
     values_file.write_text(
@@ -815,16 +945,17 @@ def test_pre_stop_values(tmp_path):
         ("null", "'/cloudRegistry': missing property 'preStopSleepSeconds'"),
     ],
 )
-def test_pre_stop_invalid(value, error):
+def test_pre_stop_invalid(value: str, error: str) -> None:
     """The delay must be a non-negative integer."""
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render("--set-json", f"cloudRegistry.preStopSleepSeconds={value}")
     assert error in exc.value.stderr
 
 
-def test_security_context_user_ids():
-    """MongoDB runs as the image's user `mongodb`, except on OpenShift, which
-    assigns user and group IDs, also if they are set in the values.
+def test_security_context_user_ids() -> None:
+    """MongoDB runs as the image's user `mongodb`, except on OpenShift.
+
+    OpenShift assigns user and group IDs, also if they are set in the values.
     """
     ids = {"runAsUser": 999, "runAsGroup": 999, "fsGroup": 999}
     context = _pod(_render(), MONGODB)["securityContext"]
@@ -848,7 +979,7 @@ def test_security_context_user_ids():
         assert context["readOnlyRootFilesystem"] is True
 
 
-def test_security_context_values():
+def test_security_context_values() -> None:
     """Security contexts can be changed via the values."""
     docs = _render(
         "--set",
@@ -865,9 +996,10 @@ def test_security_context_values():
 @pytest.mark.parametrize(
     ("release", "app"), [("cloud-registry", APP), ("prod", "prod-cloud-registry")]
 )
-def test_db_host(release, app):
-    """The app connects to the MongoDB Service of its release, unless the
-    config sets another host.
+def test_db_host(release: str, app: str) -> None:
+    """The app connects to the MongoDB Service of its release.
+
+    Unless the config sets another host.
     """
     docs = _render(release=release)
     assert _overlay(docs, app)["db"] == {"host": f"{app}-mongodb"}
@@ -876,10 +1008,11 @@ def test_db_host(release, app):
     assert overlay["db"] == {"host": "external"}
 
 
-def test_ingress():
-    """The Ingress routes the host to the app's Service, without class by
-    default; its only annotation limits request bodies (for ingress-nginx)
-    to the app's limit.
+def test_ingress() -> None:
+    """The Ingress routes the host to the app's Service.
+
+    It has no class by default; its only annotation limits request bodies
+    (for ingress-nginx) to the app's limit.
     """
     ingress = _render()[("Ingress", APP)]
     assert ingress["metadata"]["annotations"] == {BODY_SIZE: BODY_SIZE_LIMIT}
@@ -891,9 +1024,10 @@ def test_ingress():
     assert path["backend"]["service"] == {"name": APP, "port": {"name": "http"}}
 
 
-def test_ingress_options():
-    """Ingress class and annotations can be set; annotations take precedence
-    over those requesting a certificate.
+def test_ingress_options() -> None:
+    """Ingress class and annotations can be set.
+
+    Annotations take precedence over those requesting a certificate.
     """
     ingress = _render(
         "--set",
@@ -916,9 +1050,10 @@ def test_ingress_options():
     ]
 
 
-def test_ingress_body_size_default():
-    """By default, ingress-nginx limits request bodies to the default limit
-    of the app, as in the base config.
+def test_ingress_body_size_default() -> None:
+    """By default, ingress-nginx limits request bodies as the app does.
+
+    To the default limit of the app, as in the base config.
     """
     config = yaml.safe_load(CONFIG_FILE.read_text())
     assert config["server"]["max_content_length"] == MAX_CONTENT_LENGTH
@@ -926,14 +1061,13 @@ def test_ingress_body_size_default():
     assert annotations[BODY_SIZE] == BODY_SIZE_LIMIT
 
 
-def test_ingress_body_size_app(tmp_path):
-    """The size limit of request bodies of ingress-nginx follows that of
-    the app, also from values files (which have floats).
+def test_ingress_body_size_app(tmp_path: Path) -> None:
+    """The size limit of request bodies of ingress-nginx follows the app's.
+
+    Also from values files, which have floats.
     """
-    ingress = _render("--set", "config.server.max_content_length=8388608")
-    assert ingress[("Ingress", APP)]["metadata"]["annotations"] == {
-        BODY_SIZE: "8388608"
-    }
+    docs = _render("--set", "config.server.max_content_length=8388608")
+    assert docs[("Ingress", APP)]["metadata"]["annotations"] == {BODY_SIZE: "8388608"}
     values_file = tmp_path / "values.yaml"
     config = {"server": {"max_content_length": 8388608}}
     values_file.write_text(yaml.safe_dump({"config": config}))
@@ -950,18 +1084,21 @@ def test_ingress_body_size_app(tmp_path):
     ],
     ids=["null", "zero", "string"],
 )
-def test_ingress_body_size_invalid(args):
-    """Rendering fails unless the app's size limit of request bodies is a
-    positive integer (0 would mean no limit for ingress-nginx).
+def test_ingress_body_size_invalid(args: tuple[str, ...]) -> None:
+    """Rendering fails unless the app's body size limit is a positive integer.
+
+    0 would mean no limit for ingress-nginx.
     """
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render(*args)
     assert "max_content_length" in exc.value.stderr
 
 
-def test_ingress_body_size_custom_null():
-    """`config.custom: null` is like no custom config: ingress-nginx gets
-    the app's default limit, and the generated custom config is kept.
+def test_ingress_body_size_custom_null() -> None:
+    """`config.custom: null` is like no custom config.
+
+    Ingress-nginx gets the app's default limit, and the generated custom
+    config is kept.
     """
     docs = _render("--set", "config.custom=null")
     ingress = docs[("Ingress", APP)]
@@ -969,10 +1106,11 @@ def test_ingress_body_size_custom_null():
     assert _overlay(docs)["custom"]["endpoints"]["service"]["external_host"] == "x"
 
 
-def test_server_null():
-    """`config.server: null` is like no server config: ingress-nginx gets
-    the app's default limit, and the overlay has no `server` (FOCA would
-    refuse `null`).
+def test_server_null() -> None:
+    """`config.server: null` is like no server config.
+
+    Ingress-nginx gets the app's default limit, and the overlay has no
+    `server` (FOCA would refuse `null`).
     """
     docs = _render("--set-json", "config.server=null")
     ingress = docs[("Ingress", APP)]
@@ -980,12 +1118,14 @@ def test_server_null():
     assert "server" not in _overlay(docs)
 
 
-def test_ingress_body_size_annotation():
-    """The size limit of request bodies set by an annotation takes
-    precedence over that of the app; `null` removes it.
+def test_ingress_body_size_annotation() -> None:
+    """An annotation's size limit of request bodies overrides the app's.
+
+    `null` removes it.
     """
 
-    def render(limit):
+    def render(limit: str | None) -> Manifest:
+        """Render the Ingress with a size limit annotation."""
         annotations = json.dumps({BODY_SIZE: limit})
         args = ("--set-json", f"cloudRegistry.ingress.annotations={annotations}")
         return _render(*args)[("Ingress", APP)]
@@ -996,10 +1136,8 @@ def test_ingress_body_size_annotation():
     assert "annotations" not in ingress["metadata"]
 
 
-def test_route():
-    """Without an Ingress, an OpenShift Route is created if the cluster
-    serves Routes.
-    """
+def test_route() -> None:
+    """Without an Ingress, an OpenShift Route is created if the cluster serves them."""
     assert not [
         kind for kind, _ in _render(*NO_INGRESS) if kind in ("Ingress", "Route")
     ]
@@ -1025,10 +1163,12 @@ def test_route():
     ],
     ids=["ingress", "ingress-https", "ingress-route-api", "route", "none"],
 )
-def test_notes(args, exposed, tls_note):
-    """The notes show the app's HTTPS URL (as advertised by the app) with a
-    request, noting if the Ingress has no TLS, or warn and show a port
-    forward if the app is not exposed.
+def test_notes(args: tuple[str, ...], exposed: bool, tls_note: bool) -> None:
+    """The notes show how to reach the app.
+
+    They show the app's HTTPS URL (as advertised by the app) with a request,
+    noting if the Ingress has no TLS, or warn and show a port forward if the
+    app is not exposed.
     """
     notes = render_notes("--set", "hostName=x", "--namespace", "registry", *args)
     url = "https://x" if exposed else "http://localhost:8080"
@@ -1050,19 +1190,41 @@ INGRESS_NGINX = [
 ]
 
 
-def _network_policies(docs: dict) -> dict:
-    """Get the NetworkPolicies by name."""
+def _network_policies(docs: Docs) -> dict[str, Manifest]:
+    """Get the NetworkPolicies by name.
+
+    Args:
+        docs: Rendered manifests.
+
+    Returns:
+        The NetworkPolicies, by name.
+    """
     return {name: doc for (kind, name), doc in docs.items() if kind == "NetworkPolicy"}
 
 
-def _pod_labels(docs: dict, name: str) -> dict:
-    """Get the pod labels of a Deployment."""
+def _pod_labels(docs: Docs, name: str) -> dict[str, str]:
+    """Get the pod labels of a Deployment.
+
+    Args:
+        docs: Rendered manifests.
+        name: Name of the Deployment.
+
+    Returns:
+        The labels of the Deployment's pods.
+    """
     return docs[("Deployment", name)]["spec"]["template"]["metadata"]["labels"]
 
 
-def _only_ingress(policy: dict) -> list:
-    """Check that a NetworkPolicy restricts ingress only (not egress), and
-    get its ingress rules.
+def _only_ingress(policy: Manifest) -> list[dict[str, Any]]:
+    """Get the ingress rules of a NetworkPolicy that restricts ingress only.
+
+    Checks that the NetworkPolicy does not restrict egress.
+
+    Args:
+        policy: NetworkPolicy.
+
+    Returns:
+        The ingress rules.
     """
     spec = policy["spec"]
     assert spec["policyTypes"] == ["Ingress"]
@@ -1070,9 +1232,10 @@ def _only_ingress(policy: dict) -> list:
     return spec["ingress"]
 
 
-def test_network_policy_defaults():
-    """By default, only the app's pods of the release may connect to MongoDB
-    (on its port), and the app has no NetworkPolicy.
+def test_network_policy_defaults() -> None:
+    """By default, only the app's pods of the release may connect to MongoDB.
+
+    They may connect on its port; the app has no NetworkPolicy.
     """
     docs = _render(release="prod")
     policies = _network_policies(docs)
@@ -1091,15 +1254,16 @@ def test_network_policy_defaults():
     assert container["ports"][0]["containerPort"] == 27017
 
 
-def test_network_policy_disabled():
+def test_network_policy_disabled() -> None:
     """The MongoDB NetworkPolicy can be disabled."""
     docs = _render("--set", "mongodb.networkPolicy.enabled=false")
     assert not _network_policies(docs)
 
 
-def test_network_policy_app():
-    """If enabled, only the namespace of ingress-nginx may connect to the
-    app (on its port) by default.
+def test_network_policy_app() -> None:
+    """If enabled, only ingress-nginx may connect to the app by default.
+
+    Only its namespace may connect, on the app's port.
     """
     docs = _render(*APP_POLICY)
     policy = _network_policies(docs)[APP]
@@ -1111,7 +1275,7 @@ def test_network_policy_app():
     assert MONGODB in _network_policies(docs)
 
 
-def test_network_policy_app_ingress_from(tmp_path):
+def test_network_policy_app_ingress_from(tmp_path: Path) -> None:
     """The peers allowed to connect to the app can be changed."""
     peers = [
         {
@@ -1197,9 +1361,10 @@ def test_network_policy_app_ingress_from(tmp_path):
         "enabled-type",
     ],
 )
-def test_network_policy_invalid(args, error):
-    """Rendering fails without peers allowed to connect to the app (which
-    would allow all sources), with unknown peer fields or wrong types.
+def test_network_policy_invalid(args: tuple[str, ...], error: str) -> None:
+    """Rendering fails without peers, with unknown peer fields or wrong types.
+
+    No peers allowed to connect to the app would allow all sources.
     """
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render(*APP_POLICY, *args)

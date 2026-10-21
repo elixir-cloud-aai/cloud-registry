@@ -18,6 +18,7 @@ closes a block).
 import os
 from pathlib import Path
 import re
+from typing import Protocol
 
 INCLUDE = '--8<-- "deployment/README.md"'
 README = Path("deployment/README.md")
@@ -28,6 +29,21 @@ DOCS_URL = "https://cloud-registry.readthedocs.io/en/latest/"
 LINK = re.compile(r"\]\((?P<target>[^)\s]+)\)")
 # Opening and closing lines of fenced code blocks
 FENCE = re.compile(r"^\s*(```|~~~)")
+
+
+class Config(Protocol):
+    """Settings of MkDocs that the hooks use (of `MkDocsConfig`).
+
+    A protocol, so that the hooks are type-checked without MkDocs, which only
+    the `docs` extra installs.
+
+    Attributes:
+        config_file_path: Path of `mkdocs.yml`.
+        repo_url: URL of the repository on GitHub (set in `mkdocs.yml`).
+    """
+
+    config_file_path: str
+    repo_url: str
 
 
 def adapt_link(target: str, repo_url: str, ref: str = "dev") -> str:
@@ -69,8 +85,18 @@ def adapt_links(markdown: str, repo_url: str, ref: str = "dev") -> str:
     return "\n".join(lines)
 
 
-def on_page_markdown(markdown, page, config, files):
-    """Include the chart's README in pages that ask for it."""
+def on_page_markdown(markdown: str, page: object, config: Config, files: object) -> str:
+    """Include the chart's README in pages that ask for it.
+
+    Args:
+        markdown: Markdown of the page.
+        page: The page (`mkdocs.structure.pages.Page`); unused.
+        config: Settings of MkDocs.
+        files: Files of the site (`mkdocs.structure.files.Files`); unused.
+
+    Returns:
+        The Markdown, with the README in place of the line `INCLUDE`.
+    """
     if INCLUDE not in markdown.splitlines():
         return markdown
     readme = Path(config.config_file_path).parent / README

@@ -3,6 +3,7 @@
 from datetime import date
 import ipaddress
 import re
+from typing import Any
 from urllib.parse import quote
 
 from flask import request
@@ -91,7 +92,7 @@ def _format_host(host: str) -> str:
     return f"[{address}%25{zone}]" if zone else f"[{address}]"
 
 
-def get_collection(name: str) -> Collection:
+def get_collection(name: str) -> Collection[dict[str, Any]]:
     """Get a collection of the service store of the current app.
 
     Args:

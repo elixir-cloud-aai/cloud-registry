@@ -56,6 +56,7 @@ errorlog = "-"
 control_socket_disable = True
 
 
+# `/dev/shm` is memory-backed, not a directory for temporary files
 def _worker_tmp_dir(shm: Path = Path("/dev/shm")) -> str | None:  # noqa: S108
     """Get the directory for the heartbeat files of workers.
 

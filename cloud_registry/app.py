@@ -21,12 +21,13 @@ VALIDATION_LOGGER = "connexion.decorators.validation"
 
 
 def create_app() -> App:
-    """Create the app from the config, with the error handler for validation
-    errors (silencing Connexion's validation log messages), check admin
-    groups, require a size limit of request bodies, and add missing keys of
-    services. FOCA validates the service info (`service_info`) of the
-    config, and limits the size of request bodies
-    (`server.max_content_length`).
+    """Create the app from the config, with the registry's checks.
+
+    Adds the error handler for validation errors (silencing Connexion's
+    validation log messages), checks admin groups, requires a size limit of
+    request bodies, and adds missing keys of services. FOCA validates the
+    service info (`service_info`) of the config, and limits the size of
+    request bodies (`server.max_content_length`).
 
     Gunicorn calls this in each worker, after forking (MongoDB clients must
     not be shared across forks), so the checks run in each worker; if they
@@ -75,9 +76,10 @@ def create_app() -> App:
     return app
 
 
-def main():
-    """Create the app and run it with Flask's development server, on the
-    configured port (for development; not for production).
+def main() -> None:
+    """Run the app with Flask's development server, on the configured port.
+
+    For development; not for production.
     """
     app = create_app()
     app.run(port=app.port)

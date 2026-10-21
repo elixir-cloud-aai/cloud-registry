@@ -16,6 +16,7 @@ read by anyone.
 
 from datetime import datetime, timezone
 import logging
+from typing import Any
 
 from flask import Response, request
 from foca.utils.logging import escape_log_value
@@ -48,6 +49,7 @@ class VerificationConflict(Conflict):
     """The service has another URL or API type than the one checked."""
 
     def __init__(self) -> None:
+        """Create the exception, with a description of what to do."""
         super().__init__(
             "The service has another URL or API type than the one checked; "
             "check the service as it is registered, then verify it again."
@@ -77,7 +79,7 @@ def _format_time(time: datetime) -> str:
     return f"{time:%Y-%m-%dT%H:%M:%S}.{time.microsecond // 1000:03d}Z"
 
 
-def _verification(service: dict) -> dict:
+def _verification(service: dict[str, Any]) -> dict[str, Any]:
     """Get the verification of a stored service.
 
     Args:
@@ -94,9 +96,8 @@ def _verification(service: dict) -> dict:
     }
 
 
-def _checked_query(checked: dict) -> dict:
-    """Get the query for a service with the URL and API type an admin
-    checked.
+def _checked_query(checked: dict[str, Any]) -> dict[str, Any]:
+    """Get the query for a service with the URL and API type an admin checked.
 
     Args:
         checked: URL and API type the admin checked (cf. request body of
@@ -113,8 +114,7 @@ def _checked_query(checked: dict) -> dict:
 
 
 def _has_unparsed_body() -> bool:
-    """Check whether the current request has a body that wasn't parsed as
-    JSON.
+    """Check whether the current request has a body not parsed as JSON.
 
     Returns:
         Whether the request has a body other than none, an empty one or JSON
@@ -150,11 +150,13 @@ def _not_verified(serviceId: str, exc: HTTPException) -> Response:
 
 
 # GET /services/{serviceId}/verification
-def getServiceVerification(serviceId: str, **kwargs) -> dict:
+def getServiceVerification(serviceId: str, **kwargs: Any) -> dict[str, Any]:
     """Get the verification of a service.
 
     Args:
         serviceId: Service identifier.
+        **kwargs: Further arguments that Connexion passes (`user`,
+            `token_info`); unused.
 
     Returns:
         Verification of the service.
@@ -173,8 +175,8 @@ def getServiceVerification(serviceId: str, **kwargs) -> dict:
 
 # PUT /services/{serviceId}/verification
 def putServiceVerification(
-    serviceId: str, verification: dict | None = None, **kwargs
-) -> dict | Response:
+    serviceId: str, verification: dict[str, Any] | None = None, **kwargs: Any
+) -> dict[str, Any] | Response:
     """Verify a service, or renew its verification.
 
     If the request names the URL and API type the admin checked, the service
@@ -184,6 +186,8 @@ def putServiceVerification(
     Args:
         serviceId: Service identifier.
         verification: URL and API type the admin checked; optional.
+        **kwargs: Further arguments that Connexion passes (`user`,
+            `token_info`); unused.
 
     Returns:
         Verification of the service, at the current time (or the later time
@@ -195,7 +199,7 @@ def putServiceVerification(
     Raises:
         cloud_registry.exceptions.NotFound: The service doesn't exist.
     """
-    query: dict = {"id": serviceId}
+    query: dict[str, Any] = {"id": serviceId}
     if verification is not None:
         try:
             query.update(_checked_query(verification))
@@ -227,11 +231,13 @@ def putServiceVerification(
 
 
 # DELETE /services/{serviceId}/verification
-def deleteServiceVerification(serviceId: str, **kwargs) -> str:
+def deleteServiceVerification(serviceId: str, **kwargs: Any) -> str:
     """Remove the verification of a service.
 
     Args:
         serviceId: Service identifier.
+        **kwargs: Further arguments that Connexion passes (`user`,
+            `token_info`); unused.
 
     Returns:
         Identifier of the service.
@@ -254,8 +260,12 @@ def deleteServiceVerification(serviceId: str, **kwargs) -> str:
 
 
 # GET /verifications
-def getVerifications(**kwargs) -> list[dict]:
+def getVerifications(**kwargs: Any) -> list[dict[str, Any]]:
     """List verified services.
+
+    Args:
+        **kwargs: Further arguments that Connexion passes (`user`,
+            `token_info`); unused.
 
     Returns:
         Identifier and verification of each verified service, sorted by

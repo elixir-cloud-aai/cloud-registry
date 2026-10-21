@@ -1,7 +1,11 @@
 """Unit tests for endpoint controllers."""
 
 from copy import deepcopy
+import inspect
+from typing import Any
 
+from flask import Flask
+from pymongo.collection import Collection
 import pytest
 
 from cloud_registry.exceptions import BadRequest, NotFound
@@ -23,10 +27,13 @@ from tests.mock_data import (
 
 
 @pytest.fixture(autouse=True)
-def ownership(monkeypatch):
-    """Record changes of service ownership, which require access control (cf.
-    `tests/test_access_control.py`); the caller is an admin."""
-    calls = []
+def ownership(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
+    """Record changes of service ownership; the caller is an admin.
+
+    Changes of ownership require access control (cf.
+    `tests/test_access_control.py`).
+    """
+    calls: list[tuple[str, str]] = []
     monkeypatch.setattr(server, "is_admin", lambda: True)
     for name in ["add_owner", "remove_permissions"]:
         monkeypatch.setattr(
@@ -35,9 +42,17 @@ def ownership(monkeypatch):
     return calls
 
 
-def _insert_services(services, ids):
-    """Insert copies of the mock service with the given identifiers; return
-    them without the database's `_id` fields.
+def _insert_services(
+    services: Collection[dict[str, Any]], ids: list[str]
+) -> list[dict[str, Any]]:
+    """Insert copies of the mock service with the given identifiers.
+
+    Args:
+        services: Collection of services.
+        ids: Identifiers of the services.
+
+    Returns:
+        The inserted services, without the database's `_id` fields.
     """
     data = []
     for i in ids:
@@ -50,17 +65,17 @@ def _insert_services(services, ids):
 
 
 # GET /services
-def test_getServices(unit_app, services):
+def test_getServices(unit_app: Flask, services: Collection[dict[str, Any]]) -> None:
     """Test for getting a list of all available services."""
     data = _insert_services(services, ["serv1", "serv2", "serv3"])
 
     with unit_app.app_context():
-        res = getServices.__wrapped__()
+        res = inspect.unwrap(getServices)()
         assert res == data
 
 
 # GET /services/{serviceId}
-def test_getServiceById(unit_app, services):
+def test_getServiceById(unit_app: Flask, services: Collection[dict[str, Any]]) -> None:
     """Test for getting a service associated with a given identifier."""
     _insert_services(services, [MOCK_ID, "serv2", "serv3"])
 
@@ -68,33 +83,33 @@ def test_getServiceById(unit_app, services):
     mock_service = deepcopy(MOCK_SERVICE)
     mock_service["id"] = MOCK_ID
     with unit_app.app_context():
-        res = getServiceById.__wrapped__(MOCK_ID)
+        res = inspect.unwrap(getServiceById)(MOCK_ID)
         assert res == mock_service
 
     # check whether error is raised if ID does not exist
     with pytest.raises(NotFound):
         with unit_app.app_context():
-            res = getServiceById.__wrapped__("serv4")
+            res = inspect.unwrap(getServiceById)("serv4")
 
 
 # GET /services/types
-def test_getServiceTypes_duplicates(unit_app, services):
-    """Test for getting a list of all available service types when only
-    services of the same service type are registered.
-    """
+def test_getServiceTypes_duplicates(
+    unit_app: Flask, services: Collection[dict[str, Any]]
+) -> None:
+    """Test for listing service types if all services have the same type."""
     _insert_services(services, ["serv1", "serv2", "serv3"])
 
     with unit_app.app_context():
-        res = getServiceTypes.__wrapped__()
+        res = inspect.unwrap(getServiceTypes)()
         # All written services have same type, we expect list of length 1
         assert res == [MOCK_TYPE]
 
 
 # GET /services/types
-def test_getServiceTypes_distinct(unit_app, services):
-    """Test for getting a list of all available service types when all
-    registered services are of distinct service types.
-    """
+def test_getServiceTypes_distinct(
+    unit_app: Flask, services: Collection[dict[str, Any]]
+) -> None:
+    """Test for listing service types if all services have distinct types."""
     ids = ["serv3", "serv1", "serv2"]
     for i in ids:
         mock_resp = deepcopy(MOCK_SERVICE)
@@ -103,13 +118,15 @@ def test_getServiceTypes_distinct(unit_app, services):
         services.insert_one(mock_resp)
 
     with unit_app.app_context():
-        res = getServiceTypes.__wrapped__()
+        res = inspect.unwrap(getServiceTypes)()
         # All written services have distinct types, sorted by artifact
         assert res == [{**MOCK_TYPE, "artifact": i} for i in sorted(ids)]
 
 
 # GET /services/types
-def test_getServiceTypes_sort_order(unit_app, services):
+def test_getServiceTypes_sort_order(
+    unit_app: Flask, services: Collection[dict[str, Any]]
+) -> None:
     """Service types are sorted by group, then artifact, then version."""
     expected = [
         {"group": "a", "artifact": "b", "version": "2"},
@@ -121,16 +138,20 @@ def test_getServiceTypes_sort_order(unit_app, services):
         services.insert_one({**MOCK_SERVICE, "id": f"serv{i}", "type": service_type})
 
     with unit_app.app_context():
-        assert getServiceTypes.__wrapped__() == expected
+        assert inspect.unwrap(getServiceTypes)() == expected
 
 
 # POST /service
-def test_postService(unit_app, services, ownership):
+def test_postService(
+    unit_app: Flask,
+    services: Collection[dict[str, Any]],
+    ownership: list[tuple[str, str]],
+) -> None:
     """Test for registering a service; identifier assigned by implementation."""
     data = deepcopy(MOCK_SERVICE)
     data["id"] = MOCK_ID
     with unit_app.test_request_context("/services", json=data):
-        service_id, status, headers = postService.__wrapped__()
+        service_id, status, headers = inspect.unwrap(postService)()
     assert status == 201
     assert headers == {"Location": f"{MOCK_PUBLIC_URL}/services/{service_id}"}
     assert ownership == [
@@ -139,91 +160,120 @@ def test_postService(unit_app, services, ownership):
     ]
 
 
-def test_postService_trailing_slash(unit_app, services):
-    """Locations of services posted to the collection URL with a trailing
-    slash have no empty path segment.
+def test_postService_trailing_slash(
+    unit_app: Flask, services: Collection[dict[str, Any]]
+) -> None:
+    """Locations of services posted with a trailing slash have no empty segment.
+
+    I.e., of services posted to the collection URL with a trailing slash.
     """
     with unit_app.test_request_context("/services/", json=deepcopy(MOCK_SERVICE)):
-        service_id, _, headers = postService.__wrapped__()
+        service_id, _, headers = inspect.unwrap(postService)()
     assert headers == {"Location": f"{MOCK_PUBLIC_URL}/services/{service_id}"}
 
 
-def test_postService_invalid_payload(unit_app, services):
-    """Test for registering a service; identifier assigned by implementation,
-    given invalid payload.
+def test_postService_invalid_payload(
+    unit_app: Flask, services: Collection[dict[str, Any]]
+) -> None:
+    """Test for registering a service with an invalid payload.
+
+    The identifier is assigned by the implementation.
     """
     with pytest.raises(BadRequest):
         with unit_app.test_request_context(json=""):
-            postService.__wrapped__()
+            inspect.unwrap(postService)()
 
 
 # DELETE /service/{serviceId}
-def test_deleteService(unit_app, services, ownership):
+def test_deleteService(
+    unit_app: Flask,
+    services: Collection[dict[str, Any]],
+    ownership: list[tuple[str, str]],
+) -> None:
     """Test for deleting a service."""
     _insert_services(services, [MOCK_ID])
 
     with unit_app.app_context():
-        res = deleteService.__wrapped__(serviceId=MOCK_ID)
+        res = inspect.unwrap(deleteService)(serviceId=MOCK_ID)
         assert res == MOCK_ID
     assert ownership == [("remove_permissions", MOCK_ID)] * 2
 
 
-def test_deleteService_NotFound(unit_app, services):
-    """Test for deleting a service if a service with the specified identifier
-    is not available.
-    """
+def test_deleteService_NotFound(
+    unit_app: Flask, services: Collection[dict[str, Any]]
+) -> None:
+    """Test for deleting a service if no service has the identifier."""
     services.insert_one(deepcopy(MOCK_SERVICE))
 
     with unit_app.app_context():
         with pytest.raises(NotFound):
-            deleteService.__wrapped__(serviceId=MOCK_ID)
+            inspect.unwrap(deleteService)(serviceId=MOCK_ID)
 
 
-def test_deleteService_concurrently(unit_app, services, ownership, monkeypatch):
-    """A service deleted concurrently (after it was found) is not found, and
-    its roles are revoked.
+def test_deleteService_concurrently(
+    unit_app: Flask,
+    services: Collection[dict[str, Any]],
+    ownership: list[tuple[str, str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A service deleted concurrently is not found, and its roles are revoked.
+
+    I.e., a service deleted after it was found.
     """
     monkeypatch.setattr(server, "service_exists", lambda serviceId: True)
     with unit_app.app_context():
         with pytest.raises(NotFound):
-            deleteService.__wrapped__(serviceId=MOCK_ID)
+            inspect.unwrap(deleteService)(serviceId=MOCK_ID)
     assert ownership == [("remove_permissions", MOCK_ID)]
 
 
 # PUT /service/{serviceId}
-def test_putService(unit_app, services, ownership):
+def test_putService(
+    unit_app: Flask,
+    services: Collection[dict[str, Any]],
+    ownership: list[tuple[str, str]],
+) -> None:
     """Test for registering a service; identifier provided by client."""
     data = deepcopy(MOCK_SERVICE)
     path = f"/services/{MOCK_ID}"
     with unit_app.test_request_context(path, json=data):
-        res = putService.__wrapped__(serviceId=MOCK_ID)
+        res = inspect.unwrap(putService)(serviceId=MOCK_ID)
         assert res == (MOCK_ID, 201, {"Location": f"{MOCK_PUBLIC_URL}{path}"})
     # only new services get an owner (and a location)
     with unit_app.test_request_context(path, json=data):
-        assert putService.__wrapped__(serviceId=MOCK_ID) == MOCK_ID
+        assert inspect.unwrap(putService)(serviceId=MOCK_ID) == MOCK_ID
     assert ownership == [("remove_permissions", MOCK_ID), ("add_owner", MOCK_ID)]
 
 
-def test_putService_not_admin(unit_app, services, ownership, monkeypatch):
-    """Only admins can register services with a chosen identifier; others can
-    only replace existing ones.
+def test_putService_not_admin(
+    unit_app: Flask,
+    services: Collection[dict[str, Any]],
+    ownership: list[tuple[str, str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only admins can register services with a chosen identifier.
+
+    Others can only replace existing ones.
     """
     monkeypatch.setattr(server, "is_admin", lambda: False)
     path = f"/services/{MOCK_ID}"
     with unit_app.test_request_context(path, json=deepcopy(MOCK_SERVICE)):
         with pytest.raises(NotFound):
-            putService.__wrapped__(serviceId=MOCK_ID)
+            inspect.unwrap(putService)(serviceId=MOCK_ID)
     _insert_services(services, [MOCK_ID])
     with unit_app.test_request_context(path, json=deepcopy(MOCK_SERVICE)):
-        assert putService.__wrapped__(serviceId=MOCK_ID) == MOCK_ID
+        assert inspect.unwrap(putService)(serviceId=MOCK_ID) == MOCK_ID
     assert services.count_documents({}) == 1
     assert ownership == []
 
 
-def test_putService_invalid_payload(unit_app, services):
-    """Test for registering a service; identifier provided by client, given
-    invalid payload.
+def test_putService_invalid_payload(
+    unit_app: Flask, services: Collection[dict[str, Any]]
+) -> None:
+    """Test for registering a service with an invalid payload.
+
+    The identifier is provided by the client.
     """
     with pytest.raises(BadRequest):
         with unit_app.test_request_context(json=""):
-            putService.__wrapped__(serviceId=MOCK_ID)
+            inspect.unwrap(putService)(serviceId=MOCK_ID)
