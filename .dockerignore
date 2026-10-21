@@ -4,7 +4,6 @@
 !LICENSE
 !pyproject.toml
 !README.md
-!requirements.txt
 
 # Exclude caches and local files within the included paths
 **/__pycache__

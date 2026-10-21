@@ -3,11 +3,13 @@
 import fnmatch
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 
 from foca.config.config_parser import ConfigParser
 from foca.models.config import Config
+from packaging.requirements import Requirement
 from pydantic import ValidationError
 import pytest
 import yaml
@@ -327,3 +329,24 @@ def test_package_data():
         assert (ROOT / "cloud_registry" / path).is_file(), path
         # setuptools matches the patterns from the package directory
         assert any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns), path
+
+
+def test_base_image_foca():
+    """The FOCA version of the base image satisfies the `foca` requirement, so
+    that the image build does not install another FOCA on top of it.
+    """
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    requirements = {
+        requirement.name: requirement
+        for requirement in map(Requirement, pyproject["project"]["dependencies"])
+    }
+    match = re.search(
+        r"^FROM elixircloud/foca:(?P<version>[^-@\s]+)",
+        (ROOT / "Dockerfile").read_text(),
+        flags=re.MULTILINE,
+    )
+    assert match, "No FOCA base image in the Dockerfile"
+    assert requirements["foca"].specifier.contains(match["version"]), (
+        f"Base image has FOCA {match['version']}, but {requirements['foca']} is "
+        "required"
+    )

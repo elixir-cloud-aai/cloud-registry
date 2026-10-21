@@ -52,8 +52,8 @@ repos:
       - id: actionlint
   - repo: local
     hooks:
-      # Local hooks use the installed dev dependencies
-      # (`requirements_dev.txt`); mypy needs them to check imported packages
+      # Local hooks use the installed dev dependencies (the `dev` extra of
+      # `pyproject.toml`); mypy needs them to check imported packages
       - id: ast-grep
         name: ast-grep
         entry: ast-grep scan

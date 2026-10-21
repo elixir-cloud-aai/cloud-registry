@@ -5,8 +5,7 @@ tests of the chart (skipped without it). To set up a development environment
 (e.g., in a virtual environment) and run the checks that CI runs:
 
 ```bash
-pip install -r requirements.txt -r requirements_dev.txt
-pip install -e .  # the app itself, e.g., for its version
+pip install -e ".[dev]"  # the app, with the dev dependencies
 pre-commit install  # run the checks on every commit
 pre-commit run --all-files  # ruff, mypy, semgrep, ast-grep, actionlint
 pre-commit run --all-files --hook-stage manual gitleaks-all  # secrets
@@ -20,7 +19,7 @@ with Flask's development server instead of Gunicorn (see
 [Server](configuration.md#server)); it needs a MongoDB at `db.host` of the
 config.
 
-Run `pre-commit` in the environment with the dev requirements: the mypy and
+Run `pre-commit` in the environment with the dev dependencies: the mypy and
 ast-grep hooks use the installed packages. The first run sets up the other
 hooks, which takes a few minutes.
 
@@ -53,7 +52,7 @@ it with live reloading, in the dev environment set up as above (Python 3.11
 or later):
 
 ```bash
-pip install -r requirements_docs.txt
+pip install -e ".[docs]"
 mkdocs build --strict  # into `site/`, ignored by Git
 mkdocs serve
 ```
