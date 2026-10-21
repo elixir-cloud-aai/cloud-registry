@@ -159,6 +159,20 @@ def remember_current_user(service_ids: list[str]) -> None:
         )
 
 
+def _forget_names(serviceId: str, userId: str | None = None) -> None:
+    """Delete display names stored for users on a service (cf.
+    `remember_current_user()`).
+
+    Args:
+        serviceId: Service identifier.
+        userId: User identifier; names of all users if `None`.
+    """
+    query = {"service_id": serviceId}
+    if userId is not None:
+        query["user_id"] = userId
+    get_collection(USER_NAMES).delete_many(query)
+
+
 def add_owner(serviceId: str) -> None:
     """Make the subject of the current request owner of a service.
 
@@ -190,7 +204,7 @@ def remove_permissions(serviceId: str) -> None:
             escape_log_value(serviceId),
             current_user(),
         )
-    get_collection(USER_NAMES).delete_many({"service_id": serviceId})
+    _forget_names(serviceId)
 
 
 # GET /services/{serviceId}/permissions
@@ -288,9 +302,7 @@ def _grant(serviceId: str, resource: str, userId: str, role: str) -> None:
     add_resource_role(subject=userId, role=role, resource=resource)
     if not service_exists(serviceId):
         remove_resource_role(subject=userId, role=role, resource=resource)
-        get_collection(USER_NAMES).delete_many(
-            {"service_id": serviceId, "user_id": userId}
-        )
+        _forget_names(serviceId, userId)
         raise NotFound
 
 
@@ -367,9 +379,7 @@ def putServicePermission(serviceId: str, userId: str, **kwargs) -> dict:
         if "owner" in previous_roles and role != "owner":
             _restore_owner_if_none(serviceId, resource, userId)
         if not previous_roles:
-            get_collection(USER_NAMES).delete_many(
-                {"service_id": serviceId, "user_id": userId}
-            )
+            _forget_names(serviceId, userId)
         _grant(serviceId, resource, userId, role)
     # FOCA rejects values that can't be stored in policy rules (e.g., user
     # identifiers with commas)
@@ -421,7 +431,7 @@ def deleteServicePermission(serviceId: str, userId: str, **kwargs) -> str:
         raise NotFound
     if was_owner:
         _restore_owner_if_none(serviceId, resource, userId)
-    get_collection(USER_NAMES).delete_many({"service_id": serviceId, "user_id": userId})
+    _forget_names(serviceId, userId)
     logger.info(
         "Roles on service '%s' of '%s' revoked by '%s'.",
         escape_log_value(serviceId),
