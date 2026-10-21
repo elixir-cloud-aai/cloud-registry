@@ -6,7 +6,8 @@ import json
 import logging
 import re
 import string
-from urllib.parse import quote, urlsplit, urlunsplit
+import unicodedata
+from urllib.parse import SplitResult, quote, urlsplit, urlunsplit
 
 from foca.utils.misc import generate_id
 import idna
@@ -26,9 +27,30 @@ VERIFIED = "_verifiedAt"
 # Projection excluding internal fields
 PROJECTION = {"_id": False, KEY: False, VERIFIED: False}
 DEFAULT_PORTS = {"http": 80, "https": 443}
+# Schemes of service URLs and links
+HTTP_SCHEMES = frozenset(DEFAULT_PORTS)
+# Categories of characters rejected in URLs (cf. `_check_characters()`):
+# control and format characters, surrogates (unpaired; they can't be
+# encoded) and separators
+REJECTED_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp", "Zs"})
+# Format characters allowed in international host names, where IDNA 2008
+# allows them in some contexts (CONTEXTJ): zero width non-joiner and joiner
+JOINERS = frozenset("\u200c\u200d")
+# Fields with URLs of links, as paths of keys, with the schemes they allow
+# besides `http` and `https`: contact URLs can be email addresses (RFC 2368),
+# as in the GA4GH service info specification
+LINK_FIELDS: dict[tuple[str, ...], frozenset[str]] = {
+    ("contactUrl",): frozenset({"mailto"}),
+    ("documentationUrl",): frozenset(),
+    ("organization", "url"): frozenset(),
+}
 PERCENT_ENCODED = re.compile(r"%([0-9A-Fa-f]{2})")
 # Percent signs not starting a percent-encoding
 MALFORMED_PERCENT = re.compile(r"%(?![0-9A-Fa-f]{2})")
+# IPv6 zone identifiers (RFC 6874), after `%25`
+ZONE_ID = re.compile(r"(?:[A-Za-z0-9\-._~]|%[0-9A-Fa-f]{2})+")
+# Labels of domain names (letters, digits, hyphens; RFC 1123, section 2.1)
+LDH_LABEL = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
 # Registered names (RFC 3986, section 3.2.2)
 REG_NAME = re.compile(r"(?:[A-Za-z0-9\-._~!$&'()*+,;=]|%[0-9A-Fa-f]{2})*")
 # RFC 3986, section 2.3
@@ -52,7 +74,7 @@ class DuplicateService(Conflict):
 
 
 class InvalidService(BadRequest):
-    """The URL or API type of a service is missing or invalid."""
+    """The URL or API type of a service, or a link, is missing or invalid."""
 
 
 def normalize_url(url: str) -> str:
@@ -62,65 +84,282 @@ def normalize_url(url: str) -> str:
     international host names (IDNA), writes IPv6 addresses in canonical form,
     percent-encodes non-ASCII characters of paths, and removes trailing dots
     of hosts, default ports, dot segments, repeated and trailing slashes,
-    needless percent-encoding of paths, queries and fragments. Other schemes
-    (e.g., `http` and `https`) give other URLs.
+    needless percent-encoding of paths, queries and fragments. `http` and
+    `https` URLs are different services.
 
     Args:
-        url: Service URL.
+        url: Service URL; leading and trailing spaces are ignored.
 
     Returns:
         Normalized URL.
 
     Raises:
-        InvalidService: The URL is invalid, has no scheme or an invalid or no
-            host, has user info, or malformed percent-encodings in its path.
+        InvalidService: The URL is invalid (cf. `_split_http_url()`) or has
+            malformed percent-encodings in its path.
     """
-    try:
-        parts = urlsplit(url.strip())
-        port = parts.port
-    except ValueError as exc:
-        raise InvalidService(f"Invalid service URL: {exc}.") from exc
-    if not parts.scheme or not parts.hostname:
-        raise InvalidService("Service URLs need a scheme and a host.")
-    if parts.username is not None or parts.password is not None:
-        raise InvalidService("Service URLs must not contain user info.")
+    # surrounding spaces are tolerated for backward compatibility; links are
+    # stored as written and must not have any (cf. `check_link()`)
+    parts, host = _split_http_url(url.strip(" "), subject="Service URLs")
     scheme = parts.scheme.lower()
-    host = _normalize_host(parts.hostname)
-    if port is not None and port != DEFAULT_PORTS.get(scheme):
-        host = f"{host}:{port}"
+    if parts.port is not None and parts.port != DEFAULT_PORTS[scheme]:
+        host = f"{host}:{parts.port}"
     return urlunsplit((scheme, host, _normalize_path(parts.path), "", ""))
 
 
-def _normalize_host(host: str) -> str:
+def check_strings(value: object, field: str = "") -> None:
+    """Check that the strings of a request body can be stored.
+
+    Unpaired surrogates (e.g., from JSON escapes like `\\ud800`) can't be
+    encoded (UTF-8), so they fail when stored or logged.
+
+    Args:
+        value: Request body, or part of it.
+        field: Path of `value` in the body (e.g., `type.group`), for error
+            messages.
+
+    Raises:
+        InvalidService: A string, or a key, has unpaired surrogates.
+    """
+    if isinstance(value, dict):
+        for key, item in value.items():
+            check_strings(key, field=field)
+            check_strings(item, field=f"{field}.{key}" if field else str(key))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            check_strings(item, field=f"{field}[{index}]")
+    elif isinstance(value, str):
+        try:
+            value.encode()
+        except UnicodeEncodeError as exc:
+            where = f"'{field}'" if field else "The request body"
+            raise InvalidService(
+                f"{where} must not contain unpaired surrogates."
+            ) from exc
+
+
+def check_link(url: object, field: str, schemes: frozenset[str] = frozenset()) -> None:
+    """Check that the URL of a link is valid.
+
+    Links are not compared, so not normalized, but checked like service URLs
+    (cf. `_split_http_url()`).
+
+    Args:
+        url: URL of the link.
+        field: Name of the field with the URL, for error messages.
+        schemes: Schemes allowed besides `http` and `https`, for URLs with a
+            path (e.g., an email address) but no authority (`//host`).
+
+    Raises:
+        InvalidService: The URL is not a string, or invalid: neither an
+            HTTP(S) URL (cf. `_split_http_url()`) nor a URL with one of
+            `schemes`, email addresses (cf. `_check_addresses()`) and no
+            authority.
+    """
+    subject = f"URLs in '{field}'"
+    if not isinstance(url, str):
+        raise InvalidService(f"{subject} must be strings.")
+    scheme, _, rest = url.partition(":")
+    # without an authority, `urlsplit()` doesn't raise
+    if scheme.lower() in schemes and not rest.startswith("//") and urlsplit(url).path:
+        _check_characters(url, subject=subject)
+        _check_percent_encodings(url, subject=subject)
+        _check_addresses(urlsplit(url).path, subject=subject)
+        return
+    _split_http_url(url, subject=subject)
+
+
+def check_links(data: dict) -> None:
+    """Check the URLs of the links of a service (cf. `LINK_FIELDS`).
+
+    Args:
+        data: Service metadata.
+
+    Raises:
+        InvalidService: A URL is invalid (cf. `check_link()`).
+    """
+    for path, schemes in LINK_FIELDS.items():
+        value: object = data
+        for key in path:
+            if not isinstance(value, dict) or key not in value:
+                break
+            value = value[key]
+        else:
+            check_link(value, field=".".join(path), schemes=schemes)
+
+
+def _check_characters(
+    url: str, subject: str, allowed: frozenset[str] = frozenset()
+) -> None:
+    """Check that a URL has no whitespace, control or format characters.
+
+    URLs are stored as written, so such characters are rejected rather than
+    normalized: `urlsplit()` would strip some of them or drop tabs and
+    newlines, so that the stored URL would differ from the one checked.
+    Format characters (e.g., bidirectional controls, soft hyphens) are
+    invisible or reorder text, so they are rejected, too, except `allowed`
+    ones (e.g., `JOINERS` in hosts, which the IDNA check validates).
+
+    Args:
+        url: URL, or part of it.
+        subject: Subject of error messages (e.g., `Service URLs`).
+        allowed: Characters allowed although in `REJECTED_CATEGORIES`.
+
+    Raises:
+        InvalidService: The URL has whitespace, control or format
+            characters, other than `allowed` ones.
+    """
+    if any(
+        char not in allowed
+        and (char.isspace() or unicodedata.category(char) in REJECTED_CATEGORIES)
+        for char in url
+    ):
+        raise InvalidService(
+            f"{subject} must not contain whitespace, control or format characters."
+        )
+
+
+def _check_percent_encodings(text: str, subject: str) -> None:
+    """Check that the percent signs in a URL, or part of it, start
+    percent-encodings.
+
+    Args:
+        text: URL, or part of it.
+        subject: Subject of error messages (e.g., `Service URLs`).
+
+    Raises:
+        InvalidService: The text has malformed percent-encodings.
+    """
+    if MALFORMED_PERCENT.search(text):
+        raise InvalidService(f"{subject} must not contain malformed percent-encodings.")
+
+
+def _check_addresses(path: str, subject: str) -> None:
+    """Check the email addresses of a `mailto:` URL (minimally, not as of
+    RFC 5322).
+
+    Args:
+        path: Path of the URL, with comma-separated addresses.
+        subject: Subject of error messages.
+
+    Raises:
+        InvalidService: An address has no local part, one with `@` (unless
+            percent-encoded), or no domain name (cf. `_check_domain()`).
+    """
+    for address in path.split(","):
+        local, _, domain = address.rpartition("@")
+        if not local or "@" in local or not domain:
+            raise InvalidService(f"{subject} need valid email addresses.")
+        _check_domain(domain, subject=subject)
+
+
+def _check_domain(domain: str, subject: str) -> None:
+    """Check the domain of an email address.
+
+    Args:
+        domain: Domain.
+        subject: Subject of error messages.
+
+    Raises:
+        InvalidService: The domain is not a domain name (e.g., an IP address,
+            or not valid per IDNA 2008): after IDNA encoding, it needs at
+            least two labels of letters, digits and hyphens (1-63 characters,
+            no leading or trailing hyphen), and at most 253 characters.
+    """
+    message = f"{subject} need email addresses with a domain name."
+    try:
+        ipaddress.ip_address(domain)
+    except ValueError:
+        pass
+    else:
+        raise InvalidService(message)
+    if not domain.isascii():
+        try:
+            domain = idna.encode(domain, uts46=True, transitional=False).decode()
+        except idna.IDNAError as exc:
+            raise InvalidService(message) from exc
+    labels = domain.split(".")
+    if (
+        len(domain) > 253
+        or len(labels) < 2
+        or not all(LDH_LABEL.fullmatch(label) for label in labels)
+    ):
+        raise InvalidService(message)
+
+
+def _split_http_url(url: str, subject: str) -> tuple[SplitResult, str]:
+    """Split an HTTP(S) URL, checking it.
+
+    Args:
+        url: URL.
+        subject: Subject of error messages (e.g., `Service URLs`).
+
+    Returns:
+        Parts of the URL, and its normalized host (cf. `_normalize_host()`).
+
+    Raises:
+        InvalidService: The URL is invalid, has characters rejected by
+            `_check_characters()` (joiners only in the host), malformed
+            percent-encodings, no scheme or an invalid or no host, a scheme
+            other than `http` and `https`, user info, or an invalid port (or
+            `0`).
+    """
+    _check_characters(url, subject=subject, allowed=JOINERS)
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError as exc:
+        raise InvalidService(f"{subject} must be valid URLs: {exc}.") from exc
+    for part in (parts.path, parts.query, parts.fragment):
+        _check_characters(part, subject=subject)
+        _check_percent_encodings(part, subject=subject)
+    if parts.scheme and parts.scheme.lower() not in HTTP_SCHEMES:
+        raise InvalidService(f"{subject} must be HTTP(S) URLs.")
+    if not parts.scheme or not parts.hostname:
+        raise InvalidService(f"{subject} need a scheme and a host.")
+    if parts.username is not None or parts.password is not None:
+        raise InvalidService(f"{subject} must not contain user info.")
+    if port == 0:
+        raise InvalidService(f"{subject} need a valid port.")
+    return parts, _normalize_host(parts.hostname, subject=subject)
+
+
+def _normalize_host(host: str, subject: str) -> str:
     """Normalize the host of a URL.
 
     Args:
         host: Lowercase host, without brackets for IPv6 addresses.
+        subject: Subject of error messages.
 
     Returns:
         Host without trailing dots; IPv6 addresses in canonical form, in
         brackets; international host names encoded (IDNA 2008, UTS 46).
 
     Raises:
-        InvalidService: The host is invalid or empty.
+        InvalidService: The host is invalid or empty, e.g., an IPv6 address
+            with a `%` not followed by `25` and a zone identifier (`ZONE_ID`,
+            non-empty).
     """
     if ":" in host:
-        address, _, zone = host.partition("%")
+        address, percent, zone = host.partition("%")
         try:
             address = ipaddress.IPv6Address(address).compressed
         except ValueError as exc:
-            raise InvalidService(f"Invalid host in service URL: {exc}.") from exc
-        return f"[{address}%{zone}]" if zone else f"[{address}]"
+            raise InvalidService(f"{subject} need a valid host: {exc}.") from exc
+        if not percent:
+            return f"[{address}]"
+        if not zone.startswith("25") or not ZONE_ID.fullmatch(zone[2:]):
+            raise InvalidService(f"{subject} need a valid host: '{host}'.")
+        return f"[{address}%{zone}]"
     if not host.isascii():
         try:
             host = idna.encode(host, uts46=True, transitional=False).decode()
         except idna.IDNAError as exc:
-            raise InvalidService(f"Invalid host in service URL: {exc}.") from exc
+            raise InvalidService(f"{subject} need a valid host: {exc}.") from exc
     if not REG_NAME.fullmatch(host):
-        raise InvalidService(f"Invalid host in service URL: '{host}'.")
+        raise InvalidService(f"{subject} need a valid host: '{host}'.")
     host = host.rstrip(".")
     if not host:
-        raise InvalidService("Service URLs need a scheme and a host.")
+        raise InvalidService(f"{subject} need a scheme and a host.")
     return host
 
 
@@ -134,13 +373,9 @@ def _normalize_path(path: str) -> str:
         Path with non-ASCII characters percent-encoded (UTF-8), unreserved
         characters decoded, other percent-encodings in uppercase, dot
         segments resolved, and without repeated and trailing
-        slashes.
-
-    Raises:
-        InvalidService: The path has malformed percent-encodings.
+        slashes. Malformed percent-encodings are rejected beforehand (cf.
+        `_split_http_url()`).
     """
-    if MALFORMED_PERCENT.search(path):
-        raise InvalidService("Invalid percent-encoding in service URL path.")
     path = PERCENT_ENCODED.sub(_decode_unreserved, quote(path, safe=ASCII_PRINTABLE))
     segments: list[str] = []
     for segment in path.split("/"):
@@ -256,12 +491,16 @@ class RegisterService:
                 again if it changed concurrently (cf. `_replace()`).
 
         Raises:
+            InvalidService: The URL or API type of the service, the URL of a
+                link, or a string (cf. `check_strings()`) is invalid.
             DuplicateService: Another service with the same URL and API type
                 is registered.
             InternalServerError: The service could not be registered within
                 the retries.
         """
+        check_strings(self.data)
         key = service_key(self.data)
+        check_links(self.data)
         self._check_duplicate(key=key)
 
         # replace or insert service with provided ID (PUT)
