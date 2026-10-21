@@ -737,8 +737,12 @@ def test_group_membership_required(client):
     assert grant_group(client, service_id, OTHER_GROUP, "owner") == 403
     assert revoke_group(client, service_id, OTHER_GROUP) == 200
     assert update(client, service_id, BOB) == 403
-    # members of a group can't grant themselves roles through it
-    assert grant_group(client, service_id, TEAM_GROUP, "owner", as_user=ERIN) == 403
+    # other owners can't grant roles to groups they aren't members of either,
+    # but to their own groups
+    assert grant(client, service_id, BOB, "owner") == 200
+    assert grant_group(client, service_id, TEAM_GROUP, "maintainer", BOB) == 403
+    assert grant_group(client, service_id, OTHER_GROUP, "maintainer", BOB) == 200
+    assert group_permissions(client, service_id) == [(OTHER_GROUP, "maintainer")]
 
 
 def test_invalid_group_permissions(client):
