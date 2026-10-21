@@ -189,6 +189,17 @@ def test_deleteService_NotFound(unit_app, services):
             deleteService.__wrapped__(serviceId=MOCK_ID)
 
 
+def test_deleteService_concurrently(unit_app, services, ownership, monkeypatch):
+    """A service deleted concurrently (after it was found) is not found, and
+    its roles are revoked.
+    """
+    monkeypatch.setattr(server, "service_exists", lambda serviceId: True)
+    with unit_app.app_context():
+        with pytest.raises(NotFound):
+            deleteService.__wrapped__(serviceId=MOCK_ID)
+    assert ownership == [("remove_permissions", MOCK_ID)]
+
+
 # PUT /service/{serviceId}
 def test_putService(unit_app, services, ownership):
     """Test for registering a service; identifier provided by client."""
