@@ -102,10 +102,11 @@ paths:
       summary: Register or update service.
       description: |
         Create (`201`) or update (`200`) a service resource. Only admins can
-        create services; for others, unknown services (also services deleted
-        during the request) return `404`. Services are unique by URL and API
-        type: changing them to those of another service returns `409`.
-        Invalid URLs return `400` (cf. `ExternalServiceRegister`).
+        create services; others can only update services they have a role on
+        (`403` otherwise). Services deleted during the request return `404`,
+        unless an admin's request creates them again. Services are unique by
+        URL and API type: changing them to those of another service returns
+        `409`. Invalid URLs return `400` (cf. `ExternalServiceRegister`).
       operationId: putService
       tags:
         - cloud-registry

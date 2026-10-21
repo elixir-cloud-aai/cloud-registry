@@ -172,10 +172,11 @@ Registering a service (`POST /services`, or `PUT /services/{serviceId}` with a
 new identifier) returns `201 Created`, with the identifier of the service in
 the body and its [public URL](#public-urls) in the `Location` header; updating
 a service (`PUT`) returns `200 OK`. Only admins can register services with
-`PUT`: for others, unknown identifiers return `404 Not Found`, also if the
-service is deleted while it is updated. Identifiers `.` and `..` (which
-clients resolve in URLs) and `types` (the path of `GET /services/types`) are
-rejected (`400 Bad Request`).
+`PUT`: others can only update services they have a role on (`403 Forbidden`
+otherwise). Services deleted while they are registered or updated return
+`404 Not Found`, unless an admin's `PUT` registers them again. Identifiers `.`
+and `..` (which clients resolve in URLs) and `types` (the path of
+`GET /services/types`) are rejected (`400 Bad Request`).
 
 URLs in registrations must be HTTP(S) URLs with a host: the service `url`,
 `documentationUrl`, `organization.url` and `contactUrl`, which can also be an
