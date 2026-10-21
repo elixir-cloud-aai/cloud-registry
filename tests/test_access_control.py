@@ -419,6 +419,32 @@ def _roles(app, service_id):
         )
 
 
+def before_first_call(patch, method, collection, callback):
+    """Run a callback once, before the first call of a method of `mongomock`
+    collections on a collection (e.g., to interleave another request).
+
+    Args:
+        patch: Monkeypatch (context) to patch the method with.
+        method: Name of the method of `mongomock.collection.Collection`.
+        collection: Name of the collection.
+        callback: Function to call, without arguments.
+
+    Returns:
+        List that is non-empty once the callback ran.
+    """
+    original = getattr(mongomock.collection.Collection, method)
+    fired = []
+
+    def wrapper(self, *args, **kwargs):
+        if self.name == collection and not fired:
+            fired.append(True)
+            callback()
+        return original(self, *args, **kwargs)
+
+    patch.setattr(mongomock.collection.Collection, method, wrapper)
+    return fired
+
+
 @pytest.mark.parametrize(
     ("user", "status", "roles"),
     [(BOB, 404, []), (ADMIN, 201, [(ADMIN, "owner")])],
@@ -430,21 +456,16 @@ def test_put_racing_delete(app, client, monkeypatch, user, status, roles):
     """
     service_id = register(client)
     assert grant(client, service_id, BOB, "maintainer") == 200
-    replace_one = mongomock.collection.Collection.replace_one
-    deleted = []
 
-    def delete_first(self, *args, **kwargs):
+    def delete_service():
         # the owner deletes the service after it was read for the update
-        if self.name == "services" and not deleted:
-            deleted.append(True)
-            permissions_module.remove_permissions(service_id)
-            self.delete_one({"id": service_id})
-        return replace_one(self, *args, **kwargs)
+        permissions_module.remove_permissions(service_id)
+        get_collection("services").delete_one({"id": service_id})
 
     with monkeypatch.context() as patch:
-        patch.setattr(mongomock.collection.Collection, "replace_one", delete_first)
+        fired = before_first_call(patch, "replace_one", "services", delete_service)
         assert update(client, service_id, user) == status
-    assert deleted
+    assert fired
     assert _roles(app, service_id) == roles
     expected = 404 if status == 404 else 200
     assert client.get(f"{BASE}/services/{service_id}").status_code == expected
@@ -487,9 +508,11 @@ def test_grant_racing_delete(app, client, monkeypatch):
     """
     service_id = register(client)
     add_resource_role = permissions_module.add_resource_role
+    deleted = []
 
     def delete_first(**kwargs):
         # the service is deleted after its existence was checked
+        deleted.append(True)
         permissions_module.remove_permissions(service_id)
         get_collection("services").delete_one({"id": service_id})
         return add_resource_role(**kwargs)
@@ -497,6 +520,7 @@ def test_grant_racing_delete(app, client, monkeypatch):
     with monkeypatch.context() as patch:
         patch.setattr(permissions_module, "add_resource_role", delete_first)
         assert grant(client, service_id, BOB, "maintainer") == 404
+    assert deleted == [True]
     assert _roles(app, service_id) == []
 
 
@@ -505,22 +529,20 @@ def test_delete_racing_grant(app, client, monkeypatch):
     revoked) are revoked with it.
     """
     service_id = register(client)
-    delete_one = mongomock.collection.Collection.delete_one
 
-    def grant_first(self, *args, **kwargs):
+    def grant_role():
         # a role is granted after the roles were revoked, and the grant's
         # check found the service still registered
-        if self.name == "services":
-            permissions_module.add_resource_role(
-                subject=BOB,
-                role="owner",
-                resource=permissions_module.service_path(service_id),
-            )
-        return delete_one(self, *args, **kwargs)
+        permissions_module.add_resource_role(
+            subject=BOB,
+            role="owner",
+            resource=permissions_module.service_path(service_id),
+        )
 
     with monkeypatch.context() as patch:
-        patch.setattr(mongomock.collection.Collection, "delete_one", grant_first)
+        fired = before_first_call(patch, "delete_one", "services", grant_role)
         assert delete(client, service_id, ALICE) == 200
+    assert fired
     assert _roles(app, service_id) == []
 
 
