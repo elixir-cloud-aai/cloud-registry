@@ -829,6 +829,7 @@ class TestWarnUrlSchemes:
             ("HTTPS", "https://third.example.org"),
             ("BAD", 1),
             ("INVALID", "http://[::1/v1"),
+            ("NOHOST", "http://"),
         ]:
             services.insert_one({**MOCK_SERVICE, "id": id, "url": url})
         services.insert_one({"id": "NOURL"})
@@ -841,6 +842,7 @@ class TestWarnUrlSchemes:
         assert "HTTPS" not in message
         assert "BAD" not in message
         assert "INVALID" not in message
+        assert "NOHOST" not in message
 
     def test_none(
         self,

@@ -142,8 +142,6 @@ def check_url_scheme(url: str, schemes: Collection[str]) -> None:
     Raises:
         InvalidService: The scheme of the URL is not one of `schemes`
             (case-insensitive).
-        ValueError: The URL is invalid (e.g., a stored one; cf.
-            `urllib.parse.urlsplit()`).
     """
     if urlsplit(url.strip(" ")).scheme.lower() not in schemes:
         allowed = ", ".join(f"'{scheme}'" for scheme in sorted(schemes))
@@ -773,8 +771,8 @@ def warn_url_schemes() -> None:
     For example, `http` URLs registered before `https` became the only
     scheme allowed by default (`custom.endpoints.services.url_schemes`).
     Such services are still served, but can only be updated with an allowed
-    scheme. Services with URLs that aren't strings or URLs are skipped (cf.
-    `add_service_keys()`).
+    scheme. Services with URLs that aren't strings or valid URLs (cf.
+    `normalize_url()`) are skipped.
     """
     schemes = frozenset(get_custom_config().endpoints.services.url_schemes)
     ids = []
@@ -785,13 +783,15 @@ def warn_url_schemes() -> None:
         if not isinstance(url, str):
             continue
         try:
-            check_url_scheme(url, schemes=schemes)
+            normalize_url(url)
         except InvalidService:
-            ids.append(f"'{service['id']}'")
-        except ValueError:
             # invalid URLs stored before URLs were checked can't be updated
             # unchanged anyway (cf. "Stored services" in `docs/upgrading.md`)
             continue
+        try:
+            check_url_scheme(url, schemes=schemes)
+        except InvalidService:
+            ids.append(f"'{service['id']}'")
     if ids:
         logger.warning(
             "Services with URL schemes not allowed "
