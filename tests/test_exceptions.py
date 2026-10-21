@@ -48,9 +48,8 @@ def test_validation_problem_long_detail(caplog):
         response = validation_problem(exc)
     head = MAX_DETAIL_LENGTH // 2
     tail = "' is too long - 'name'"
-    truncated = (
-        f"'\n{'a' * (head - 2)}…{'a' * (MAX_DETAIL_LENGTH - head - len(tail))}{tail}"
-    )
+    rest = MAX_DETAIL_LENGTH - 1 - head - len(tail)
+    truncated = f"'\n{'a' * (head - 2)}…{'a' * rest}{tail}"
     assert json.loads(response.get_data())["detail"] == truncated
     assert caplog.messages == [f"Request rejected: {escape_log_value(truncated)}"]
 
@@ -62,12 +61,12 @@ def test_validation_problem_long_detail(caplog):
 )
 def test_shorten_detail_boundary(length, shortened):
     """Details up to `MAX_DETAIL_LENGTH` characters are kept; longer ones
-    are shortened to that many characters and "…".
+    are shortened to that many characters, including "…".
     """
     detail = "x" * length
     result = shorten_detail(detail)
     assert (result != detail) is shortened
-    assert len(result) == min(length, MAX_DETAIL_LENGTH + 1)
+    assert len(result) == MAX_DETAIL_LENGTH
     assert result.endswith("x")
 
 
@@ -75,7 +74,7 @@ def test_validation_problem_long_messages():
     """Messages of form data are shortened together."""
     exc = BadRequestProblem(detail=["a" * MAX_DETAIL_LENGTH, "b: no int"])
     detail = json.loads(validation_problem(exc).get_data())["detail"]
-    assert len(detail) == MAX_DETAIL_LENGTH + 1
+    assert len(detail) == MAX_DETAIL_LENGTH
     assert detail.startswith("a")
     assert detail.endswith("a; b: no int")
 
@@ -84,5 +83,5 @@ def test_problem_long_description():
     """Descriptions of other problems are shortened, too."""
     exc = BadRequest(description=f"{'a' * 10000} is invalid")
     detail = json.loads(problem(exc).get_data())["detail"]
-    assert len(detail) == MAX_DETAIL_LENGTH + 1
+    assert len(detail) == MAX_DETAIL_LENGTH
     assert detail.endswith("a is invalid")

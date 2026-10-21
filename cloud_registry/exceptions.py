@@ -99,13 +99,13 @@ def shorten_detail(detail: str) -> str:
 
     Returns:
         The detail if it is not longer than `MAX_DETAIL_LENGTH`, otherwise
-        its first and last characters (`MAX_DETAIL_LENGTH` in total),
-        joined by "…".
+        its first and last characters, joined by "…", with
+        `MAX_DETAIL_LENGTH` characters in total.
     """
     if len(detail) <= MAX_DETAIL_LENGTH:
         return detail
     head = MAX_DETAIL_LENGTH // 2
-    return f"{detail[:head]}…{detail[head - MAX_DETAIL_LENGTH :]}"
+    return f"{detail[:head]}…{detail[head + 1 - MAX_DETAIL_LENGTH :]}"
 
 
 def problem(exc: HTTPException, **extensions: str) -> Response:

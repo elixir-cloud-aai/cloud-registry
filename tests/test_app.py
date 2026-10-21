@@ -957,7 +957,7 @@ def test_validation_error_detail_large_body(client, admin_headers):
         f"{BASE}/services", headers=admin_headers, json=_service(name="a" * 900_000)
     )
     _assert_error(response, 400)
-    assert len(response.json["detail"]) == MAX_DETAIL_LENGTH + 1
+    assert len(response.json["detail"]) == MAX_DETAIL_LENGTH
     assert "…" in response.json["detail"]
     assert response.json["detail"].endswith("is too long - 'name'")
 
