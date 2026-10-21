@@ -632,7 +632,10 @@ git push origin vX.Y.Z
 The tag must be annotated and signed (`git tag -s`), with a key that GitHub
 can verify (added to the tagger's GitHub account). The [release
 workflow][release-workflow], triggered by the tag, checks that GitHub
-verified the signature and that the tag's commit is on `main`. It packages
+verified the signature, that the tag's commit is on `main`, and that the [CI
+workflow][checks-workflow] passed for it (a run for the push of the commit to
+`dev`; if CI hasn't finished or failed, re-run the release workflow once it
+passed). It packages
 the Helm chart with the release version as `version` and `appVersion` (the
 default image tag). After approval in the `release` environment, it builds
 the image, checks that the app reports the release version, pushes exactly

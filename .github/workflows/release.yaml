@@ -1,6 +1,6 @@
 # Release when a version tag (`vX.Y.Z`, or `vX.Y.ZaN`, `vX.Y.ZbN`,
-# `vX.Y.ZrcN` for pre-releases) is pushed: check the tag, package the Helm
-# chart, build, check and push the Docker image, and create the GitHub
+# `vX.Y.ZrcN` for pre-releases) is pushed: check the tag and that CI passed
+# for its commit, package the Helm chart, build, check and push the Docker image, and create the GitHub
 # release with the chart attached. The tag is the only source of the version:
 # it is passed to the image build (the Docker build gets no Git metadata) and
 # set as the chart's `version` and `appVersion`. Publishing runs in the
@@ -28,6 +28,9 @@ jobs:
     name: Check tag and package chart
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read # read the CI runs of the release commit
     outputs:
       version: ${{ steps.version.outputs.version }}
       prerelease: ${{ steps.version.outputs.prerelease }}
@@ -84,6 +87,22 @@ jobs:
                   echo "prerelease=false"
               fi
           } >> "${GITHUB_OUTPUT}"
+      # The checks above don't run the tests: require a successful run of
+      # the CI workflow for a push of the release commit (to `dev`, before it
+      # moved to `main`); runs for pull requests test merge commits, not the
+      # commit itself. Re-runs that succeeded count
+      - name: Check that CI passed for the release commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ steps.version.outputs.sha }}
+        run: |
+          runs="$(gh api "repos/${REPOSITORY}/actions/workflows/checks.yaml/runs?head_sha=${SHA}&event=push&status=success&per_page=1" \
+              --jq .total_count)"
+          if [[ ! "${runs}" =~ ^[0-9]+$ || "${runs}" -lt 1 ]]; then
+              echo "::error::No successful run of the CI workflow (checks.yaml) for a push of ${SHA}; once CI passed for it, re-run this workflow"
+              exit 1
+          fi
       # Helm is preinstalled on GitHub-hosted Ubuntu runners; `appVersion`
       # (the default image tag) is the release version
       - name: Package chart
