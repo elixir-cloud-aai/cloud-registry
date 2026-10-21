@@ -1,7 +1,8 @@
 site_name: ELIXIR Cloud service registry
 site_description: >-
   GA4GH Service Registry API implementation for the ELIXIR Cloud
-site_url: https://cloud-registry.readthedocs.io/
+# Read the Docs serves each version under its own path (e.g., `/en/latest/`)
+site_url: !ENV [READTHEDOCS_CANONICAL_URL, "https://cloud-registry.readthedocs.io/en/latest/"]
 repo_url: https://github.com/elixir-cloud-aai/cloud-registry
 repo_name: elixir-cloud-aai/cloud-registry
 edit_uri: edit/dev/docs/

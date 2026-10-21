@@ -20,7 +20,9 @@ Login](https://lifescience-ri.eu/ls-login/) can register services and manage
 those they own.
 <!-- --8<-- [end:synopsis] -->
 
-**Read the [documentation][docs] for details.**
+**Read the [documentation][docs]** for the configuration, the API, access
+control, the deployment with the Helm chart in [`deployment/`][deployment],
+operations, upgrades and development.
 
 ## Quick start
 
@@ -46,21 +48,6 @@ curl -X GET "http://localhost:8080/ga4gh/registry/v1/services" -H  "accept: appl
 ```
 <!-- --8<-- [end:quick-start] -->
 
-## Documentation
-
-- [Getting started][docs-getting-started]: Docker Compose setup and first
-  requests
-- [Configuration][docs-configuration]: config overlays, public URLs, request
-  size limit, server and service info
-- [API][docs-api] and [access control][docs-access-control]: endpoints,
-  validation, duplicate and verified services, authentication, roles of users
-  and groups, admins
-- [Deployment][docs-deployment]: the Helm chart in [`deployment/`][deployment]
-- [Operations][docs-operations], [upgrading][docs-upgrading] and
-  [development][docs-development], including versioning and releases
-- [API reference][docs-reference] of the code and [release
-  notes][docs-changelog]
-
 [badge-build-status]:<https://github.com/elixir-cloud-aai/cloud-registry/actions/workflows/checks.yaml/badge.svg>
 [badge-coverage]:<https://codecov.io/gh/elixir-cloud-aai/cloud-registry/branch/dev/graph/badge.svg>
 [badge-docs]: <https://readthedocs.org/projects/cloud-registry/badge/?version=latest>
@@ -71,13 +58,3 @@ curl -X GET "http://localhost:8080/ga4gh/registry/v1/services" -H  "accept: appl
 [badge-url-license]:<https://www.apache.org/licenses/LICENSE-2.0>
 [deployment]: deployment/
 [docs]: <https://cloud-registry.readthedocs.io/en/latest/>
-[docs-access-control]: <https://cloud-registry.readthedocs.io/en/latest/access-control/>
-[docs-api]: <https://cloud-registry.readthedocs.io/en/latest/api/>
-[docs-changelog]: <https://cloud-registry.readthedocs.io/en/latest/changelog/>
-[docs-configuration]: <https://cloud-registry.readthedocs.io/en/latest/configuration/>
-[docs-deployment]: <https://cloud-registry.readthedocs.io/en/latest/deployment/>
-[docs-development]: <https://cloud-registry.readthedocs.io/en/latest/development/>
-[docs-getting-started]: <https://cloud-registry.readthedocs.io/en/latest/getting-started/>
-[docs-operations]: <https://cloud-registry.readthedocs.io/en/latest/operations/>
-[docs-reference]: <https://cloud-registry.readthedocs.io/en/latest/reference/>
-[docs-upgrading]: <https://cloud-registry.readthedocs.io/en/latest/upgrading/>

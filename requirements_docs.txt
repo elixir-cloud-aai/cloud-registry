@@ -1,6 +1,10 @@
 # Requirements of the documentation (`mkdocs.yml`), built by Read the Docs
-# (`.readthedocs.yaml`) and in CI
+# (`.readthedocs.yaml`) and in CI; the packages that add warnings, which fail
+# the strict build, are pinned too
+griffelib==2.4.0
 mkdocs==1.6.1
+mkdocs-autorefs==1.4.4
 mkdocs-material==9.7.7
 mkdocstrings==1.0.8
 mkdocstrings-python==2.0.10
+pymdown-extensions==12.3

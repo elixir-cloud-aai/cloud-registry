@@ -45,7 +45,8 @@ by Read the Docs (configured in
 and in CI; warnings, e.g., of broken links, fail the build. The [API
 reference](reference.md) is generated from the docstrings with
 [mkdocstrings](https://mkdocstrings.github.io/). To build it locally, or serve
-it with live reloading:
+it with live reloading, in the dev environment set up as above (Python 3.11
+or later):
 
 ```bash
 pip install -r requirements_docs.txt

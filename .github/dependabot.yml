@@ -12,13 +12,14 @@ updates:
       # Requirements of the documentation (`requirements_docs.txt`), in
       # pull requests of their own
       docs-dependencies:
-        patterns: ["mkdocs", "mkdocs-*", "mkdocstrings", "mkdocstrings-*"]
+        patterns: [
+          "griffelib", "mkdocs", "mkdocs-*", "mkdocstrings",
+          "mkdocstrings-*", "pymdown-extensions",
+        ]
+      # Dependencies match the first group listed
       python-dependencies:
         patterns: ["*"]
-        exclude-patterns: [
-          "connexion", "foca",
-          "mkdocs", "mkdocs-*", "mkdocstrings", "mkdocstrings-*",
-        ]
+        exclude-patterns: ["connexion", "foca"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
