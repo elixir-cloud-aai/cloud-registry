@@ -108,6 +108,20 @@ def _get_current_claims() -> dict:
     return claims if isinstance(claims, dict) else {}
 
 
+def is_admin() -> bool:
+    """Check whether the subject of the current request is an admin.
+
+    Returns:
+        Whether the subject has the role `admin`, as the policies see it:
+        from group claims (cf. `security.access_control.group_mapping`) or
+        granted to the user via FOCA's permissions API (a `g` rule).
+    """
+    prefix = get_config().security.access_control.subject_prefix
+    role_manager = get_enforcer().get_role_manager()
+    subjects = [f"{prefix}{get_current_subject()}", *get_current_groups()]
+    return any(role_manager.has_link(subject, "admin") for subject in subjects)
+
+
 def remember_current_user(service_ids: list[str]) -> None:
     """Store the display name of the subject of the current request for
     services they have a role on.

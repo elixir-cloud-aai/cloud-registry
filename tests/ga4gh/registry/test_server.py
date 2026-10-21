@@ -27,8 +27,9 @@ from tests.mock_data import (
 @pytest.fixture(autouse=True)
 def ownership(monkeypatch):
     """Record changes of service ownership, which require access control (cf.
-    `tests/test_access_control.py`)."""
+    `tests/test_access_control.py`); the caller is an admin."""
     calls = []
+    monkeypatch.setattr(server, "is_admin", lambda: True)
     for name in ["add_owner", "remove_permissions"]:
         monkeypatch.setattr(
             server, name, lambda serviceId, name=name: calls.append((name, serviceId))
@@ -200,6 +201,22 @@ def test_putService(unit_app, services, ownership):
     with unit_app.test_request_context(path, json=data):
         assert putService.__wrapped__(serviceId=MOCK_ID) == MOCK_ID
     assert ownership == [("remove_permissions", MOCK_ID), ("add_owner", MOCK_ID)]
+
+
+def test_putService_not_admin(unit_app, services, ownership, monkeypatch):
+    """Only admins can register services with a chosen identifier; others can
+    only replace existing ones.
+    """
+    monkeypatch.setattr(server, "is_admin", lambda: False)
+    path = f"/services/{MOCK_ID}"
+    with unit_app.test_request_context(path, json=deepcopy(MOCK_SERVICE)):
+        with pytest.raises(NotFound):
+            putService.__wrapped__(serviceId=MOCK_ID)
+    _insert_services(services, [MOCK_ID])
+    with unit_app.test_request_context(path, json=deepcopy(MOCK_SERVICE)):
+        assert putService.__wrapped__(serviceId=MOCK_ID) == MOCK_ID
+    assert services.count_documents({}) == 1
+    assert ownership == []
 
 
 def test_putService_invalid_payload(unit_app, services):

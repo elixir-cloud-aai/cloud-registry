@@ -13,7 +13,12 @@ from foca.utils.misc import generate_id
 import idna
 from pymongo.errors import DuplicateKeyError
 
-from cloud_registry.exceptions import BadRequest, Conflict, InternalServerError
+from cloud_registry.exceptions import (
+    BadRequest,
+    Conflict,
+    InternalServerError,
+    NotFound,
+)
 from cloud_registry.utils import escape_log_value, get_collection, get_custom_config
 
 logger = logging.getLogger(__name__)
@@ -452,6 +457,7 @@ class RegisterService:
         self,
         data: dict,
         id: str | None = None,
+        allow_create: bool = True,
     ) -> None:
         """Initialize service data.
 
@@ -459,6 +465,10 @@ class RegisterService:
             data: Service metadata consistent with the
             `ExternalServiceRegister` schema.
             id: Service identifier. Auto-generated if not provided.
+            allow_create: With an identifier, whether the service may be
+                registered if it doesn't exist (e.g., for admins only, cf.
+                `_replace()`); otherwise, only an existing service is
+                replaced.
 
         Attributes:
             data: Service metadata; a copy of `data`, with the identifier.
@@ -466,6 +476,8 @@ class RegisterService:
                 should be replaced. Set to `True` if an `id` is provided,
                 otherwise set to `False`.
             was_created: Whether a new service was registered.
+            allow_create: Whether a service with the identifier may be
+                registered.
             id_charset: A string of allowed characters for generating service
                 identifiers.
             id_length: Length of generated service identifiers.
@@ -475,6 +487,7 @@ class RegisterService:
         self.data = deepcopy(data)
         self.data["id"] = id
         self.replace = id is not None
+        self.allow_create = allow_create
         self.was_created = False
         self.id_charset: str = endpoint_conf.services.id.charset
         self.id_length = int(endpoint_conf.services.id.length)
@@ -497,6 +510,9 @@ class RegisterService:
                 is registered.
             InternalServerError: The service could not be registered within
                 the retries.
+            cloud_registry.exceptions.NotFound: With an identifier, the
+                service doesn't exist (also if it was deleted concurrently),
+                and `allow_create` is false.
         """
         check_strings(self.data)
         key = service_key(self.data)
@@ -553,6 +569,11 @@ class RegisterService:
         inserted concurrently (after it was read as missing) is a
         verification of the inserted service removed.
 
+        The service is only inserted if `allow_create` is set, also when it
+        was deleted after it was read (e.g., by a concurrent `DELETE`), so
+        that users who may only update a service can't register it again
+        (and become its owner).
+
         Args:
             key: Key of the service (cf. `service_key()`).
             retries: How many times the service is read again if it changed
@@ -563,12 +584,16 @@ class RegisterService:
                 was registered concurrently.
             cloud_registry.exceptions.InternalServerError: The service
                 changed or was added concurrently on each try.
+            cloud_registry.exceptions.NotFound: The service doesn't exist
+                (anymore), and `allow_create` is false.
         """
         for _ in range(retries + 1):
             stored = self.db_coll.find_one(
                 {"id": self.data["id"]},
                 {"_id": False, "url": True, KEY: True, VERIFIED: True},
             )
+            if stored is None and not self.allow_create:
+                raise NotFound
             replacement = {**self.data, KEY: key}
             query: dict = {"id": self.data["id"]}
             if stored is not None:

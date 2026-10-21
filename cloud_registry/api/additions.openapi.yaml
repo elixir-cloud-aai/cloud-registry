@@ -98,10 +98,11 @@ paths:
     put:
       summary: Register or update service.
       description: |
-        Create (`201`) or update (`200`) a service resource. Services are
-        unique by URL and API type: changing them to those of another service
-        returns `409`. Invalid URLs return `400` (cf.
-        `ExternalServiceRegister`).
+        Create (`201`) or update (`200`) a service resource. Only admins can
+        create services; for others, unknown services (also services deleted
+        during the request) return `404`. Services are unique by URL and API
+        type: changing them to those of another service returns `409`.
+        Invalid URLs return `400` (cf. `ExternalServiceRegister`).
       operationId: putService
       tags:
         - cloud-registry
@@ -139,6 +140,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/DuplicateService'
         '500':

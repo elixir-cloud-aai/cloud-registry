@@ -169,7 +169,9 @@ under the API base path `/ga4gh/registry/v1`:
 Registering a service (`POST /services`, or `PUT /services/{serviceId}` with a
 new identifier) returns `201 Created`, with the identifier of the service in
 the body and its [public URL](#public-urls) in the `Location` header; updating
-a service (`PUT`) returns `200 OK`. Identifiers `.` and `..` are rejected
+a service (`PUT`) returns `200 OK`. Only admins can register services with
+`PUT`: for others, unknown identifiers return `404 Not Found`, also if the
+service is deleted while it is updated. Identifiers `.` and `..` are rejected
 (`400 Bad Request`).
 
 URLs in registrations must be HTTP(S) URLs with a host: the service `url`,

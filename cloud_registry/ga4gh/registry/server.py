@@ -6,12 +6,17 @@ from flask import Response, request
 from foca.utils.logging import log_traffic
 
 from cloud_registry.exceptions import BadRequest, NotFound, problem
-from cloud_registry.ga4gh.registry.permissions import add_owner, remove_permissions
+from cloud_registry.ga4gh.registry.permissions import (
+    add_owner,
+    is_admin,
+    remove_permissions,
+)
 from cloud_registry.ga4gh.registry.service import (
     PROJECTION,
     DuplicateService,
     InvalidService,
     RegisterService,
+    service_exists,
 )
 from cloud_registry.ga4gh.registry.service_info import get_service_info
 from cloud_registry.utils import escape_log_value, get_collection, get_public_url
@@ -105,6 +110,10 @@ def postService(**kwargs) -> RegisterResponse:
 def deleteService(serviceId: str, **kwargs) -> str:
     """Delete service.
 
+    The roles on the service are revoked first, so that none are left on a
+    deleted service if deleting it fails, and nobody can act on it in
+    between.
+
     Args:
         serviceId: Identifier of service to be deleted.
 
@@ -112,10 +121,12 @@ def deleteService(serviceId: str, **kwargs) -> str:
         Identifier of deleted service.
     """
     db_collection_service = get_collection("services")
+    if not service_exists(serviceId):
+        raise NotFound
+    remove_permissions(serviceId)
     res = db_collection_service.delete_one({"id": serviceId})
     if not res.deleted_count:
         raise NotFound
-    remove_permissions(serviceId)
     return serviceId
 
 
@@ -123,6 +134,9 @@ def deleteService(serviceId: str, **kwargs) -> str:
 @log_traffic
 def putService(serviceId: str, **kwargs) -> RegisterResponse:
     """Add/replace service with a user-supplied ID.
+
+    Only admins may add services: for others, the service must exist (cf.
+    `RegisterService._replace()`), also if it is deleted concurrently.
 
     Args:
         serviceId: Identifier of service to be registered/updated.
@@ -134,7 +148,9 @@ def putService(serviceId: str, **kwargs) -> RegisterResponse:
     # the request path is the service's URL path: `/services/{serviceId}`,
     # with the API base path and the identifier as routed (decoded)
     collection_path = request.path.removesuffix(f"/{serviceId}")
-    return _register_service(collection_path=collection_path, service_id=serviceId)
+    return _register_service(
+        collection_path=collection_path, service_id=serviceId, allow_create=is_admin()
+    )
 
 
 def _get_request_object() -> dict:
@@ -154,7 +170,7 @@ def _get_request_object() -> dict:
 
 
 def _register_service(
-    collection_path: str, service_id: str | None = None
+    collection_path: str, service_id: str | None = None, allow_create: bool = True
 ) -> RegisterResponse:
     """Register the service in the request body.
 
@@ -162,13 +178,17 @@ def _register_service(
         collection_path: Path of the service collection (`/services`, with the
             API base path), for the URL of new services.
         service_id: Identifier of the service; generated if not provided.
+        allow_create: With `service_id`, whether the service may be
+            registered if it doesn't exist.
 
     Returns:
         Identifier of the service; if it is new, with status `201` and its URL
         as `Location`. Or an error response: `400` for invalid URLs, `409`
         naming the registered service with the same URL and API type.
     """
-    service = RegisterService(data=_get_request_object(), id=service_id)
+    service = RegisterService(
+        data=_get_request_object(), id=service_id, allow_create=allow_create
+    )
     try:
         service.register_metadata()
     except InvalidService as exc:

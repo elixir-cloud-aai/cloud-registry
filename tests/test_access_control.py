@@ -5,6 +5,7 @@
 from copy import deepcopy
 from itertools import count
 
+import mongomock
 import pytest
 
 from cloud_registry.ga4gh.registry import permissions as permissions_module
@@ -407,3 +408,74 @@ def test_no_claims_without_token(app):
     """Without a validated token, there are no claims."""
     with app.app.test_request_context():
         assert permissions_module._get_current_claims() == {}
+
+
+def _roles(app, service_id):
+    """Roles granted on a service, also if it doesn't exist."""
+    with app.app.test_request_context(f"{BASE}/services/{service_id}"):
+        app.app.preprocess_request()
+        return sorted(
+            permissions_module.list_resource_roles(f"{BASE}/services/{service_id}")
+        )
+
+
+@pytest.mark.parametrize(
+    ("user", "status", "roles"),
+    [(BOB, 404, []), (ADMIN, 201, [(ADMIN, "owner")])],
+    ids=["maintainer", "admin"],
+)
+def test_put_racing_delete(app, client, monkeypatch, user, status, roles):
+    """A service deleted while it is replaced is only registered again by
+    admins: others get `404`, and don't become owners.
+    """
+    service_id = register(client)
+    assert grant(client, service_id, BOB, "maintainer") == 200
+    replace_one = mongomock.collection.Collection.replace_one
+    deleted = []
+
+    def delete_first(self, *args, **kwargs):
+        # the owner deletes the service after it was read for the update
+        if self.name == "services" and not deleted:
+            deleted.append(True)
+            permissions_module.remove_permissions(service_id)
+            self.delete_one({"id": service_id})
+        return replace_one(self, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(mongomock.collection.Collection, "replace_one", delete_first)
+        assert update(client, service_id, user) == status
+    assert deleted
+    assert _roles(app, service_id) == roles
+    expected = 404 if status == 404 else 200
+    assert client.get(f"{BASE}/services/{service_id}").status_code == expected
+
+
+def test_put_stale_role(app, client, monkeypatch):
+    """Roles left on the identifier of a deleted service don't let users
+    other than admins register it again.
+    """
+    service_id = register(client)
+    assert grant(client, service_id, BOB, "maintainer") == 200
+    # as if revoking the roles of the deleted service had failed
+    with monkeypatch.context() as patch:
+        patch.setattr(server_module, "remove_permissions", lambda serviceId: None)
+        assert delete(client, service_id, ALICE) == 200
+    assert update(client, service_id, BOB) == 404
+    assert client.get(f"{BASE}/services/{service_id}").status_code == 404
+
+
+def test_roles_removed_before_delete(app, client, monkeypatch):
+    """Roles on a service are revoked before it is deleted, so that no role
+    is left on a deleted service if deleting it fails.
+    """
+    service_id = register(client)
+    assert grant(client, service_id, BOB, "maintainer") == 200
+
+    def fail(self, *args, **kwargs):
+        raise RuntimeError("database unavailable")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(mongomock.collection.Collection, "delete_one", fail)
+        assert delete(client, service_id, ALICE) == 500
+    assert _roles(app, service_id) == []
+    assert client.get(f"{BASE}/services/{service_id}").status_code == 200
