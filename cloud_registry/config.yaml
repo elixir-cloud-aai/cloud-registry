@@ -146,7 +146,7 @@ api:
 # Service info, served at `GET /service-info` by FOCA, according to the GA4GH
 # `Service` schema (validated on startup); `version` defaults to the version
 # of the installed package (`package`). Deployments set their own `id`,
-# `name`, `description`, `organization` and `contactUrl`
+# `name`, `description`, `organization`, `contactUrl` and `environment`
 # Cf. https://foca.readthedocs.io/en/latest/configuration/service-info/
 service_info:
     package: cloud-registry

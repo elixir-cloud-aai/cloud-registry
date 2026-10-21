@@ -60,9 +60,9 @@ The service info served at `/service-info` is set via
 change, e.g., `environment: prod`, and set optional fields of the default to
 `null` to remove them). The defaults describe the app, so set all fields that
 describe the deployment: `id`, `name`, `description`, `organization` (both
-`name` and `url`) and `contactUrl` (see the example in `values.yaml`). Pods are
-restarted when the ConfigMap changes, and the app refuses to start if the
-service info is invalid.
+`name` and `url`), `contactUrl` and `environment` (the default is `dev`; see
+the example in `values.yaml`). Pods are restarted when the ConfigMap changes,
+and the app refuses to start if the service info is invalid.
 
 Do not edit the ConfigMap with `kubectl edit`: Helm overwrites it on the next
 upgrade. As `config` is stored in a ConfigMap, it must not contain secrets
