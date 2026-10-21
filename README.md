@@ -652,9 +652,9 @@ requests. Curated notes are published as written, so the release workflow fails
 if they contain `TODO`; on re-runs, it replaces the notes of an existing
 release with them (also overwriting manual edits). No packages are published to
 PyPI. Tags of alpha, beta and release candidate versions (e.g., `vX.Y.Zrc1`,
-also `aN` and `bN`) get chart version `X.Y.Z-rc1` and never update the `latest`
-image. These and, until 1.0.0, all other releases are GitHub pre-releases
-(never marked as the latest release).
+also `aN` and `bN`) get chart version `X.Y.Z-rc1` (or `-aN`, `-bN`) and never
+update the `latest` image. These and, until 1.0.0, all other releases are
+GitHub pre-releases (never marked as the latest release).
 Images of commits on `dev` are published by the [CI workflow][checks-workflow]
 (environment `dev-images`).
 
