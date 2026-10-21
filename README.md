@@ -173,9 +173,12 @@ a service (`PUT`) returns `200 OK`. Identifiers `.` and `..` are rejected
 URLs in registrations must be HTTP(S) URLs with a host: the service `url`,
 `documentationUrl`, `organization.url` and `contactUrl`, which can also be an
 email address (`mailto:`); other URLs are rejected (`400 Bad Request`, saying
-why). Anyone logged in can register services, so clients should treat
-registry content as untrusted: escape it rather than render it as HTML, and
-don't follow or fetch its URLs blindly (e.g., to internal addresses).
+why). Links are stored as written, so they must not contain whitespace (unlike
+service URLs, which may have leading and trailing spaces), control or format
+characters (except joiners in international host names). Anyone logged in can
+register services, so clients should treat registry content as untrusted:
+escape it rather than render it as HTML, and don't follow or fetch its URLs
+blindly (e.g., to internal addresses).
 
 See [Access control](#access-control) for the roles and [Verified
 services](#verified-services) for verifications. Extensions of the GA4GH
@@ -291,8 +294,8 @@ ports, dot segments (`/./`, `/../`), repeated and trailing slashes, needless
 percent-encoding in paths, queries and fragments. `http` and `https` URLs are
 different services. Invalid URLs, URLs without scheme or host, with schemes
 other than `http` and `https`, user info (`user:password@`), whitespace (other
-than leading and trailing spaces) or control characters are rejected (`400 Bad
-Request`, saying why).
+than leading and trailing spaces), control or format characters are rejected
+(`400 Bad Request`, saying why).
 
 Registering a service again (`POST /services`), or changing a service to the
 URL and API type of another one (`PUT`), returns `409 Conflict`, with the
@@ -309,12 +312,14 @@ URL (e.g., by fetching `{url}/service-info` on registration) was rejected:
 the identifier in service info is self-declared, and fetching user-supplied
 URLs would allow server-side request forgery.
 
-Services stored before this check get their key on startup. If some of them
-have invalid URLs, or the same URL and API type as another one, the app
-refuses to start and names all of them. Invalid URLs include URLs with schemes
-other than `http` and `https`, which were accepted before. Fix or delete them in the database,
-e.g., with `mongosh` (see the [deployment instructions][deployment-instructions]
-for access to the database of a Helm deployment):
+Services stored before this check get their key on startup; only services
+without a key are checked again. If some of them have invalid URLs, or the same
+URL and API type as another one, the app refuses to start and names all of
+them. Invalid URLs include some that were accepted before: URLs with schemes
+other than `http` and `https`, whitespace or control characters, or port 0. Fix
+or delete them in the database, e.g., with `mongosh` (see the [deployment
+instructions][deployment-instructions] for access to the database of a Helm
+deployment):
 
 ```javascript
 db.getSiblingDB("serviceStore").services.deleteOne({id: "<id>"})

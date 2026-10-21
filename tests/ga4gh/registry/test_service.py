@@ -174,6 +174,9 @@ class TestRegisterService:
         ("https://bücher.example.org", "https://xn--bcher-kva.example.org"),
         ("https://XN--BCHER-KVA.example.org", "https://xn--bcher-kva.example.org"),
         ("https://faß.de", "https://xn--fa-hia.de"),
+        # zero width non-joiner and joiner (IDNA 2008, CONTEXTJ)
+        ("https://\u0628\u06cc\u200c\u062a.ir", "https://xn--ngbe99b612f.ir"),
+        ("https://\u0915\u094d\u200d\u0937.in", "https://xn--11b2ezcw70k.in"),
         ("https://a.com。/x", "https://a.com/x"),
         ("https://my_host.internal", "https://my_host.internal"),
         ("https://[0::FFFF:1.2.3.4]/v1", "https://[::ffff:1.2.3.4]/v1"),
@@ -208,6 +211,9 @@ def test_normalize_url(url, normalized):
         "ht\ttps://tes.example.org",
         "\u00a0https://tes.example.org",
         "https://tes.example.org/v1\n",
+        "https://tes.ex\u00adample.org",
+        "https://tes\u202e.example.org",
+        "https://tes.example.org/\u200dv1",
         "http://[::1/v1",
         "https://.",
         "https://[::g]",
@@ -235,6 +241,8 @@ def test_normalize_url_invalid(url):
         "HTTPS://WWW.Example.org:8443/docs?page=1#top",
         "https://[::1]/docs",
         "https://bücher.example.org",
+        "https://\u0628\u06cc\u200c\u062a.ir",
+        "https://\u0915\u094d\u200d\u0937.in",
     ],
 )
 def test_check_link(url):
@@ -251,7 +259,12 @@ def test_check_link(url):
         ("\u00a0https://www.example.org", "must not contain whitespace"),
         ("ht\ttps://www.example.org", "must not contain whitespace"),
         ("https://www.exa\nmple.org", "must not contain whitespace"),
-        ("https://www.example.org/\x00", "control characters"),
+        ("https://www.example.org/\x00", "control or format characters"),
+        ("https://www.example.org/\u202ev1", "control or format characters"),
+        ("https://www.ex\u00adample.org", "control or format characters"),
+        ("https://www.example.org/?q=\u200c", "control or format characters"),
+        ("https://www.example.org/#\u2028", "control or format characters"),
+        ("https://www\u202e.example.org", "control or format characters"),
         ("https://www.example.org:port", "must be valid URLs"),
         ("http://[::1/docs", "must be valid URLs"),
         ("https://www.example.org:0", "need a valid port"),
@@ -268,7 +281,7 @@ def test_check_link(url):
 )
 def test_check_link_invalid(url, detail):
     """Links must be HTTP(S) URLs with a valid host and port, and without
-    user info, whitespace or control characters, saying why.
+    user info, whitespace, control or format characters, saying why.
     """
     with pytest.raises(InvalidService) as exc_info:
         check_link(url, field="documentationUrl")
@@ -288,6 +301,9 @@ def test_check_link_schemes(url):
     "url, detail",
     [
         ("mailto:", "must be HTTP(S) URLs"),
+        ("mailto:#support", "must be HTTP(S) URLs"),
+        ("mailto:?to=support@example.org", "must be HTTP(S) URLs"),
+        ("mailto:support\u00ad@example.org", "control or format characters"),
         ("mailto://example.org/support", "must be HTTP(S) URLs"),
         ("mailto:support@example.org\n", "must not contain whitespace"),
         ("mailto:a b@example.org", "must not contain whitespace"),
@@ -322,23 +338,24 @@ def test_check_links(data):
 
 
 @pytest.mark.parametrize(
-    "data",
+    "data, field",
     [
-        {"contactUrl": "javascript:alert(1)"},
-        {"documentationUrl": "mailto:support@example.org"},
-        {"organization": {"url": "file:///etc/passwd"}},
+        ({"contactUrl": "javascript:alert(1)"}, "contactUrl"),
+        ({"documentationUrl": "mailto:support@example.org"}, "documentationUrl"),
+        ({"organization": {"url": "file:///etc/passwd"}}, "organization.url"),
     ],
 )
-def test_check_links_invalid(data):
-    """Invalid links are rejected."""
-    with pytest.raises(InvalidService):
+def test_check_links_invalid(data, field):
+    """Invalid links are rejected, naming their field."""
+    with pytest.raises(InvalidService) as exc_info:
         check_links(data)
+    assert f"'{field}'" in exc_info.value.description
 
 
 def test_normalize_host_invalid_ipv6():
     """Invalid IPv6 addresses are rejected (`urlsplit()` rejects most)."""
     with pytest.raises(InvalidService):
-        _normalize_host("::g")
+        _normalize_host("::g", subject="Service URLs")
 
 
 def test_service_key():

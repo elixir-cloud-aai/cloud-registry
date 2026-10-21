@@ -242,39 +242,29 @@ URL_FIELDS = ["url", "contactUrl", "documentationUrl", "organization.url"]
 
 @pytest.mark.parametrize("method, path", [("post", ""), ("put", "/abc")])
 @pytest.mark.parametrize("field", URL_FIELDS)
-@pytest.mark.parametrize(
-    "value",
-    [
-        "JavaScript://example.org/%0Aalert(1)",
-        "file:///etc/passwd",
-        "https:///path",
-    ],
-)
-def test_service_url_not_http(client, admin_headers, method, path, field, value):
+def test_service_url_not_http(client, admin_headers, method, path, field):
     """URLs of services, contacts, documentation and organizations must be
-    HTTP(S) URLs with a host.
+    HTTP(S) URLs (cf. the unit tests of `check_link()` for other cases).
     """
     response = getattr(client, method)(
         f"{BASE}/services{path}",
-        json=_service_with(field, value),
+        json=_service_with(field, "javascript:alert(1)"),
         headers=admin_headers,
     )
     _assert_error(response, 400)
     assert response.mimetype == "application/problem+json"
-    assert response.json["title"] == "Bad request"
     assert "Location" not in response.headers
     assert client.get(f"{BASE}/services").json == []
 
 
 @pytest.mark.parametrize("method, path", [("post", ""), ("put", "/abc")])
-@pytest.mark.parametrize("field", URL_FIELDS)
 @pytest.mark.parametrize(
-    "value",
+    "field, value",
     [
-        "http://www.example.org",
-        "https://www.example.org/docs?page=1#top",
-        "HTTPS://WWW.EXAMPLE.ORG",
-        "HttP://www.example.org:8080/a",
+        ("url", "HTTPS://TES.Example.org/ga4gh/tes/v1"),
+        ("contactUrl", "https://www.example.org/contact?topic=tes"),
+        ("documentationUrl", "http://docs.example.org/tes#top"),
+        ("organization.url", "HttP://www.example.org:8080"),
     ],
 )
 def test_service_url_http(client, admin_headers, method, path, field, value):
@@ -303,6 +293,8 @@ def test_service_contact_url_mailto(client, admin_headers, method, path):
         headers=admin_headers,
     )
     assert response.status_code == 201, response.json
+    stored = client.get(f"{BASE}/services/{response.json}").json
+    assert stored["contactUrl"] == mailto
     response = getattr(client, method)(
         f"{BASE}/services{path}",
         json=_service(documentationUrl=mailto),

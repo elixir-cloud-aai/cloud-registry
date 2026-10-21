@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import string
+import unicodedata
 from urllib.parse import SplitResult, quote, urlsplit, urlunsplit
 
 from foca.utils.misc import generate_id
@@ -26,6 +27,14 @@ VERIFIED = "_verifiedAt"
 # Projection excluding internal fields
 PROJECTION = {"_id": False, KEY: False, VERIFIED: False}
 DEFAULT_PORTS = {"http": 80, "https": 443}
+# Schemes of service URLs and links
+HTTP_SCHEMES = frozenset(DEFAULT_PORTS)
+# Categories of characters rejected in URLs (cf. `_check_characters()`):
+# control and format characters, and separators
+REJECTED_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp", "Zs"})
+# Format characters allowed in hosts, where IDNA 2008 allows them in some
+# contexts (CONTEXTJ): zero width non-joiner and joiner
+JOINERS = frozenset("\u200c\u200d")
 # Fields with URLs of links, as paths of keys, with the schemes they allow
 # besides `http` and `https`: contact URLs can be email addresses (RFC 2368),
 # as in the GA4GH service info specification
@@ -83,6 +92,8 @@ def normalize_url(url: str) -> str:
         InvalidService: The URL is invalid (cf. `_split_http_url()`) or has
             malformed percent-encodings in its path.
     """
+    # surrounding spaces are tolerated for backward compatibility; links are
+    # stored as written and must not have any (cf. `check_link()`)
     parts, host = _split_http_url(url.strip(" "), subject="Service URLs")
     scheme = parts.scheme.lower()
     if parts.port is not None and parts.port != DEFAULT_PORTS[scheme]:
@@ -105,13 +116,15 @@ def check_link(url: object, field: str, schemes: frozenset[str] = frozenset()) -
     Raises:
         InvalidService: The URL is not a string, or invalid: neither an
             HTTP(S) URL (cf. `_split_http_url()`) nor a URL with one of
-            `schemes`, a path, no authority, whitespace or control characters.
+            `schemes`, a path and no authority, or it has characters rejected
+            by `_check_characters()`.
     """
     subject = f"URLs in '{field}'"
     if not isinstance(url, str):
         raise InvalidService(f"{subject} must be strings.")
     scheme, _, rest = url.partition(":")
-    if scheme.lower() in schemes and rest and not rest.startswith("//"):
+    # without an authority, `urlsplit()` doesn't raise
+    if scheme.lower() in schemes and not rest.startswith("//") and urlsplit(url).path:
         _check_characters(url, subject=subject)
         return
     _split_http_url(url, subject=subject)
@@ -136,23 +149,34 @@ def check_links(data: dict) -> None:
             check_link(value, field=".".join(path), schemes=schemes)
 
 
-def _check_characters(url: str, subject: str) -> None:
-    """Check that a URL has no whitespace or control characters.
+def _check_characters(
+    url: str, subject: str, allowed: frozenset[str] = frozenset()
+) -> None:
+    """Check that a URL has no whitespace, control or format characters.
 
     URLs are stored as written, so such characters are rejected rather than
     normalized: `urlsplit()` would strip some of them or drop tabs and
     newlines, so that the stored URL would differ from the one checked.
+    Format characters (e.g., bidirectional controls, soft hyphens) are
+    invisible or reorder text, so they are rejected, too, except `allowed`
+    ones (e.g., `JOINERS` in hosts, which the IDNA check validates).
 
     Args:
-        url: URL.
+        url: URL, or part of it.
         subject: Subject of error messages (e.g., `Service URLs`).
+        allowed: Characters allowed although in `REJECTED_CATEGORIES`.
 
     Raises:
-        InvalidService: The URL has whitespace or control characters.
+        InvalidService: The URL has whitespace, control or format
+            characters, other than `allowed` ones.
     """
-    if any(char.isspace() or not char.isprintable() for char in url):
+    if any(
+        char not in allowed
+        and (char.isspace() or unicodedata.category(char) in REJECTED_CATEGORIES)
+        for char in url
+    ):
         raise InvalidService(
-            f"{subject} must not contain whitespace or control characters."
+            f"{subject} must not contain whitespace, control or format characters."
         )
 
 
@@ -167,17 +191,19 @@ def _split_http_url(url: str, subject: str) -> tuple[SplitResult, str]:
         Parts of the URL, and its normalized host (cf. `_normalize_host()`).
 
     Raises:
-        InvalidService: The URL is invalid, has whitespace or control
-            characters, no scheme or an invalid or no host, a scheme other
-            than `http` and `https`, user info, or an invalid port (or `0`).
+        InvalidService: The URL is invalid, has characters rejected by
+            `_check_characters()` (joiners only in the host), no scheme or an
+            invalid or no host, a scheme other than `http` and `https`, user
+            info, or an invalid port (or `0`).
     """
-    _check_characters(url, subject=subject)
+    _check_characters(url, subject=subject, allowed=JOINERS)
     try:
         parts = urlsplit(url)
         port = parts.port
     except ValueError as exc:
         raise InvalidService(f"{subject} must be valid URLs: {exc}.") from exc
-    if parts.scheme and parts.scheme.lower() not in DEFAULT_PORTS:
+    _check_characters(parts.path + parts.query + parts.fragment, subject=subject)
+    if parts.scheme and parts.scheme.lower() not in HTTP_SCHEMES:
         raise InvalidService(f"{subject} must be HTTP(S) URLs.")
     if not parts.scheme or not parts.hostname:
         raise InvalidService(f"{subject} need a scheme and a host.")
@@ -188,7 +214,7 @@ def _split_http_url(url: str, subject: str) -> tuple[SplitResult, str]:
     return parts, _normalize_host(parts.hostname, subject=subject)
 
 
-def _normalize_host(host: str, subject: str = "Service URLs") -> str:
+def _normalize_host(host: str, subject: str) -> str:
     """Normalize the host of a URL.
 
     Args:
