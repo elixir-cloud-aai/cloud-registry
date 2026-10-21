@@ -25,10 +25,10 @@ As the app on startup, refuse to render without a group mapped to the role
 As the app on startup (FOCA), refuse to render without an audience (a list
 of non-blank client IDs) for the trusted token issuers, unless audience
 validation is explicitly disabled (with a value that pydantic parses as
-false, e.g., `false` or "False"), or no issuers are trusted (`issuers: []`;
-the base config trusts LS Login).
+false, e.g., `false` or "False"). Without issuers, FOCA requires no
+audience, but refuses to run with access control, which the app needs, so
+there is no exception for them.
 */ -}}
-{{- $issuers := dig "security" "auth" "issuers" (list "base config") $config -}}
 {{- $verifyAudience := dig "security" "auth" "verify_audience" true $config -}}
 {{- if kindIs "string" $verifyAudience -}}
 {{- $verifyAudience = not (has (lower $verifyAudience) (list "0" "off" "f" "false" "n" "no")) -}}
@@ -40,7 +40,7 @@ the base config trusts LS Login).
 {{- $hasAudience = false -}}
 {{- end -}}
 {{- end -}}
-{{- if and $verifyAudience (not (and (kindIs "slice" $issuers) (empty $issuers))) (not $hasAudience) -}}
+{{- if and $verifyAudience (not $hasAudience) -}}
 {{- fail "config.security.auth.audience must list the client IDs of the apps calling the registry (e.g., its front end), whose tokens are accepted; or set config.security.auth.verify_audience to false to accept tokens for any audience (not recommended)" -}}
 {{- end -}}
 {{- $generated := dict

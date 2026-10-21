@@ -193,8 +193,19 @@ class TestChartOverlay:
             ("--set", "config.security.auth.verify_audience=true"),
             ("--set-string", "config.security.auth.verify_audience=true"),
             ("--set-json", 'config.security.auth.issuers=["https://x.org/"]'),
+            # FOCA refuses no issuers anyway, as access control needs them
+            ("--set-json", "config.security.auth.issuers=[]"),
         ],
-        ids=["missing", "empty", "blank", "null", "verified", "string", "issuers"],
+        ids=[
+            "missing",
+            "empty",
+            "blank",
+            "null",
+            "verified",
+            "string",
+            "issuers",
+            "no_issuers",
+        ],
     )
     def test_audience_required(self, args):
         """Rendering fails without an audience, as the app would refuse to
@@ -227,19 +238,6 @@ class TestChartOverlay:
         path.write_text(yaml.safe_dump(overlay))
         monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(path))
         assert _parse_config().security.auth.audience is None
-
-    def test_audience_optional_without_issuers(self):
-        """Without trusted issuers, no audience is needed, as for FOCA (which
-        then also requires access control to be disabled).
-        """
-        overlay = _render_overlay(
-            "--set",
-            "host_name=example.org",
-            "--set-json",
-            "config.security.auth.issuers=[]",
-            audience=None,
-        )
-        assert overlay["security"]["auth"] == {"issuers": []}
 
     def test_audience(self, tmp_path, monkeypatch):
         """The audience is passed to the app."""
