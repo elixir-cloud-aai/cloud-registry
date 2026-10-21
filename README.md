@@ -128,9 +128,11 @@ http://localhost:8080/ga4gh/registry/v1/
 You can explore the service via the [Swagger UI][url-swagger], which also
 serves the OpenAPI specification (`/ga4gh/registry/v1/openapi.json`).
 
-> The app listens on the port set in the [config][config] (`server.port`);
+> The image's Gunicorn listens on port 8080 (`--bind`, see [Server](#server));
 > [`docker-compose.yaml`][compose] publishes it on the host. If you change
-> either, update the URLs above accordingly.
+> the published port, update the URLs above accordingly. `server.port` of the
+> [config][config] only sets the port of the development server
+> (`python -m cloud_registry.app`).
 
 [Endpoints][schema-endpoints] can be probed with `curl`, for example:
 
@@ -488,9 +490,11 @@ passes it on from the host, and the Helm chart sets it from its
 
 Each worker loads the whole app (about 55 MiB of memory), with its own
 database client, and runs the startup checks (e.g., of the service info and
-the admin groups); if they fail, Gunicorn exits. `server.host` and
-`server.port` of the config apply only to Flask's development server
-(`python -m cloud_registry.app`), which is not for production.
+the admin groups); if they fail, Gunicorn exits. Gunicorn always listens on
+`0.0.0.0:8080` (its `bind` setting): `server.host` and `server.port` of the
+config apply only to Flask's development server
+(`python -m cloud_registry.app`), which is not for production, and changing
+them does not move the image's traffic.
 
 Serve the app behind a reverse proxy that buffers requests (e.g.,
 ingress-nginx, as with the Helm chart): Gunicorn's threads read requests
