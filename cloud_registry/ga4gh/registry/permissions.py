@@ -261,8 +261,8 @@ def getServicePermissions(serviceId: str, **kwargs: Any) -> list[dict[str, Any]]
 
     Args:
         serviceId: Service identifier.
-        **kwargs: Further arguments that Connexion passes (`user`,
-            `token_info`); unused.
+        **kwargs: Further arguments that Connexion passes (e.g., `user`,
+            `token_info` or the request body); unused.
 
     Returns:
         Roles granted on the service: user identifier, display name (if
@@ -562,8 +562,8 @@ def putServicePermission(serviceId: str, userId: str, **kwargs: Any) -> dict[str
     Args:
         serviceId: Service identifier.
         userId: User identifier (`sub` claim of the user's tokens).
-        **kwargs: Further arguments that Connexion passes (`user`,
-            `token_info`); unused.
+        **kwargs: Further arguments that Connexion passes (e.g., `user`,
+            `token_info` or the request body); unused.
 
     Returns:
         User identifier and granted role.
@@ -584,8 +584,8 @@ def deleteServicePermission(serviceId: str, userId: str, **kwargs: Any) -> str:
     Args:
         serviceId: Service identifier.
         userId: User identifier.
-        **kwargs: Further arguments that Connexion passes (`user`,
-            `token_info`); unused.
+        **kwargs: Further arguments that Connexion passes (e.g., `user`,
+            `token_info` or the request body); unused.
 
     Returns:
         User identifier.
@@ -612,8 +612,8 @@ def putServiceGroupPermission(
     Args:
         serviceId: Service identifier.
         entitlement: Group, i.e., a value of the group claim of its members.
-        **kwargs: Further arguments that Connexion passes (`user`,
-            `token_info`); unused.
+        **kwargs: Further arguments that Connexion passes (e.g., `user`,
+            `token_info` or the request body); unused.
 
     Returns:
         Group and granted role.
@@ -647,8 +647,8 @@ def deleteServiceGroupPermission(
     Args:
         serviceId: Service identifier.
         entitlement: Group.
-        **kwargs: Further arguments that Connexion passes (`user`,
-            `token_info`); unused.
+        **kwargs: Further arguments that Connexion passes (e.g., `user`,
+            `token_info` or the request body); unused.
 
     Returns:
         The group.
@@ -664,8 +664,8 @@ def getMe(**kwargs: Any) -> dict[str, Any]:
     The name is stored for the services the user has a role on.
 
     Args:
-        **kwargs: Further arguments that Connexion passes (`user`,
-            `token_info`); unused.
+        **kwargs: Further arguments that Connexion passes (e.g., `user`,
+            `token_info` or the request body); unused.
 
     Returns:
         User identifier, whether the user is an admin (cf. `is_admin()`),

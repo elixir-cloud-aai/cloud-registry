@@ -38,8 +38,8 @@ def getServices(**kwargs: Any) -> list[dict[str, Any]]:
     """List all services.
 
     Args:
-        **kwargs: Further arguments that Connexion passes (`user`,
-            `token_info`); unused.
+        **kwargs: Further arguments that Connexion passes (e.g., `user`,
+            `token_info` or the request body); unused.
 
     Returns:
         List of services.
@@ -59,8 +59,8 @@ def getServiceById(serviceId: str, **kwargs: Any) -> dict[str, Any]:
 
     Args:
         serviceId: Identifier of service to be retrieved.
-        **kwargs: Further arguments that Connexion passes (`user`,
-            `token_info`); unused.
+        **kwargs: Further arguments that Connexion passes (e.g., `user`,
+            `token_info` or the request body); unused.
 
     Returns:
         Service object.
@@ -78,8 +78,8 @@ def getServiceTypes(**kwargs: Any) -> list[dict[str, Any]]:
     """List types of services.
 
     Args:
-        **kwargs: Further arguments that Connexion passes (`user`,
-            `token_info`); unused.
+        **kwargs: Further arguments that Connexion passes (e.g., `user`,
+            `token_info` or the request body); unused.
 
     Returns:
         List of distinct service types, sorted by group, artifact and version.
@@ -100,8 +100,8 @@ def postService(**kwargs: Any) -> RegisterResponse:
     """Add service with an auto-generated identifier.
 
     Args:
-        **kwargs: Further arguments that Connexion passes (`user`,
-            `token_info`); unused.
+        **kwargs: Further arguments that Connexion passes (e.g., `user`,
+            `token_info` or the request body); unused.
 
     Returns:
         Identifier of registered service, with status `201` and its URL as
@@ -122,8 +122,8 @@ def deleteService(serviceId: str, **kwargs: Any) -> str:
 
     Args:
         serviceId: Identifier of service to be deleted.
-        **kwargs: Further arguments that Connexion passes (`user`,
-            `token_info`); unused.
+        **kwargs: Further arguments that Connexion passes (e.g., `user`,
+            `token_info` or the request body); unused.
 
     Returns:
         Identifier of deleted service.
@@ -154,8 +154,8 @@ def putService(serviceId: str, **kwargs: Any) -> RegisterResponse:
 
     Args:
         serviceId: Identifier of service to be registered/updated.
-        **kwargs: Further arguments that Connexion passes (`user`,
-            `token_info`); unused.
+        **kwargs: Further arguments that Connexion passes (e.g., `user`,
+            `token_info` or the request body); unused.
 
     Returns:
         Identifier of registered/updated service; for registered services,
