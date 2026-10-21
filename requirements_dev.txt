@@ -10,5 +10,5 @@ pytest==9.1.1
 # (`.github/workflows/checks.yaml`); builds use `build-system.requires`
 setuptools-scm==10.3.4
 # Used by tests on Python 3.10 (`tomllib` from 3.11 on)
-tomli==2.3.1; python_version < "3.11"
+tomli==2.5.0; python_version < "3.11"
 types-PyYAML==6.0.12.20260906
