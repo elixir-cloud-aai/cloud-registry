@@ -1,6 +1,7 @@
 """App exceptions."""
 
 from json import dumps
+import logging
 
 from connexion.exceptions import (
     BadRequestProblem,
@@ -19,6 +20,10 @@ from werkzeug.exceptions import (
     RequestEntityTooLarge,
 )
 
+from cloud_registry.utils import escape_log_value
+
+logger = logging.getLogger(__name__)
+
 # exceptions raised in app context
 exceptions = {
     Exception: {
@@ -28,7 +33,7 @@ exceptions = {
     },
     BadRequestProblem: {
         "title": "Bad request",
-        "detail": "The request is malformed",
+        "detail": "The request is malformed.",
         "status": 400,
     },
     BadRequest: {
@@ -92,16 +97,63 @@ def problem(exc: HTTPException, **extensions: str) -> Response:
     Returns:
         Problem details response.
     """
-    # title as for other errors, from the closest mapped exception class
-    title = next(
-        exceptions[cls]["title"] for cls in type(exc).__mro__ if cls in exceptions
-    )
-    details = {
-        "title": title,
-        "status": exc.code,
-        "detail": exc.description,
+    return _response(
+        title=_mapped(exc)["title"],
+        status=exc.code,  # type: ignore[arg-type]
+        detail=exc.description,  # type: ignore[arg-type]
         **extensions,
-    }
-    return Response(
-        dumps(details), status=exc.code, mimetype="application/problem+json"
     )
+
+
+def validation_problem(exc: BadRequestProblem | ExtraParameterProblem) -> Response:
+    """Build a problem details response for a request that Connexion's
+    validation rejected, with the reason (e.g., the validator's message).
+
+    Registered as error handler for these exceptions (cf.
+    `cloud_registry.app.create_app()`), as FOCA's handler only serves the
+    fixed details of the exception class.
+
+    Args:
+        exc: Validation error, with the reason as `detail` (a string, or a
+            list of them for form data).
+
+    Returns:
+        Problem details response (`400`), with the reason as `detail`, or
+        the mapped details if there is none.
+    """
+    mapped = _mapped(exc)
+    detail = exc.detail
+    if isinstance(detail, list):
+        detail = "; ".join(str(item) for item in detail)
+    if not isinstance(detail, str) or not detail:
+        detail = mapped["detail"]
+    logger.info("Request rejected: %s", escape_log_value(detail))
+    return _response(title=mapped["title"], status=mapped["status"], detail=detail)
+
+
+def _mapped(exc: Exception) -> dict:
+    """Get the problem details mapped to the closest class of an exception.
+
+    Args:
+        exc: Exception.
+
+    Returns:
+        Problem details of the closest class in `exceptions`.
+    """
+    return next(exceptions[cls] for cls in type(exc).__mro__ if cls in exceptions)
+
+
+def _response(title: str, status: int, detail: str, **extensions: str) -> Response:
+    """Build a problem details response.
+
+    Args:
+        title: Title of the problem.
+        status: HTTP status code.
+        detail: Description of the problem.
+        extensions: Extension members of the problem details.
+
+    Returns:
+        Problem details response.
+    """
+    details = {"title": title, "status": status, "detail": detail, **extensions}
+    return Response(dumps(details), status=status, mimetype="application/problem+json")

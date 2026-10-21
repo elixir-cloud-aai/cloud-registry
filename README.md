@@ -207,6 +207,11 @@ verifications (`PUT /services/{serviceId}/verification`) are limited in length
 Services stored before these limits were introduced may have longer values;
 they can't be updated unchanged, only with the values shortened.
 
+Requests that don't match the [API specification](#usage) (e.g., missing or
+unknown fields, values that are too long, extra query parameters, or bodies
+that aren't JSON) are rejected with `400 Bad Request`, with the reason in
+`detail`.
+
 See [Access control](#access-control) for the roles and [Verified
 services](#verified-services) for verifications. Extensions of the GA4GH
 endpoints, such as pagination, search or filters, will be reconsidered with

@@ -900,3 +900,48 @@ def test_service_date_time(client, admin_headers):
     service_id = _post(client, admin_headers, _service(**timestamps))
     service = client.get(f"{BASE}/services/{service_id}").json
     assert {field: service[field] for field in timestamps} == timestamps
+
+
+@pytest.mark.parametrize(
+    "request_kwargs, detail",
+    [
+        (
+            {"method": "post", "path": "/services", "json": {"url": "x"}},
+            "'name' is a required property",
+        ),
+        (
+            {
+                "method": "post",
+                "path": "/services",
+                "json": _service(name="a" * 1025),
+            },
+            "is too long - 'name'",
+        ),
+        (
+            {"method": "put", "path": "/services/types", "json": _service()},
+            "does not match",
+        ),
+        (
+            {
+                "method": "post",
+                "path": "/services",
+                "data": "{",
+                "content_type": "application/json",
+            },
+            "Request body is not valid JSON",
+        ),
+        (
+            {"method": "get", "path": "/services/abc?page=1"},
+            "Extra query parameter(s) page not in spec",
+        ),
+    ],
+    ids=["required", "too_long", "pattern", "json", "extra_parameter"],
+)
+def test_validation_error_detail(client, admin_headers, request_kwargs, detail):
+    """Requests rejected by the schema validation return `400`, saying why."""
+    path = request_kwargs.pop("path")
+    response = client.open(f"{BASE}{path}", headers=admin_headers, **request_kwargs)
+    _assert_error(response, 400)
+    assert response.mimetype == "application/problem+json"
+    assert response.json["title"] == "Bad request"
+    assert detail in response.json["detail"]
