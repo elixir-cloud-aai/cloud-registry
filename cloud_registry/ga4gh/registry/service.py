@@ -617,11 +617,14 @@ def add_service_keys() -> None:
     """Add keys to services registered without one, e.g., before keys were
     introduced.
 
+    Concurrent runs of this function are safe (e.g., in each worker of the
+    app on startup): keys added by another run are kept. Services registered
+    without keys while it runs (e.g., by an app of an older version) are not
+    safe: they may be missed or reported as duplicates.
+
     Raises:
         RuntimeError: Services have invalid URLs or types, or the same URL
-            and API type; the message names all of them. Assumes that no
-            services without keys are registered concurrently (e.g., by an
-            app of an older version).
+            and API type; the message names all of them.
     """
     collection = get_collection("services")
     problems = []
@@ -632,6 +635,8 @@ def add_service_keys() -> None:
             problems.append(f"'{service['id']}': {exc.description}")
             continue
         existing = collection.find_one({KEY: key}, {"_id": False, "id": True})
+        if existing is not None and existing["id"] == service["id"]:
+            continue  # added concurrently, e.g., by another worker
         if existing is not None:
             problems.append(
                 f"'{service['id']}': same URL and API type as '{existing['id']}'"

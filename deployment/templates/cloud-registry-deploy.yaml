@@ -31,6 +31,11 @@ spec:
         env:
         - name: FOCA_CONFIG_OVERLAY
           value: /etc/cloud-registry/overlay.yaml
+        # Settings of Gunicorn (the image's command), overriding the image's
+        # defaults; options are split like shell words, so `extraArgs` are
+        # quoted
+        - name: GUNICORN_CMD_ARGS
+          value: {{ include "cloud-registry.gunicornArgs" . | quote }}
         {{- if .Values.mongodb.auth.enabled }}
         {{- include "cloud-registry.mongodbSecretEnv" (dict "root" . "vars" (dict
           "MONGO_USERNAME" "username"
@@ -65,6 +70,15 @@ spec:
           periodSeconds: 20
           timeoutSeconds: 5
           failureThreshold: 3
+        {{- with int .Values.cloud_registry.preStopSleepSeconds }}
+        # Keep serving until the ingress controller and Service have removed
+        # the pod from their endpoints, as Gunicorn stops accepting
+        # connections on SIGTERM (Python, as the image need not have `sleep`)
+        lifecycle:
+          preStop:
+            exec:
+              command: ["python", "-c", {{ printf "import time; time.sleep(%d)" . | quote }}]
+        {{- end }}
         resources: {{- toYaml .Values.cloud_registry.resources | nindent 10 }}
         securityContext:
           {{- include "cloud-registry.securityContext" (dict "root" . "context" .Values.cloud_registry.securityContext) | nindent 10 }}
@@ -83,7 +97,7 @@ spec:
       schedulerName: default-scheduler
       securityContext:
         {{- include "cloud-registry.securityContext" (dict "root" . "context" .Values.cloud_registry.podSecurityContext) | nindent 8 }}
-      terminationGracePeriodSeconds: 30
+      terminationGracePeriodSeconds: {{ include "cloud-registry.terminationGracePeriod" . }}
       volumes:
       - configMap:
           name: {{ printf "%s-config" (include "cloud-registry.fullname" .) | quote }}

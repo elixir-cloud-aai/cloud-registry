@@ -78,7 +78,7 @@
     },
     "cloud_registry": {
       "type": "object",
-      "required": ["image", "probePath"],
+      "required": ["image", "probePath", "preStopSleepSeconds", "gunicorn"],
       "properties": {
         "image": {
           "type": "string",
@@ -137,6 +137,58 @@
         },
         "tmpSizeLimit": {
           "$ref": "#/$defs/tmpSizeLimit"
+        },
+        "preStopSleepSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 300,
+          "description": "Seconds that the app keeps serving after its pod is deleted (preStop hook); 0 omits the hook"
+        },
+        "gunicorn": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["workers", "threads", "timeout", "gracefulTimeout", "keepalive", "extraArgs"],
+          "description": "Settings of Gunicorn, the image's WSGI server (via GUNICORN_CMD_ARGS)",
+          "properties": {
+            "workers": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64,
+              "description": "Worker processes; each loads the whole app (about 55Mi)"
+            },
+            "threads": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 256,
+              "description": "Threads per worker"
+            },
+            "timeout": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600,
+              "description": "Seconds after which workers whose main loop does not respond are restarted (slow requests in threads do not count)"
+            },
+            "gracefulTimeout": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3600,
+              "description": "Seconds that workers get to finish requests on shutdown; the termination grace period is this plus preStopSleepSeconds plus 10 seconds"
+            },
+            "keepalive": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3600,
+              "description": "Seconds after which idle keep-alive connections are closed (0: no keep-alive); longer than the upstream keep-alive timeout of the ingress controller (60 for ingress-nginx)"
+            },
+            "extraArgs": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[^']*$"
+              },
+              "description": "Further Gunicorn options (no single quotes); --bind/-b, --preload and --graceful-timeout are rejected"
+            }
+          }
         }
       }
     }

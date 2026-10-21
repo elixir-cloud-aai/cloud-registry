@@ -29,6 +29,11 @@ warn_unused_ignores = true
 module = ["connexion", "connexion.*"]
 ignore_missing_imports = true
 
+# Gunicorn ships no type information (used by the tests only)
+[[tool.mypy.overrides]]
+module = ["gunicorn", "gunicorn.*"]
+ignore_missing_imports = true
+
 [tool.coverage.run]
 source = ["cloud_registry"]
 

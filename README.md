@@ -128,9 +128,11 @@ http://localhost:8080/ga4gh/registry/v1/
 You can explore the service via the [Swagger UI][url-swagger], which also
 serves the OpenAPI specification (`/ga4gh/registry/v1/openapi.json`).
 
-> The app listens on the port set in the [config][config] (`server.port`);
+> The image's Gunicorn listens on port 8080 (`--bind`, see [Server](#server));
 > [`docker-compose.yaml`][compose] publishes it on the host. If you change
-> either, update the URLs above accordingly.
+> the published port, update the URLs above accordingly. `server.port` of the
+> [config][config] only sets the port of the development server
+> (`python -m cloud_registry.app`).
 
 [Endpoints][schema-endpoints] can be probed with `curl`, for example:
 
@@ -414,7 +416,10 @@ config overlay file and list it in environment variable `FOCA_CONFIG_OVERLAY`
 (several files separated by `:`); FOCA merges overlays into the config on
 startup (see the [FOCA deployment guide][foca-deployment]). The [Helm
 chart][deployment-instructions] uses the same mechanism: it renders its
-`config` value (in a values file per deployment) into an overlay.
+`config` value (in a values file per deployment) into an overlay. Overlays
+cannot change the address the image listens on: `server.host` and
+`server.port` apply to the development server only, not to Gunicorn (see
+[Server](#server)).
 
 Each deployment must set two values that depend on it, otherwise the app
 refuses to start:
@@ -466,6 +471,35 @@ that it rejects larger requests itself; the Helm chart sets the limit of
 ingress-nginx from `custom.max_content_length` (see the [deployment
 instructions][deployment-instructions]).
 
+### Server
+
+The image serves the app with [Gunicorn][gunicorn] on port 8080, with
+settings for a small container in
+[`cloud_registry/gunicorn_config.py`][gunicorn-config]: one worker process
+with 4 threads, workers restarted if their main loop doesn't respond for 30
+seconds (requests run in threads, so slow requests don't count), 20 seconds
+to finish requests on shutdown, idle keep-alive connections closed after 75
+seconds, and Gunicorn's size limits of the request line and headers. Keep the
+keep-alive timeout longer than that of a reverse proxy in front of the app
+for its connections to the app (60 seconds for ingress-nginx): otherwise, the
+proxy may reuse a connection just as Gunicorn closes it, and the request
+fails (`502`). To change the settings, set `GUNICORN_CMD_ARGS` to [Gunicorn
+options][gunicorn-settings] (e.g., `--workers 2 --threads 8`); Docker Compose
+passes it on from the host, and the Helm chart sets it from its
+`cloud_registry.gunicorn` values.
+
+Each worker loads the whole app (about 55 MiB of memory), with its own
+database client, and runs the startup checks (e.g., of the service info and
+the admin groups); if they fail, Gunicorn exits. Gunicorn always listens on
+`0.0.0.0:8080` (its `bind` setting): `server.host` and `server.port` of the
+config apply only to Flask's development server
+(`python -m cloud_registry.app`), which is not for production, and changing
+them does not move the image's traffic.
+
+Serve the app behind a reverse proxy that buffers requests (e.g.,
+ingress-nginx, as with the Helm chart): Gunicorn's threads read requests
+themselves, so slow clients can tie them up.
+
 ## Development
 
 Development needs Python 3.10 or later, and [Helm][helm] for the tests of the
@@ -483,7 +517,9 @@ pytest
 
 The tests need no database (they use `mongomock`). To try changes in the
 running app, rebuild it with `docker compose up --build -d` (see
-[Deployment](#deployment)).
+[Deployment](#deployment)). `python -m cloud_registry.app` runs the app with
+Flask's development server instead of Gunicorn (see [Server](#server)); it
+needs a MongoDB at `db.host` of the config.
 
 Run `pre-commit` in the environment with the dev requirements: the mypy and
 ast-grep hooks use the installed packages. The first run sets up the other
@@ -596,6 +632,9 @@ etc.
 [docker-compose]: <https://docs.docker.com/compose/install/>
 [docs-api]: <https://cloud-registry.readthedocs.io/en/latest/>
 [git]: <https://git-scm.com/book/en/v2/Getting-Started-Installing-Git>
+[gunicorn]: <https://gunicorn.org/>
+[gunicorn-config]: cloud_registry/gunicorn_config.py
+[gunicorn-settings]: <https://gunicorn.org/reference/settings/>
 [helm]: <https://helm.sh/>
 [license]: LICENSE
 [license-apache]: <https://www.apache.org/licenses/LICENSE-2.0>

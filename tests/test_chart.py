@@ -2,12 +2,14 @@
 
 import json
 import re
+import shlex
 import subprocess
 
 import pytest
 import yaml
 
 from cloud_registry.service_models.custom_config import MAX_CONTENT_LENGTH
+from tests.gunicorn_settings import load_settings
 from tests.helm import (
     APP,
     CHART,
@@ -34,6 +36,8 @@ TMP_SIZE_LIMIT = "64Mi"
 BODY_SIZE = "nginx.ingress.kubernetes.io/proxy-body-size"
 BODY_SIZE_LIMIT = str(MAX_CONTENT_LENGTH)
 PROBES = ("startupProbe", "readinessProbe", "livenessProbe")
+# Environment variables of the app with literal values (no credentials)
+APP_ENV = {"FOCA_CONFIG_OVERLAY", "GUNICORN_CMD_ARGS"}
 # Default image tag
 APP_VERSION = yaml.safe_load((CHART / "Chart.yaml").read_text())["appVersion"]
 
@@ -241,7 +245,7 @@ def test_auth_disabled():
     docs = _render(*NO_AUTH, mongodb_secret=None)
     for name in (APP, MONGODB):
         assert not _secret_refs(_container(docs, name))
-    assert _literal_env(_container(docs, APP)) == {"FOCA_CONFIG_OVERLAY"}
+    assert _literal_env(_container(docs, APP)) == APP_ENV
     assert _literal_env(_container(docs, MONGODB)) == set()
     assert ("ConfigMap", INIT_SCRIPT) not in docs
     assert _init_script_volumes(docs) == ([], [])
@@ -263,7 +267,7 @@ def test_auth_enabled():
         "MONGO_APP_PASSWORD": (MONGODB_SECRET, "password"),
     }
     # No other variables, e.g., with literal credentials
-    assert _literal_env(app) == {"FOCA_CONFIG_OVERLAY"}
+    assert _literal_env(app) == APP_ENV
     assert _literal_env(mongodb) == set()
     script = docs[("ConfigMap", INIT_SCRIPT)]["data"]["create-app-user.js"]
     assert "process.env.MONGO_APP_PASSWORD" in script
@@ -538,6 +542,233 @@ def test_tmp_size_limit(tmp_path, name, values):
     assert _tmp_volume(docs, name)["emptyDir"] == {"sizeLimit": "67108864"}
     docs = _render("--set", f"{values}.tmpSizeLimit=null")
     assert _tmp_volume(docs, name)["emptyDir"] == {}
+
+
+def _gunicorn_args(docs: dict) -> str:
+    """Get the Gunicorn options of the app (`GUNICORN_CMD_ARGS`)."""
+    env = _container(docs, APP)["env"]
+    (args,) = [var["value"] for var in env if var["name"] == "GUNICORN_CMD_ARGS"]
+    return args
+
+
+def _grace_period(docs: dict) -> int:
+    """Get the termination grace period of the app's pod."""
+    return _pod(docs, APP)["terminationGracePeriodSeconds"]
+
+
+def test_gunicorn_defaults():
+    """By default, Gunicorn gets the image's settings."""
+    docs = _render()
+    cfg = load_settings(_gunicorn_args(docs)).cfg
+    image = load_settings().cfg
+    for name in ("workers", "threads", "timeout", "graceful_timeout", "keepalive"):
+        assert getattr(cfg, name) == getattr(image, name), name
+
+
+def test_gunicorn_values(tmp_path):
+    """Gunicorn's settings can be changed (also from values files, which
+    have floats), with further options, which may contain spaces.
+    """
+    values = {
+        "workers": 2,
+        "threads": 8,
+        "timeout": 60,
+        "gracefulTimeout": 45,
+        "keepalive": 0,
+        "extraArgs": ["--access-logfile", "-", "--access-logformat", "%(h)s %(r)s"],
+    }
+    values_file = tmp_path / "values.yaml"
+    values_file.write_text(yaml.safe_dump({"cloud_registry": {"gunicorn": values}}))
+    docs = _render("-f", str(values_file))
+    cfg = load_settings(_gunicorn_args(docs)).cfg
+    assert (cfg.workers, cfg.threads, cfg.timeout) == (2, 8, 60)
+    assert (cfg.graceful_timeout, cfg.keepalive) == (45, 0)
+    assert (cfg.accesslog, cfg.access_log_format) == ("-", "%(h)s %(r)s")
+
+
+@pytest.mark.parametrize(
+    ("args", "error"),
+    [
+        (
+            ("--set", "cloud_registry.gunicorn.workers=0"),
+            "'/cloud_registry/gunicorn/workers': minimum",
+        ),
+        (
+            ("--set-json", "cloud_registry.gunicorn.threads=1.5"),
+            "'/cloud_registry/gunicorn/threads': got number, want integer",
+        ),
+        (
+            ("--set-string", "cloud_registry.gunicorn.timeout=30"),
+            "'/cloud_registry/gunicorn/timeout': got string, want integer",
+        ),
+        (
+            ("--set", "cloud_registry.gunicorn.gracefulTimeout=null"),
+            "'/cloud_registry/gunicorn': missing property 'gracefulTimeout'",
+        ),
+        (
+            ("--set", "cloud_registry.gunicorn.keepalive=-1"),
+            "'/cloud_registry/gunicorn/keepalive': minimum",
+        ),
+        (
+            ("--set-json", """cloud_registry.gunicorn.extraArgs=["--name='x'"]"""),
+            "'/cloud_registry/gunicorn/extraArgs/0': ",
+        ),
+        (
+            ("--set", "cloud_registry.gunicorn.preload=true"),
+            "'/cloud_registry/gunicorn': additional properties 'preload'",
+        ),
+        (
+            ("--set", "cloud_registry.gunicorn=null"),
+            "'/cloud_registry': missing property 'gunicorn'",
+        ),
+    ],
+    ids=[
+        "workers",
+        "threads",
+        "timeout",
+        "graceful",
+        "keepalive",
+        "quote",
+        "unknown",
+        "null",
+    ],
+)
+def test_gunicorn_invalid(args, error):
+    """Gunicorn's settings must be integers in their ranges, further options
+    must not contain single quotes, and other settings are rejected.
+    """
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render(*args)
+    assert error in exc.value.stderr
+
+
+def _render_extra_args(*extra_args: str) -> dict:
+    """Render the chart with further Gunicorn options."""
+    return _render(
+        "--set-json", f"cloud_registry.gunicorn.extraArgs={json.dumps(extra_args)}"
+    )
+
+
+@pytest.mark.parametrize(
+    "extra_args",
+    [
+        ("--bind", "0.0.0.0:9090"),
+        ("--bind=0.0.0.0:9090",),
+        ("--bin", "0.0.0.0:9090"),
+        ("-b", "0.0.0.0:9090"),
+        ("-b0.0.0.0:9090",),
+        ("-Rb", "0.0.0.0:9090"),
+        ("--preload",),
+        ("--pre",),
+        ("--graceful-timeout", "60"),
+        ("--graceful-timeout=60",),
+        ("--graceful", "60"),
+    ],
+)
+def test_gunicorn_reserved_args(extra_args):
+    """Further options must not change the address (the chart's ports),
+    preload the app (MongoDB clients must be created after forking) or set
+    the graceful timeout (the grace period is derived from
+    `gracefulTimeout`), also abbreviated (as Gunicorn accepts them) or with
+    attached values; Gunicorn itself would apply them.
+    """
+    cfg = load_settings(shlex.join(extra_args)).cfg
+    assert (cfg.bind, cfg.preload_app, cfg.graceful_timeout) != (
+        ["0.0.0.0:8080"],
+        False,
+        20,
+    )
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render_extra_args(*extra_args)
+    assert "cloud_registry.gunicorn.extraArgs must not set" in exc.value.stderr
+    assert repr(extra_args[0]).strip("'") in exc.value.stderr
+
+
+def test_gunicorn_other_args():
+    """Other further options are passed on, also short ones and option values
+    that look like reserved options (which Gunicorn takes as values, as they
+    contain spaces or follow `=`).
+    """
+    extra_args = (
+        "-R",
+        "--backlog",
+        "64",
+        "--access-logformat",
+        "--bind %(h)s",
+        "--name=-bx",
+    )
+    cfg = load_settings(_gunicorn_args(_render_extra_args(*extra_args))).cfg
+    assert (cfg.enable_stdio_inheritance, cfg.backlog) == (True, 64)
+    assert (cfg.access_log_format, cfg.proc_name) == ("--bind %(h)s", "-bx")
+    assert (cfg.bind, cfg.preload_app) == (["0.0.0.0:8080"], False)
+
+
+def test_gunicorn_port():
+    """The app's container port, its probes and the Service's target port
+    are the port Gunicorn listens on (the image's command; the app config's
+    `server.port` applies to the development server only).
+    """
+    (bind,) = load_settings().cfg.bind
+    port = int(bind.rpartition(":")[2])
+    docs = _render()
+    app = _container(docs, APP)
+    (container_port,) = app["ports"]
+    assert (container_port["name"], container_port["containerPort"]) == ("http", port)
+    for probe in PROBES:
+        assert app[probe]["httpGet"]["port"] in (port, "http"), probe
+    (service_port,) = docs[("Service", APP)]["spec"]["ports"]
+    assert service_port["targetPort"] in (port, "http")
+
+
+def test_pre_stop_default():
+    """By default, the app keeps serving for 5 seconds after its pod is
+    deleted (until the ingress controller removes it from its endpoints),
+    and the termination grace period covers that, Gunicorn's graceful
+    timeout and a margin of 10 seconds.
+    """
+    docs = _render()
+    hook = _container(docs, APP)["lifecycle"]["preStop"]
+    assert hook == {"exec": {"command": ["python", "-c", "import time; time.sleep(5)"]}}
+    assert _grace_period(docs) == 5 + 20 + 10
+
+
+def test_pre_stop_values(tmp_path):
+    """The delay can be changed (also from values files, which have floats)
+    or removed (`0`); the grace period follows it and the graceful timeout.
+    """
+    values_file = tmp_path / "values.yaml"
+    values_file.write_text(
+        yaml.safe_dump(
+            {
+                "cloud_registry": {
+                    "preStopSleepSeconds": 15,
+                    "gunicorn": {"gracefulTimeout": 45},
+                }
+            }
+        )
+    )
+    docs = _render("-f", str(values_file))
+    command = _container(docs, APP)["lifecycle"]["preStop"]["exec"]["command"]
+    assert command[-1] == "import time; time.sleep(15)"
+    assert _grace_period(docs) == 15 + 45 + 10
+    docs = _render("--set", "cloud_registry.preStopSleepSeconds=0")
+    assert "lifecycle" not in _container(docs, APP)
+    assert _grace_period(docs) == 20 + 10
+
+
+@pytest.mark.parametrize(
+    ("value", "error"),
+    [
+        ("-1", "'/cloud_registry/preStopSleepSeconds': minimum"),
+        ("1.5", "'/cloud_registry/preStopSleepSeconds': got number, want integer"),
+        ("null", "'/cloud_registry': missing property 'preStopSleepSeconds'"),
+    ],
+)
+def test_pre_stop_invalid(value, error):
+    """The delay must be a non-negative integer."""
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render("--set-json", f"cloud_registry.preStopSleepSeconds={value}")
+    assert error in exc.value.stderr
 
 
 def test_security_context_user_ids():

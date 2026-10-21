@@ -197,3 +197,62 @@ emptyDir:
   sizeLimit: {{ ternary . (int64 . | toString) (kindIs "string" .) | quote }}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Gunicorn options (`GUNICORN_CMD_ARGS`) from `cloud_registry.gunicorn`: the
+numbers (floats from values files) as integers, followed by `extraArgs`, each
+in single quotes, as Gunicorn splits the options like shell words (the schema
+rejects single quotes in them).
+*/}}
+{{- define "cloud-registry.gunicornArgs" -}}
+{{- $g := .Values.cloud_registry.gunicorn -}}
+{{- $args := list
+  "--workers" (int $g.workers)
+  "--threads" (int $g.threads)
+  "--timeout" (int $g.timeout)
+  "--graceful-timeout" (int $g.gracefulTimeout)
+  "--keep-alive" (int $g.keepalive)
+-}}
+{{- range $g.extraArgs -}}
+{{- include "cloud-registry.checkGunicornArg" . -}}
+{{- $args = append $args (squote .) -}}
+{{- end -}}
+{{- join " " $args -}}
+{{- end -}}
+
+{{/*
+Fail if an item of `cloud_registry.gunicorn.extraArgs` sets an option that
+the chart or the app relies on: `--bind`/`-b` (the chart's ports),
+`--preload` (MongoDB clients must be created after forking) or
+`--graceful-timeout` (the termination grace period is derived from
+`gracefulTimeout`). As Gunicorn parses them: long options also abbreviated
+and with `=value`; `-b` also with an attached value and after the short
+flags `-D` and `-R`. Items like `--bind x` (a space before any `=`) are
+values for Gunicorn, not options, so they pass.
+*/}}
+{{- define "cloud-registry.checkGunicornArg" -}}
+{{- $name := lower (regexReplaceAll "=.*$" . "") -}}
+{{- $reserved := false -}}
+{{- if hasPrefix "--" $name -}}
+{{- range list "--bind" "--preload" "--graceful-timeout" -}}
+{{- if and (ge (len $name) 3) (hasPrefix $name .) -}}
+{{- $reserved = true -}}
+{{- end -}}
+{{- end -}}
+{{- else if regexMatch "^-[DR]*b" . -}}
+{{- $reserved = true -}}
+{{- end -}}
+{{- if $reserved -}}
+{{- fail (printf "cloud_registry.gunicorn.extraArgs must not set --bind/-b (the chart's ports are 8080), --preload (MongoDB clients must be created after forking) or --graceful-timeout (set gracefulTimeout instead): %s" .) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Termination grace period of the app's pod, in seconds: the `preStop` delay,
+then Gunicorn's graceful timeout for finishing requests, plus a margin for
+Gunicorn to stop its workers and exit before it is killed.
+*/}}
+{{- define "cloud-registry.terminationGracePeriod" -}}
+{{- $margin := 10 -}}
+{{- add (int .Values.cloud_registry.preStopSleepSeconds) (int .Values.cloud_registry.gunicorn.gracefulTimeout) $margin -}}
+{{- end -}}
