@@ -400,6 +400,24 @@ def test_app_name_removed():
     assert "fullnameOverride" in exc.value.stderr
 
 
+@pytest.mark.parametrize(
+    "removed, replacement",
+    [
+        ("config.custom.max_content_length", "config.server.max_content_length"),
+        ("config.custom.endpoints.service_info", "config.service_info.service"),
+    ],
+    ids=["max_content_length", "service_info"],
+)
+def test_custom_config_removed(removed, replacement):
+    """Settings of the custom config replaced by FOCA's (FOCA 0.15 upgrade)
+    are rejected, naming the replacement.
+    """
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render("--set-json", f'{removed}={{"name": "x"}}')
+    assert f"{removed} was removed" in exc.value.stderr
+    assert f"set {replacement} instead" in exc.value.stderr
+
+
 def test_upgrade():
     """Upgrades render (the cluster is not looked up by `helm template`)."""
     assert ("Deployment", APP) in _render("--is-upgrade")

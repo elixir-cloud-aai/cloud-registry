@@ -50,6 +50,20 @@ app's ConfigMap template).
 {{- if .Values.cloud_registry.appName -}}
 {{- fail "cloud_registry.appName was removed after the legacy charts (versions 2 and 3): resource names are derived from the release name; set fullnameOverride to choose them at installation (see deployment/README.md, Names and labels)" -}}
 {{- end -}}
+{{- /*
+Settings of the custom config replaced by FOCA's (with the FOCA 0.15
+upgrade), which the app rejects
+*/ -}}
+{{- $custom := dig "custom" dict (.Values.config | default dict) -}}
+{{- if kindIs "map" $custom -}}
+{{- if hasKey $custom "max_content_length" -}}
+{{- fail "config.custom.max_content_length was removed with the FOCA 0.15 upgrade: set config.server.max_content_length instead (see deployment/README.md, Ingress)" -}}
+{{- end -}}
+{{- $endpoints := index $custom "endpoints" -}}
+{{- if and (kindIs "map" $endpoints) (hasKey $endpoints "service_info") -}}
+{{- fail "config.custom.endpoints.service_info was removed with the FOCA 0.15 upgrade: set config.service_info.service instead (see deployment/README.md, Configuration)" -}}
+{{- end -}}
+{{- end -}}
 {{- $fullname := include "cloud-registry.fullname" . -}}
 {{- if eq $fullname (include "cloud-registry.mongodbFullname" .) -}}
 {{- fail (printf "the app and MongoDB resources would both be named %s: choose a fullnameOverride that does not end in -mongodb" $fullname) -}}
