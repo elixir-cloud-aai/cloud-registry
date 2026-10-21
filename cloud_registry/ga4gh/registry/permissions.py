@@ -1,6 +1,9 @@
 """Access control: policies, service ownership and controllers for managing
 permissions on services.
 
+Changes of roles are logged (who changed which role of whom on which
+service), for auditing.
+
 Policies are configured in `config.yaml` (`security.access_control`) and
 enforced by FOCA on all operations that require authentication, using the
 model in `cloud_registry/access_control/model.conf`. Subjects with the role
@@ -108,6 +111,15 @@ def _get_current_claims() -> dict:
     return claims if isinstance(claims, dict) else {}
 
 
+def current_user() -> str:
+    """Get the subject of the current request, for log messages.
+
+    Returns:
+        User identifier, with non-printable characters escaped.
+    """
+    return escape_log_value(get_current_subject())
+
+
 def is_admin() -> bool:
     """Check whether the subject of the current request is an admin.
 
@@ -157,6 +169,11 @@ def add_owner(serviceId: str) -> None:
         role="owner",
         resource=service_path(serviceId),
     )
+    logger.info(
+        "Role 'owner' on new service '%s' granted to its creator '%s'.",
+        escape_log_value(serviceId),
+        current_user(),
+    )
     remember_current_user([serviceId])
 
 
@@ -166,7 +183,12 @@ def remove_permissions(serviceId: str) -> None:
     Args:
         serviceId: Service identifier.
     """
-    remove_resource(service_path(serviceId))
+    if remove_resource(service_path(serviceId)):
+        logger.info(
+            "All roles on service '%s' revoked by '%s'.",
+            escape_log_value(serviceId),
+            current_user(),
+        )
     get_collection(USER_NAMES).delete_many({"service_id": serviceId})
 
 
@@ -294,9 +316,10 @@ def _restore_owner_if_none(serviceId: str, resource: str, userId: str) -> None:
         # the service still exists afterwards
         _grant(serviceId, resource, userId, "owner")
         logger.info(
-            "Restored owner '%s' of '%s'",
+            "Restored owner '%s' of '%s', removed concurrently by '%s'",
             escape_log_value(userId),
             escape_log_value(resource),
+            current_user(),
         )
         raise Conflict
 
@@ -352,6 +375,14 @@ def putServicePermission(serviceId: str, userId: str, **kwargs) -> dict:
     except ValueError as exc:
         logger.info("Invalid permission: %s", escape_log_value(exc))
         raise BadRequest from exc
+    logger.info(
+        "Role '%s' on service '%s' granted to '%s' by '%s' (previous roles: %s).",
+        role,
+        escape_log_value(serviceId),
+        escape_log_value(userId),
+        current_user(),
+        ", ".join(previous_roles) or "none",
+    )
     return {"user_id": userId, "role": role}
 
 
@@ -390,6 +421,12 @@ def deleteServicePermission(serviceId: str, userId: str, **kwargs) -> str:
     if was_owner:
         _restore_owner_if_none(serviceId, resource, userId)
     get_collection(USER_NAMES).delete_many({"service_id": serviceId, "user_id": userId})
+    logger.info(
+        "Roles on service '%s' of '%s' revoked by '%s'.",
+        escape_log_value(serviceId),
+        escape_log_value(userId),
+        current_user(),
+    )
     return userId
 
 

@@ -437,3 +437,23 @@ def test_logged_values_escaped(client, caplog):
     assert verify(client, service_id=service_id).status_code == 200
     assert "Service 'MY\\x1bSERV' verified by" in caplog.text
     assert "MY\x1bSERV" not in caplog.text
+
+
+def test_verification_changes_logged(client, caplog):
+    """Verifications, and their removal by admins or updates, are logged with
+    the user who changed them.
+    """
+    caplog.set_level("INFO")
+    assert put_service(client) == 201
+    assert verify(client).status_code == 200
+    assert put_service(client, _service(url="https://other.example.org")) == 200
+    assert verify(client).status_code == 200
+    assert unverify(client).status_code == 200
+    messages = [
+        f"Service '{SERVICE_ID}' verified by '{ADMIN}'.",
+        f"Verification of service '{SERVICE_ID}' removed by an update by "
+        f"'{ADMIN}' (URL or API type changed).",
+        f"Verification of service '{SERVICE_ID}' removed by '{ADMIN}'.",
+    ]
+    for message in messages:
+        assert message in caplog.text

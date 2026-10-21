@@ -286,6 +286,11 @@ public service responses.
 Access control is implemented with [FOCA][foca-access-control]; see the
 `security` section of the [configuration][config].
 
+For auditing, the app logs (at level `INFO`) who changed which roles of whom
+on which service, who deleted services, and who verified services or removed
+their verifications (also by updating their URL or API type). Changes via the
+[permissions API](#permissions-api) are logged by FOCA's request logging only.
+
 ### Permissions API
 
 FOCA also serves its permissions API at `/admin/access-control/permissions`

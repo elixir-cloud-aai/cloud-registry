@@ -476,6 +476,8 @@ class RegisterService:
                 should be replaced. Set to `True` if an `id` is provided,
                 otherwise set to `False`.
             was_created: Whether a new service was registered.
+            verification_removed: Whether the verification of a replaced
+                service was removed (cf. `_replace()`).
             allow_create: Whether a service with the identifier may be
                 registered.
             id_charset: A string of allowed characters for generating service
@@ -489,6 +491,7 @@ class RegisterService:
         self.replace = id is not None
         self.allow_create = allow_create
         self.was_created = False
+        self.verification_removed = False
         self.id_charset: str = endpoint_conf.services.id.charset
         self.id_length = int(endpoint_conf.services.id.length)
         self.db_coll = get_collection("services")
@@ -624,6 +627,11 @@ class RegisterService:
                 continue
             if result.matched_count or result.upserted_id is not None:
                 self.was_created = result.upserted_id is not None
+                self.verification_removed = (
+                    stored is not None
+                    and VERIFIED in stored
+                    and VERIFIED not in replacement
+                )
                 return
             logger.debug(
                 "Service '%s' changed concurrently.", escape_log_value(self.data["id"])

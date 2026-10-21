@@ -8,6 +8,7 @@ from foca.utils.logging import log_traffic
 from cloud_registry.exceptions import BadRequest, NotFound, problem
 from cloud_registry.ga4gh.registry.permissions import (
     add_owner,
+    current_user,
     is_admin,
     remove_permissions,
 )
@@ -129,6 +130,9 @@ def deleteService(serviceId: str, **kwargs) -> str:
     if not res.deleted_count:
         raise NotFound
     remove_permissions(serviceId)
+    logger.info(
+        "Service '%s' deleted by '%s'.", escape_log_value(serviceId), current_user()
+    )
     return serviceId
 
 
@@ -199,6 +203,13 @@ def _register_service(
     except DuplicateService as exc:
         logger.info("Service not registered: %s", escape_log_value(exc.description))
         return problem(exc, serviceId=exc.existing_id)
+    if service.verification_removed:
+        logger.info(
+            "Verification of service '%s' removed by an update by '%s' (URL or "
+            "API type changed).",
+            escape_log_value(service.data["id"]),
+            current_user(),
+        )
     if service.was_created:
         try:
             # Roles left on the identifier by a deleted service (e.g., if

@@ -557,3 +557,31 @@ def test_admin_via_permissions_api(client):
     assert response.status_code == 200
     assert me(client, CAROL)["admin"] is False
     assert update(client, service_id, CAROL) == 403
+
+
+def test_role_changes_logged(client, caplog):
+    """Changes of roles are logged: who changed which role of whom on which
+    service.
+    """
+    caplog.set_level("INFO", logger=permissions_module.__name__)
+    service_id = register(client)
+    assert grant(client, service_id, BOB, "maintainer") == 200
+    assert grant(client, service_id, BOB, "owner") == 200
+    assert revoke(client, service_id, BOB) == 200
+    assert delete(client, service_id, ADMIN) == 200
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == permissions_module.__name__
+    ]
+    assert messages == [
+        f"Role 'owner' on new service '{service_id}' granted to its creator "
+        f"'{ALICE}'.",
+        f"Role 'maintainer' on service '{service_id}' granted to '{BOB}' by "
+        f"'{ALICE}' (previous roles: none).",
+        f"Role 'owner' on service '{service_id}' granted to '{BOB}' by "
+        f"'{ALICE}' (previous roles: maintainer).",
+        f"Roles on service '{service_id}' of '{BOB}' revoked by '{ALICE}'.",
+        f"All roles on service '{service_id}' revoked by '{ADMIN}'.",
+    ]
+    assert f"Service '{service_id}' deleted by '{ADMIN}'." in caplog.text
