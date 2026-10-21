@@ -1,6 +1,12 @@
+[![ELIXIR On-Cloud](images/logo_elixir_on_cloud.png)](https://elixir-on.cloud/)
+
 # Cloud Registry
 
 --8<-- "README.md:synopsis"
+
+## Known deployments
+
+--8<-- "README.md:deployments"
 
 ## Contents
 
@@ -28,7 +34,7 @@ repository](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/LICENSE)
 
 ## Contact
 
-The project is a collaborative effort under the umbrella of [ELIXIR Cloud &
-AAI](https://github.com/elixir-cloud-aai/elixir-cloud-aai). Follow the link to
-get in touch with us via chat or email. Please mention the name of this
-service for any inquiry, proposal, question etc.
+The project is a collaborative effort under the umbrella of [ELIXIR
+On-Cloud](https://elixir-on.cloud/). Follow the link to get in touch with us
+via chat or email. Please mention the name of this service for any inquiry,
+proposal, question etc.

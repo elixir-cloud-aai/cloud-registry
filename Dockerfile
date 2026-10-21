@@ -6,11 +6,11 @@ FROM elixircloud/foca:0.15.0-py3.12@sha256:0d21e23d67f8b84a0bf4e2ee893024ac82344
 
 ##### METADATA #####
 LABEL software="Cloud Registry"
-LABEL software.description="GA4GH Service Registry API implementation for the ELIXIR Cloud"
+LABEL software.description="GA4GH Service Registry API implementation by ELIXIR On-Cloud"
 LABEL software.website="https://github.com/elixir-cloud-aai/cloud-registry"
 LABEL software.license="https://spdx.org/licenses/Apache-2.0"
 LABEL maintainer="alexander.kanitz@alumni.ethz.ch"
-LABEL maintainer.organisation="ELIXIR Cloud & AAI"
+LABEL maintainer.organisation="ELIXIR On-Cloud"
 
 ## Install dependencies (`project.dependencies` of `pyproject.toml`, read
 ## with `tomllib` of the base image's Python, 3.11 or later) first, so that
