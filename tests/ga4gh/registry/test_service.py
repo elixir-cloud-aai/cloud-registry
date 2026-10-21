@@ -615,6 +615,25 @@ class TestAddServiceKeys:
             add_service_keys()
         assert services.find_one({"id": "OLD"})[KEY] == "newer"
 
+    def test_added_concurrently(self, monkeypatch, unit_app, services):
+        """Keys added concurrently, e.g., by another worker starting at the
+        same time, are not reported as duplicates.
+        """
+        key = service_key(MOCK_SERVICE)
+        services.insert_one({**MOCK_SERVICE, "id": "OLD", KEY: key})
+        find = services.find
+
+        def find_without_key(filter=None, *args, **kwargs):
+            # serve the service as read before the key was added
+            if filter == {KEY: {"$exists": False}}:
+                return find({}, {"_id": False, KEY: False})
+            return find(filter, *args, **kwargs)
+
+        monkeypatch.setattr(services, "find", find_without_key)
+        with unit_app.app_context():
+            add_service_keys()
+        assert services.find_one({"id": "OLD"})[KEY] == key
+
     def test_problems(self, unit_app, services):
         """All services with the same URL and API type as another one, or
         with invalid URLs, are named.
