@@ -5,6 +5,7 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    versioning-strategy: increase-if-necessary
     ignore:
       # connexion 3 needs a FOCA upgrade
       - dependency-name: connexion

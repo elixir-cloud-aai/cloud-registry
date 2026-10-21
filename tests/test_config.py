@@ -336,15 +336,17 @@ def test_base_image_foca():
     that the image build does not install another FOCA on top of it.
     """
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    (requirement,) = (
-        Requirement(dependency)
-        for dependency in pyproject["project"]["dependencies"]
-        if Requirement(dependency).name == "foca"
-    )
+    requirements = {
+        requirement.name: requirement
+        for requirement in map(Requirement, pyproject["project"]["dependencies"])
+    }
     match = re.search(
         r"^FROM elixircloud/foca:(?P<version>[^-@\s]+)",
         (ROOT / "Dockerfile").read_text(),
         flags=re.MULTILINE,
     )
-    assert match
-    assert requirement.specifier.contains(match["version"])
+    assert match, "No FOCA base image in the Dockerfile"
+    assert requirements["foca"].specifier.contains(match["version"]), (
+        f"Base image has FOCA {match['version']}, but {requirements['foca']} is "
+        "required"
+    )

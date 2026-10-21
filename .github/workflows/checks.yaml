@@ -290,12 +290,9 @@ jobs:
       - name: Derive version
         if: steps.head.outputs.current == 'true'
         id: version
-        # With the build requirements (`build-system.requires` of
-        # `pyproject.toml`), which builds of the app use too
+        # Same bound as in `build-system.requires` of `pyproject.toml`
         run: |
-          python -c "import tomllib; print('\n'.join(tomllib.load(open('pyproject.toml', 'rb'))['build-system']['requires']))" \
-            > "${RUNNER_TEMP}/build-requirements.txt"
-          pip install -r "${RUNNER_TEMP}/build-requirements.txt"
+          pip install "setuptools-scm>=8"
           echo "version=$(python -m setuptools_scm)" >> "$GITHUB_OUTPUT"
       - name: Set up Docker Buildx
         if: steps.head.outputs.current == 'true'
