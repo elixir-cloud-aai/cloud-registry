@@ -385,7 +385,7 @@ def _set_field(service: dict, field: str, value: str) -> dict:
 URL_PREFIX = "https://example.org/"
 
 
-# Length limits of string fields of services (cf. README, API); values start
+# Length limits of string fields of services (cf. `docs/api.md`); values start
 # with the prefix (e.g., a scheme and host for URLs)
 @pytest.mark.parametrize(
     "field, prefix, limit",

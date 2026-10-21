@@ -1,31 +1,21 @@
-# Read the Docs configuration file for Sphinx projects
+# Read the Docs configuration file
 # See https://docs.readthedocs.io/en/stable/config-file/v2.html for details
 
-# Required
 version: 2
 
-# Set the OS, Python version and other tools you might need
 build:
-  os: ubuntu-22.04
+  os: ubuntu-24.04
   tools:
-    python: "3.10"
-  jobs:
-    # The version is derived from Git tags (setuptools-scm), which shallow
-    # clones may lack
-    post_checkout:
-      - if [ "$(git rev-parse --is-shallow-repository)" = true ]; then git fetch --unshallow; fi
-      - git fetch --tags
+    # Python version of the base image in the `Dockerfile`
+    python: "3.12"
 
-# Build documentation in the "docs/" directory with Sphinx
-sphinx:
-  configuration: docs/api/conf.py
-  # Fail on all warnings, e.g., modules that autodoc cannot import
+mkdocs:
+  configuration: mkdocs.yml
+  # Fail on all warnings to avoid broken links and references
   fail_on_warning: true
 
-# Install the package with its dependencies, so that autodoc can import the
-# modules, and the docs requirements
 python:
   install:
     - method: pip
       path: .
-    - requirements: docs/api/requirements.txt
+    - requirements: requirements_docs.txt

@@ -68,12 +68,13 @@ content-type = "text/markdown"
 
 [project.urls]
 homepage = "https://github.com/elixir-cloud-aai/cloud-registry.git"
+Documentation = "https://cloud-registry.readthedocs.io"
 
 [tool.setuptools_scm]
 # Version from Git tags (`vX.Y.Z`), the only place it is stored; builds
 # without Git metadata (e.g., Docker builds, which get no `.git`) report the
 # fallback unless `SETUPTOOLS_SCM_PRETEND_VERSION` is set. See "Versioning
-# and releases" in README.md
+# and releases" in `docs/development.md`
 fallback_version = "0.0.0.dev0"
 
 [tool.setuptools.packages.find]

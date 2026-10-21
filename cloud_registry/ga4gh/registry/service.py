@@ -495,7 +495,7 @@ class RegisterService:
 
         Args:
             data: Service metadata consistent with the
-            `ExternalServiceRegister` schema.
+                `ExternalServiceRegister` schema.
             id: Service identifier. Auto-generated if not provided.
             allow_create: With an identifier, whether the service may be
                 registered if it doesn't exist (e.g., for admins only, cf.
@@ -730,6 +730,6 @@ def add_service_keys() -> None:
             logger.info("Added key to service '%s'.", escape_log_value(service["id"]))
     if problems:
         raise RuntimeError(
-            "Fix or delete these services (cf. 'Duplicate services' in the "
-            f"README): {'; '.join(problems)}"
+            "Fix or delete these services (cf. https://cloud-registry.readthedocs.io"
+            f"/en/latest/upgrading/#stored-services): {'; '.join(problems)}"
         )

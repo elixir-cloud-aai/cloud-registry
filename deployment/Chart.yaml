@@ -5,7 +5,7 @@ description: >-
   Registry API, with a MongoDB database
 type: application
 # Placeholders: releases set `version` and `appVersion` from the tag
-# (`vX.Y.Z`, see "Versioning and releases" in README.md).
+# (`vX.Y.Z`, see "Versioning and releases" in `docs/development.md`).
 version: 0.0.0
 # `appVersion` is the default image tag, so the chart in the repository
 # deploys the `dev` image unless `cloudRegistry.tag` is set
