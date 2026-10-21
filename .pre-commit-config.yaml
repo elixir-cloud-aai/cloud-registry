@@ -44,6 +44,12 @@ repos:
         name: Detect hardcoded secrets (all files)
         entry: gitleaks dir --redact --verbose
         stages: [manual]
+  - repo: https://github.com/rhysd/actionlint
+    rev: 914e7df21a07ef503a81201c76d2b11c789d3fca  # frozen: v1.7.12
+    hooks:
+      # Workflows (`.github/workflows/`); also checks their scripts with
+      # shellcheck if it is installed (as on GitHub-hosted runners)
+      - id: actionlint
   - repo: local
     hooks:
       # Local hooks use the installed dev dependencies

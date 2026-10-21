@@ -534,13 +534,16 @@ def test_labels_all():
 )
 def test_security_context(name, writable):
     """Containers run as non-root, without privileges, without a service
-    account token and with a read-only root file system; directories they
-    write to are volumes.
+    account token or service links and with a read-only root file system;
+    directories they write to are volumes.
     """
     docs = _render()
     pod = _pod(docs, name)
     # neither the app nor MongoDB call the Kubernetes API
     assert pod["automountServiceAccountToken"] is False
+    # no `<SERVICE>_PORT` variables of Services in the namespace (FOCA reads
+    # e.g. `MONGO_PORT` as configuration)
+    assert pod["enableServiceLinks"] is False
     assert pod["securityContext"]["runAsNonRoot"] is True
     assert pod["securityContext"]["seccompProfile"] == {"type": "RuntimeDefault"}
     context = pod["containers"][0]["securityContext"]

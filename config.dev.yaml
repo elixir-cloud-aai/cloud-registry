@@ -5,6 +5,11 @@ security:
     auth:
         # Accept LS Login tokens for any audience (i.e., of any app)
         verify_audience: False
+    access_control:
+        # No admin groups (cf. `custom.access_control.require_admin`). Set,
+        # but empty, as FOCA warns that `keep_group_subjects` has no effect
+        # without a mapping (roles of groups apply either way)
+        group_mapping: {}
 custom:
     access_control:
         # Start without admin groups (nobody can manage services they don't
