@@ -5,6 +5,7 @@ The image serves the app with Gunicorn (`cloud_registry.app:create_app()`, see
 Flask's development server.
 """
 
+import logging
 from pathlib import Path
 
 from connexion import App
@@ -18,6 +19,9 @@ from cloud_registry.ga4gh.registry.permissions import check_admin_groups
 from cloud_registry.ga4gh.registry.service import add_service_keys
 from cloud_registry.ga4gh.registry.service_info import check_service_info
 from cloud_registry.utils import get_custom_config
+
+# Logger of Connexion's request validation
+VALIDATION_LOGGER = "connexion.decorators.validation"
 
 
 def check_streamed_size() -> None:
@@ -47,8 +51,9 @@ def check_streamed_size() -> None:
 
 def create_app() -> App:
     """Create the app from the config, with the size limit of request bodies
-    and the error handler for validation errors, check admin groups and
-    service info, and add missing keys of services.
+    and the error handler for validation errors (silencing Connexion's
+    validation log messages), check admin groups and service info, and add
+    missing keys of services.
 
     Gunicorn calls this in each worker, after forking (MongoDB clients must
     not be shared across forks), so the checks run in each worker; if they
@@ -83,6 +88,11 @@ def create_app() -> App:
     # the fixed details of the exception class
     for exception in (BadRequestProblem, ExtraParameterProblem):
         app.add_error_handler(exception, validation_problem)
+    # Connexion's validation logs the validator's message (`ERROR`) before
+    # the handler, unescaped and in full (validators quote rejected values,
+    # e.g., a whole request body); the handler logs it shortened and
+    # escaped. Set here, as FOCA's log config has no `loggers`
+    logging.getLogger(VALIDATION_LOGGER).setLevel(logging.CRITICAL)
 
     with app.app.app_context():
         check_admin_groups()

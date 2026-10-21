@@ -4,6 +4,7 @@ from copy import deepcopy
 from importlib.metadata import version
 import io
 import json
+import logging
 import os
 import string
 
@@ -959,3 +960,16 @@ def test_validation_error_detail_large_body(client, admin_headers):
     assert len(response.json["detail"]) == MAX_DETAIL_LENGTH + 1
     assert "…" in response.json["detail"]
     assert response.json["detail"].endswith("is too long - 'name'")
+
+
+def test_validation_error_logs_bounded(client, admin_headers, caplog):
+    """Large rejected values are not logged in full, also not by Connexion's
+    validation, which logs the validator's message before the error handler.
+    """
+    with caplog.at_level(logging.DEBUG):
+        response = client.post(
+            f"{BASE}/services", headers=admin_headers, json=_service(name="a" * 900_000)
+        )
+    assert response.status_code == 400
+    assert any("Request rejected" in message for message in caplog.messages)
+    assert max(len(record.getMessage()) for record in caplog.records) < 2000
