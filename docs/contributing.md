@@ -62,9 +62,8 @@ releases](development.md#versioning-and-releases)).
 4. Once the checks pass and all conversations are resolved, the maintainers
    squash-merge the pull request into `dev`.
 
-Keep pull requests focused: if a change grows large, split it into several
-pull requests (as a rule of thumb, the change should be summarized in 50
-characters). Feature branches are unstable: don't build on other people's
+Keep pull requests focused: if a change can't be summarized in a title of
+50 characters, split it into several pull requests. Feature branches are unstable: don't build on other people's
 branches without talking to them first.
 
 ## Commit messages and pull request titles
@@ -96,16 +95,17 @@ Pull request titles, which become the commit messages on `dev`, follow the
 | `chore` | other maintenance, e.g., `.gitignore` |
 | `revert` | reverts of earlier commits |
 
-Use `feat`, `fix`, `perf`, `refactor` and `style` only for changes of the app
-itself (`cloud_registry/`). Commit messages on feature branches may follow the
+Use `feat`, `fix`, `perf`, `refactor` and `style` only for changes of what
+is deployed: the app (`cloud_registry/`) and its Helm chart (`deployment/`). Commit messages on feature branches may follow the
 same format, which makes the history easier to review.
 
 ## Python guidelines
 
 The app supports Python 3.10 and later (`requires-python` in
 `pyproject.toml`); CI tests 3.10 and 3.12, the Python version of the image.
-All of the following is checked by pre-commit and CI (see
-[Development](development.md) for how to run the checks locally).
+Most of the following is checked by pre-commit and CI (see
+[Development](development.md) for how to run the checks locally); the rest is
+checked in reviews.
 
 - **Packaging:** the package, its dependencies and the configuration of the
   tools are in `pyproject.toml`; runtime dependencies in
@@ -120,8 +120,9 @@ All of the following is checked by pre-commit and CI (see
   classes, methods and functions, also private ones and tests, with a
   one-line summary and, where applicable, the sections `Args`, `Returns` (or
   `Yields`), `Raises` and, for classes, `Attributes`; consider `Examples` and
-  `Note`. Ruff's pydocstyle rules check them (Google convention), and the
-  [API reference](reference.md) is generated from them.
+  `Note`. Ruff's pydocstyle rules (Google convention) check those of public
+  objects and their `Args`; reviews check the others. The [API
+  reference](reference.md) is generated from them.
 - **Type hints:** complete type hints for all functions and methods (also of
   the tests), including `*args` and `**kwargs`, and generic types with their
   parameters (e.g., `dict[str, Any]`, not `dict`); add hints to module-level
@@ -138,8 +139,8 @@ All of the following is checked by pre-commit and CI (see
   and [actionlint](https://github.com/rhysd/actionlint) (workflows), and
   pre-commit's checks of YAML, whitespace, merge conflicts and large files.
 
-Suppress a finding only if it is a false positive, on the line and with the
-reason (see [Development](development.md)).
+Suppress a finding only if it is a false positive or can't be avoided, on
+its line, preferably with the reason (see [Development](development.md)).
 
 ## Documentation
 

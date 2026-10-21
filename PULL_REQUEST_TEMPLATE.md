@@ -22,5 +22,5 @@ Please delete options that are not relevant.
 - [ ] I have added tests that prove my fix is effective or that my feature works
 - [ ] New and existing unit tests pass locally with my changes
 - [ ] I have not reduced the existing code coverage
-- [ ] I have added Google-style docstrings and complete type hints, following the [Python guidelines](https://cloud-registry.readthedocs.io/en/latest/contributing/#python-guidelines) of this project, to all new modules, classes, methods and functions, and updated existing ones, if applicable
+- [ ] I have added Google-style docstrings and complete type hints to all new code (see the [Python guidelines](https://cloud-registry.readthedocs.io/en/latest/contributing/#python-guidelines))
 - [ ] I have updated any sections of the app's documentation that are affected by the proposed changes, if applicable

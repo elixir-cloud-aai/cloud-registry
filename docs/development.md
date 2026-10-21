@@ -34,8 +34,10 @@ Project-specific rules are in `.semgrep/` (security) and `.ast-grep/`
 [ShellCheck](https://www.shellcheck.net/) if it is installed (as on
 GitHub-hosted runners, so CI may find more than a local run without it). To
 suppress a false positive, add a comment with the reason to the line:
-`# noqa: <code>` (ruff), `# nosemgrep: <rule-id>`,
-`# ast-grep-ignore: <rule-id>` or `# gitleaks:allow`.
+`# noqa: <code>` (ruff), `# type: ignore[<code>]` (mypy),
+`# nosemgrep: <rule-id>`, `# ast-grep-ignore: <rule-id>` or
+`# gitleaks:allow`. See [Contributing](contributing.md) for how to contribute,
+including the Python guidelines.
 
 ## Documentation
 
@@ -64,15 +66,6 @@ sections of `README.md` (between `--8<-- [start:<name>]` and
 the README of the Helm chart (`deployment/README.md`), which `docs/hooks.py`
 includes, with its links to pages of the docs (`../docs/<page>.md`) and other
 files of the repository adapted.
-
-## Contributing
-
-This project is a community effort and lives off your contributions, be it in
-the form of bug reports, feature requests, discussions, or fixes and other code
-changes. See [Contributing](contributing.md) for how to contribute, including
-the Python guidelines, and mind the [code of
-conduct](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/CODE_OF_CONDUCT.md)
-for all interactions with the community.
 
 ## Versioning and releases
 
