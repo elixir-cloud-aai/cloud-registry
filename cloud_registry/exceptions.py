@@ -11,6 +11,7 @@ from connexion.exceptions import (
     Unauthorized,
 )
 from flask import Response
+from foca.utils.logging import escape_log_value
 from werkzeug.exceptions import (
     BadRequest,
     Conflict,
@@ -19,8 +20,6 @@ from werkzeug.exceptions import (
     NotFound,
     RequestEntityTooLarge,
 )
-
-from cloud_registry.utils import escape_log_value
 
 logger = logging.getLogger(__name__)
 

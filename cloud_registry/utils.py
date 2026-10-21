@@ -23,28 +23,6 @@ DATE_TIME = re.compile(
 )
 
 
-def escape_log_value(value: object) -> str:
-    """Escape non-printable characters of a value for logging.
-
-    Values from requests (e.g., identifiers from request paths) could forge
-    log lines with line breaks or hide text with control characters, so
-    these are replaced with their escape sequences (e.g., a line feed with
-    `\\n`).
-
-    Args:
-        value: Value to be logged.
-
-    Returns:
-        String representation of `value` with non-printable characters
-        escaped.
-    """
-    # TODO(#104): use `foca.utils.logging.escape_log_value()` (FOCA 0.15),
-    # which this copies
-    return "".join(
-        char if char.isprintable() else repr(char)[1:-1] for char in str(value)
-    )
-
-
 def get_custom_config() -> CustomConfig:
     """Get the custom configuration of the current app.
 

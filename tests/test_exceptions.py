@@ -3,6 +3,7 @@
 import json
 
 from connexion.exceptions import BadRequestProblem, ExtraParameterProblem
+from foca.utils.logging import escape_log_value
 import pytest
 
 from cloud_registry.exceptions import (
@@ -12,7 +13,6 @@ from cloud_registry.exceptions import (
     shorten_detail,
     validation_problem,
 )
-from cloud_registry.utils import escape_log_value
 
 
 @pytest.mark.parametrize(

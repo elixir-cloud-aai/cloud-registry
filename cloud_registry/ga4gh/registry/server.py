@@ -3,7 +3,7 @@
 import logging
 
 from flask import Response, request
-from foca.utils.logging import log_traffic
+from foca.utils.logging import escape_log_value, log_traffic
 
 from cloud_registry.exceptions import BadRequest, NotFound, problem, shorten_detail
 from cloud_registry.ga4gh.registry.permissions import (
@@ -21,7 +21,7 @@ from cloud_registry.ga4gh.registry.service import (
     service_exists,
 )
 from cloud_registry.ga4gh.registry.service_info import get_service_info
-from cloud_registry.utils import escape_log_value, get_collection, get_public_url
+from cloud_registry.utils import get_collection, get_public_url
 
 logger = logging.getLogger(__name__)
 # Response for a registered service: its identifier, status `201` and its URL

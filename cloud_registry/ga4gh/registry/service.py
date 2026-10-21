@@ -9,6 +9,7 @@ import string
 import unicodedata
 from urllib.parse import SplitResult, quote, urlsplit, urlunsplit
 
+from foca.utils.logging import escape_log_value
 from foca.utils.misc import generate_id
 import idna
 from pymongo.errors import DuplicateKeyError
@@ -20,7 +21,6 @@ from cloud_registry.exceptions import (
     NotFound,
 )
 from cloud_registry.utils import (
-    escape_log_value,
     get_collection,
     get_custom_config,
     is_date_time,
