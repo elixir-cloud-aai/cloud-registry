@@ -19,8 +19,11 @@ services:
             - "8080:8080"
         # Development settings (`config.dev.yaml`): tokens for any audience,
         # no admin groups required
+        # The image's command serves the app with Gunicorn; options from the
+        # host's `GUNICORN_CMD_ARGS` (e.g., `--workers 2`) override its settings
         environment:
             FOCA_CONFIG_OVERLAY: /etc/cloud-registry/config.dev.yaml
+            GUNICORN_CMD_ARGS: ${GUNICORN_CMD_ARGS:-}
         volumes:
             - ./config.dev.yaml:/etc/cloud-registry/config.dev.yaml:ro
 
