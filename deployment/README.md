@@ -217,6 +217,12 @@ cloud_registry:
     extraArgs: []       # further options, e.g., ["--access-logfile", "-"]
 ```
 
+Rendering fails if `extraArgs` set `--bind`/`-b` (the chart's Service,
+container port and probes use port 8080), `--preload` (each worker must
+create its own MongoDB client after forking) or `--graceful-timeout` (set
+`gracefulTimeout`, from which the termination grace period is derived), also
+abbreviated or as `--option=value`.
+
 Each worker loads the whole app (about 55 MiB of memory; the default memory
 limit, 128 MiB, fits one), so raise `cloud_registry.resources` before
 raising `workers`, or raise `threads` instead. Each worker runs the app's
@@ -244,8 +250,9 @@ With the read-only root file system, Gunicorn keeps the heartbeat files of
 its workers in `/dev/shm` (or in the `/tmp` volume if `/dev/shm` isn't
 writable). Gunicorn's threads read requests themselves, so serve the app
 through a proxy that buffers requests (ingress-nginx does by default), so
-that slow clients can't tie them up (OpenShift Routes, served by HAProxy,
-don't buffer request bodies by default).
+that slow clients can't tie them up. OpenShift Routes (HAProxy) don't buffer
+request bodies by default, so there, slow uploads hold Gunicorn threads until
+they complete.
 
 ## Upgrades
 

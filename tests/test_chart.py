@@ -2,6 +2,7 @@
 
 import json
 import re
+import shlex
 import subprocess
 
 import pytest
@@ -639,6 +640,67 @@ def test_gunicorn_invalid(args, error):
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render(*args)
     assert error in exc.value.stderr
+
+
+def _render_extra_args(*extra_args: str) -> dict:
+    """Render the chart with further Gunicorn options."""
+    return _render(
+        "--set-json", f"cloud_registry.gunicorn.extraArgs={json.dumps(extra_args)}"
+    )
+
+
+@pytest.mark.parametrize(
+    "extra_args",
+    [
+        ("--bind", "0.0.0.0:9090"),
+        ("--bind=0.0.0.0:9090",),
+        ("--bin", "0.0.0.0:9090"),
+        ("-b", "0.0.0.0:9090"),
+        ("-b0.0.0.0:9090",),
+        ("-Rb", "0.0.0.0:9090"),
+        ("--preload",),
+        ("--pre",),
+        ("--graceful-timeout", "60"),
+        ("--graceful-timeout=60",),
+        ("--graceful", "60"),
+    ],
+)
+def test_gunicorn_reserved_args(extra_args):
+    """Further options must not change the address (the chart's ports),
+    preload the app (MongoDB clients must be created after forking) or set
+    the graceful timeout (the grace period is derived from
+    `gracefulTimeout`), also abbreviated (as Gunicorn accepts them) or with
+    attached values; Gunicorn itself would apply them.
+    """
+    cfg = load_settings(shlex.join(extra_args)).cfg
+    assert (cfg.bind, cfg.preload_app, cfg.graceful_timeout) != (
+        ["0.0.0.0:8080"],
+        False,
+        20,
+    )
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render_extra_args(*extra_args)
+    assert "cloud_registry.gunicorn.extraArgs must not set" in exc.value.stderr
+    assert repr(extra_args[0]).strip("'") in exc.value.stderr
+
+
+def test_gunicorn_other_args():
+    """Other further options are passed on, also short ones and option values
+    that look like reserved options (which Gunicorn takes as values, as they
+    contain spaces or follow `=`).
+    """
+    extra_args = (
+        "-R",
+        "--backlog",
+        "64",
+        "--access-logformat",
+        "--bind %(h)s",
+        "--name=-bx",
+    )
+    cfg = load_settings(_gunicorn_args(_render_extra_args(*extra_args))).cfg
+    assert (cfg.enable_stdio_inheritance, cfg.backlog) == (True, 64)
+    assert (cfg.access_log_format, cfg.proc_name) == ("--bind %(h)s", "-bx")
+    assert (cfg.bind, cfg.preload_app) == (["0.0.0.0:8080"], False)
 
 
 def test_gunicorn_port():

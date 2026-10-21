@@ -214,9 +214,37 @@ rejects single quotes in them).
   "--keep-alive" (int $g.keepalive)
 -}}
 {{- range $g.extraArgs -}}
+{{- include "cloud-registry.checkGunicornArg" . -}}
 {{- $args = append $args (squote .) -}}
 {{- end -}}
 {{- join " " $args -}}
+{{- end -}}
+
+{{/*
+Fail if an item of `cloud_registry.gunicorn.extraArgs` sets an option that
+the chart or the app relies on: `--bind`/`-b` (the chart's ports),
+`--preload` (MongoDB clients must be created after forking) or
+`--graceful-timeout` (the termination grace period is derived from
+`gracefulTimeout`). As Gunicorn parses them: long options also abbreviated
+and with `=value`; `-b` also with an attached value and after the short
+flags `-D` and `-R`. Items like `--bind x` (a space before any `=`) are
+values for Gunicorn, not options, so they pass.
+*/}}
+{{- define "cloud-registry.checkGunicornArg" -}}
+{{- $name := lower (regexReplaceAll "=.*$" . "") -}}
+{{- $reserved := false -}}
+{{- if hasPrefix "--" $name -}}
+{{- range list "--bind" "--preload" "--graceful-timeout" -}}
+{{- if and (ge (len $name) 3) (hasPrefix $name .) -}}
+{{- $reserved = true -}}
+{{- end -}}
+{{- end -}}
+{{- else if regexMatch "^-[DR]*b" . -}}
+{{- $reserved = true -}}
+{{- end -}}
+{{- if $reserved -}}
+{{- fail (printf "cloud_registry.gunicorn.extraArgs must not set --bind/-b (the chart's ports are 8080), --preload (MongoDB clients must be created after forking) or --graceful-timeout (set gracefulTimeout instead): %s" .) -}}
+{{- end -}}
 {{- end -}}
 
 {{/*

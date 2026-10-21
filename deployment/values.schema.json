@@ -186,7 +186,7 @@
                 "type": "string",
                 "pattern": "^[^']*$"
               },
-              "description": "Further Gunicorn options (no single quotes)"
+              "description": "Further Gunicorn options (no single quotes); --bind/-b, --preload and --graceful-timeout are rejected"
             }
           }
         }
