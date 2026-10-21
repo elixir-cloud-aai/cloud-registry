@@ -64,7 +64,9 @@ def check_admin_groups() -> None:
     """
     conf = get_config().security.access_control
     mapping = conf.group_mapping or {}
-    if mapping and not conf.keep_group_subjects:
+    # FOCA drops group claim values that aren't mapped once a mapping is set,
+    # also an empty one
+    if conf.group_mapping is not None and not conf.keep_group_subjects:
         logger.warning(
             "`security.access_control.keep_group_subjects` is not set, so "
             "roles on services granted to groups don't apply"

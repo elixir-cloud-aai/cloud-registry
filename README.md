@@ -343,10 +343,10 @@ Access control is implemented with [FOCA][foca-access-control]; see the
 For auditing, the app logs (at level `INFO`) who changed which roles of whom
 (users or groups) on which service, who deleted services, and who verified
 services or removed their verifications (also by updating their URL or API
-type). Changes via the
-[permissions API](#permissions-api) are not logged by the app itself: FOCA
-logs the requests (method, path and client address) and the identifiers of
-the added, updated or deleted policy rules, but not who changed them, or how.
+type). Changes via the [permissions API](#permissions-api) are not logged by
+the app itself: FOCA logs the requests (method, path and client address) and
+the identifiers of the added, updated or deleted policy rules, but not who
+changed them, or how.
 
 ### Permissions API
 
