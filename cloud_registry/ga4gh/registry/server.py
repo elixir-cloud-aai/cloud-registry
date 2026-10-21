@@ -112,7 +112,8 @@ def deleteService(serviceId: str, **kwargs) -> str:
 
     The roles on the service are revoked first, so that none are left on a
     deleted service if deleting it fails, and nobody can act on it in
-    between.
+    between; and again afterwards, as roles granted concurrently (after
+    their request checked that the service exists) would be left otherwise.
 
     Args:
         serviceId: Identifier of service to be deleted.
@@ -127,6 +128,7 @@ def deleteService(serviceId: str, **kwargs) -> str:
     res = db_collection_service.delete_one({"id": serviceId})
     if not res.deleted_count:
         raise NotFound
+    remove_permissions(serviceId)
     return serviceId
 
 

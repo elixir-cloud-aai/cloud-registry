@@ -479,3 +479,46 @@ def test_roles_removed_before_delete(app, client, monkeypatch):
         assert delete(client, service_id, ALICE) == 500
     assert _roles(app, service_id) == []
     assert client.get(f"{BASE}/services/{service_id}").status_code == 200
+
+
+def test_grant_racing_delete(app, client, monkeypatch):
+    """A role granted on a service that is deleted meanwhile is revoked
+    again (`404`).
+    """
+    service_id = register(client)
+    add_resource_role = permissions_module.add_resource_role
+
+    def delete_first(**kwargs):
+        # the service is deleted after its existence was checked
+        permissions_module.remove_permissions(service_id)
+        get_collection("services").delete_one({"id": service_id})
+        return add_resource_role(**kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(permissions_module, "add_resource_role", delete_first)
+        assert grant(client, service_id, BOB, "maintainer") == 404
+    assert _roles(app, service_id) == []
+
+
+def test_delete_racing_grant(app, client, monkeypatch):
+    """Roles granted while a service is deleted (after its roles were
+    revoked) are revoked with it.
+    """
+    service_id = register(client)
+    delete_one = mongomock.collection.Collection.delete_one
+
+    def grant_first(self, *args, **kwargs):
+        # a role is granted after the roles were revoked, and the grant's
+        # check found the service still registered
+        if self.name == "services":
+            permissions_module.add_resource_role(
+                subject=BOB,
+                role="owner",
+                resource=permissions_module.service_path(service_id),
+            )
+        return delete_one(self, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(mongomock.collection.Collection, "delete_one", grant_first)
+        assert delete(client, service_id, ALICE) == 200
+    assert _roles(app, service_id) == []

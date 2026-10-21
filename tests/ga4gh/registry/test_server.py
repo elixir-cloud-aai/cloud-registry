@@ -175,7 +175,7 @@ def test_deleteService(unit_app, services, ownership):
     with unit_app.app_context():
         res = deleteService.__wrapped__(serviceId=MOCK_ID)
         assert res == MOCK_ID
-    assert ownership == [("remove_permissions", MOCK_ID)]
+    assert ownership == [("remove_permissions", MOCK_ID)] * 2
 
 
 def test_deleteService_NotFound(unit_app, services):

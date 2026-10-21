@@ -240,6 +240,37 @@ def _check_other_owners(resource: str, userId: str) -> None:
         raise Conflict
 
 
+def _grant(serviceId: str, resource: str, userId: str, role: str) -> None:
+    """Grant a user a role on a service, unless the service was deleted.
+
+    Checking that the service exists before granting the role is not atomic:
+    the service may be deleted in between (after its roles were revoked),
+    and the role would be left on the deleted service. So the existence is
+    checked again afterwards, and if the service is gone, the role (and a
+    name stored for the user on the service) is revoked again. (A deletion
+    also revokes the roles again after deleting the service, cf.
+    `deleteService()`.)
+
+    Args:
+        serviceId: Service identifier.
+        resource: Resource path of the service.
+        userId: User identifier.
+        role: Role to grant.
+
+    Raises:
+        cloud_registry.exceptions.NotFound: The service was deleted
+            meanwhile.
+        ValueError: The user identifier can't be stored in policy rules.
+    """
+    add_resource_role(subject=userId, role=role, resource=resource)
+    if not service_exists(serviceId):
+        remove_resource_role(subject=userId, role=role, resource=resource)
+        get_collection(USER_NAMES).delete_many(
+            {"service_id": serviceId, "user_id": userId}
+        )
+        raise NotFound
+
+
 def _restore_owner_if_none(serviceId: str, resource: str, userId: str) -> None:
     """Make a former owner owner again if a service has no owners left.
 
@@ -259,10 +290,9 @@ def _restore_owner_if_none(serviceId: str, resource: str, userId: str) -> None:
             meanwhile.
     """
     if not _owners(resource):
-        # A concurrent deletion of the service removed all roles
-        if not service_exists(serviceId):
-            raise NotFound
-        add_resource_role(subject=userId, role="owner", resource=resource)
+        # A concurrent deletion of the service removed all roles, unless
+        # the service still exists afterwards
+        _grant(serviceId, resource, userId, "owner")
         logger.info(
             "Restored owner '%s' of '%s'",
             escape_log_value(userId),
@@ -292,7 +322,8 @@ def putServicePermission(serviceId: str, userId: str, **kwargs) -> dict:
             stored in policy rules.
         cloud_registry.exceptions.Conflict: The user is the last owner of
             the service, and the role is not `owner`.
-        cloud_registry.exceptions.NotFound: The service doesn't exist.
+        cloud_registry.exceptions.NotFound: The service doesn't exist, or
+            was deleted meanwhile (cf. `_grant()`).
     """
     role = request.json["role"]
     if not service_exists(serviceId):
@@ -315,7 +346,7 @@ def putServicePermission(serviceId: str, userId: str, **kwargs) -> dict:
             get_collection(USER_NAMES).delete_many(
                 {"service_id": serviceId, "user_id": userId}
             )
-        add_resource_role(subject=userId, role=role, resource=resource)
+        _grant(serviceId, resource, userId, role)
     # FOCA rejects values that can't be stored in policy rules (e.g., user
     # identifiers with commas)
     except ValueError as exc:
