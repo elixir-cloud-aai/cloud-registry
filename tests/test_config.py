@@ -190,25 +190,34 @@ def test_config_requires_audience(
 # Values specific to an identity provider or deployment, which the
 # repository must not contain (examples use fictitious values)
 IDP_SPECIFIC = re.compile(
-    r"lifescience|\bls[ -]login\b|eduperson|\bperun\b|\bECP\b|ECP_CLN|urn:geant",
+    # Names not preceded or followed by letters (e.g., also `perun_groups`)
+    r"lifescience|(?<![a-z])ls[ -]login(?![a-z])|eduperson|(?<![a-z])perun(?![a-z])"
+    r"|(?<![a-z])ecp(?![a-z])|urn:geant",
     re.IGNORECASE,
 )
-# Suffixes of the text files that are scanned (and files without one, e.g.,
-# `Dockerfile`)
-TEXT_SUFFIXES = {
-    "",
-    ".cfg",
-    ".conf",
-    ".json",
-    ".lock",
-    ".md",
-    ".py",
-    ".toml",
-    ".tpl",
-    ".txt",
-    ".yaml",
-    ".yml",
-}
+
+
+def _text_lines(path: Path) -> list[str]:
+    """Get the lines of a file, or none if it is not text (UTF-8).
+
+    Args:
+        path: The file.
+
+    Returns:
+        Its lines.
+    """
+    try:
+        return path.read_text(encoding="utf-8").splitlines()
+    except UnicodeDecodeError:
+        return []
+
+
+def test_text_lines(tmp_path: Path) -> None:
+    """Files that aren't UTF-8 text (e.g., images) have no lines."""
+    (tmp_path / "text.md").write_text("a\nb\n")
+    (tmp_path / "image.png").write_bytes(b"\x89PNG\r\n\x1a\n\xff")
+    assert _text_lines(tmp_path / "text.md") == ["a", "b"]
+    assert _text_lines(tmp_path / "image.png") == []
 
 
 def test_repository_generic() -> None:
@@ -231,12 +240,8 @@ def test_repository_generic() -> None:
         f"{name}:{number}: {line.strip()}"
         for name in files
         # This file names the values to find
-        if name not in ("", "tests/test_config.py")
-        and (ROOT / name).is_file()
-        and Path(name).suffix in TEXT_SUFFIXES
-        for number, line in enumerate(
-            (ROOT / name).read_text(encoding="utf-8").splitlines(), start=1
-        )
+        if name not in ("", "tests/test_config.py") and (ROOT / name).is_file()
+        for number, line in enumerate(_text_lines(ROOT / name), start=1)
         if IDP_SPECIFIC.search(line)
     ]
     assert found == []
@@ -436,7 +441,7 @@ class TestChartOverlay:
 
     @pytest.mark.parametrize("value", ['["groups"]', "123", "true", "false", "0"])
     def test_group_claim_invalid(self, value: str) -> None:
-        """Group claims that aren't strings are rejected, as by the app."""
+        """Group claims that aren't strings are rejected, as by FOCA's config."""
         with pytest.raises(subprocess.CalledProcessError) as exc:
             _render_overlay(
                 "--set",

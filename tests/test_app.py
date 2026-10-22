@@ -1415,7 +1415,7 @@ def test_create_app_requires_claim_groups(
 ) -> None:
     """`create_app()` refuses a group mapping without a group claim.
 
-    Without `claim_groups`, no group would be admin.
+    Without `claim_groups` (or with a blank one), no group would be admin.
     """
     _set_overlay(
         monkeypatch,
@@ -1423,7 +1423,10 @@ def test_create_app_requires_claim_groups(
         {
             "security": {
                 "auth": {"issuers": [ISSUER], "audience": ["a"]},
-                "access_control": {"group_mapping": {ADMIN_GROUP: "admin"}},
+                "access_control": {
+                    "claim_groups": "  ",
+                    "group_mapping": {ADMIN_GROUP: "admin"},
+                },
             }
         },
     )

@@ -72,7 +72,8 @@ def check_admin_groups() -> None:
     """
     conf = get_config().security.access_control
     mapping = conf.group_mapping or {}
-    if mapping and not conf.claim_groups:
+    claim_groups = (conf.claim_groups or "").strip()
+    if mapping and not claim_groups:
         raise RuntimeError(
             "Groups are mapped to roles, but no group claim is set: set "
             "`security.access_control.claim_groups` to the claim with the "
@@ -80,7 +81,7 @@ def check_admin_groups() -> None:
             "`security.auth.userinfo_claims` if the identity provider "
             "releases it via user info only"
         )
-    if not conf.claim_groups:
+    if not claim_groups:
         logger.warning(
             "No group claim is set (`security.access_control.claim_groups`), "
             "so users have no groups: roles on services can't be granted to "
