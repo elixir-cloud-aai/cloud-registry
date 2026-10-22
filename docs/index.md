@@ -20,7 +20,8 @@
   Connect provider, roles of users and groups on services, admins and
   `GET /me`.
 - [Deployment](deployment.md): the Helm chart for Kubernetes.
-- [Operations](operations.md): admins, the permissions API and audit logs.
+- [Operations](operations.md): admins, the permissions API, audit logs and
+  verifying images and charts.
 - [Upgrading](upgrading.md): changes to existing deployments and data.
 - [Development](development.md): development setup, checks, versioning and
   releases.
