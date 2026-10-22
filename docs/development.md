@@ -101,10 +101,10 @@ version to the image build. Images on Docker Hub
   `dev` (full SHA), to deploy a fixed commit.
 
 Features and fixes are merged into `dev`. Branch `main` only ever moves
-forward to commits on `dev` that are released. First, set the version and
-date of the release in the citation metadata, which Zenodo archives with each
-release, and merge the change into `dev` (the release workflow fails if
-`CITATION.cff` has another version):
+forward to commits on `dev` that are released. First, shortly before the
+release, set its version and date in the citation metadata, which Zenodo
+archives with each release, and merge the change into `dev`; each version,
+also each pre-release (e.g., `X.Y.Zrc1`), needs its own such change:
 
 ```bash
 python scripts/citation.py set X.Y.Z  # date: today (UTC), or --date YYYY-MM-DD
@@ -114,6 +114,8 @@ Then, to release version `X.Y.Z` from commit `<sha>` on `dev` (with that
 change), after CI passed for it:
 
 ```bash
+git switch --detach <sha>
+python scripts/citation.py check X.Y.Z  # as the release workflow does
 git push origin <sha>:main  # fails unless it is a fast-forward
 git tag -s vX.Y.Z <sha> -m "vX.Y.Z"
 git push origin vX.Y.Z
@@ -123,7 +125,8 @@ The tag must be annotated and signed (`git tag -s`), with a key that GitHub can
 verify (added to the tagger's GitHub account). The [release
 workflow](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/.github/workflows/release.yaml),
 triggered by the tag, checks that GitHub verified the signature, that the
-tag's commit is on `main`, and that the [CI
+tag's commit is on `main` and its `CITATION.cff` has the release version and
+a date that is not in the future (UTC), and that the [CI
 workflow](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/.github/workflows/checks.yaml)
 passed for it (a run for the push of the commit to `dev`; if CI hasn't
 finished or failed, re-run the release workflow once it passed). It packages

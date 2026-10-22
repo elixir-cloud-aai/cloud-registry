@@ -110,14 +110,18 @@ Cloud Registry is cited with the metadata in
 [`CITATION.cff`](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/CITATION.cff)
 ([Citation File Format](https://citation-file-format.github.io/)), which
 GitHub ("Cite this repository") and Zenodo use. Its authors are the people
-who committed at least 100 lines to `main` (to `dev` before the first
-release; without bots, vendored or generated files and reformatting
-commits), ordered by lines, then by commits; its `message` explains the
-order. To add or correct your entry (e.g., your name, [ORCID
-iD](https://orcid.org/) or affiliation), open a pull request that changes
-only your entry; don't add e-mail addresses. CI validates the file
-(`cffconvert --validate`), and its `version` and `date-released` are set for
-each release (see [Versioning and
+who committed at least 100 lines (lines added) to `main`, the release
+branch (to `dev` before the first release), not counting bots, vendored or
+generated files and the reformatting commits in `.git-blame-ignore-revs`.
+They are ordered by lines, then by commits; equal contributors are listed
+alphabetically by family name and marked with an asterisk (*). Affiliations
+come from public ORCID records only. To add or correct your entry (e.g.,
+your name, [ORCID iD](https://orcid.org/) or affiliation), open a pull
+request that changes only your entry; don't add e-mail addresses. CI
+validates the file (`cffconvert --validate`). Before each release, `python
+scripts/citation.py set X.Y.Z` sets its `version` and `date-released`, and
+the release workflow fails if they don't match the release (`python
+scripts/citation.py check X.Y.Z`; see [Versioning and
 releases](development.md#versioning-and-releases)).
 
 ## Python guidelines
