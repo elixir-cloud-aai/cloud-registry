@@ -1,6 +1,7 @@
 """Controllers for verifications of services.
 
-Admins verify services they checked (e.g., that they accept LS Login tokens).
+Admins verify services they checked (e.g., that they accept tokens of the
+deployment's identity provider).
 The time of the verification is stored in an internal field of the service
 (`VERIFIED`), not served with the service, so that the GA4GH endpoints are
 unchanged. Replacing a service with another URL (as written) or API type

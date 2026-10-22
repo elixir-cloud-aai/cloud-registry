@@ -1,8 +1,16 @@
-# Config overlay for app tests, with the settings each deployment must make
+# Config overlay for app tests, with the settings each deployment must make;
+# the identity provider is fictitious (and mocked by the tests)
 security:
     auth:
+        issuers:
+          - https://login.example.org/oidc/
         audience:
           - client-id
+        # The identity provider releases groups and names via user info only
+        userinfo_claims:
+          - groups
+          - name
     access_control:
+        claim_groups: groups
         group_mapping:
-            "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN:ADMIN#aai.lifescience-ri.eu": admin
+            "urn:example:group:registry-admins#login.example.org": admin

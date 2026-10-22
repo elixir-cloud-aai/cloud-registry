@@ -46,31 +46,32 @@ from cloud_registry.service_models.custom_config import CustomConfig
 from tests.mock_data import CUSTOM_CONFIG, DB, ERROR_MEDIA_TYPE, MONGO_CONFIG
 
 APP_DIR = Path(__file__).parents[1] / "cloud_registry"
-# Config overlay with the settings each deployment must make (audience, admin
-# group)
+# Config overlay with the settings each deployment must make (issuer,
+# audience, group claim, admin group)
 CONFIG_OVERLAY = Path(__file__).parent / "config_overlay.yaml"
 AUDIENCE = "client-id"
-# The trusted issuer from `config.yaml`; all its endpoints are mocked
-ISSUER = "https://login.aai.lifescience-ri.eu/oidc/"
+# The trusted issuer of the test overlay, a fictitious identity provider;
+# all its endpoints are mocked
+ISSUER = "https://login.example.org/oidc/"
 JWKS_URI = f"{ISSUER}jwk"
 USERINFO_URI = f"{ISSUER}userinfo"
 USER = "alice@example.org"
 ADMIN = "admin@example.org"
-# Group mapped to the role `admin` in the test overlay
-ADMIN_GROUP = (
-    "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN:ADMIN#aai.lifescience-ri.eu"
-)
+# Claim with the group memberships of users (`claim_groups` of the test
+# overlay)
+GROUP_CLAIM = "groups"
+# Group mapped to the role `admin` in the test overlay; URN-style, so that
+# colons and `#` in groups are covered (`test_group_with_slash`: slashes)
+ADMIN_GROUP = "urn:example:group:registry-admins#login.example.org"
 # Group of a team, whose members are users (for roles granted to groups)
-TEAM_GROUP = "urn:geant:lifescience-ri.eu:group:elixir:TEAM#aai.lifescience-ri.eu"
+TEAM_GROUP = "urn:example:group:registry-team#login.example.org"
 # Group memberships and display names the identity provider returns as user
-# info, like LS Login (not in access tokens)
-ENTITLEMENTS = {
+# info, not in access tokens (`userinfo_claims` of the test overlay)
+GROUPS = {
     USER: [TEAM_GROUP],
     ADMIN: [ADMIN_GROUP],
     "erin@example.org": [TEAM_GROUP],
-    "bob@example.org": [
-        "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN#aai.lifescience-ri.eu"
-    ],
+    "bob@example.org": ["urn:example:group:registry#login.example.org"],
 }
 NAMES = {
     USER: "Alice Example",
@@ -184,7 +185,7 @@ def mock_get(
         except jwt.InvalidTokenError:
             return MockResponse({"error": "invalid_token"}, status_code=401)
         sub = claims["sub"]
-        userinfo = {"sub": sub, "eduperson_entitlement": ENTITLEMENTS.get(sub, [])}
+        userinfo = {"sub": sub, GROUP_CLAIM: GROUPS.get(sub, [])}
         if sub in NAMES:
             userinfo["name"] = NAMES[sub]
         return MockResponse(userinfo)
@@ -200,7 +201,7 @@ def make_headers(
         user: User identifier (`sub` claim).
         key: Key that signs the token.
         typ: Type of the token (`typ` header), `at+jwt` for access tokens
-            (RFC 9068, as issued by LS Login); `None` for no type.
+            (RFC 9068); `None` for no type.
 
     Returns:
         Request headers.
@@ -210,7 +211,7 @@ def make_headers(
         {
             "aud": AUDIENCE,
             "sub": user,
-            "scope": "openid eduperson_entitlement",
+            "scope": "openid groups",
             "iss": ISSUER,
             "iat": now,
             "exp": now + 300,

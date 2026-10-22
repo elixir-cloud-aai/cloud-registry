@@ -64,11 +64,21 @@ def check_admin_groups() -> None:
     to grant them).
 
     Raises:
-        RuntimeError: No group is mapped to the role `admin`, and
+        RuntimeError: Groups are mapped to roles, but no group claim is set
+            (`claim_groups`), so that no mapping applies; or no group is
+            mapped to the role `admin`, and
             `custom.access_control.require_admin` is true.
     """
     conf = get_config().security.access_control
     mapping = conf.group_mapping or {}
+    if mapping and not conf.claim_groups:
+        raise RuntimeError(
+            "Groups are mapped to roles, but no group claim is set: set "
+            "`security.access_control.claim_groups` to the claim with the "
+            "groups of users (e.g., `groups`), and add it to "
+            "`security.auth.userinfo_claims` if the identity provider "
+            "releases it via user info only"
+        )
     # FOCA drops group claim values that aren't mapped once a mapping is set,
     # also an empty one
     if conf.group_mapping is not None and not conf.keep_group_subjects:
@@ -506,19 +516,19 @@ def deleteServicePermission(serviceId: str, userId: str, **kwargs: Any) -> str:
     return userId
 
 
-# PUT /services/{serviceId}/permissions/groups/{entitlement}
+# PUT /services/{serviceId}/permissions/groups/{group}
 def putServiceGroupPermission(
-    serviceId: str, entitlement: str, **kwargs: Any
+    serviceId: str, group: str, **kwargs: Any
 ) -> dict[str, Any]:
     """Grant a group a role on a service, replacing any other role.
 
     See `_put_role()`. Owners may only grant roles to groups they are members
-    of (i.e., whose entitlement is in their group claim), as they could
+    of (i.e., whose group claim contains it), as they could
     otherwise hand a service to any group; admins may grant roles to any group.
 
     Args:
         serviceId: Service identifier.
-        entitlement: Group, i.e., a value of the group claim of its members.
+        group: Group, i.e., a value of the group claim of its members.
         **kwargs: Further arguments that Connexion passes (`user`,
             `token_info`, and the request body); unused.
 
@@ -529,23 +539,21 @@ def putServiceGroupPermission(
         cloud_registry.exceptions.Forbidden: The subject of the current
             request is neither a member of the group nor an admin.
     """
-    if entitlement not in get_current_group_values() and not is_admin():
+    if group not in get_current_group_values() and not is_admin():
         logger.info(
             "Role on service '%s' not granted to group '%s' by '%s': not a "
             "member of the group",
             escape_log_value(serviceId),
-            escape_log_value(entitlement),
+            escape_log_value(group),
             current_user(),
         )
         raise Forbidden
-    _put_role(serviceId, entitlement, "group")
-    return {"group": entitlement, "role": request.json["role"]}
+    _put_role(serviceId, group, "group")
+    return {"group": group, "role": request.json["role"]}
 
 
-# DELETE /services/{serviceId}/permissions/groups/{entitlement}
-def deleteServiceGroupPermission(
-    serviceId: str, entitlement: str, **kwargs: Any
-) -> str:
+# DELETE /services/{serviceId}/permissions/groups/{group}
+def deleteServiceGroupPermission(serviceId: str, group: str, **kwargs: Any) -> str:
     """Revoke all roles of a group on a service (cf. `_delete_roles()`).
 
     Any owner may revoke roles of groups, also of groups they are not a
@@ -553,15 +561,15 @@ def deleteServiceGroupPermission(
 
     Args:
         serviceId: Service identifier.
-        entitlement: Group.
+        group: Group.
         **kwargs: Further arguments that Connexion passes (`user`,
             `token_info`); unused.
 
     Returns:
         The group.
     """
-    _delete_roles(serviceId, entitlement, "group")
-    return entitlement
+    _delete_roles(serviceId, group, "group")
+    return group
 
 
 # GET /me

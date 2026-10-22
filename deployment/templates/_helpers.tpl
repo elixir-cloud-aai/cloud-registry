@@ -74,9 +74,39 @@ As the app on startup, refuse to render without a group mapped to the role
 no such section, see `foca-common.configOverlay`)
 */ -}}
 {{- $mapping := dict -}}
+{{- $claimGroups := "" -}}
+{{- $issuers := list -}}
 {{- $security := get $config "security" -}}
-{{- if and (kindIs "map" $security) (kindIs "map" (get $security "access_control")) -}}
-{{- $mapping = get (get $security "access_control") "group_mapping" | default dict -}}
+{{- if kindIs "map" $security -}}
+{{- $accessControl := get $security "access_control" -}}
+{{- if kindIs "map" $accessControl -}}
+{{- $mapping = get $accessControl "group_mapping" | default dict -}}
+{{- $claimGroups = get $accessControl "claim_groups" | default "" | toString | trim -}}
+{{- end -}}
+{{- $auth := get $security "auth" -}}
+{{- if kindIs "map" $auth -}}
+{{- $issuers = get $auth "issuers" | default list -}}
+{{- end -}}
+{{- end -}}
+{{- /*
+As FOCA on startup (access control needs trusted token issuers), refuse to
+render without issuers: the base config trusts none
+*/ -}}
+{{- $hasIssuers := and (kindIs "slice" $issuers) (gt (len $issuers) 0) -}}
+{{- range $issuer := (ternary $issuers (list) $hasIssuers) -}}
+{{- if not (and (kindIs "string" $issuer) (trim $issuer)) -}}
+{{- $hasIssuers = false -}}
+{{- end -}}
+{{- end -}}
+{{- if not $hasIssuers -}}
+{{- fail "config.security.auth.issuers must list the trusted token issuers (the iss claim of their tokens, e.g., https://login.example.org/oidc/): the app trusts none by default" -}}
+{{- end -}}
+{{- /*
+As the app on startup, refuse to render group mappings without the claim
+with the groups of users, as no mapping would apply
+*/ -}}
+{{- if and $mapping (not $claimGroups) -}}
+{{- fail "config.security.access_control.claim_groups must name the claim with the groups of users (e.g., groups), as groups are mapped to roles (group_mapping); also add it to config.security.auth.userinfo_claims if the identity provider releases it via user info only" -}}
 {{- end -}}
 {{- $requireAdmin := true -}}
 {{- if kindIs "map" $custom -}}
