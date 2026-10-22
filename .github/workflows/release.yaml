@@ -94,6 +94,10 @@ jobs:
               echo "::error::${notes} contains TODO: finish the release notes, then tag a new release"
               exit 1
           fi
+      # Temporary pins to development versions (e.g., a FOCA commit, to test
+      # unreleased changes) must be replaced by releases first
+      - name: Check that dependencies are releases
+        run: python scripts/check_release_pins.py
       # The checks above don't run the tests: require a successful run of
       # the CI workflow for a push of the release commit (to `dev`, before it
       # moved to `main`); runs for pull requests test merge commits, not the
