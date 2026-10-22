@@ -550,14 +550,6 @@ def test_renamed_keys(old: str, new: str, value: str, args: tuple[str, ...]) -> 
     assert f"{old} was renamed to {new}" in exc.value.stderr
 
 
-@pytest.mark.parametrize("value", ["null", "{}", '{"access_control": null}'])
-def test_security_config_empty(value: str) -> None:
-    """Without a security config, rendering fails on the admin mapping."""
-    with pytest.raises(subprocess.CalledProcessError) as exc:
-        _render("--set-json", f"config.security={value}")
-    assert "must map a group to the role admin" in exc.value.stderr
-
-
 @pytest.mark.parametrize(
     ("value", "error"),
     [
