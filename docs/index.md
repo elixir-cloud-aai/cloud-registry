@@ -16,8 +16,9 @@
   the request size limit, the server and the service info.
 - [API](api.md): the endpoints, what registrations must look like, errors,
   duplicate and verified services.
-- [Access control](access-control.md): authentication with LS Login, roles of
-  users and groups on services, admins and `GET /me`.
+- [Access control](access-control.md): authentication with an OpenID
+  Connect provider, roles of users and groups on services, admins and
+  `GET /me`.
 - [Deployment](deployment.md): the Helm chart for Kubernetes.
 - [Operations](operations.md): admins, the permissions API and audit logs.
 - [Upgrading](upgrading.md): changes to existing deployments and data.

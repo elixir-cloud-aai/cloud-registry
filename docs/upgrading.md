@@ -5,6 +5,18 @@ and how to upgrade, e.g., [to 0.3.0](releases/0.3.0.md#upgrade). Upgrades of
 Helm releases are described in [Deployment](deployment.md#upgrades). This page
 describes how existing setups and data are affected.
 
+## From versions before 0.3.0
+
+Redeploy with a fresh install and an empty database instead of migrating the
+data (see the [upgrade steps of 0.3.0](releases/0.3.0.md#upgrade)): earlier
+versions accepted tokens of any issuer and had no owners, so their data can't
+be trusted. Export the registered services first as a reference for their
+operators (`GET /ga4gh/registry/v1/services`), and ask them to register their
+services again. The identity provider is deployment configuration now, without
+defaults: set the trusted token issuers, the audience, the group claim and the
+admin group mapping (see [Deployment
+configuration](configuration.md#deployment-configuration)).
+
 ## Docker Compose data
 
 Earlier versions kept the data in `../data/cloud-registry/db`. To keep using

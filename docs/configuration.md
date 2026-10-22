@@ -12,15 +12,60 @@ chart](deployment.md) uses the same mechanism: it renders its `config` value
 address the image listens on: `server.host` and `server.port` apply to the
 development server only, not to Gunicorn (see [Server](#server)).
 
-Each deployment must set two values that depend on it, otherwise the app
-refuses to start:
+## Deployment configuration
 
-- `security.auth.audience`: the client IDs of the apps whose LS Login tokens
-  are accepted (e.g., the registry's front end; see
-  [Authentication](access-control.md#authentication));
+The registry works with any OpenID Connect provider that issues access tokens
+as per [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068) (JWTs). The
+identity provider, its claims, the groups mapped to roles and the roles of
+users on services are deployment configuration: the base config has no
+defaults for them, so each deployment sets them in an overlay (or in the
+chart's `config` value), otherwise the app refuses to start:
+
+- `security.auth.issuers`: the trusted token issuers (the `iss` claim of their
+  tokens, e.g., `https://login.example.org/oidc/`); tokens of other issuers
+  are rejected (see [Authentication](access-control.md#authentication));
+- `security.auth.audience`: the client IDs of the apps whose tokens are
+  accepted (the `aud` claim, e.g., of the registry's front end), unless
+  `security.auth.verify_audience` is `false`, which accepts tokens for any
+  audience (not recommended);
+- `security.access_control.claim_groups`: the claim with the groups of users
+  (e.g., `groups`), needed for admins and roles of groups; add it to
+  `security.auth.userinfo_claims` if the identity provider releases it via
+  user info only, not in access tokens (as `name`, which the registry shows
+  to owners of services);
 - `security.access_control.group_mapping`: the group(s) whose members are
-  admins (see [Access control](access-control.md#admins)), or
+  admins (values of the group claim, see [Access
+  control](access-control.md#admins)), or
   `custom.access_control.require_admin: false` to run without admins.
+
+For example:
+
+```yaml
+security:
+    auth:
+        issuers:
+            - https://login.example.org/oidc/
+        audience:
+            - registry-portal
+        userinfo_claims:
+            - groups
+            - name
+    access_control:
+        claim_groups: groups
+        group_mapping:
+            registry-admins: admin
+```
+
+Roles of users and groups on services are granted by owners and admins via
+the API, not configured (see [Roles on
+services](access-control.md#roles-on-services)). The policies
+(`security.access_control.policies`, see FOCA's [access
+control](https://foca.readthedocs.io/en/latest/access-control/#configuring-policies))
+say what each role may do; an overlay may change them, but lists replace
+those of the base config, so copy all its rules and change those you need
+(e.g., remove the rule that lets any authenticated user register services,
+so that only admins can). Don't rename the roles `owner` and `maintainer`
+(`security.access_control.resource_roles`), as the API is written for them.
 
 FOCA's service clients (`security.auth.service_clients`,
 `security.auth.on_behalf_of_header`) are not supported; the app refuses to
@@ -30,8 +75,9 @@ start with them (see [Access control](access-control.md#roles-on-services)).
 
 Docker Compose mounts
 [`config.dev.yaml`](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/config.dev.yaml),
-an overlay for local development that accepts tokens for any audience and
-`http` service URLs, and requires no admins. To override more values locally,
+an overlay for local development that trusts a fictitious token issuer
+(`https://login.example.org/oidc/`; set your own in a local override), accepts
+tokens for any audience and `http` service URLs, and requires no admins. To override more values locally,
 put them in `config.local.yaml` and mount it in a
 `docker-compose.override.yaml` (both are ignored by Git):
 

@@ -35,32 +35,49 @@ commits since the upgrade to FOCA 0.15. Older images ignore the overlay or
 the service info (`config.service_info`), and the chart rejects their way of
 setting it (`config.custom.endpoints.service_info`).
 
-Each deployment must set the audience (`config.security.auth.audience`;
-rendering fails without it, as the app would refuse to start, unless
-`config.security.auth.verify_audience` is `false`, which accepts tokens for
-any audience) and map an admin group to the role `admin`
-(`config.security.access_control.group_mapping`; rendering fails without one,
-unless `config.custom.access_control.require_admin` is `false`). Keep the
-values of each deployment in its own values file outside this repository
-(e.g., `values-prod.yaml` in the deployment's infrastructure repository), for
-example:
+The identity provider is deployment configuration, without defaults (see
+[Deployment
+configuration](https://cloud-registry.readthedocs.io/en/latest/configuration/#deployment-configuration)).
+Rendering fails, as the app would refuse to start, unless each deployment sets:
+
+- the trusted token issuers (`config.security.auth.issuers`);
+- the audience (`config.security.auth.audience`), unless
+  `config.security.auth.verify_audience` is `false`, which accepts tokens for
+  any audience;
+- an admin group mapped to the role `admin`
+  (`config.security.access_control.group_mapping`), unless
+  `config.custom.access_control.require_admin` is `false` (a boolean, as
+  the app parses it, e.g., `"no"`; rendering fails on other values);
+- the claim with the groups of users
+  (`config.security.access_control.claim_groups`), if groups are mapped.
+
+Keep the values of each deployment in its own values file outside this
+repository (e.g., `values-prod.yaml` in the deployment's infrastructure
+repository), for example:
 
 ```yaml
 hostName: registry.example.org
 config:
   security:
     auth:
+      # Trusted token issuers (`iss` claim)
+      issuers: ["https://login.example.org/oidc/"]
       # Client IDs of the apps calling the registry
       audience: ["my-portal-client-id"]
+      # Claims released via user info only, not in access tokens
+      userinfo_claims: ["groups", "name"]
     access_control:
+      # Claim with the groups of users
+      claim_groups: groups
       # Members of this group may manage all services
       group_mapping:
-        "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN:ADMIN#aai.lifescience-ri.eu": admin
+        registry-admins: admin
 ```
 
-Users removed from a group keep its roles (also `admin`) for up to
+Users removed from a group keep its roles (also `admin`) until their token
+expires, or, if the group claim is read from the user info, for up to
 `config.security.auth.cache_ttl` seconds (default: 300), as FOCA caches the
-user info with the group memberships per token; set
+user info per token; set
 `config.security.auth.validate_userinfo: true` or a lower `cache_ttl` to
 shorten the delay (see [Group membership
 changes](https://cloud-registry.readthedocs.io/en/latest/access-control/#group-membership-changes)).
