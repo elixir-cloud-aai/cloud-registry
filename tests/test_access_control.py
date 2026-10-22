@@ -837,11 +837,14 @@ def test_roles_removed_before_delete(
 
 
 def delete_after_first_check(patch: pytest.MonkeyPatch, service_id: str) -> list[bool]:
-    """Delete a service (with its roles) after its first existence check.
+    """Delete a service after its first existence check.
 
     Patches the app's existence check (`service_exists()`), which it also
     passes to FOCA's helpers as `exists`, so that the service is deleted
-    before the second check, i.e., while a role on it is granted.
+    before the second check, i.e., after a role on it was granted. Only the
+    service is deleted, not its roles (as if the deletion's second
+    revocation had run before the role was granted), so that the role is
+    only revoked if FOCA's helper revokes it.
 
     Args:
         patch: Monkeypatch (context) to patch the check with.
@@ -858,7 +861,6 @@ def delete_after_first_check(patch: pytest.MonkeyPatch, service_id: str) -> list
         """Check whether the service exists, deleting it on the second call."""
         if next(calls) == 1:
             deleted.append(True)
-            permissions_module.remove_permissions(service_id)
             get_collection("services").delete_one({"id": service_id})
         return service_exists(serviceId)
 
@@ -875,7 +877,7 @@ def test_grant_racing_delete(
         deleted = delete_after_first_check(patch, service_id)
         assert grant(client, service_id, BOB, "maintainer") == 404
     assert deleted == [True]
-    assert _roles(app, service_id) == []
+    assert _roles(app, service_id) == [(ALICE, "owner")]
 
 
 def test_delete_racing_grant(
@@ -1231,7 +1233,7 @@ def test_group_grant_racing_delete(
         deleted = delete_after_first_check(patch, service_id)
         assert grant_group(client, service_id, TEAM_GROUP, "maintainer") == 404
     assert deleted == [True]
-    assert _roles(app, service_id) == []
+    assert _roles(app, service_id) == [(ALICE, "owner")]
 
 
 def test_me_group_roles(client: FlaskClient) -> None:

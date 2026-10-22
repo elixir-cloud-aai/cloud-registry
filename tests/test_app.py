@@ -1327,6 +1327,27 @@ def test_create_app_url_schemes(
     assert response.status_code == 200
 
 
+def test_create_app_invalid_urls(
+    mongo_client: MongoClient[dict[str, Any]],
+    app_env: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`create_app()` warns of stored services with keys and invalid URLs.
+
+    They are still served.
+    """
+    services = mongo_client["serviceStore"]["services"]
+    services.insert_one(
+        {**_service(url="https://tes.example.org/a|b"), "id": "PIPE", KEY: "PIPE"}
+    )
+    app = cloud_registry.app.create_app()
+    err = capsys.readouterr().err
+    assert "Services with invalid URLs" in err
+    assert "'PIPE'" in err
+    response = app.app.test_client().get(f"{BASE}/services/PIPE")
+    assert response.status_code == 200
+
+
 @pytest.mark.parametrize(
     "auth",
     [

@@ -497,6 +497,24 @@ def add_service_keys() -> None:
         )
 
 
+def _is_valid_url(url: object) -> bool:
+    """Check whether a stored service URL is valid.
+
+    Args:
+        url: Stored service URL.
+
+    Returns:
+        Whether the URL is a string that `normalize_url()` accepts.
+    """
+    if not isinstance(url, str):
+        return False
+    try:
+        normalize_url(url)
+    except InvalidService:
+        return False
+    return True
+
+
 def warn_invalid_urls() -> None:
     """Warn of stored services with keys whose URLs are invalid.
 
@@ -514,14 +532,8 @@ def warn_invalid_urls() -> None:
         {"_id": False, "id": True, "url": True},
         sort=[("id", 1)],
     ):
-        url = service.get("url")
-        if isinstance(url, str):
-            try:
-                normalize_url(url)
-                continue
-            except InvalidService:
-                pass
-        ids.append(f"'{service['id']}'")
+        if not _is_valid_url(service.get("url")):
+            ids.append(f"'{service['id']}'")
     if ids:
         logger.warning(
             "Services with invalid URLs are still served, but can only be "
@@ -546,13 +558,9 @@ def warn_url_schemes() -> None:
         {}, {"_id": False, "id": True, "url": True}
     ):
         url = service.get("url")
-        if not isinstance(url, str):
-            continue
-        try:
-            normalize_url(url)
-        except InvalidService:
-            # invalid URLs stored before URLs were checked can't be updated
-            # unchanged anyway (cf. "Stored services" in `docs/upgrading.md`)
+        # invalid URLs can't be updated unchanged anyway (cf.
+        # `warn_invalid_urls()`)
+        if not isinstance(url, str) or not _is_valid_url(url):
             continue
         try:
             check_url_scheme(url, schemes=schemes)
