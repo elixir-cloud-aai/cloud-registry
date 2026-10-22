@@ -107,7 +107,7 @@ cosign verify-blob cloud-registry-0.3.0.tgz \
 ```
 
 Images are scanned for known vulnerabilities with
-[Trivy](https://trivy.dev/) in CI, for every pull request and commit
-(including the release commits; CI fails on fixable critical and high
-vulnerabilities), and the `latest` image weekly; the maintainers see the results in the repository's
+[Trivy](https://trivy.dev/) in CI and again before a release is published
+(both fail on fixable critical and high vulnerabilities), and the `latest`
+image weekly; the maintainers see the results in the repository's
 code scanning alerts.

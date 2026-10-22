@@ -168,12 +168,12 @@ On Read the Docs, an automation rule activates the versions of tags (`v*`),
 so that the docs linked from packaged charts exist.
 
 The CI workflow builds the image of every pull request and push and scans
-it with [Trivy](https://trivy.dev/) (`.github/actions/scan-image`), so a
-release commit is scanned (the release workflow requires a successful CI
-run for it, and doesn't run Trivy itself, next to its credentials), and a
-weekly workflow (`scan.yaml`) scans `latest`. They fail on critical and high
+it with [Trivy](https://trivy.dev/) (`.github/actions/scan-image`); the
+release workflow builds and scans the release commit's image again before
+publishing (in a job without its credentials), and a weekly workflow
+(`scan.yaml`) scans `latest`. They fail on critical and high
 vulnerabilities that have a fix, and upload all findings to code scanning
-(not for pull requests from forks). To accept
+(not for pull requests from forks, nor in the release workflow). To accept
 a finding (e.g., if it doesn't affect the app), add it to `.trivyignore.yaml`
 with the affected package versions (`purls`), the reason (`statement`) and an
 expiry date (`expired_at`), after which the scans fail again. Trivy also

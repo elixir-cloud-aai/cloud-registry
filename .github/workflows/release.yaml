@@ -4,9 +4,9 @@
 # (with SBOM and provenance attestations) by digest, check it, attest
 # its build provenance, sign it (Sigstore keyless signing) and tag it, and
 # create the GitHub release with the chart attached, also attested and signed
-# (see "Verifying images and charts" in `docs/operations.md`). The image of
-# the release commit was scanned for vulnerabilities by CI (required below);
-# Trivy is not run here, next to the release credentials and signing
+# (see "Verifying images and charts" in `docs/operations.md`). Before that,
+# the image of the release commit is built and scanned for vulnerabilities
+# in a job of its own (`scan`), without the release credentials and signing
 # identity. A re-run builds, signs and tags a new digest. The tag is
 # the only source of the version: it is passed to the image build (the Docker
 # build gets no Git metadata) and set as the chart's `version` and
@@ -155,9 +155,47 @@ jobs:
           path: dist/
           if-no-files-found: error
 
+  # Builds the image of the release commit as `publish` does and scans it
+  # with Trivy (`.github/actions/scan-image`; fails on fixable critical and
+  # high vulnerabilities), so that vulnerabilities published since CI
+  # scanned the commit block the release. Kept apart from `publish`, so that
+  # Trivy (whose binary is resolved from its release tag at run time) never
+  # runs next to the Docker Hub credentials, the `contents: write` token and
+  # the signing identity. CI uploads the results to code scanning
+  scan:
+    name: Scan image
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.prepare.outputs.sha }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          # Single image, for the local Docker daemon (no attestations)
+          provenance: false
+          tags: cloud-registry:scan
+          build-args: SETUPTOOLS_SCM_PRETEND_VERSION=${{ needs.prepare.outputs.version }}
+      - name: Scan image
+        uses: ./.github/actions/scan-image
+        with:
+          image: cloud-registry:scan
+          category: release
+          upload: "false"
+
   publish:
     name: Publish image and release
-    needs: prepare
+    needs: [prepare, scan]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
