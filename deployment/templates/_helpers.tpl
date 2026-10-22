@@ -76,16 +76,54 @@ no such section, see `foca-common.configOverlay`)
 {{- $mapping := dict -}}
 {{- $security := get $config "security" -}}
 {{- if and (kindIs "map" $security) (kindIs "map" (get $security "access_control")) -}}
-{{- $mapping = get (get $security "access_control") "group_mapping" | default dict -}}
+{{- $mapping = get (get $security "access_control") "group_mapping" -}}
 {{- end -}}
-{{- $requireAdmin := true -}}
+{{- if kindIs "invalid" $mapping -}}
+{{- $mapping = dict -}}
+{{- else if not (kindIs "map" $mapping) -}}
+{{- fail "config.security.access_control.group_mapping must be a map of groups to roles" -}}
+{{- end -}}
+{{- $requireAdmin := "true" -}}
+{{- $accessControl := dict -}}
 {{- if kindIs "map" $custom -}}
-{{- $requireAdmin = dig "access_control" "require_admin" true $custom -}}
+{{- $accessControl = get $custom "access_control" | default dict -}}
 {{- end -}}
-{{- if and $requireAdmin (not (has "admin" (values $mapping))) -}}
+{{- if and (kindIs "map" $accessControl) (hasKey $accessControl "require_admin") -}}
+{{- $requireAdmin = include "cloud-registry.parseBool" (dict
+  "value" (get $accessControl "require_admin")
+  "key" "config.custom.access_control.require_admin"
+) -}}
+{{- end -}}
+{{- if and (eq $requireAdmin "true") (not (has "admin" (values $mapping))) -}}
 {{- fail "config.security.access_control.group_mapping must map a group to the role admin (e.g., the admin group of the identity provider), or set config.custom.access_control.require_admin to false" -}}
 {{- end -}}
 {{- $_ := required "hostName must be set" .Values.hostName -}}
+{{- end -}}
+
+{{/*
+A boolean of the config, parsed as pydantic parses booleans (lax mode), as the
+app does: `true` or `false`, the strings `1`, `on`, `t`, `true`, `y`, `yes`
+and `0`, `off`, `f`, `false`, `n`, `no` (in any case, without whitespace),
+and the numbers 1 and 0. Renders "true" or "false"; fails otherwise. Call
+with a dict of the value (`value`) and its key (`key`).
+*/}}
+{{- define "cloud-registry.parseBool" -}}
+{{- $value := .value -}}
+{{- $text := lower (toString $value) -}}
+{{- $isNumber := or (kindIs "float64" $value) (kindIs "int64" $value) (kindIs "int" $value) -}}
+{{- if kindIs "bool" $value -}}
+{{- $value -}}
+{{- else if and (kindIs "string" $value) (has $text (list "1" "on" "t" "true" "y" "yes")) -}}
+true
+{{- else if and (kindIs "string" $value) (has $text (list "0" "off" "f" "false" "n" "no")) -}}
+false
+{{- else if and $isNumber (has $text (list "0" "1")) -}}
+{{- eq $text "1" -}}
+{{- else if kindIs "invalid" $value -}}
+{{- fail (printf "%s must be true or false, not null" .key) -}}
+{{- else -}}
+{{- fail (printf "%s must be true or false, not %v" .key $value) -}}
+{{- end -}}
 {{- end -}}
 
 {{/*
