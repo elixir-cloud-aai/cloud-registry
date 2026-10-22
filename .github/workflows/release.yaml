@@ -83,6 +83,13 @@ jobs:
               exit 1
           fi
           echo "sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+      # Zenodo archives the release with the citation metadata of the tagged
+      # commit, so they must have the release version (see "Versioning and
+      # releases" in `docs/development.md`)
+      - name: Check citation metadata
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: python scripts/citation.py check "${VERSION}"
       # Curated release notes are published as written, so unfinished ones
       # (with a `TODO`) must not be published
       - name: Check release notes
