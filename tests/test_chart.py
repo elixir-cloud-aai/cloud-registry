@@ -528,6 +528,9 @@ def test_app_name_removed(key: str) -> None:
 
 
 @pytest.mark.parametrize(
+    "args", [(), ("--set", "hostName=null")], ids=["host", "no-host"]
+)
+@pytest.mark.parametrize(
     ("old", "new", "value"),
     [
         ("host_name", "hostName", '"registry.example.org"'),
@@ -536,16 +539,23 @@ def test_app_name_removed(key: str) -> None:
     ],
     ids=["host_name", "cloud_registry", "cloud_registry-empty"],
 )
-def test_renamed_keys(old: str, new: str, value: str) -> None:
+def test_renamed_keys(old: str, new: str, value: str, args: tuple[str, ...]) -> None:
     """Keys renamed to camelCase (Helm conventions) are rejected.
 
     The error names the new key, as they would otherwise be ignored; also if
     `hostName` is missing, as for values of earlier versions.
     """
-    for args in ((), ("--set", "hostName=null")):
-        with pytest.raises(subprocess.CalledProcessError) as exc:
-            _render("--set-json", f"{old}={value}", *args)
-        assert f"{old} was renamed to {new}" in exc.value.stderr
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render("--set-json", f"{old}={value}", *args)
+    assert f"{old} was renamed to {new}" in exc.value.stderr
+
+
+@pytest.mark.parametrize("value", ["null", "{}", '{"access_control": null}'])
+def test_security_config_empty(value: str) -> None:
+    """Without a security config, rendering fails on the admin mapping."""
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render("--set-json", f"config.security={value}")
+    assert "must map a group to the role admin" in exc.value.stderr
 
 
 @pytest.mark.parametrize(

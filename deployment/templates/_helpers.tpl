@@ -73,7 +73,11 @@ As the app on startup, refuse to render without a group mapped to the role
 `admin`, unless admins are explicitly not required (`custom: null` is like
 no such section, see `foca-common.configOverlay`)
 */ -}}
-{{- $mapping := dig "security" "access_control" "group_mapping" dict $config -}}
+{{- $mapping := dict -}}
+{{- $security := get $config "security" -}}
+{{- if and (kindIs "map" $security) (kindIs "map" (get $security "access_control")) -}}
+{{- $mapping = get (get $security "access_control") "group_mapping" | default dict -}}
+{{- end -}}
 {{- $requireAdmin := true -}}
 {{- if kindIs "map" $custom -}}
 {{- $requireAdmin = dig "access_control" "require_admin" true $custom -}}
@@ -82,12 +86,17 @@ no such section, see `foca-common.configOverlay`)
 {{- fail "config.security.access_control.group_mapping must map a group to the role admin (e.g., the admin group of the identity provider), or set config.custom.access_control.require_admin to false" -}}
 {{- end -}}
 {{- $_ := required "hostName must be set" .Values.hostName -}}
-{{- /*
-Upgrades of releases of the legacy charts (versions 2 and 3, installed from
-the repository before charts were released from Git tags) would delete their
-MongoDB volume (`mongodb`), as its name changed. `lookup` finds nothing in
-`helm template` and client-side dry runs.
-*/ -}}
+{{- end -}}
+
+{{/*
+Fails on upgrades of releases of the legacy charts (versions 2 and 3,
+installed from the repository before charts were released from Git tags),
+which would delete their MongoDB volume (`mongodb`), as its name changed;
+renders nothing. Included once (in the app's ConfigMap template), as it looks
+up resources in the cluster. `lookup` finds nothing in `helm template` and
+client-side dry runs.
+*/}}
+{{- define "cloud-registry.checkUpgrade" -}}
 {{- if .Release.IsUpgrade -}}
 {{- range $old := list (list "v1" "PersistentVolumeClaim") (list "apps/v1" "Deployment") -}}
 {{- include "cloud-registry.failIfLegacy" (dict
