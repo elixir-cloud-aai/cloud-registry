@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
-import sys
+import tomllib
 from typing import Any
 
 from foca.config.config_parser import ConfigParser
@@ -19,11 +19,6 @@ from cloud_registry.ga4gh.registry.service import KEY
 from cloud_registry.service_models.custom_config import CustomConfig
 from tests.conftest import CONFIG_OVERLAY
 from tests.helm import ADMIN_GROUP, AUDIENCE, CHART, HELM, Manifest, render
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # pytest depends on tomli on Python 3.10
-    import tomli as tomllib
 
 ROOT = Path(__file__).parents[1]
 CONFIG_FILE = ROOT / "cloud_registry" / "config.yaml"
@@ -463,3 +458,40 @@ def test_base_image_foca() -> None:
         f"Base image has FOCA {match['version']}, but {requirements['foca']} is "
         "required"
     )
+
+
+def test_python_version() -> None:
+    """The app targets one Python version, that of the base image.
+
+    That is, the Python version of the base image in the `Dockerfile` is the
+    minimum of `requires-python`, the only one in the classifiers and the one
+    of mypy, and all workflows and Read the Docs use it.
+    """
+    match = re.search(
+        r"^FROM elixircloud/foca:[^-@\s]+-py(?P<version>3\.\d+)@",
+        (ROOT / "Dockerfile").read_text(),
+        flags=re.MULTILINE,
+    )
+    assert match, "No Python version in the base image tag of the Dockerfile"
+    image = match["version"]
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    assert pyproject["project"]["requires-python"] == f">={image}"
+    assert pyproject["tool"]["mypy"]["python_version"] == image
+    assert pyproject["tool"]["ruff"]["target-version"] == f"py{image.replace('.', '')}"
+    prefix = "Programming Language :: Python :: 3."
+    classifiers = [
+        classifier.removeprefix("Programming Language :: Python :: ")
+        for classifier in pyproject["project"]["classifiers"]
+        if classifier.startswith(prefix)
+    ]
+    assert classifiers == [image]
+    workflows = sorted((ROOT / ".github" / "workflows").glob("*.yaml"))
+    assert workflows
+    for workflow in workflows:
+        for name, job in yaml.safe_load(workflow.read_text())["jobs"].items():
+            for step in job.get("steps", []):
+                if "actions/setup-python@" in step.get("uses", ""):
+                    version = step["with"]["python-version"]
+                    assert version == image, f"{workflow.name}: {name}"
+    readthedocs = yaml.safe_load((ROOT / ".readthedocs.yaml").read_text())
+    assert readthedocs["build"]["tools"]["python"] == image

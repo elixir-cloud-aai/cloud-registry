@@ -14,7 +14,7 @@ Only admins may verify services and remove verifications: no policy in
 read by anyone.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 import logging
 from typing import Any
 
@@ -62,7 +62,7 @@ def _now() -> datetime:
     Returns:
         Current time (UTC), in milliseconds, like MongoDB dates.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return now.replace(microsecond=now.microsecond // 1000 * 1000)
 
 

@@ -4,7 +4,7 @@ The app and its fixtures are set up in `tests/conftest.py`.
 """
 
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from json import dumps
 from typing import Any
 
@@ -197,7 +197,7 @@ def service(client: FlaskClient) -> str:
 
 def test_verify(client: FlaskClient, service: str) -> None:
     """Admins verify services; anyone can read the verification."""
-    before = datetime.now(timezone.utc).replace(microsecond=0)
+    before = datetime.now(UTC).replace(microsecond=0)
     response = verify(client)
     assert response.status_code == 200
     verified_at = response.get_json()["verified_at"]
@@ -374,8 +374,8 @@ def test_verify_again(
     """Verifying a verified service renews its verification."""
     _set_clock(
         monkeypatch,
-        datetime(2026, 10, 20, 12, tzinfo=timezone.utc),
-        datetime(2026, 10, 20, 13, tzinfo=timezone.utc),
+        datetime(2026, 10, 20, 12, tzinfo=UTC),
+        datetime(2026, 10, 20, 13, tzinfo=UTC),
     )
     assert verify(client).get_json()["verified_at"] == "2026-10-20T12:00:00.000Z"
     second = verify(client)
@@ -394,8 +394,8 @@ def test_verify_again_earlier(
     """
     _set_clock(
         monkeypatch,
-        datetime(2026, 10, 20, 13, tzinfo=timezone.utc),
-        datetime(2026, 10, 20, 12, tzinfo=timezone.utc),
+        datetime(2026, 10, 20, 13, tzinfo=UTC),
+        datetime(2026, 10, 20, 12, tzinfo=UTC),
     )
     first = verify(client).get_json()
     second = verify(client)
