@@ -56,7 +56,8 @@ security:
     # services and becomes their owner; owners may update and delete their
     # services and grant other users, or groups they are members of, the
     # roles `owner` or `maintainer` (update only) on them; admins may do
-    # everything. Roles on services are managed by the app (see
+    # everything. Roles on services are managed by the app with FOCA's
+    # resource ownership helpers (see
     # `cloud_registry/ga4gh/registry/permissions.py`).
     # Cf. https://foca.readthedocs.io/en/latest/access-control/
     access_control:
@@ -65,6 +66,13 @@ security:
         model: access_control/model.conf
         db_name: serviceStore
         collection_name: policy_rules
+        # Roles on services (`Role` in `api/additions.openapi.yaml`), which
+        # FOCA's ownership helpers grant and revoke; groups must not be
+        # mapped to them (`group_mapping`), as their members would get the
+        # role on all services
+        resource_roles:
+            - owner
+            - maintainer
         claim_groups: eduperson_entitlement
         # Deployments map their admin groups (values of `claim_groups`) to
         # the role `admin`; the app refuses to start without one, unless

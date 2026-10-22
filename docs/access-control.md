@@ -63,9 +63,19 @@ request the corresponding scopes when logging in). Tokens are validated by
   granted the role; names are deleted with the role), and
   `DELETE /services/<id>/permissions/<user-id>` revokes them. The last owner
   of a service can't be removed or downgraded (`409 Conflict`); delete the
-  service instead.
+  service instead. The role `maintainer` is only granted on services with an
+  owner (`400 Bad Request` otherwise, e.g., on services stored before owners
+  were introduced: admins grant `owner` first).
 - **Maintainers** can update, but not delete a service.
 - [Admins](#admins) can do everything.
+
+Roles are granted, revoked and listed with FOCA's [resource ownership
+helpers](https://foca.readthedocs.io/en/latest/access-control/#resource-ownership),
+for the roles in `security.access_control.resource_roles` (`owner` and
+`maintainer`; don't change them, as the API and the policies are written for
+them). Groups must not be mapped to these roles
+(`security.access_control.group_mapping`), as all members of such a group
+would have the role on all services; FOCA refuses to start then.
 
 ## Roles of groups
 
@@ -94,7 +104,8 @@ depends on the group's membership in Perun: if the group is emptied or
 deleted, only admins can manage the service. Roles of groups apply because
 the base config sets `security.access_control.keep_group_subjects` (all values
 of the group claim are used as subjects, besides the admin group mapping);
-don't unset it in overlays (the app warns on startup if it is unset).
+don't unset it in overlays (the app warns on startup if it is unset, and roles
+can't be granted to groups then: `400 Bad Request`).
 
 !!! warning
     All members of an owner group are owners: they can list the identifiers

@@ -193,6 +193,24 @@ def test_config_url_schemes(monkeypatch: pytest.MonkeyPatch) -> None:
     assert _custom(_parse_config()).endpoints.services.url_schemes == ["https"]
 
 
+def test_config_resource_roles(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The roles on services are those of the API, and set in the config.
+
+    FOCA's ownership helpers grant and revoke the roles of
+    `security.access_control.resource_roles`, which the API lists as `Role`.
+    """
+    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(CONFIG_OVERLAY))
+    spec = yaml.safe_load(
+        (ROOT / "cloud_registry" / "api" / "additions.openapi.yaml").read_text()
+    )
+    roles = spec["components"]["schemas"]["Role"]["enum"]
+    assert (
+        "resource_roles"
+        in yaml.safe_load(CONFIG_FILE.read_text())["security"]["access_control"]
+    )
+    assert _parse_config().security.access_control.resource_roles == roles
+
+
 def test_service_key_index(monkeypatch: pytest.MonkeyPatch) -> None:
     """Service keys are unique, and the index is sparse.
 

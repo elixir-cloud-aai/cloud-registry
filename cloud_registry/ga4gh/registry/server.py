@@ -4,13 +4,13 @@ import logging
 from typing import Any
 
 from flask import Response, request
+from foca.security.access_control import is_admin
 from foca.utils.logging import escape_log_value, log_traffic
 
 from cloud_registry.exceptions import BadRequest, NotFound, problem, shorten_detail
 from cloud_registry.ga4gh.registry.permissions import (
     add_owner,
     current_user,
-    is_admin,
     remove_owner,
     remove_permissions,
 )
@@ -249,8 +249,8 @@ def _register_service(
             raise
         # The service may have been deleted (with its roles) before its owner
         # was stored, which would leave the role on a deleted service (cf.
-        # `permissions._grant()`); only the role granted here is revoked, as
-        # the identifier may be registered again meanwhile
+        # `exists` of FOCA's `grant_role()`); only the role granted here is
+        # revoked, as the identifier may be registered again meanwhile
         if not service_exists(service.data["id"]):
             remove_owner(service.data["id"])
             raise NotFound
