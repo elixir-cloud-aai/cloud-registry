@@ -116,8 +116,10 @@ jobs:
         with:
           version: v3.22.1
       # `appVersion` (the default image tag) is the release version. The
-      # chart is packaged from a copy whose README links to the docs and files
-      # of the release instead of the latest docs and branch `dev` (see
+      # package includes the library chart foca-common (the version locked in
+      # `Chart.lock`), so that it installs without access to its repository.
+      # The chart is packaged from a copy whose README links to the docs and
+      # files of the release instead of the latest docs and branch `dev` (see
       # `scripts/chart_readme.py`; fails if any link to a version that moves
       # is left)
       - name: Package chart
@@ -125,6 +127,8 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           CHART_VERSION: ${{ steps.version.outputs.chart_version }}
         run: |
+          helm dependency build deployment
+          (cd deployment && sha256sum -c charts.sha256)
           helm lint deployment --strict -f deployment/ci/test-values.yaml
           chart="$(mktemp -d)/cloud-registry"
           cp -R deployment "${chart}"
@@ -134,6 +138,10 @@ jobs:
           package="dist/cloud-registry-${CHART_VERSION}.tgz"
           # The packaged README is the checked one
           tar -xzOf "${package}" cloud-registry/README.md | cmp - "${chart}/README.md"
+          # The library chart is packaged with it, in the locked version
+          library="$(tar -xzOf "${package}" cloud-registry/charts/foca-common/Chart.yaml \
+              | yq .version)"
+          [[ "${library}" == "$(yq '.dependencies[0].version' deployment/Chart.lock)" ]]
       - name: Upload chart
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

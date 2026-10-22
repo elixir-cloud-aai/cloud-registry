@@ -10,3 +10,10 @@ version: 0.0.0
 # `appVersion` is the default image tag, so the chart in the repository
 # deploys the `dev` image unless `cloudRegistry.tag` is set
 appVersion: "dev"
+dependencies:
+  # The library chart of FOCA apps, with the templates of all resources (see
+  # "Helm library chart" in FOCA's docs); `helm dependency build` downloads
+  # the version locked in `Chart.lock` into `charts/`
+  - name: foca-common
+    version: 0.1.0
+    repository: oci://ghcr.io/elixir-cloud-aai/charts

@@ -1,10 +1,12 @@
 """Tests for the resources of the Helm chart."""
 
+import hashlib
 import json
 from pathlib import Path
 import re
 import shlex
 import subprocess
+import tarfile
 from typing import Any
 
 import pytest
@@ -246,6 +248,30 @@ def test_image_of_packaged_chart(
     )
     package = tmp_path / f"cloud-registry-{chart_version}.tgz"
     assert _app_image(chart=package) == f"elixircloud/cloud-registry:{app_version}"
+
+
+def test_packaged_chart_includes_library(tmp_path: Path) -> None:
+    """Packaged charts include the library chart, so they install offline.
+
+    That is the version locked in `Chart.lock`, as the release workflow
+    packages the chart after `helm dependency build`.
+    """
+    assert HELM is not None
+    subprocess.run(  # noqa: S603 (argument list, no shell)
+        [HELM, "package", str(CHART), "-d", str(tmp_path)],
+        capture_output=True,
+        check=True,
+    )
+    lock = yaml.safe_load((CHART / "Chart.lock").read_text())
+    (library,) = lock["dependencies"]
+    with tarfile.open(tmp_path / "cloud-registry-0.0.0.tgz") as package:
+        member = package.extractfile("cloud-registry/charts/foca-common/Chart.yaml")
+        assert member is not None
+        packaged = yaml.safe_load(member.read())
+    assert (packaged["name"], packaged["version"]) == (
+        library["name"],
+        library["version"],
+    )
 
 
 @pytest.mark.parametrize(
@@ -502,6 +528,9 @@ def test_app_name_removed(key: str) -> None:
 
 
 @pytest.mark.parametrize(
+    "args", [(), ("--set", "hostName=null")], ids=["host", "no-host"]
+)
+@pytest.mark.parametrize(
     ("old", "new", "value"),
     [
         ("host_name", "hostName", '"registry.example.org"'),
@@ -510,14 +539,23 @@ def test_app_name_removed(key: str) -> None:
     ],
     ids=["host_name", "cloud_registry", "cloud_registry-empty"],
 )
-def test_renamed_keys(old: str, new: str, value: str) -> None:
+def test_renamed_keys(old: str, new: str, value: str, args: tuple[str, ...]) -> None:
     """Keys renamed to camelCase (Helm conventions) are rejected.
 
-    The error names the new key, as they would otherwise be ignored.
+    The error names the new key, as they would otherwise be ignored; also if
+    `hostName` is missing, as for values of earlier versions.
     """
     with pytest.raises(subprocess.CalledProcessError) as exc:
-        _render("--set-json", f"{old}={value}")
+        _render("--set-json", f"{old}={value}", *args)
     assert f"{old} was renamed to {new}" in exc.value.stderr
+
+
+@pytest.mark.parametrize("value", ["null", "{}", '{"access_control": null}'])
+def test_security_config_empty(value: str) -> None:
+    """Without a security config, rendering fails on the admin mapping."""
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render("--set-json", f"config.security={value}")
+    assert "must map a group to the role admin" in exc.value.stderr
 
 
 @pytest.mark.parametrize(
@@ -947,6 +985,61 @@ def test_pre_stop_values(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
+    "value",
+    ["false", '"false"', '"FALSE"', '"no"', '"off"', '"f"', '"n"', '"0"', "0", "0.0"],
+)
+def test_admins_not_required(value: str) -> None:
+    """Admins are optional if `require_admin` is false, as parsed by the app."""
+    _render(
+        "--set-json",
+        f"config.custom.access_control.require_admin={value}",
+        admin_group=None,
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["true", '"true"', '"True"', '"yes"', '"on"', '"t"', '"y"', '"1"', "1", "1.0"],
+)
+def test_admins_required(value: str) -> None:
+    """Admins are required if `require_admin` is true, as parsed by the app."""
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render(
+            "--set-json",
+            f"config.custom.access_control.require_admin={value}",
+            admin_group=None,
+        )
+    assert "must map a group to the role admin" in exc.value.stderr
+
+
+@pytest.mark.parametrize("value", ["null", '"maybe"', '" true"', "2", "[]"])
+def test_require_admin_invalid(tmp_path: Path, value: str) -> None:
+    """Values of `require_admin` that the app rejects are rejected.
+
+    Set in a values file, as `--set-json` removes keys set to null.
+    """
+    values = tmp_path / "values.yaml"
+    values.write_text(
+        f"config:\n  custom:\n    access_control:\n      require_admin: {value}\n"
+    )
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render("-f", str(values))
+    assert "require_admin must be true or false" in exc.value.stderr
+
+
+@pytest.mark.parametrize("value", ['"admins"', '["admins"]', "[]", "false"])
+def test_group_mapping_invalid(value: str) -> None:
+    """Group mappings that aren't maps are rejected with a clear error."""
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render(
+            "--set-json",
+            f"config.security.access_control.group_mapping={value}",
+            admin_group=None,
+        )
+    assert "group_mapping must be a map" in exc.value.stderr
+
+
+@pytest.mark.parametrize(
     ("value", "error"),
     [
         ("-1", "'/cloudRegistry/preStopSleepSeconds': minimum"),
@@ -1015,6 +1108,153 @@ def test_db_host(release: str, app: str) -> None:
     assert ("Service", f"{app}-mongodb") in docs
     overlay = _overlay(_render("--set", "config.db.host=external"))
     assert overlay["db"] == {"host": "external"}
+
+
+def test_library_dependency() -> None:
+    """The chart's templates are those of a released FOCA library chart.
+
+    The library chart foca-common is pinned to a version of its OCI
+    repository, locked in `Chart.lock`; the schema is that of this version.
+    """
+    chart = yaml.safe_load((CHART / "Chart.yaml").read_text())
+    (dependency,) = chart["dependencies"]
+    assert dependency["name"] == "foca-common"
+    assert dependency["repository"] == "oci://ghcr.io/elixir-cloud-aai/charts"
+    assert re.fullmatch(r"\d+\.\d+\.\d+", dependency["version"])
+    lock = yaml.safe_load((CHART / "Chart.lock").read_text())
+    assert lock["dependencies"] == [dependency]
+    # The archive is pinned by its digest, which CI checks
+    archive = f"charts/foca-common-{dependency['version']}.tgz"
+    digest, name = (CHART / "charts.sha256").read_text().split()
+    assert name == archive
+    assert hashlib.sha256((CHART / archive).read_bytes()).hexdigest() == digest
+
+
+def test_schema_of_library() -> None:
+    """The values schema is that of the library chart, with the app's key.
+
+    That is the library's `app-values.schema.json` with the documented
+    changes: the app's values (`cloudRegistry`) also require the Gunicorn
+    settings and the `preStop` delay, MongoDB's image is pinned to a minor
+    version, and there is no Celery worker or broker.
+    """
+    chart = yaml.safe_load((CHART / "Chart.yaml").read_text())
+    (dependency,) = chart["dependencies"]
+    archive = CHART / "charts" / f"foca-common-{dependency['version']}.tgz"
+    with tarfile.open(archive) as package:
+        member = package.extractfile("foca-common/app-values.schema.json")
+        assert member is not None
+        library = json.loads(member.read())
+    schema = json.loads((CHART / "values.schema.json").read_text())
+    assert schema["$defs"] == library["$defs"]
+    properties = dict(schema["properties"])
+    assert properties.pop("cloudRegistry") == {
+        "allOf": [{"$ref": "#/$defs/app"}],
+        "required": ["preStopSleepSeconds", "gunicorn"],
+    }
+    image = properties["mongodb"]["properties"]["image"]
+    assert "minor version" in image.pop("description")
+    expected = dict(library["properties"])
+    del expected["worker"], expected["broker"]
+    del expected["mongodb"]["properties"]["image"]["description"]
+    assert properties == expected
+    assert {key: schema[key] for key in ("$schema", "type")} == {
+        key: library[key] for key in ("$schema", "type")
+    }
+
+
+def test_mongodb_external() -> None:
+    """With an external MongoDB, the app connects to the configured host.
+
+    No MongoDB resources are rendered; the app still gets the credentials of
+    its user from the Secret.
+    """
+    docs = _render(
+        "--set", "mongodb.enabled=false", "--set", "config.db.host=db.example.org"
+    )
+    assert {kind for kind, _ in docs} == {
+        "ConfigMap",
+        "Deployment",
+        "Ingress",
+        "Service",
+    }
+    assert not [name for _, name in docs if name.startswith(MONGODB)]
+    assert _overlay(docs)["db"] == {"host": "db.example.org"}
+    assert _secret_refs(_container(docs, APP)) == {
+        "MONGO_USERNAME": (MONGODB_SECRET, "username"),
+        "MONGO_PASSWORD": (MONGODB_SECRET, "password"),
+    }
+
+
+@pytest.mark.parametrize("host", [None, '""', '" "', "null"])
+def test_mongodb_external_requires_host(host: str | None) -> None:
+    """An external MongoDB needs a host in the config."""
+    args: tuple[str, ...] = ("--set", "mongodb.enabled=false")
+    if host is not None:
+        args = (*args, "--set-json", f"config.db.host={host}")
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render(*args)
+    assert "config.db.host must be set" in exc.value.stderr
+
+
+def test_mongodb_external_without_auth() -> None:
+    """An external MongoDB without authentication needs no Secret."""
+    docs = _render(
+        "--set",
+        "mongodb.enabled=false",
+        "--set",
+        "mongodb.auth.enabled=false",
+        "--set",
+        "config.db.host=db.example.org",
+        mongodb_secret=None,
+    )
+    assert not _secret_refs(_container(docs, APP))
+    assert _literal_env(_container(docs, APP)) == APP_ENV
+
+
+def test_mongodb_image_required() -> None:
+    """The bundled MongoDB needs an image."""
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render("--set", "mongodb.image=")
+    assert "mongodb.image must be set" in exc.value.stderr
+
+
+def test_image_pull_policy() -> None:
+    """Images are pulled on every start by default; the policy can be set."""
+    docs = _render()
+    for name in (APP, MONGODB):
+        assert _container(docs, name)["imagePullPolicy"] == "Always"
+    docs = _render(
+        "--set",
+        "cloudRegistry.imagePullPolicy=IfNotPresent",
+        "--set",
+        "mongodb.imagePullPolicy=Never",
+    )
+    assert _container(docs, APP)["imagePullPolicy"] == "IfNotPresent"
+    assert _container(docs, MONGODB)["imagePullPolicy"] == "Never"
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render("--set", "cloudRegistry.imagePullPolicy=Sometimes")
+    assert "imagePullPolicy" in exc.value.stderr
+
+
+def test_init_script_access_control_database() -> None:
+    """The app user gets access to the database of access control.
+
+    By default, that of the base config, the app's database; a database set
+    in the config is added.
+    """
+    config = yaml.safe_load(CONFIG_FILE.read_text())
+    (database,) = config["db"]["dbs"]
+    assert config["security"]["access_control"]["db_name"] == database
+    script = _render()[("ConfigMap", INIT_SCRIPT)]["data"]["create-app-user.js"]
+    assert f"roles: [{{ role: 'readWrite', db: '{database}' }}]" in script
+    docs = _render("--set", "config.security.access_control.db_name=accessControl")
+    script = docs[("ConfigMap", INIT_SCRIPT)]["data"]["create-app-user.js"]
+    assert f"db.getSiblingDB('{database}').createUser(" in script
+    assert (
+        f"roles: [{{ role: 'readWrite', db: '{database}' }},"
+        " { role: 'readWrite', db: 'accessControl' }]"
+    ) in script
 
 
 def test_ingress() -> None:

@@ -228,3 +228,6 @@ tags
 # Local config overrides
 config.local.yaml
 docker-compose.override.yaml
+
+# Dependencies of the Helm chart (`helm dependency build deployment`)
+deployment/charts/

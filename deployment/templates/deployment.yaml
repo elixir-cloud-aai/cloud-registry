@@ -1,0 +1,1 @@
+{{- include "foca-common.deployment" (dict "root" . "settings" (include "cloud-registry.settings" . | fromYaml)) }}

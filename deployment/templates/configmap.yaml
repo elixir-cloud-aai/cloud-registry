@@ -1,0 +1,2 @@
+{{- include "cloud-registry.checkUpgrade" . -}}
+{{- include "foca-common.configMap" (dict "root" . "settings" (include "cloud-registry.settings" . | fromYaml)) }}

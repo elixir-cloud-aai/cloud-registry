@@ -1,6 +1,8 @@
 # Default values for cloud-registry.
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
+# The chart's templates are those of FOCA's library chart foca-common (see
+# `Chart.yaml`), which reads these values (see deployment/README.md).
 
 # Resource names are derived from the release name: `<release>-cloud-registry`
 # (or `<release>` if it contains `cloud-registry`) for the app and
@@ -60,6 +62,8 @@ cloudRegistry:
   # Images of commits on `dev` are tagged `sha-<commit>` (see
   # deployment/README.md, Image)
   tag: ""
+  # Pull policy of the image (`Always`, `IfNotPresent` or `Never`)
+  imagePullPolicy: Always
   # Path of the app's startup, readiness and liveness probes; change it if
   # the config disables the Swagger UI
   probePath: /ga4gh/registry/v1/ui/
@@ -149,12 +153,21 @@ cloudRegistry:
     extraArgs: []
 
 mongodb:
+  # Deploy MongoDB with the app; if false, set the host (and port) of an
+  # external MongoDB in `config.db`, and its app user's credentials via
+  # `auth.existingSecret` (see deployment/README.md, External MongoDB).
+  # Setting it to false for an installed release deletes the bundled
+  # MongoDB's volume, usually with its data: dump the data first
+  enabled: true
   # MongoDB 8.0 refuses to start on Linux kernels 6.19 to 7.0.13
   # (https://jira.mongodb.org/browse/SERVER-121912); see the deployment docs
   # before changing the version of an existing database, e.g., when upgrading
   # from the legacy chart version 2 (`mongo:noble`)
   # Pinned to a minor version; patch versions are updated on restarts
   image: docker.io/library/mongo:7.0
+  # Pull policy of the image (`Always`, `IfNotPresent` or `Never`); `Always`,
+  # so that restarts get the latest patch version
+  imagePullPolicy: Always
   auth:
     # Require credentials (set `existingSecret`); enforced on every start,
     # but users are only created when MongoDB starts with an empty data
@@ -164,8 +177,9 @@ mongodb:
     # only if that is acceptable
     enabled: true
     # Name of an existing Secret with keys `root-username` and
-    # `root-password` (MongoDB root user) and `username` and `password` (app
-    # user, created with access to the app's database)
+    # `root-password` (MongoDB root user; not needed for an external MongoDB)
+    # and `username` and `password` (app user, created with access to the
+    # app's database)
     existingSecret: ""
   # NetworkPolicy allowing connections to MongoDB only from the app's pods of
   # this release (and the kubelet's probes; see deployment/README.md, Network
