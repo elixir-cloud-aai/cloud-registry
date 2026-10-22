@@ -1,5 +1,6 @@
 """Tests for the resources of the Helm chart."""
 
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -538,11 +539,13 @@ def test_app_name_removed(key: str) -> None:
 def test_renamed_keys(old: str, new: str, value: str) -> None:
     """Keys renamed to camelCase (Helm conventions) are rejected.
 
-    The error names the new key, as they would otherwise be ignored.
+    The error names the new key, as they would otherwise be ignored; also if
+    `hostName` is missing, as for values of earlier versions.
     """
-    with pytest.raises(subprocess.CalledProcessError) as exc:
-        _render("--set-json", f"{old}={value}")
-    assert f"{old} was renamed to {new}" in exc.value.stderr
+    for args in ((), ("--set", "hostName=null")):
+        with pytest.raises(subprocess.CalledProcessError) as exc:
+            _render("--set-json", f"{old}={value}", *args)
+        assert f"{old} was renamed to {new}" in exc.value.stderr
 
 
 @pytest.mark.parametrize(
@@ -1055,8 +1058,44 @@ def test_library_dependency() -> None:
     assert re.fullmatch(r"\d+\.\d+\.\d+", dependency["version"])
     lock = yaml.safe_load((CHART / "Chart.lock").read_text())
     assert lock["dependencies"] == [dependency]
+    # The archive is pinned by its digest, which CI checks
+    archive = f"charts/foca-common-{dependency['version']}.tgz"
+    digest, name = (CHART / "charts.sha256").read_text().split()
+    assert name == archive
+    assert hashlib.sha256((CHART / archive).read_bytes()).hexdigest() == digest
+
+
+def test_schema_of_library() -> None:
+    """The values schema is that of the library chart, with the app's key.
+
+    That is the library's `app-values.schema.json` with the documented
+    changes: the app's values (`cloudRegistry`) also require the Gunicorn
+    settings and the `preStop` delay, MongoDB's image is pinned to a minor
+    version, and there is no Celery worker or broker.
+    """
+    chart = yaml.safe_load((CHART / "Chart.yaml").read_text())
+    (dependency,) = chart["dependencies"]
+    archive = CHART / "charts" / f"foca-common-{dependency['version']}.tgz"
+    with tarfile.open(archive) as package:
+        member = package.extractfile("foca-common/app-values.schema.json")
+        assert member is not None
+        library = json.loads(member.read())
     schema = json.loads((CHART / "values.schema.json").read_text())
-    assert f"foca-common {dependency['version']}," in schema["$comment"]
+    assert schema["$defs"] == library["$defs"]
+    properties = dict(schema["properties"])
+    assert properties.pop("cloudRegistry") == {
+        "allOf": [{"$ref": "#/$defs/app"}],
+        "required": ["preStopSleepSeconds", "gunicorn"],
+    }
+    image = properties["mongodb"]["properties"]["image"]
+    assert "minor version" in image.pop("description")
+    expected = dict(library["properties"])
+    del expected["worker"], expected["broker"]
+    del expected["mongodb"]["properties"]["image"]["description"]
+    assert properties == expected
+    assert {key: schema[key] for key in ("$schema", "type")} == {
+        key: library[key] for key in ("$schema", "type")
+    }
 
 
 def test_mongodb_external() -> None:
@@ -1091,6 +1130,21 @@ def test_mongodb_external_requires_host(host: str | None) -> None:
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render(*args)
     assert "config.db.host must be set" in exc.value.stderr
+
+
+def test_mongodb_external_without_auth() -> None:
+    """An external MongoDB without authentication needs no Secret."""
+    docs = _render(
+        "--set",
+        "mongodb.enabled=false",
+        "--set",
+        "mongodb.auth.enabled=false",
+        "--set",
+        "config.db.host=db.example.org",
+        mongodb_secret=None,
+    )
+    assert not _secret_refs(_container(docs, APP))
+    assert _literal_env(_container(docs, APP)) == APP_ENV
 
 
 def test_mongodb_image_required() -> None:

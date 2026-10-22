@@ -128,6 +128,7 @@ jobs:
           CHART_VERSION: ${{ steps.version.outputs.chart_version }}
         run: |
           helm dependency build deployment
+          (cd deployment && sha256sum -c charts.sha256)
           helm lint deployment --strict -f deployment/ci/test-values.yaml
           chart="$(mktemp -d)/cloud-registry"
           cp -R deployment "${chart}"

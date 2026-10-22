@@ -1,12 +1,13 @@
 # Helm chart
 
 The chart deploys the app and a MongoDB database on Kubernetes (and
-OpenShift). It is a thin chart over FOCA's library chart `foca-common`
-(version 0.1.0, see `Chart.yaml`), which renders all resources from the values
+OpenShift). It is a thin chart over FOCA's library chart `foca-common` (the
+version in `Chart.yaml`), which renders all resources from the values
 described here and in `values.yaml` (see the [library chart's
-documentation](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.1.0/docs/helm-chart.md)). The chart attached to a release
-includes the library chart; the chart in the repository downloads it with
-`helm dependency build` (see [Installation](#installation)).
+documentation](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.1.0/docs/helm-chart.md)).
+The chart attached to a release includes the library chart; the chart in the
+repository downloads it with `helm dependency build` (see
+[Installation](#installation)).
 
 ## Configuration
 
@@ -105,11 +106,15 @@ cloudRegistry:
 
 `cloudRegistry.image` may also include a tag or digest (e.g.,
 `elixircloud/cloud-registry:0.3.0`, as in earlier chart versions); then
-`cloudRegistry.tag` must be empty. The image is pulled on every start of a pod
+`cloudRegistry.tag` must be empty. See [Versioning and
+releases](https://cloud-registry.readthedocs.io/en/latest/development/#versioning-and-releases) for the image tags.
+
+The image is pulled on every start of a pod
 (`cloudRegistry.imagePullPolicy: Always`), so that moving tags such as `dev`
 deploy the latest image; set `IfNotPresent` for fixed tags or digests, or
-`Never` for images loaded into the nodes (e.g., with `kind load`). See [Versioning and
-releases](https://cloud-registry.readthedocs.io/en/latest/development/#versioning-and-releases) for the image tags.
+`Never` for images loaded into the nodes (e.g., with `kind load`). MongoDB's
+image is pulled the same way (`mongodb.imagePullPolicy`), so that restarts get
+the latest patch version of the pinned minor version (see [Version](#version)).
 
 ## Installation
 
@@ -739,6 +744,13 @@ config:
     host: mongodb.example.org
     port: 27017
 ```
+
+For an installed release, setting `mongodb.enabled: false` deletes the
+bundled MongoDB with its PersistentVolumeClaim (`<app>-mongodb`), and usually
+its data with it: dump the data first and restore it into the external
+MongoDB (see the steps of [From the legacy charts](#from-the-legacy-charts),
+with the release's MongoDB Deployment, `<app>-mongodb`), or set the reclaim
+policy of the volume to `Retain` before upgrading.
 
 The app authenticates as the app user against its database (`serviceStore`),
 so create that user there, with the `readWrite` role on `serviceStore` (see

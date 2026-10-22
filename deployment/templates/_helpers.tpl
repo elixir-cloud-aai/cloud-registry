@@ -9,8 +9,12 @@ required), its database (`db.dbs`) and that of access control
 (`security.access_control.db_name`). The generated config sets the public
 URL of the app from `hostName`, with HTTPS on port 443, as TLS is usually
 terminated by the ingress, the route or a proxy in front of the cluster.
+Every template includes the settings, so the app's checks
+(`cloud-registry.validate`) run first, before those of the library and
+whichever template Helm renders first.
 */}}
 {{- define "cloud-registry.settings" -}}
+{{- include "cloud-registry.validate" . -}}
 valuesKey: cloudRegistry
 maxContentLength: 1048576
 requireAudience: true
@@ -22,14 +26,16 @@ config:
     endpoints:
       service:
         url_prefix: https
-        external_host: {{ required "hostName must be set" .Values.hostName | toJson }}
+        external_host: {{ .Values.hostName | toJson }}
         external_port: 443
 {{- end -}}
 
 {{/*
 Checks of the values and the release specific to this app; renders nothing.
-Included once (in the app's ConfigMap template), before the library's checks
-(`foca-common.validate`).
+Included by the settings (`cloud-registry.settings`), so in every template,
+before the library's checks (`foca-common.validate`); the checks of renamed
+and removed values come first, so that they are reported instead of their
+consequences (e.g., a missing `hostName` for `host_name`).
 */}}
 {{- define "cloud-registry.validate" -}}
 {{- range $key := list "cloud_registry" "cloudRegistry" -}}
@@ -75,6 +81,7 @@ no such section, see `foca-common.configOverlay`)
 {{- if and $requireAdmin (not (has "admin" (values $mapping))) -}}
 {{- fail "config.security.access_control.group_mapping must map a group to the role admin (e.g., the admin group of the identity provider), or set config.custom.access_control.require_admin to false" -}}
 {{- end -}}
+{{- $_ := required "hostName must be set" .Values.hostName -}}
 {{- /*
 Upgrades of releases of the legacy charts (versions 2 and 3, installed from
 the repository before charts were released from Git tags) would delete their

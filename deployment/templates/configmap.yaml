@@ -1,3 +1,1 @@
-{{- /* Checks of this app, then the ConfigMap with the library's checks */ -}}
-{{- include "cloud-registry.validate" . -}}
 {{- include "foca-common.configMap" (dict "root" . "settings" (include "cloud-registry.settings" . | fromYaml)) }}

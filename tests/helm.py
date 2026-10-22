@@ -61,10 +61,16 @@ def render(
         The rendered manifests.
 
     Raises:
+        RuntimeError: The chart's dependencies are not built
+            (`helm dependency build`).
         subprocess.CalledProcessError: Helm failed, e.g., as a required value
             is not set.
     """
     assert HELM is not None
+    if chart.is_dir() and not list((chart / "charts").glob("foca-common-*.tgz")):
+        raise RuntimeError(
+            "The library chart is missing: run `helm dependency build deployment`"
+        )
     if admin_group is not None:
         mapping = json.dumps({admin_group: "admin"})
         args = (

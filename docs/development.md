@@ -173,10 +173,14 @@ The chart is a thin chart over FOCA's library chart `foca-common` (see the
 documentation](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.1.0/docs/helm-chart.md)):
 `deployment/Chart.yaml` pins its version, and `deployment/Chart.lock` locks
 it; `helm dependency build deployment` downloads it into `deployment/charts/`
-(ignored by Git), and the release workflow packages it with the chart.
+(ignored by Git), and the release workflow packages it with the chart. CI
+and the release workflow check the downloaded archive against its digest in
+`deployment/charts.sha256`, as OCI tags can be pushed again.
 Dependabot doesn't update it: to bump it, change the version in
 `Chart.yaml`, run `helm dependency update deployment` (which rewrites
-`Chart.lock`), copy the library's `app-values.schema.json` to
+`Chart.lock`), update `deployment/charts.sha256` (`cd deployment && sha256sum
+charts/foca-common-X.Y.Z.tgz > charts.sha256`, after checking the archive),
+copy the library's `app-values.schema.json` to
 `deployment/values.schema.json` with the changes noted in its `$comment`,
 add values it introduces to `deployment/values.yaml`, update the links to
 the library's docs in `deployment/README.md` (the tests check that they point

@@ -86,7 +86,11 @@ jobs:
       # The chart tests (run if Helm is installed, as on GitHub's runners)
       # need the library chart, the version locked in `Chart.lock`
       - name: Build chart dependencies
-        run: helm dependency build deployment
+        run: |
+          helm dependency build deployment
+          # The library chart as checked when it was pinned: OCI tags can
+          # be pushed again
+          (cd deployment && sha256sum -c charts.sha256)
       - name: Calculate unit test coverage
         run: |
           coverage run --source cloud_registry,scripts -m pytest -W ignore::DeprecationWarning
@@ -138,7 +142,11 @@ jobs:
       # The chart tests (run if Helm is installed, as on GitHub's runners)
       # need the library chart, the version locked in `Chart.lock`
       - name: Build chart dependencies
-        run: helm dependency build deployment
+        run: |
+          helm dependency build deployment
+          # The library chart as checked when it was pinned: OCI tags can
+          # be pushed again
+          (cd deployment && sha256sum -c charts.sha256)
       # Fails instead of falling back to mongomock if the URI is missing
       - name: Run tests
         run: |
@@ -181,7 +189,11 @@ jobs:
           version: v3.22.1
       # The library chart foca-common, the version locked in `Chart.lock`
       - name: Build chart dependencies
-        run: helm dependency build deployment
+        run: |
+          helm dependency build deployment
+          # The library chart as checked when it was pinned: OCI tags can
+          # be pushed again
+          (cd deployment && sha256sum -c charts.sha256)
       - name: Lint chart
         run: |
           helm lint deployment --strict -f deployment/ci/test-values.yaml

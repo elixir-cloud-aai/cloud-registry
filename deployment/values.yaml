@@ -155,7 +155,9 @@ cloudRegistry:
 mongodb:
   # Deploy MongoDB with the app; if false, set the host (and port) of an
   # external MongoDB in `config.db`, and its app user's credentials via
-  # `auth.existingSecret` (see deployment/README.md, External MongoDB)
+  # `auth.existingSecret` (see deployment/README.md, External MongoDB).
+  # Setting it to false for an installed release deletes the bundled
+  # MongoDB's volume, usually with its data: dump the data first
   enabled: true
   # MongoDB 8.0 refuses to start on Linux kernels 6.19 to 7.0.13
   # (https://jira.mongodb.org/browse/SERVER-121912); see the deployment docs
