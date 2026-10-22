@@ -104,6 +104,22 @@ deployed: the app (`cloud_registry/`) and its Helm chart (`deployment/`).
 Commit messages on feature branches may follow the same format, which makes the
 history easier to review.
 
+## Citation metadata
+
+Cloud Registry is cited with the metadata in
+[`CITATION.cff`](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/CITATION.cff)
+([Citation File Format](https://citation-file-format.github.io/)), which
+GitHub ("Cite this repository") and Zenodo use. Its authors are the people
+who committed at least 100 lines to `main` (to `dev` before the first
+release; without bots, vendored or generated files and reformatting
+commits), ordered by lines, then by commits; its `message` explains the
+order. To add or correct your entry (e.g., your name, [ORCID
+iD](https://orcid.org/) or affiliation), open a pull request that changes
+only your entry; don't add e-mail addresses. CI validates the file
+(`cffconvert --validate`), and its `version` and `date-released` are set for
+each release (see [Versioning and
+releases](development.md#versioning-and-releases)).
+
 ## Python guidelines
 
 The app targets one Python version, that of the image (3.13;
