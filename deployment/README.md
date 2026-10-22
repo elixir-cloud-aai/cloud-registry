@@ -695,7 +695,17 @@ the app user. The app user may only access the app's database,
 `serviceStore`, which also holds the rules of access control
 (`security.access_control.db_name`); if the config sets another database for
 them (`config.security.access_control.db_name`), the app user gets access to
-it too. Credentials never appear in values files or ConfigMaps.
+it too. As the init script only runs for an empty data directory, grant the
+app user (`username` in the Secret, e.g., `cloud-registry`) the `readWrite`
+role on that database yourself when changing it for an installed release:
+
+```bash
+kubectl exec deploy/cloud-registry-mongodb -n <namespace> -- sh -c 'mongosh --quiet \
+  -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" \
+  --authenticationDatabase admin --eval "db.getSiblingDB(\"serviceStore\").grantRolesToUser(\"<app user>\", [{role: \"readWrite\", db: \"<database>\"}])"'
+```
+
+Credentials never appear in values files or ConfigMaps.
 
 Commands that need privileges can use the root user's credentials from the
 container's environment, as in [Version](#version).
@@ -770,7 +780,9 @@ with the release's MongoDB Deployment, `<app>-mongodb`), or set the reclaim
 policy of the volume to `Retain` before upgrading.
 
 The app authenticates as the app user against its database (`serviceStore`),
-so create that user there, with the `readWrite` role on `serviceStore` (see
+so create that user there, with the `readWrite` role on `serviceStore` and on
+the database of access control, if the config sets another one
+(`config.security.access_control.db_name`; see
 [Authentication](#authentication)); the Secret needs no root credentials. With
 `mongodb.auth.enabled: false`, the app connects without credentials. Allow
 the app's pods to connect to the database, e.g., in the database's firewall

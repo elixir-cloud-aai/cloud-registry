@@ -550,6 +550,14 @@ def test_renamed_keys(old: str, new: str, value: str, args: tuple[str, ...]) -> 
     assert f"{old} was renamed to {new}" in exc.value.stderr
 
 
+@pytest.mark.parametrize("value", ["null", "{}", '{"access_control": null}'])
+def test_security_config_empty(value: str) -> None:
+    """Without a security config, rendering fails on the admin mapping."""
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render("--set-json", f"config.security={value}")
+    assert "must map a group to the role admin" in exc.value.stderr
+
+
 @pytest.mark.parametrize(
     ("value", "error"),
     [
@@ -993,6 +1001,61 @@ def test_pre_stop_values(tmp_path: Path) -> None:
     docs = _render("--set", "cloudRegistry.preStopSleepSeconds=0")
     assert "lifecycle" not in _container(docs, APP)
     assert _grace_period(docs) == 20 + 10
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["false", '"false"', '"FALSE"', '"no"', '"off"', '"f"', '"n"', '"0"', "0", "0.0"],
+)
+def test_admins_not_required(value: str) -> None:
+    """Admins are optional if `require_admin` is false, as parsed by the app."""
+    _render(
+        "--set-json",
+        f"config.custom.access_control.require_admin={value}",
+        admin_group=None,
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["true", '"true"', '"True"', '"yes"', '"on"', '"t"', '"y"', '"1"', "1", "1.0"],
+)
+def test_admins_required(value: str) -> None:
+    """Admins are required if `require_admin` is true, as parsed by the app."""
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render(
+            "--set-json",
+            f"config.custom.access_control.require_admin={value}",
+            admin_group=None,
+        )
+    assert "must map a group to the role admin" in exc.value.stderr
+
+
+@pytest.mark.parametrize("value", ["null", '"maybe"', '" true"', "2", "[]"])
+def test_require_admin_invalid(tmp_path: Path, value: str) -> None:
+    """Values of `require_admin` that the app rejects are rejected.
+
+    Set in a values file, as `--set-json` removes keys set to null.
+    """
+    values = tmp_path / "values.yaml"
+    values.write_text(
+        f"config:\n  custom:\n    access_control:\n      require_admin: {value}\n"
+    )
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render("-f", str(values))
+    assert "require_admin must be true or false" in exc.value.stderr
+
+
+@pytest.mark.parametrize("value", ['"admins"', '["admins"]', "[]", "false"])
+def test_group_mapping_invalid(value: str) -> None:
+    """Group mappings that aren't maps are rejected with a clear error."""
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render(
+            "--set-json",
+            f"config.security.access_control.group_mapping={value}",
+            admin_group=None,
+        )
+    assert "group_mapping must be a map" in exc.value.stderr
 
 
 @pytest.mark.parametrize(
