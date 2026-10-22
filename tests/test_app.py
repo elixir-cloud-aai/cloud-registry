@@ -19,6 +19,7 @@ from flask.testing import FlaskClient
 import foca.api.service_info
 from foca.config.access import get_app_config
 from foca.security import auth
+import jwt
 from pydantic import ValidationError
 from pymongo import MongoClient
 import pytest
@@ -206,12 +207,13 @@ def test_access_token_types(client: FlaskClient, typ: str) -> None:
 def test_other_token_types(client: FlaskClient, typ: str | None) -> None:
     """Tokens that aren't access tokens (e.g., ID tokens) are rejected.
 
-    That is, tokens without the type of access tokens (RFC 9068), even if
-    the identity provider signed them.
+    That is, tokens without the type of access tokens (RFC 9068), or without
+    a type, even if the identity provider signed them.
     """
-    response = client.post(
-        f"{BASE}/services", json=_service(), headers=make_headers(typ=typ)
-    )
+    headers = make_headers(typ=typ)
+    token = headers["Authorization"].removeprefix("Bearer ")
+    assert jwt.get_unverified_header(token).get("typ") == typ
+    response = client.post(f"{BASE}/services", json=_service(), headers=headers)
     _assert_invalid_token(response)
 
 

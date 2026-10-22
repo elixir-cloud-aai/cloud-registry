@@ -205,7 +205,6 @@ def make_headers(
     Returns:
         Request headers.
     """
-    jwt_headers = {"kid": "rsa1"} if typ is None else {"kid": "rsa1", "typ": typ}
     now = int(time.time())
     token = jwt.encode(
         {
@@ -218,7 +217,8 @@ def make_headers(
         },
         key,
         algorithm="RS256",
-        headers=jwt_headers,
+        # PyJWT omits `typ` if it is `None` (and sets `JWT` if it is missing)
+        headers={"kid": "rsa1", "typ": typ},
     )
     return {"Authorization": f"Bearer {token}"}
 
