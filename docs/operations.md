@@ -3,7 +3,8 @@
 Tasks of the admins of a deployment (see [Admins](access-control.md#admins))
 and the logs that record them. Admins also [verify
 services](api.md#verified-services) and resolve conflicts over [duplicate
-services](api.md#duplicate-services).
+services](api.md#duplicate-services). Before deploying, operators can
+[verify the images and charts](#verifying-images-and-charts).
 
 ## Audit logs
 
@@ -51,3 +52,56 @@ the API are stored in the database. The API is served like the registry's
 endpoints (e.g., the Helm chart's Ingress routes all paths); to keep it off
 the internet, route only `/ga4gh/registry/v1/` through a reverse proxy (see
 [Ingress](deployment.md#ingress) for the Helm chart).
+
+## Verifying images and charts
+
+From version 0.3.0 on, images on Docker Hub (`elixircloud/cloud-registry`)
+are built by this repository's workflows on GitHub Actions, with an SBOM and
+the build provenance attached as attestations, a [GitHub artifact
+attestation](https://docs.github.com/en/actions/concepts/security/artifact-attestations)
+of their provenance, and a keyless [Sigstore](https://www.sigstore.dev/)
+signature. To check that an image was built by the release workflow, run
+(with the [GitHub CLI](https://cli.github.com/) or
+[cosign](https://docs.sigstore.dev/cosign/system_config/installation/)):
+
+```bash
+gh attestation verify oci://docker.io/elixircloud/cloud-registry:0.3.0 \
+    --repo elixir-cloud-aai/cloud-registry \
+    --signer-workflow elixir-cloud-aai/cloud-registry/.github/workflows/release.yaml
+cosign verify docker.io/elixircloud/cloud-registry:0.3.0 \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    --certificate-identity https://github.com/elixir-cloud-aai/cloud-registry/.github/workflows/release.yaml@refs/tags/v0.3.0
+```
+
+Images of commits on `dev` (`dev`, `sha-<commit>`) are signed by the CI
+workflow instead (`checks.yaml@refs/heads/dev`). To show an image's SBOM or
+provenance, run:
+
+```bash
+docker buildx imagetools inspect docker.io/elixircloud/cloud-registry:0.3.0 \
+    --format '{{ json .SBOM }}'
+docker buildx imagetools inspect docker.io/elixircloud/cloud-registry:0.3.0 \
+    --format '{{ json .Provenance }}'
+```
+
+The Helm chart attached to a release (`cloud-registry-0.3.0.tgz`) has a
+GitHub artifact attestation of its provenance and a Sigstore bundle with its
+signature (`cloud-registry-0.3.0.tgz.sigstore.json`, attached too):
+
+```bash
+gh release download v0.3.0 --repo elixir-cloud-aai/cloud-registry \
+    --pattern 'cloud-registry-0.3.0.tgz*'
+gh attestation verify cloud-registry-0.3.0.tgz \
+    --repo elixir-cloud-aai/cloud-registry \
+    --signer-workflow elixir-cloud-aai/cloud-registry/.github/workflows/release.yaml
+cosign verify-blob cloud-registry-0.3.0.tgz \
+    --bundle cloud-registry-0.3.0.tgz.sigstore.json \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    --certificate-identity https://github.com/elixir-cloud-aai/cloud-registry/.github/workflows/release.yaml@refs/tags/v0.3.0
+```
+
+Images are scanned for known vulnerabilities with
+[Trivy](https://trivy.dev/) in CI and again before a release image is
+tagged (both fail on fixable critical and high vulnerabilities), and the
+`latest` image weekly; the maintainers see the results in the repository's
+code scanning alerts.
