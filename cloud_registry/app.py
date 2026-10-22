@@ -13,8 +13,15 @@ from connexion.exceptions import BadRequestProblem, ExtraParameterProblem
 from foca import Foca, get_config
 
 from cloud_registry.exceptions import validation_problem
-from cloud_registry.ga4gh.registry.permissions import check_admin_groups
-from cloud_registry.ga4gh.registry.service import add_service_keys, warn_url_schemes
+from cloud_registry.ga4gh.registry.permissions import (
+    check_admin_groups,
+    check_no_service_clients,
+)
+from cloud_registry.ga4gh.registry.service import (
+    add_service_keys,
+    warn_invalid_urls,
+    warn_url_schemes,
+)
 
 logger = logging.getLogger(__name__)
 # Logger of Connexion's request validation
@@ -59,10 +66,11 @@ def create_app() -> App:
     """Create the app from the config, with the registry's checks.
 
     Adds the error handler for validation errors (silencing Connexion's
-    validation log messages), checks admin groups, requires a size limit of
-    request bodies, adds missing keys of services, and warns of stored
-    services with URL schemes that are not allowed and of placeholders in
-    the service info. FOCA validates the service info (`service_info`) of
+    validation log messages), checks admin groups and that no service
+    clients are configured, requires a size limit of request bodies, adds
+    missing keys of services, and warns of stored services with invalid URLs
+    or URL schemes that are not allowed and of placeholders in the service
+    info. FOCA validates the service info (`service_info`) of
     the config, and limits the size of request bodies
     (`server.max_content_length`).
 
@@ -76,7 +84,8 @@ def create_app() -> App:
     Raises:
         RuntimeError: Request bodies are not limited in size
             (`server.max_content_length` is null), no group is mapped to the
-            role `admin` (unless admins are optional), or stored services
+            role `admin` (unless admins are optional), service clients
+            are configured (which the app doesn't support), or stored services
             are invalid or duplicates.
         pydantic.ValidationError: The config is invalid, e.g., the service
             info (naming the invalid field).
@@ -102,6 +111,7 @@ def create_app() -> App:
 
     with app.app.app_context():
         check_admin_groups()
+        check_no_service_clients()
         # `null` would remove FOCA's size limit of request bodies, so that
         # bodies of any size are read before the access token is checked
         if get_config().server.max_content_length is None:
@@ -110,6 +120,7 @@ def create_app() -> App:
                 "`server.max_content_length` (bytes), not null"
             )
         add_service_keys()
+        warn_invalid_urls()
         warn_url_schemes()
         warn_placeholder_service_info()
     return app

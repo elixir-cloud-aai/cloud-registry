@@ -691,9 +691,9 @@ def test_put_duplicate(client: FlaskClient, admin_headers: dict[str, str]) -> No
         ("tes.example.org/v1", "need a scheme and a host"),
         ("http://[::1/v1", "must be valid URLs"),
         ("https://tes.exa\nmple.org", "must not contain whitespace"),
-        ("ftp://tes.example.org", "must be HTTP(S) URLs"),
+        ("ftp://tes.example.org", "must use one of these schemes: 'http', 'https'"),
         # by default (`custom.endpoints.services.url_schemes`)
-        ("http://tes.example.org", "must use an allowed scheme: 'https'"),
+        ("http://tes.example.org", "must use one of these schemes: 'https'"),
     ],
 )
 def test_service_url_invalid(
@@ -815,7 +815,7 @@ def test_service_url_not_http(
 ) -> None:
     """URLs of services, contacts, documentation and organizations are HTTP(S).
 
-    Cf. the unit tests of `check_link()` for other cases.
+    Cf. the unit tests of `check_links()` for other cases.
     """
     response = getattr(client, method)(
         f"{BASE}/services{path}",
@@ -1325,6 +1325,60 @@ def test_create_app_url_schemes(
     assert "'PLAIN'" in err
     response = app.app.test_client().get(f"{BASE}/services/PLAIN")
     assert response.status_code == 200
+
+
+def test_create_app_invalid_urls(
+    mongo_client: MongoClient[dict[str, Any]],
+    app_env: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`create_app()` warns of stored services with keys and invalid URLs.
+
+    They are still served.
+    """
+    services = mongo_client["serviceStore"]["services"]
+    services.insert_one(
+        {**_service(url="https://tes.example.org/a|b"), "id": "PIPE", KEY: "PIPE"}
+    )
+    app = cloud_registry.app.create_app()
+    err = capsys.readouterr().err
+    assert "Services with invalid URLs" in err
+    assert "'PIPE'" in err
+    response = app.app.test_client().get(f"{BASE}/services/PIPE")
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "auth",
+    [
+        {"service_clients": [{"client_id": "portal"}]},
+        {"on_behalf_of_header": "X-On-Behalf-Of"},
+    ],
+    ids=["service_clients", "on_behalf_of_header"],
+)
+def test_create_app_service_clients(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    auth: dict[str, Any],
+) -> None:
+    """`create_app()` refuses service clients, which the app doesn't support.
+
+    FOCA would make service clients (or the users they name) owners, which
+    the app's endpoints neither list nor manage.
+    """
+    _set_overlay(
+        monkeypatch,
+        tmp_path,
+        {
+            "security": {
+                "auth": {"audience": ["a"], **auth},
+                "access_control": {"group_mapping": {ADMIN_GROUP: "admin"}},
+            }
+        },
+    )
+    with pytest.raises(RuntimeError, match="not supported"):
+        cloud_registry.app.create_app()
 
 
 def test_create_app_group_subjects(

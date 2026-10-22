@@ -10,7 +10,12 @@ services](api.md#duplicate-services).
 For auditing, the app logs (at level `INFO`) who changed which roles of whom
 (users or groups) on which service, who deleted services, and who verified
 services or removed their verifications (also by updating their URL or API
-type). Changes via the [permissions API](#permissions-api) are not logged by
+type). Role changes are logged by FOCA's ownership helpers (logger
+`foca.security.access_control.ownership`), naming the service by its path,
+e.g., `Role 'maintainer' on '/ga4gh/registry/v1/services/ABC123' granted to
+user '<sub>' by user '<sub>' (previous roles: none)`; deletions and
+verifications by the app (loggers `cloud_registry.*`).
+Changes via the [permissions API](#permissions-api) are not logged by
 the app itself: FOCA logs the requests (method, path and client address) and
 the identifiers of the added, updated or deleted policy rules, but not who
 changed them, or how.

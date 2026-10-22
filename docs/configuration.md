@@ -22,6 +22,10 @@ refuses to start:
   admins (see [Access control](access-control.md#admins)), or
   `custom.access_control.require_admin: false` to run without admins.
 
+FOCA's service clients (`security.auth.service_clients`,
+`security.auth.on_behalf_of_header`) are not supported; the app refuses to
+start with them (see [Access control](access-control.md#roles-on-services)).
+
 ## Local overrides
 
 Docker Compose mounts

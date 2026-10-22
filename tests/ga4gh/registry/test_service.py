@@ -19,13 +19,12 @@ from cloud_registry.ga4gh.registry.service import (
     DuplicateService,
     InvalidService,
     RegisterService,
-    _normalize_host,
     add_service_keys,
-    check_link,
     check_links,
     check_strings,
     normalize_url,
     service_key,
+    warn_invalid_urls,
     warn_url_schemes,
 )
 from cloud_registry.utils import get_custom_config
@@ -49,6 +48,23 @@ def _without_db_id(doc: dict[str, Any] | None) -> dict[str, Any]:
     assert doc is not None
     del doc["_id"]
     return doc
+
+
+def _check_link(url: object, field: str) -> None:
+    """Check a link, in metadata with only that link (cf. `check_links()`).
+
+    Args:
+        url: URL of the link.
+        field: Field of the link, as a path of keys separated by dots (e.g.,
+            `organization.url`).
+    """
+    data: dict[str, Any] = {}
+    parent = data
+    *keys, last = field.split(".")
+    for key in keys:
+        parent = parent.setdefault(key, {})
+    parent[last] = url
+    check_links(data)
 
 
 def _find(services: Collection[dict[str, Any]], id: str) -> dict[str, Any]:
@@ -223,7 +239,7 @@ class TestRegisterService:
             with pytest.raises(InvalidService) as exc_info:
                 obj.register_metadata()
         assert exc_info.value.description == (
-            "Service URLs must use an allowed scheme: 'https'."
+            "Service URLs must use one of these schemes: 'https'."
         )
         assert services.count_documents({}) == 0
 
@@ -243,7 +259,7 @@ class TestRegisterService:
         with unit_app.app_context():
             get_custom_config().endpoints.services.url_schemes = ["http"]
             obj = RegisterService(data=deepcopy(MOCK_SERVICE))
-            with pytest.raises(InvalidService, match="allowed scheme: 'http'"):
+            with pytest.raises(InvalidService, match=r"one of these schemes: 'http'\."):
                 obj.register_metadata()
 
 
@@ -330,6 +346,11 @@ def test_normalize_url(url: str, normalized: str) -> None:
         "https://[fe80::1%25]/v1",
         "https://[fe80::1%eth0]/v1",
         "https://[fe80::1%]/v1",
+        # rejected since FOCA's URL helpers are used (cloud-registry 0.3.0)
+        "https://127.1",
+        "https://a..example.org",
+        "https://ex%61mple.org",
+        "https://tes.example.org/a|b",
     ],
 )
 def test_normalize_url_invalid(url: str) -> None:
@@ -356,7 +377,7 @@ def test_normalize_url_invalid(url: str) -> None:
 )
 def test_check_link(url: str) -> None:
     """HTTP(S) URLs with valid hosts are valid links."""
-    check_link(url, field="documentationUrl")
+    _check_link(url, field="documentationUrl")
 
 
 @pytest.mark.parametrize(
@@ -382,15 +403,17 @@ def test_check_link(url: str) -> None:
         ("https://www.example.org:port", "must be valid URLs"),
         ("http://[::1/docs", "must be valid URLs"),
         ("https://www.example.org:0", "need a valid port"),
-        ("javascript:alert(1)", "must be HTTP(S) URLs"),
-        ("file:///etc/passwd", "must be HTTP(S) URLs"),
-        ("ftp://ftp.example.org/pub", "must be HTTP(S) URLs"),
-        ("mailto:support@example.org", "must be HTTP(S) URLs"),
+        ("javascript:alert(1)", "must use one of these schemes"),
+        ("file:///etc/passwd", "must use one of these schemes"),
+        ("ftp://ftp.example.org/pub", "must use one of these schemes"),
+        ("mailto:support@example.org", "must use one of these schemes"),
         ("www.example.org/docs", "need a scheme and a host"),
         ("not a URL", "must not contain whitespace"),
         ("https:///docs", "need a scheme and a host"),
         ("https://user@www.example.org", "must not contain user info"),
         ("https://www<x>.example.org", "need a valid host"),
+        ("https://www.example.org/<x>", "do not allow unencoded"),
+        ("https://0x7f.0.0.1/docs", "need a valid host"),
     ],
 )
 def test_check_link_invalid(url: object, detail: str) -> None:
@@ -400,7 +423,7 @@ def test_check_link_invalid(url: object, detail: str) -> None:
     info, whitespace, control or format characters.
     """
     with pytest.raises(InvalidService) as exc_info:
-        check_link(url, field="documentationUrl")
+        _check_link(url, field="documentationUrl")
     assert detail in exc_info.value.description
     assert "'documentationUrl'" in exc_info.value.description
 
@@ -418,18 +441,18 @@ def test_check_link_invalid(url: object, detail: str) -> None:
 )
 def test_check_link_schemes(url: str) -> None:
     """Links can have other allowed schemes, with a path but no authority."""
-    check_link(url, field="contactUrl", schemes=frozenset({"mailto"}))
+    _check_link(url, field="contactUrl")
 
 
 @pytest.mark.parametrize(
     "url, detail",
     [
-        ("mailto:", "must be HTTP(S) URLs"),
+        ("mailto:", "need valid email addresses"),
         ("mailto:support", "need valid email addresses"),
         ("mailto:@example.org", "need valid email addresses"),
         ("mailto:support@", "need valid email addresses"),
         ("mailto:a@example.org,", "need valid email addresses"),
-        ("mailto:support@exa<mple.org", "with a domain name"),
+        ("mailto:support@exa<mple.org", "do not allow unencoded"),
         ("mailto:a@b@example.org", "need valid email addresses"),
         ("mailto:a@x'onclick=alert(1)", "with a domain name"),
         ("mailto:a@-x.org", "with a domain name"),
@@ -440,17 +463,17 @@ def test_check_link_schemes(url: str) -> None:
         ("mailto:a@example.org.", "with a domain name"),
         ("mailto:a@localhost", "with a domain name"),
         ("mailto:a@192.0.2.1", "with a domain name"),
-        ("mailto:a@[192.0.2.1]", "with a domain name"),
+        ("mailto:a@[192.0.2.1]", "do not allow unencoded"),
         (f"mailto:a@{'x' * 64}.org", "with a domain name"),
         (f"mailto:a@{'x.' * 127}org", "with a domain name"),
         ("mailto:a@b\u00fc\u0301\u0300--.org", "with a domain name"),
         ("mailto:support@example.org?subject=%zz", "malformed percent-encodings"),
         ("mailto:support%@example.org", "malformed percent-encodings"),
         ("mailto:support@example.org\ud800", "control or format characters"),
-        ("mailto:#support", "must be HTTP(S) URLs"),
-        ("mailto:?to=support@example.org", "must be HTTP(S) URLs"),
+        ("mailto:#support", "need valid email addresses"),
+        ("mailto:?to=support@example.org", "need valid email addresses"),
         ("mailto:support\u00ad@example.org", "control or format characters"),
-        ("mailto://example.org/support", "must be HTTP(S) URLs"),
+        ("mailto://example.org/support", "need valid email addresses"),
         ("mailto:support@example.org\n", "must not contain whitespace"),
         ("mailto:a b@example.org", "must not contain whitespace"),
     ],
@@ -461,7 +484,7 @@ def test_check_link_schemes_invalid(url: str, detail: str) -> None:
     They must not contain whitespace or control characters either.
     """
     with pytest.raises(InvalidService) as exc_info:
-        check_link(url, field="contactUrl", schemes=frozenset({"mailto"}))
+        _check_link(url, field="contactUrl")
     assert exc_info.value.description.startswith("URLs in 'contactUrl' ")
     assert detail in exc_info.value.description
 
@@ -524,12 +547,6 @@ def test_check_strings_invalid(value: object, field: str) -> None:
         check_strings(value)
     assert exc_info.value.description.startswith(field)
     assert "unpaired surrogates" in exc_info.value.description
-
-
-def test_normalize_host_invalid_ipv6() -> None:
-    """Invalid IPv6 addresses are rejected (`urlsplit()` rejects most)."""
-    with pytest.raises(InvalidService):
-        _normalize_host("::g", subject="Service URLs")
 
 
 def test_service_key() -> None:
@@ -862,6 +879,49 @@ class TestWarnUrlSchemes:
             )
             get_custom_config().endpoints.services.url_schemes = ["http", "https"]
             warn_url_schemes()
+        assert not caplog.records
+
+
+class TestWarnInvalidUrls:
+    """Tests for warning of stored services with keys and invalid URLs."""
+
+    def test_warned(
+        self,
+        unit_app: Flask,
+        services: Collection[dict[str, Any]],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Services with keys and invalid URLs are named, others not.
+
+        E.g., URLs accepted before stricter checks; services without keys are
+        checked when their keys are added.
+        """
+        for id, url in [
+            ("PIPE", "https://beacon.example.org/a|b"),
+            ("SHORT", "https://127.1"),
+            ("NOSTR", 1),
+            ("VALID", " https://third.example.org"),
+            ("HTTP", "http://fourth.example.org"),
+        ]:
+            services.insert_one({**MOCK_SERVICE, "id": id, "url": url, KEY: id})
+        services.insert_one({**MOCK_SERVICE, "id": "NOKEY", "url": "https://1.1"})
+        with unit_app.app_context(), caplog.at_level(logging.WARNING):
+            warn_invalid_urls()
+        assert len(caplog.records) == 1
+        message = caplog.records[0].getMessage()
+        assert message.endswith("'NOSTR', 'PIPE', 'SHORT'")
+        assert "duplicates" in message
+
+    def test_none(
+        self,
+        unit_app: Flask,
+        services: Collection[dict[str, Any]],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Without such services, nothing is logged."""
+        services.insert_one({**MOCK_SERVICE, "id": MOCK_ID, KEY: MOCK_ID})
+        with unit_app.app_context(), caplog.at_level(logging.WARNING):
+            warn_invalid_urls()
         assert not caplog.records
 
 

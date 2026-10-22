@@ -1,6 +1,9 @@
 """Tests for access control, with the app created from its config.
 
-The app and its fixtures are set up in `tests/conftest.py`.
+The app and its fixtures are set up in `tests/conftest.py`. Some tests patch
+internals of FOCA 0.16's ownership helpers (`ownership_module`) to simulate
+failures and concurrent requests that its public API can't produce; adapt
+them when upgrading FOCA.
 """
 
 from collections.abc import Callable
@@ -11,6 +14,16 @@ from urllib.parse import quote
 
 from connexion import App
 from flask.testing import FlaskClient
+from foca import get_config
+from foca.security.access_control import (
+    add_resource_role,
+    is_admin,
+    list_resource_roles,
+)
+from foca.security.access_control import (
+    ownership as ownership_module,
+)
+from foca.security.access_control.enforcement import get_enforcer
 from pymongo.collection import Collection
 import pytest
 
@@ -462,7 +475,7 @@ def test_last_owner_restored(
     # skip the check before the change, so that only the check afterwards can
     # keep the service from losing its last owner (as when concurrent
     # requests removed the other owners after the first check)
-    monkeypatch.setattr(permissions_module, "_check_other_owners", lambda *args: None)
+    monkeypatch.setattr(ownership_module, "_check_other_owners", lambda *args: None)
     if change == "revoke":
         assert revoke(client, service_id, ALICE) == 409
     else:
@@ -537,7 +550,7 @@ def test_failed_grant_reduces_rights(
         raise RuntimeError("database unavailable")
 
     with monkeypatch.context() as patch:
-        patch.setattr(permissions_module, "add_resource_role", fail)
+        patch.setattr(ownership_module, "add_resource_role", fail)
         assert grant(client, service_id, BOB, "maintainer") == 500
     assert permissions(client, service_id) == [(ALICE, "owner")]
 
@@ -554,6 +567,52 @@ def test_revoke_invalid_user_id(client: FlaskClient) -> None:
     assert revoke(client, service_id, "bob,x") == 404
 
 
+def test_roles_of_invalid_service_id(app: App, client: FlaskClient) -> None:
+    """Services whose identifiers can't be in policy rules have no roles.
+
+    E.g., services stored with commas in their identifiers before these were
+    checked: granting roles is rejected (`400`), revoking them not found.
+    """
+    with app.app.app_context():
+        get_collection("services").insert_one({**_service(), "id": "a,b"})
+    assert grant(client, "a,b", BOB, "owner", as_user=ADMIN) == 400
+    assert revoke(client, "a,b", BOB, as_user=ADMIN) == 404
+    assert permission_list(client, "a,b") == []
+
+
+def test_maintainer_needs_owner(app: App, client: FlaskClient) -> None:
+    """Roles other than `owner` are only granted on services with an owner.
+
+    E.g., on services stored before owners were introduced, admins grant
+    `owner` first (`400` otherwise).
+    """
+    service_id = register(client)
+    with app.app.test_request_context(f"{BASE}/services/{service_id}"):
+        app.app.preprocess_request()
+        permissions_module.remove_permissions(service_id)
+    assert grant(client, service_id, BOB, "maintainer", as_user=ADMIN) == 400
+    assert permission_list(client, service_id) == []
+    assert grant(client, service_id, CAROL, "owner", as_user=ADMIN) == 200
+    assert grant(client, service_id, BOB, "maintainer", as_user=ADMIN) == 200
+
+
+def test_group_roles_need_group_subjects(
+    app: App, client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Roles are not granted to groups if they wouldn't apply (`400`).
+
+    That is, if groups are mapped (`group_mapping`), but not kept as subjects
+    (`keep_group_subjects`).
+    """
+    service_id = register(client)
+    with app.app.app_context():
+        conf = get_config().security.access_control
+    monkeypatch.setattr(conf, "keep_group_subjects", False)
+    assert grant_group(client, service_id, TEAM_GROUP, "owner") == 400
+    assert grant_group(client, service_id, TEAM_GROUP, "maintainer", ADMIN) == 400
+    assert group_permissions(client, service_id) == []
+
+
 def test_owner_not_restored_on_deleted_service(
     client: FlaskClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -567,7 +626,7 @@ def test_owner_not_restored_on_deleted_service(
         return len(calls) == 1
 
     with monkeypatch.context() as patch:
-        patch.setattr(permissions_module, "_check_other_owners", lambda *args: None)
+        patch.setattr(ownership_module, "_check_other_owners", lambda *args: None)
         patch.setattr(permissions_module, "service_exists", exists_once)
         assert revoke(client, service_id, ALICE) == 404
     assert permissions(client, service_id) == []
@@ -601,9 +660,9 @@ def test_is_admin_without_subject(app: App) -> None:
     """
     with app.app.test_request_context(f"{BASE}/me"):
         app.app.preprocess_request()
-        prefix = permissions_module.get_config().security.access_control.subject_prefix
-        permissions_module.get_enforcer().add_role_for_user(f"{prefix}None", "admin")
-        assert not permissions_module.is_admin()
+        prefix = get_config().security.access_control.subject_prefix
+        get_enforcer().add_role_for_user(f"{prefix}None", "admin")
+        assert not is_admin()
 
 
 def test_api_base_path_outside_api(app: App) -> None:
@@ -627,9 +686,7 @@ def _roles(app: App, service_id: str) -> list[tuple[str, str]]:
     """
     with app.app.test_request_context(f"{BASE}/services/{service_id}"):
         app.app.preprocess_request()
-        return sorted(
-            permissions_module.list_resource_roles(f"{BASE}/services/{service_id}")
-        )
+        return sorted(list_resource_roles(f"{BASE}/services/{service_id}"))
 
 
 def before_first_call(
@@ -723,7 +780,7 @@ def test_create_racing_delete(
         grants a role on the identifier.
         """
         get_collection("services").delete_one({"id": "MYSERV"})
-        permissions_module.add_resource_role(
+        add_resource_role(
             subject=BOB,
             role="owner",
             resource=permissions_module.service_path("MYSERV"),
@@ -779,26 +836,48 @@ def test_roles_removed_before_delete(
     assert client.get(f"{BASE}/services/{service_id}").status_code == 200
 
 
+def delete_after_first_check(patch: pytest.MonkeyPatch, service_id: str) -> list[bool]:
+    """Delete a service after its first existence check.
+
+    Patches the app's existence check (`service_exists()`), which it also
+    passes to FOCA's helpers as `exists`, so that the service is deleted
+    before the second check, i.e., after a role on it was granted. Only the
+    service is deleted, not its roles (as if the deletion's second
+    revocation had run before the role was granted), so that the role is
+    only revoked if FOCA's helper revokes it.
+
+    Args:
+        patch: Monkeypatch (context) to patch the check with.
+        service_id: Service identifier.
+
+    Returns:
+        List that is non-empty once the service was deleted.
+    """
+    service_exists = permissions_module.service_exists
+    deleted: list[bool] = []
+    calls = count()
+
+    def check(serviceId: str) -> bool:
+        """Check whether the service exists, deleting it on the second call."""
+        if next(calls) == 1:
+            deleted.append(True)
+            get_collection("services").delete_one({"id": service_id})
+        return service_exists(serviceId)
+
+    patch.setattr(permissions_module, "service_exists", check)
+    return deleted
+
+
 def test_grant_racing_delete(
     app: App, client: FlaskClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A role granted on a service deleted meanwhile is revoked again (`404`)."""
     service_id = register(client)
-    add_resource_role = permissions_module.add_resource_role
-    deleted = []
-
-    def delete_first(**kwargs: Any) -> bool:
-        """Delete the service after its existence was checked, then grant."""
-        deleted.append(True)
-        permissions_module.remove_permissions(service_id)
-        get_collection("services").delete_one({"id": service_id})
-        return add_resource_role(**kwargs)
-
     with monkeypatch.context() as patch:
-        patch.setattr(permissions_module, "add_resource_role", delete_first)
+        deleted = delete_after_first_check(patch, service_id)
         assert grant(client, service_id, BOB, "maintainer") == 404
     assert deleted == [True]
-    assert _roles(app, service_id) == []
+    assert _roles(app, service_id) == [(ALICE, "owner")]
 
 
 def test_delete_racing_grant(
@@ -815,7 +894,7 @@ def test_delete_racing_grant(
 
         The grant's check found the service still registered.
         """
-        permissions_module.add_resource_role(
+        add_resource_role(
             subject=BOB,
             role="owner",
             resource=permissions_module.service_path(service_id),
@@ -864,6 +943,27 @@ def test_admin_via_permissions_api(client: FlaskClient) -> None:
     assert update(client, service_id, CAROL) == 403
 
 
+# Loggers of role changes: FOCA's ownership helpers, and the app (deletions)
+ROLE_LOGGERS = (ownership_module.__name__, permissions_module.__name__)
+
+
+def _role_messages(caplog: pytest.LogCaptureFixture) -> list[str]:
+    """Get the logged messages about roles, by FOCA's helpers and the app.
+
+    Args:
+        caplog: Fixture capturing the log records, at level `INFO` (set by the
+            tests).
+
+    Returns:
+        Messages, in the order they were logged.
+    """
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if record.name in ROLE_LOGGERS and record.levelname == "INFO"
+    ]
+
+
 def test_role_changes_logged(
     client: FlaskClient, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -871,24 +971,21 @@ def test_role_changes_logged(
 
     The messages say who changed which role of whom on which service.
     """
-    caplog.set_level("INFO", logger=permissions_module.__name__)
+    caplog.set_level("INFO")
     service_id = register(client)
     assert grant(client, service_id, BOB, "maintainer") == 200
     assert grant(client, service_id, BOB, "owner") == 200
     assert revoke(client, service_id, BOB) == 200
     assert delete(client, service_id, ADMIN) == 200
-    messages = [
-        record.getMessage()
-        for record in caplog.records
-        if record.name == permissions_module.__name__
-    ]
-    assert messages == [
-        f"Role 'owner' on new service '{service_id}' granted to its creator '{ALICE}'.",
-        f"Role 'maintainer' on service '{service_id}' granted to '{BOB}' by "
-        f"'{ALICE}' (previous roles: none).",
-        f"Role 'owner' on service '{service_id}' granted to '{BOB}' by "
-        f"'{ALICE}' (previous roles: maintainer).",
-        f"Roles on service '{service_id}' of '{BOB}' revoked by '{ALICE}'.",
+    resource = f"{BASE}/services/{service_id}"
+    assert _role_messages(caplog) == [
+        f"Role 'owner' on '{resource}' granted to user '{ALICE}' by user '{ALICE}'",
+        f"Role 'maintainer' on '{resource}' granted to user '{BOB}' by user "
+        f"'{ALICE}' (previous roles: none)",
+        f"Role 'owner' on '{resource}' granted to user '{BOB}' by user "
+        f"'{ALICE}' (previous roles: maintainer)",
+        f"Roles on '{resource}' of user '{BOB}' revoked by user '{ALICE}' "
+        "(previous roles: owner)",
         f"All roles on service '{service_id}' revoked by '{ADMIN}'.",
     ]
     assert f"Service '{service_id}' deleted by '{ADMIN}'." in caplog.text
@@ -1049,7 +1146,7 @@ def test_group_permissions_without_group(
     assert revoke(client, service_id, ALICE) == 409
     # nor is a role of a user `groups` revoked (e.g., one stored before)
     with app.app.test_request_context(f"{BASE}/services/{service_id}"):
-        permissions_module.add_resource_role(
+        add_resource_role(
             subject="groups",
             role="maintainer",
             resource=permissions_module.service_path(service_id),
@@ -1119,7 +1216,7 @@ def test_last_owner_group_restored(
     assert grant_group(client, service_id, TEAM_GROUP, "owner") == 200
     assert revoke(client, service_id, ALICE) == 200
     monkeypatch.setattr(
-        permissions_module, "_check_other_owners", lambda *args, **kwargs: None
+        ownership_module, "_check_other_owners", lambda *args, **kwargs: None
     )
     if change == "revoke":
         assert revoke_group(client, service_id, TEAM_GROUP, as_user=ERIN) == 409
@@ -1133,18 +1230,11 @@ def test_group_grant_racing_delete(
 ) -> None:
     """A group's role on a service deleted meanwhile is revoked again (`404`)."""
     service_id = register(client)
-    add_resource_role = permissions_module.add_resource_role
-
-    def delete_first(**kwargs: Any) -> bool:
-        """Delete the service after its existence was checked, then grant."""
-        permissions_module.remove_permissions(service_id)
-        get_collection("services").delete_one({"id": service_id})
-        return add_resource_role(**kwargs)
-
     with monkeypatch.context() as patch:
-        patch.setattr(permissions_module, "add_resource_role", delete_first)
+        deleted = delete_after_first_check(patch, service_id)
         assert grant_group(client, service_id, TEAM_GROUP, "maintainer") == 404
-    assert _roles(app, service_id) == []
+    assert deleted == [True]
+    assert _roles(app, service_id) == [(ALICE, "owner")]
 
 
 def test_me_group_roles(client: FlaskClient) -> None:
@@ -1176,21 +1266,17 @@ def test_group_role_changes_logged(
     client: FlaskClient, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Changes of roles of groups are logged like those of users."""
-    caplog.set_level("INFO", logger=permissions_module.__name__)
+    caplog.set_level("INFO")
     service_id = register(client)
     assert grant_group(client, service_id, TEAM_GROUP, "maintainer") == 200
     assert grant_group(client, service_id, TEAM_GROUP, "owner") == 200
     assert revoke_group(client, service_id, TEAM_GROUP) == 200
-    messages = [
-        record.getMessage()
-        for record in caplog.records
-        if record.name == permissions_module.__name__
-    ]
-    assert messages[1:] == [
-        f"Role 'maintainer' on service '{service_id}' granted to group "
-        f"'{TEAM_GROUP}' by '{ALICE}' (previous roles: none).",
-        f"Role 'owner' on service '{service_id}' granted to group "
-        f"'{TEAM_GROUP}' by '{ALICE}' (previous roles: maintainer).",
-        f"Roles on service '{service_id}' of group '{TEAM_GROUP}' revoked by "
-        f"'{ALICE}'.",
+    resource = f"{BASE}/services/{service_id}"
+    assert _role_messages(caplog)[1:] == [
+        f"Role 'maintainer' on '{resource}' granted to group '{TEAM_GROUP}' by "
+        f"user '{ALICE}' (previous roles: none)",
+        f"Role 'owner' on '{resource}' granted to group '{TEAM_GROUP}' by user "
+        f"'{ALICE}' (previous roles: maintainer)",
+        f"Roles on '{resource}' of group '{TEAM_GROUP}' revoked by user "
+        f"'{ALICE}' (previous roles: owner)",
     ]

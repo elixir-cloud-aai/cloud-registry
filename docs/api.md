@@ -48,7 +48,13 @@ schemes](configuration.md#service-url-schemes)). Links are stored as written,
 so they must not contain whitespace (unlike service URLs, which may have
 leading and trailing spaces), control or format characters (except joiners in
 international host names), and no URLs may contain malformed
-percent-encodings. Anyone logged in can register services, so
+percent-encodings, or ASCII characters that URLs only allow percent-encoded
+(e.g., `<`, `|`, `\`). Hosts must be domain or registered names (without
+percent-encodings or empty labels; international names valid as per IDNA
+2008), IPv4 addresses in dotted-decimal form (not, e.g., `127.1`) or IPv6
+addresses in brackets. URLs are checked and normalized with FOCA's [URL
+helpers](https://foca.readthedocs.io/en/latest/utilities/#checking-and-normalizing-urls).
+Anyone logged in can register services, so
 clients should treat registry content as untrusted: escape it rather than
 render it as HTML, and don't follow or fetch its URLs blindly (e.g., to
 internal addresses).
