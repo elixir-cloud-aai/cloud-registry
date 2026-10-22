@@ -173,6 +173,17 @@ def test_main_repository(monkeypatch: pytest.MonkeyPatch) -> None:
     assert roots == [ROOT]
 
 
+def test_chart_dependencies_indentless(tmp_path: Path) -> None:
+    """Dependencies listed without indentation are checked, too."""
+    root = _write(tmp_path)
+    (root / "deployment" / "Chart.yaml").write_text(
+        "name: app\ndependencies:\n- name: a\n  version: 1.0.0-rc1\nversion: 0.0.0\n"
+    )
+    assert check_release_pins.find_dev_pins(root) == [
+        "deployment/Chart.yaml: dependency version '1.0.0-rc1' is not a release version"
+    ]
+
+
 def test_chart_dependencies(tmp_path: Path) -> None:
     """All dependencies of the chart are checked, and only their versions."""
     root = _write(tmp_path)

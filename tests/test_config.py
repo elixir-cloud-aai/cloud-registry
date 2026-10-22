@@ -456,17 +456,13 @@ def test_package_data() -> None:
         assert any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns), path
 
 
-def _foca_requirement() -> tuple[str, Requirement]:
-    """Get the `foca` requirement of the app (`pyproject.toml`).
-
-    Returns:
-        The requirement as written, and parsed.
-    """
+def _foca_requirement() -> Requirement:
+    """Get the `foca` requirement of the app (`pyproject.toml`)."""
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
     (foca,) = [
-        (line, Requirement(line))
-        for line in pyproject["project"]["dependencies"]
-        if Requirement(line).name == "foca"
+        requirement
+        for requirement in map(Requirement, pyproject["project"]["dependencies"])
+        if requirement.name == "foca"
     ]
     return foca
 
@@ -487,19 +483,17 @@ def test_base_image_foca() -> None:
 
     So the image build does not install another FOCA on top of it: a FOCA
     release that satisfies the requirement or, for a direct reference to a
-    FOCA commit (temporary, see `scripts/check_release_pins.py`), which the
-    image build leaves out as written (`foca @ `), FOCA's development image
-    (tagged by date) of that commit, which the `Dockerfile` records.
+    FOCA commit (temporary, see `scripts/check_release_pins.py`), FOCA's
+    development image (tagged by date) of that commit, which the `Dockerfile`
+    records; the image build checks the FOCA version of the image
+    (`scripts/image_requirements.py`).
     """
-    (line, foca), tag = _foca_requirement(), _base_image_tag()
+    foca, tag = _foca_requirement(), _base_image_tag()
     if foca.url is None:
         assert foca.specifier.contains(tag), (
             f"Base image has FOCA {tag}, but {foca} is required"
         )
     else:
-        assert line.startswith("foca @ "), (
-            "The Dockerfile only leaves out FOCA requirements written as `foca @ `"
-        )
         commit = re.fullmatch(
             r"git\+https://github\.com/elixir-cloud-aai/foca@(?P<sha>[0-9a-f]{40})",
             foca.url,

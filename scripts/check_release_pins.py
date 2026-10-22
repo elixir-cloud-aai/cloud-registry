@@ -40,8 +40,9 @@ RELEASE_CHART_VERSION = re.compile(SEMVER)
 def _chart_dependency_versions(path: Path) -> list[str]:
     """Get the versions of the dependencies of a chart.
 
-    The `version` keys of the `dependencies` section, i.e., of the indented
-    lines after the line `dependencies:`, up to the next top-level key.
+    The `version` keys of the `dependencies` section, i.e., of the lines
+    after the line `dependencies:` that are indented or list items, up to the
+    next top-level key.
 
     Args:
         path: The chart's `Chart.yaml`.
@@ -52,7 +53,7 @@ def _chart_dependency_versions(path: Path) -> list[str]:
     versions = []
     in_dependencies = False
     for line in path.read_text().splitlines():
-        if line and not line[0].isspace() and not line.startswith("#"):
+        if line and line[0] not in " \t-#":
             in_dependencies = line.rstrip() == "dependencies:"
         elif in_dependencies and (match := CHART_VERSION.match(line)):
             versions.append(match["version"])

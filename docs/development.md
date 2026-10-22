@@ -170,7 +170,8 @@ development image of that commit as the base image (tagged by date, e.g.,
 `elixircloud/foca:20261022-py3.13`, pinned by digest, as the tag moves with
 later commits of that day; the `Dockerfile` records the commit as
 `## FOCA commit: <sha>`, which the tests check, and the image build doesn't
-reinstall FOCA, but fails unless the base image has FOCA of that commit).
+reinstall FOCA, but fails unless the base image has FOCA of that commit,
+`scripts/image_requirements.py`).
 Dependabot ignores the base image meanwhile. Such pins are temporary: the
 release workflow fails
 while a dependency is a direct reference, the base image has no release tag,

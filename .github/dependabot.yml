@@ -48,7 +48,7 @@ updates:
       # TEMPORARY, while the base image is FOCA's development image of the
       # commit that `pyproject.toml` pins (#178): its dated tag moves with
       # later commits, so updates of its digest would change FOCA; remove
-      # with the FOCA release (#179)
+      # with the FOCA release (#179), keeping the entry above
       - dependency-name: elixircloud/foca
     groups:
       docker:
