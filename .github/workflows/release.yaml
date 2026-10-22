@@ -49,12 +49,11 @@ jobs:
           # `main`
           fetch-depth: 0
       # For `scripts/release_version.py` and `scripts/chart_readme.py`
-      # (standard library only); a Python version of the test matrix in
-      # `checks.yaml`
+      # (standard library only); the Python version of `checks.yaml`
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       - name: Check release tag and commit
         id: version
         # Guards against accidental releases, e.g., of unmerged commits; the
@@ -164,12 +163,12 @@ jobs:
           ref: ${{ needs.prepare.outputs.sha }}
           # All tags and `main`, to determine the highest release
           fetch-depth: 0
-      # For `scripts/release_version.py` (standard library only); a Python
-      # version of the test matrix in `checks.yaml`
+      # For `scripts/release_version.py` (standard library only); the Python
+      # version of `checks.yaml`
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       # Tag `X.Y.Z`; OCI labels with the version, commit and source

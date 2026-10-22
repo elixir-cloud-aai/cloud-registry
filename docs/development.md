@@ -4,7 +4,7 @@ See [Contributing](contributing.md) for how to contribute, including the
 Python guidelines; this page describes the development setup, the checks, the
 documentation and the releases.
 
-Development needs Python 3.10 or later, and [Helm](https://helm.sh/) for the
+Development needs Python 3.13 or later, and [Helm](https://helm.sh/) for the
 tests of the chart (skipped without it). To set up a development environment
 (e.g., in a virtual environment) and run the checks that CI runs:
 
@@ -65,8 +65,7 @@ by Read the Docs (configured in
 and in CI; warnings, e.g., of broken links, fail the build. The [API
 reference](reference.md) is generated from the docstrings with
 [mkdocstrings](https://mkdocstrings.github.io/). To build it locally, or serve
-it with live reloading, in the dev environment set up as above (Python 3.11
-or later):
+it with live reloading, in the dev environment set up as above:
 
 ```bash
 pip install -e ".[docs]"

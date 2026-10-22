@@ -1,6 +1,6 @@
 """Unit tests for the controllers of verifications."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from flask import Flask, Response
@@ -108,16 +108,16 @@ def _verification(res: dict[str, Any] | Response) -> dict[str, Any]:
 def test_now() -> None:
     """The current time is in UTC, in milliseconds."""
     now = _now()
-    assert now.tzinfo == timezone.utc
+    assert now.tzinfo == UTC
     assert now.microsecond % 1000 == 0
-    assert abs(datetime.now(timezone.utc) - now).total_seconds() < 5
+    assert abs(datetime.now(UTC) - now).total_seconds() < 5
 
 
 @pytest.mark.parametrize(
     "time, formatted",
     [
         (TIME, FORMATTED),
-        (TIME.replace(tzinfo=timezone.utc), FORMATTED),
+        (TIME.replace(tzinfo=UTC), FORMATTED),
         (datetime(2026, 1, 2, 3, 4, 5), "2026-01-02T03:04:05.000Z"),
     ],
 )

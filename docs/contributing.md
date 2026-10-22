@@ -102,8 +102,8 @@ history easier to review.
 
 ## Python guidelines
 
-The app supports Python 3.10 and later (`requires-python` in
-`pyproject.toml`); CI tests 3.10 and 3.12, the Python version of the image.
+The app targets one Python version, that of the image (3.13;
+`requires-python` in `pyproject.toml`), which CI tests.
 Most of the following is checked by pre-commit and CI (see
 [Development](development.md) for how to run the checks locally); the rest is
 checked in reviews.

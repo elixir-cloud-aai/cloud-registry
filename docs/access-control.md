@@ -19,15 +19,19 @@ curl -X POST "http://localhost:8080/ga4gh/registry/v1/services" \
   -d @service.json
 ```
 
-Requests without a valid token are rejected with `401 Unauthorized`;
-requests with a valid token, but without the required role, with `403
-Forbidden`.
+Requests without a valid token are rejected with `401 Unauthorized` and a
+Bearer challenge (`WWW-Authenticate: Bearer`, RFC 6750; with
+`error="invalid_token"` for invalid tokens); requests with a valid token, but
+without the required role, with `403 Forbidden`.
 
 Tokens are obtained by logging in with LS Login through an app registered as
 an LS Login client (OpenID Connect), e.g., the registry's [front
 end](https://github.com/elixir-cloud-aai/cloud-registry-ui), or a client of
 your own for scripts. The registry accepts tokens only:
 
+- that are access tokens as per [RFC
+  9068](https://www.rfc-editor.org/rfc/rfc9068) (`typ` header `at+jwt`), as
+  issued by LS Login; other tokens, such as ID tokens, are rejected;
 - of the issuers in `security.auth.issuers` (LS Login by default);
 - for the client IDs in `security.auth.audience` (the `aud` claim), which each
   deployment sets to the apps that call it (see

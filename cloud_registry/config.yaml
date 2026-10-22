@@ -31,6 +31,10 @@ security:
         algorithms:
           - RS256
         allow_expired: False
+        # Only access tokens as per RFC 9068 (`typ` header `at+jwt`, as issued
+        # by LS Login); other tokens of the issuers, such as ID tokens, are
+        # rejected
+        verify_token_type: True
         # Trusted token issuers (`iss` claim); tokens of other issuers are
         # rejected
         issuers:

@@ -2,7 +2,7 @@
 ## Pinned by digest, so that rebuilds (e.g., of a release) use the same base
 ## image; Dependabot updates the tag and digest together
 ## (`.github/dependabot.yml`)
-FROM elixircloud/foca:0.15.0-py3.12@sha256:0d21e23d67f8b84a0bf4e2ee893024ac82344aec41a09f9f4b6440d1e108e570
+FROM elixircloud/foca:0.16.0-py3.13@sha256:b401fbd4c56a6978118dca85dacf88cf5b8c17593b03a302537b9b48cb17eeef
 
 ##### METADATA #####
 LABEL software="Cloud Registry"
@@ -13,8 +13,8 @@ LABEL maintainer="alexander.kanitz@alumni.ethz.ch"
 LABEL maintainer.organisation="ELIXIR On-Cloud"
 
 ## Install dependencies (`project.dependencies` of `pyproject.toml`, read
-## with `tomllib` of the base image's Python, 3.11 or later) first, so that
-## code changes do not reinstall them; the FOCA image runs as non-root user
+## with `tomllib` of the base image's Python) first, so that code changes do
+## not reinstall them; the FOCA image runs as non-root user
 USER root
 COPY pyproject.toml /tmp/src/
 RUN python -c "import tomllib; print('\n'.join(tomllib.load(open('/tmp/src/pyproject.toml', 'rb'))['project']['dependencies']))" \
