@@ -85,11 +85,10 @@ no such section, see `foca-common.configOverlay`)
 {{- $mapping = get $securityAccessControl "group_mapping" -}}
 {{- end -}}
 {{- if hasKey $securityAccessControl "claim_groups" -}}
-{{- $rawClaimGroups := get $securityAccessControl "claim_groups" -}}
-{{- if not (or (kindIs "invalid" $rawClaimGroups) (kindIs "string" $rawClaimGroups)) -}}
-{{- fail "config.security.access_control.claim_groups must be the name of a claim (a string)" -}}
+{{- $claimGroups = get $securityAccessControl "claim_groups" -}}
+{{- if kindIs "invalid" $claimGroups -}}
+{{- $claimGroups = "" -}}
 {{- end -}}
-{{- $claimGroups = $rawClaimGroups | default "" | trim -}}
 {{- end -}}
 {{- end -}}
 {{- $auth := get $security "auth" -}}
@@ -97,24 +96,33 @@ no such section, see `foca-common.configOverlay`)
 {{- $issuers = get $auth "issuers" | default list -}}
 {{- end -}}
 {{- end -}}
-{{- if kindIs "invalid" $mapping -}}
-{{- $mapping = dict -}}
-{{- else if not (kindIs "map" $mapping) -}}
-{{- fail "config.security.access_control.group_mapping must be a map of groups to roles" -}}
-{{- end -}}
 {{- /*
-Mirrors FOCA's check on startup (access control needs trusted token issuers):
-refuse to render without a list of non-blank issuers, as the base config
-trusts none
+Checked in the order of the app's checks: the issuers, the group claim and
+the groups mapped to roles. Mirrors FOCA's check on startup (access control
+needs trusted token issuers): refuse to render without a list of non-blank
+issuers, as the base config trusts none; issuers are compared with the `iss`
+claim as written, so surrounding whitespace is refused, too
 */ -}}
-{{- $issuersError := "config.security.auth.issuers must list the trusted token issuers (the iss claim of their tokens, e.g., https://login.example.org/oidc/): the app trusts none by default" -}}
+{{- $issuersError := "config.security.auth.issuers must list the trusted token issuers (the iss claim of their tokens, e.g., https://login.example.org/oidc/, without surrounding whitespace): the app trusts none by default" -}}
 {{- if not (and (kindIs "slice" $issuers) $issuers) -}}
 {{- fail $issuersError -}}
 {{- end -}}
 {{- range $issuer := $issuers -}}
-{{- if not (and (kindIs "string" $issuer) (trim $issuer)) -}}
+{{- if not (and (kindIs "string" $issuer) (trim $issuer) (eq $issuer (trim $issuer))) -}}
 {{- fail $issuersError -}}
 {{- end -}}
+{{- end -}}
+{{- /* The claim is looked up as written, as by the app */ -}}
+{{- if not (kindIs "string" $claimGroups) -}}
+{{- fail "config.security.access_control.claim_groups must be the name of a claim (a string)" -}}
+{{- end -}}
+{{- if ne $claimGroups (trim $claimGroups) -}}
+{{- fail "config.security.access_control.claim_groups must be the name of a claim, without surrounding whitespace" -}}
+{{- end -}}
+{{- if kindIs "invalid" $mapping -}}
+{{- $mapping = dict -}}
+{{- else if not (kindIs "map" $mapping) -}}
+{{- fail "config.security.access_control.group_mapping must be a map of groups to roles" -}}
 {{- end -}}
 {{- /*
 As the app on startup, refuse to render group mappings without the claim

@@ -22,9 +22,7 @@ from tests.helm import (
     ADMIN_GROUP,
     AUDIENCE,
     CHART,
-    GROUP_CLAIM,
     HELM,
-    ISSUER,
     Manifest,
     render,
 )
@@ -392,6 +390,7 @@ class TestChartOverlay:
             ("--set-json", 'config.security.auth.issuers=[" "]'),
             ("--set-json", 'config.security.auth.issuers=["https://x.org/", ""]'),
             ("--set-json", "config.security.auth.issuers=[1]"),
+            ("--set-json", 'config.security.auth.issuers=[" https://x.org/"]'),
             ("--set-string", "config.security.auth.issuers=https://x.org/"),
             ("--set-json", "config.security.auth=null"),
         ],
@@ -402,6 +401,7 @@ class TestChartOverlay:
             "blank",
             "one-blank",
             "number",
+            "padded",
             "string",
             "auth-null",
         ],
@@ -418,12 +418,19 @@ class TestChartOverlay:
             )
         assert "config.security.auth.issuers must" in exc.value.stderr
 
-    def test_issuers(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """The issuers and the group claim are passed to the app."""
-        overlay = _render_overlay("--set", "hostName=example.org")
-        config = _load_config(tmp_path, monkeypatch, overlay)
-        assert config.security.auth.issuers == [ISSUER]
-        assert config.security.access_control.claim_groups == GROUP_CLAIM
+    def test_issuers(self) -> None:
+        """The issuers and the group claim are passed to the app.
+
+        Checked in the rendered overlay, as the test overlay sets them, too.
+        """
+        overlay = _render_overlay(
+            "--set",
+            "hostName=example.org",
+            issuer="https://issuer.example.org/",
+            group_claim="memberships",
+        )
+        assert overlay["security"]["auth"]["issuers"] == ["https://issuer.example.org/"]
+        assert overlay["security"]["access_control"]["claim_groups"] == "memberships"
 
     @pytest.mark.parametrize(
         "args",
@@ -439,9 +446,16 @@ class TestChartOverlay:
             _render_overlay("--set", "hostName=example.org", *args, group_claim=None)
         assert "config.security.access_control.claim_groups must" in exc.value.stderr
 
-    @pytest.mark.parametrize("value", ['["groups"]', "123", "true", "false", "0"])
+    @pytest.mark.parametrize(
+        "value", ['["groups"]', "123", "true", "false", "0", '" groups"', '"  "']
+    )
     def test_group_claim_invalid(self, value: str) -> None:
-        """Group claims that aren't strings are rejected, as by FOCA's config."""
+        """Group claims that the app rejects are rejected.
+
+        Those that aren't strings (FOCA's config), and those with surrounding
+        whitespace, as FOCA looks up the claim as written. Checked after the
+        issuers.
+        """
         with pytest.raises(subprocess.CalledProcessError) as exc:
             _render_overlay(
                 "--set",
@@ -450,6 +464,15 @@ class TestChartOverlay:
                 f"config.security.access_control.claim_groups={value}",
             )
         assert "claim_groups must be the name of a claim" in exc.value.stderr
+        with pytest.raises(subprocess.CalledProcessError) as exc:
+            _render_overlay(
+                "--set",
+                "hostName=example.org",
+                "--set-json",
+                f"config.security.access_control.claim_groups={value}",
+                issuer=None,
+            )
+        assert "config.security.auth.issuers must" in exc.value.stderr
 
     def test_admin_group_optional(self) -> None:
         """Without admin groups, rendering works if admins are not required."""

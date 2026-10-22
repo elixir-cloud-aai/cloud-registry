@@ -65,14 +65,21 @@ def check_admin_groups() -> None:
     groups.
 
     Raises:
-        RuntimeError: Groups are mapped to roles, but no group claim is set
-            (`claim_groups`), so that no mapping applies; or no group is
+        RuntimeError: The group claim (`claim_groups`) has surrounding
+            whitespace; groups are mapped to roles, but no group claim is
+            set, so that no mapping applies; or no group is
             mapped to the role `admin`, and
             `custom.access_control.require_admin` is true.
     """
     conf = get_config().security.access_control
     mapping = conf.group_mapping or {}
-    claim_groups = (conf.claim_groups or "").strip()
+    claim_groups = conf.claim_groups or ""
+    # FOCA looks up the claim as written
+    if claim_groups != claim_groups.strip():
+        raise RuntimeError(
+            "`security.access_control.claim_groups` must be the name of a "
+            f"claim, without surrounding whitespace: {claim_groups!r}"
+        )
     if mapping and not claim_groups:
         raise RuntimeError(
             "Groups are mapped to roles, but no group claim is set: set "

@@ -1415,7 +1415,7 @@ def test_create_app_requires_claim_groups(
 ) -> None:
     """`create_app()` refuses a group mapping without a group claim.
 
-    Without `claim_groups` (or with a blank one), no group would be admin.
+    Without `claim_groups`, no group would be admin.
     """
     _set_overlay(
         monkeypatch,
@@ -1423,14 +1423,34 @@ def test_create_app_requires_claim_groups(
         {
             "security": {
                 "auth": {"issuers": [ISSUER], "audience": ["a"]},
-                "access_control": {
-                    "claim_groups": "  ",
-                    "group_mapping": {ADMIN_GROUP: "admin"},
-                },
+                "access_control": {"group_mapping": {ADMIN_GROUP: "admin"}},
             }
         },
     )
     with pytest.raises(RuntimeError, match="claim_groups"):
+        cloud_registry.app.create_app()
+
+
+@pytest.mark.parametrize("claim", ["  ", " groups", "groups\n"])
+def test_create_app_claim_groups_whitespace(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None, claim: str
+) -> None:
+    """`create_app()` refuses a group claim with surrounding whitespace.
+
+    FOCA looks up the claim as written, so users would have no groups.
+    """
+    _set_overlay(
+        monkeypatch,
+        tmp_path,
+        {
+            "security": {
+                "auth": {"issuers": [ISSUER], "audience": ["a"]},
+                "access_control": {"claim_groups": claim},
+            },
+            "custom": {"access_control": {"require_admin": False}},
+        },
+    )
+    with pytest.raises(RuntimeError, match="without surrounding whitespace"):
         cloud_registry.app.create_app()
 
 

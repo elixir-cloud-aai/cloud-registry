@@ -23,7 +23,12 @@ chart's `config` value), otherwise the app refuses to start:
 
 - `security.auth.issuers`: the trusted token issuers (the `iss` claim of their
   tokens, e.g., `https://login.example.org/oidc/`); tokens of other issuers
-  are rejected (see [Authentication](access-control.md#authentication));
+  are rejected (see [Authentication](access-control.md#authentication)).
+  Usually one: roles are granted to users by their identifier (`sub`) and to
+  groups by their name, without the issuer, so only trust several issuers if
+  their identifiers and group names can't collide (FOCA warns on startup;
+  see FOCA's [access
+  control](https://foca.readthedocs.io/en/latest/access-control/#identity-and-group-claims));
 - `security.auth.audience`: the client IDs of the apps whose tokens are
   accepted (the `aud` claim, e.g., of the registry's front end), unless
   `security.auth.verify_audience` is `false`, which accepts tokens for any
