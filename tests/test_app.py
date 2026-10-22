@@ -691,9 +691,9 @@ def test_put_duplicate(client: FlaskClient, admin_headers: dict[str, str]) -> No
         ("tes.example.org/v1", "need a scheme and a host"),
         ("http://[::1/v1", "must be valid URLs"),
         ("https://tes.exa\nmple.org", "must not contain whitespace"),
-        ("ftp://tes.example.org", "must be HTTP(S) URLs"),
+        ("ftp://tes.example.org", "must use one of these schemes: 'http', 'https'"),
         # by default (`custom.endpoints.services.url_schemes`)
-        ("http://tes.example.org", "must use an allowed scheme: 'https'"),
+        ("http://tes.example.org", "must use one of these schemes: 'https'"),
     ],
 )
 def test_service_url_invalid(
@@ -815,7 +815,7 @@ def test_service_url_not_http(
 ) -> None:
     """URLs of services, contacts, documentation and organizations are HTTP(S).
 
-    Cf. the unit tests of `check_link()` for other cases.
+    Cf. the unit tests of `check_links()` for other cases.
     """
     response = getattr(client, method)(
         f"{BASE}/services{path}",

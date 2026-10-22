@@ -44,7 +44,10 @@ without a key are checked again. If some of them have invalid URLs, or the same
 URL and API type as another one, the app refuses to start and names all of
 them. Invalid URLs include some that were accepted before: URLs with schemes
 other than `http` and `https`, whitespace or control characters, malformed
-percent-encodings (also in queries and fragments), or port 0. Fix or delete
+percent-encodings (also in queries and fragments), characters that URLs only
+allow percent-encoded (e.g., `<`, `|`, `\`), hosts with percent-encodings or
+empty labels (e.g., `a..org`), IPv4 addresses not in dotted-decimal form (e.g.,
+`127.1`), or port 0. Fix or delete
 them in the database, e.g., with `mongosh` (see
 [MongoDB](deployment.md#mongodb) for access to the database of a Helm
 deployment):

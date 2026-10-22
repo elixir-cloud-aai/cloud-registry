@@ -771,7 +771,8 @@ components:
         GA4GH service with a URL. URLs (`url`, `organization.url`,
         `contactUrl`, `documentationUrl`) must be HTTP(S) URLs with a host,
         without user info, whitespace, control or format characters (except
-        joiners in international host names) or malformed percent-encodings;
+        joiners in international host names), characters that URLs only
+        allow percent-encoded (e.g., `<`, `|`) or malformed percent-encodings;
         `contactUrl` can also be a `mailto:` URL with email addresses. The
         service URL (`url`) must be an `https` URL, unless the deployment
         also allows `http`. Others return `400`, as do timestamps (`createdAt`, `updatedAt`) that aren't
