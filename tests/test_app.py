@@ -156,14 +156,35 @@ def test_public_read(client: FlaskClient, method: str, path: str, status: int) -
 @pytest.mark.parametrize(
     "method, path",
     [
-        ("post", "/services"),
-        ("put", "/services/abc"),
-        ("delete", "/services/abc"),
+        ("post", f"{BASE}/services"),
+        ("put", f"{BASE}/services/abc"),
+        ("delete", f"{BASE}/services/abc"),
+        ("get", f"{BASE}/me"),
+        # FOCA's permissions API
+        ("get", "/admin/access-control/permissions"),
     ],
 )
 def test_no_token(client: FlaskClient, method: str, path: str) -> None:
-    """Write requests without an access token are rejected."""
-    _assert_error(getattr(client, method)(f"{BASE}{path}", json={}), 401)
+    """Requests without an access token are rejected with a Bearer challenge.
+
+    That is, with `WWW-Authenticate: Bearer` (RFC 6750), for write requests
+    and those that need an authenticated user.
+    """
+    response = getattr(client, method)(path, json={})
+    _assert_error(response, 401)
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+def _assert_invalid_token(response: TestResponse) -> None:
+    """Assert that a response rejects an invalid access token.
+
+    Args:
+        response: Response.
+    """
+    _assert_error(response, 401)
+    assert response.headers["WWW-Authenticate"].startswith(
+        'Bearer error="invalid_token"'
+    )
 
 
 def test_invalid_token(client: FlaskClient) -> None:
@@ -172,7 +193,26 @@ def test_invalid_token(client: FlaskClient) -> None:
     response = client.post(
         f"{BASE}/services", json=_service(), headers=make_headers(key=other_key)
     )
-    _assert_error(response, 401)
+    _assert_invalid_token(response)
+
+
+@pytest.mark.parametrize("typ", ["at+jwt", "application/at+jwt", "AT+JWT"])
+def test_access_token_types(client: FlaskClient, typ: str) -> None:
+    """Access tokens (RFC 9068) are accepted, whatever the case of their type."""
+    _post(client, make_headers(typ=typ))
+
+
+@pytest.mark.parametrize("typ", [None, "JWT"])
+def test_other_token_types(client: FlaskClient, typ: str | None) -> None:
+    """Tokens that aren't access tokens (e.g., ID tokens) are rejected.
+
+    That is, tokens without the type of access tokens (RFC 9068), even if
+    the identity provider signed them.
+    """
+    response = client.post(
+        f"{BASE}/services", json=_service(), headers=make_headers(typ=typ)
+    )
+    _assert_invalid_token(response)
 
 
 @pytest.mark.parametrize("path", ["/services", "/services/types"])
@@ -1050,6 +1090,7 @@ def test_service_info_read_only(
     """Service info can't be set via the API."""
     response = client.post(f"{BASE}/service-info", json={}, headers=admin_headers)
     assert response.status_code == 405
+    assert set(response.headers["Allow"].split(", ")) == {"GET", "HEAD", "OPTIONS"}
     spec = client.get(f"{BASE}/openapi.json").get_json()
     assert list(spec["paths"]["/service-info"]) == ["get"]
 

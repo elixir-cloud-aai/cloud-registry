@@ -191,16 +191,21 @@ def mock_get(
     raise auth.requests.ConnectionError(f"Unexpected request in tests: {url}")
 
 
-def make_headers(user: str = USER, key: rsa.RSAPrivateKey = KEY) -> dict[str, str]:
+def make_headers(
+    user: str = USER, key: rsa.RSAPrivateKey = KEY, typ: str | None = "at+jwt"
+) -> dict[str, str]:
     """Get request headers with an access token for a user.
 
     Args:
         user: User identifier (`sub` claim).
         key: Key that signs the token.
+        typ: Type of the token (`typ` header), `at+jwt` for access tokens
+            (RFC 9068, as issued by LS Login); `None` for no type.
 
     Returns:
         Request headers.
     """
+    jwt_headers = {"kid": "rsa1"} if typ is None else {"kid": "rsa1", "typ": typ}
     now = int(time.time())
     token = jwt.encode(
         {
@@ -213,7 +218,7 @@ def make_headers(user: str = USER, key: rsa.RSAPrivateKey = KEY) -> dict[str, st
         },
         key,
         algorithm="RS256",
-        headers={"kid": "rsa1", "typ": "at+jwt"},
+        headers=jwt_headers,
     )
     return {"Authorization": f"Bearer {token}"}
 
