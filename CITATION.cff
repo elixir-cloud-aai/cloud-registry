@@ -1,0 +1,44 @@
+cff-version: 1.2.0
+message: >-
+  If you use this software, please cite it using the metadata from this file.
+  Authors are listed by the number of lines they committed, then by the
+  number of their commits; equal contributors, if any, are listed
+  alphabetically by family name and marked with an asterisk (*) after their
+  family names. See "Citation metadata" in the contributing guide of the
+  documentation for who is an author and how to add or correct your entry.
+title: Cloud Registry
+abstract: >-
+  Cloud Registry is a registry of web services for projects, networks and
+  infrastructures that implements the GA4GH Service Registry API, so that
+  clients can discover services and their API types, versions and operators
+  in one place. Anyone can read the entries; users authenticated with a
+  trusted OpenID Connect provider can register and manage services, and
+  admins can verify them. It is built with FOCA and deployed with Docker
+  Compose or its Helm chart.
+type: software
+authors:
+  - given-names: Alexander
+    family-names: Kanitz
+    orcid: "https://orcid.org/0000-0002-3468-0652"
+    affiliation: >-
+      Biozentrum, University of Basel, Basel, Switzerland; SIB Swiss Institute
+      of Bioinformatics, Lausanne, Switzerland
+  - given-names: Kushagra
+    family-names: Nagori
+  - given-names: CJ
+    family-names: Herrmann
+    orcid: "https://orcid.org/0000-0003-1649-3463"
+  - given-names: Aditya
+    family-names: Arora
+  - given-names: Tristan
+    family-names: Perard
+repository-code: "https://github.com/elixir-cloud-aai/cloud-registry"
+url: "https://cloud-registry.readthedocs.io/"
+keywords:
+  - GA4GH
+  - Service Registry
+  - service discovery
+  - REST API
+  - OpenAPI
+  - FOCA
+license: Apache-2.0
