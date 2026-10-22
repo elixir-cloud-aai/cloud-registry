@@ -1,6 +1,9 @@
 """Tests for access control, with the app created from its config.
 
-The app and its fixtures are set up in `tests/conftest.py`.
+The app and its fixtures are set up in `tests/conftest.py`. Some tests patch
+internals of FOCA 0.16's ownership helpers (`ownership_module`) to simulate
+failures and concurrent requests that its public API can't produce; adapt
+them when upgrading FOCA.
 """
 
 from collections.abc import Callable
@@ -833,23 +836,43 @@ def test_roles_removed_before_delete(
     assert client.get(f"{BASE}/services/{service_id}").status_code == 200
 
 
+def delete_after_first_check(patch: pytest.MonkeyPatch, service_id: str) -> list[bool]:
+    """Delete a service (with its roles) after its first existence check.
+
+    Patches the app's existence check (`service_exists()`), which it also
+    passes to FOCA's helpers as `exists`, so that the service is deleted
+    before the second check, i.e., while a role on it is granted.
+
+    Args:
+        patch: Monkeypatch (context) to patch the check with.
+        service_id: Service identifier.
+
+    Returns:
+        List that is non-empty once the service was deleted.
+    """
+    service_exists = permissions_module.service_exists
+    deleted: list[bool] = []
+    calls = count()
+
+    def check(serviceId: str) -> bool:
+        """Check whether the service exists, deleting it on the second call."""
+        if next(calls) == 1:
+            deleted.append(True)
+            permissions_module.remove_permissions(service_id)
+            get_collection("services").delete_one({"id": service_id})
+        return service_exists(serviceId)
+
+    patch.setattr(permissions_module, "service_exists", check)
+    return deleted
+
+
 def test_grant_racing_delete(
     app: App, client: FlaskClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A role granted on a service deleted meanwhile is revoked again (`404`)."""
     service_id = register(client)
-    add_resource_role = ownership_module.add_resource_role
-    deleted = []
-
-    def delete_first(**kwargs: Any) -> bool:
-        """Delete the service after its existence was checked, then grant."""
-        deleted.append(True)
-        permissions_module.remove_permissions(service_id)
-        get_collection("services").delete_one({"id": service_id})
-        return add_resource_role(**kwargs)
-
     with monkeypatch.context() as patch:
-        patch.setattr(ownership_module, "add_resource_role", delete_first)
+        deleted = delete_after_first_check(patch, service_id)
         assert grant(client, service_id, BOB, "maintainer") == 404
     assert deleted == [True]
     assert _roles(app, service_id) == []
@@ -1204,17 +1227,10 @@ def test_group_grant_racing_delete(
 ) -> None:
     """A group's role on a service deleted meanwhile is revoked again (`404`)."""
     service_id = register(client)
-    add_resource_role = ownership_module.add_resource_role
-
-    def delete_first(**kwargs: Any) -> bool:
-        """Delete the service after its existence was checked, then grant."""
-        permissions_module.remove_permissions(service_id)
-        get_collection("services").delete_one({"id": service_id})
-        return add_resource_role(**kwargs)
-
     with monkeypatch.context() as patch:
-        patch.setattr(ownership_module, "add_resource_role", delete_first)
+        deleted = delete_after_first_check(patch, service_id)
         assert grant_group(client, service_id, TEAM_GROUP, "maintainer") == 404
+    assert deleted == [True]
     assert _roles(app, service_id) == []
 
 
