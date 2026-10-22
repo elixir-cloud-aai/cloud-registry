@@ -167,12 +167,17 @@ mypy, coverage); change these rules there, not in the workflow.
 To test unreleased changes of FOCA, `pyproject.toml` may pin a FOCA commit
 (`foca @ git+https://github.com/elixir-cloud-aai/foca@<sha>`), with FOCA's
 development image of that commit as the base image (tagged by date, e.g.,
-`elixircloud/foca:20261022-py3.13`, pinned by digest; the `Dockerfile`
-records the commit as `## FOCA commit: <sha>`, which the tests check, and
-doesn't reinstall FOCA). Such pins are temporary: the release workflow fails
+`elixircloud/foca:20261022-py3.13`, pinned by digest, as the tag moves with
+later commits of that day; the `Dockerfile` records the commit as
+`## FOCA commit: <sha>`, which the tests check, and the image build doesn't
+reinstall FOCA, but fails unless the base image has FOCA of that commit).
+Dependabot ignores the base image meanwhile. Such pins are temporary: the
+release workflow fails
 while a dependency is a direct reference, the base image has no release tag,
-or a chart dependency is a pre-release (`scripts/check_release_pins.py`), so
-replace them by the released versions before releasing.
+or a chart dependency is a pre-release (`scripts/check_release_pins.py`,
+tested in `tests/test_check_release_pins.py`), so replace them by the
+released versions before releasing. This applies to pre-releases of the
+app, too: they are built on FOCA releases.
 
 In curated notes, link all changes of the release as the compare view from
 the previous release's tag (e.g.,

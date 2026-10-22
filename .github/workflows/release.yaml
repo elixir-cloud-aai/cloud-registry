@@ -54,9 +54,9 @@ jobs:
           # Full history and all tags, to check that the release commit is on
           # `main`
           fetch-depth: 0
-      # For `scripts/release_version.py`, `scripts/citation.py` and
-      # `scripts/chart_readme.py` (standard library only); the Python version
-      # of `checks.yaml`
+      # For `scripts/release_version.py`, `scripts/citation.py`,
+      # `scripts/check_release_pins.py` and `scripts/chart_readme.py`
+      # (standard library only); the Python version of `checks.yaml`
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:

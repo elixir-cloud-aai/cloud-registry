@@ -90,6 +90,16 @@ def test_release_pins(tmp_path: Path) -> None:
             " is a direct reference",
         ),
         (
+            {"dependencies": '"foca@https://example.org/foca.tar.gz",'},
+            "pyproject.toml: dependency 'foca@https://example.org/foca.tar.gz'"
+            " is a direct reference",
+        ),
+        (
+            {"dependencies": '"Foca [x]@https://example.org/foca.tar.gz",'},
+            "pyproject.toml: dependency 'Foca [x]@https://example.org/foca.tar.gz'"
+            " is a direct reference",
+        ),
+        (
             {"tag": "20261022-py3.13"},
             "Dockerfile: base image tag '20261022-py3.13' is not a release tag "
             "(<X.Y.Z>-py<X.Y>)",
@@ -110,7 +120,16 @@ def test_release_pins(tmp_path: Path) -> None:
             "release version",
         ),
     ],
-    ids=["git", "url", "dated-image", "no-python", "chart-rc", "chart-range"],
+    ids=[
+        "git",
+        "url",
+        "no-spaces",
+        "extras-spaces",
+        "dated-image",
+        "no-python",
+        "chart-rc",
+        "chart-range",
+    ],
 )
 def test_dev_pins(tmp_path: Path, kwargs: dict[str, str], error: str) -> None:
     """Pins of development versions are found."""
@@ -141,11 +160,44 @@ def test_main(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     )
 
 
-def test_main_repository(capsys: pytest.CaptureFixture[str]) -> None:
+def test_main_repository(monkeypatch: pytest.MonkeyPatch) -> None:
     """Without arguments, `main()` checks this repository."""
-    expected = check_release_pins.find_dev_pins(ROOT)
-    assert check_release_pins.main([]) == (1 if expected else 0)
-    assert capsys.readouterr().err.count("::error::") == len(expected)
+    roots: list[Path] = []
+
+    def find_dev_pins(root: Path) -> list[str]:
+        roots.append(root)
+        return []
+
+    monkeypatch.setattr(check_release_pins, "find_dev_pins", find_dev_pins)
+    assert check_release_pins.main([]) == 0
+    assert roots == [ROOT]
+
+
+def test_chart_dependencies(tmp_path: Path) -> None:
+    """All dependencies of the chart are checked, and only their versions."""
+    root = _write(tmp_path)
+    (root / "deployment" / "Chart.yaml").write_text(
+        """apiVersion: v2
+name: app
+version: 0.0.0
+dependencies:
+  - name: foca-common
+    version: 0.2.0
+    repository: oci://ghcr.io/elixir-cloud-aai/charts
+  # A comment
+  - version: "1.0.0-rc1"
+    name: other
+
+maintainers:
+  - name: someone
+    version: not-a-dependency
+annotations:
+  version: dev
+"""
+    )
+    assert check_release_pins.find_dev_pins(root) == [
+        "deployment/Chart.yaml: dependency version '1.0.0-rc1' is not a release version"
+    ]
 
 
 def test_script(tmp_path: Path) -> None:

@@ -4,7 +4,8 @@
 ## (`.github/dependabot.yml`)
 ## TEMPORARY: FOCA's development image built from the commit that
 ## `pyproject.toml` pins (#178), replaced by the release image (#179) before
-## the next release (`scripts/check_release_pins.py`)
+## the next release (`scripts/check_release_pins.py`); dated tags move with
+## later commits of the day, so only the digest identifies the image
 ## FOCA commit: db6998cae4e1f1fbbbaafd7a26795f3bbfa4511a
 FROM elixircloud/foca:20261022-py3.13@sha256:cb33b4dfd65bca19ece7b2d49d25fab53c8fdbc9479831ea4a518ee16478c19f
 
@@ -19,11 +20,18 @@ LABEL maintainer.organisation="ELIXIR On-Cloud"
 ## Install dependencies (`project.dependencies` of `pyproject.toml`, read
 ## with `tomllib` of the base image's Python) first, so that code changes do
 ## not reinstall them; the FOCA image runs as non-root user. A direct
-## reference to a FOCA commit (`foca @ git+...`) is left out: the base image
-## has FOCA of that commit (checked by the tests), and no Git
+## reference to a FOCA commit (`foca @ git+...@<sha>`, as written there) is
+## left out, as the image has no Git: the build fails unless the base image
+## has FOCA of that commit (its version ends in `+g<first 9 characters of the
+## commit>`, as set by setuptools-scm)
 USER root
 COPY pyproject.toml /tmp/src/
-RUN python -c "import tomllib; print('\n'.join(r for r in tomllib.load(open('/tmp/src/pyproject.toml', 'rb'))['project']['dependencies'] if not r.startswith('foca @')))" \
+RUN python -c "import importlib.metadata, re, tomllib; \
+deps = tomllib.load(open('/tmp/src/pyproject.toml', 'rb'))['project']['dependencies']; \
+pins = [m[1] for m in (re.fullmatch(r'foca @ git\+\S+@([0-9a-f]{40})', d) for d in deps) if m]; \
+installed = importlib.metadata.version('foca'); \
+assert all(installed.endswith('+g' + pin[:9]) for pin in pins), 'base image has FOCA ' + installed + ', not commit ' + ', '.join(pins); \
+print('\n'.join(d for d in deps if not d.startswith('foca @ ')))" \
     > /tmp/src/requirements.txt \
   && pip install --no-cache-dir -r /tmp/src/requirements.txt
 

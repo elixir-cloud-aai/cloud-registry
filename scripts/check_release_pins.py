@@ -23,19 +23,40 @@ import re
 import sys
 import tomllib
 
-# A requirement that is a direct reference (PEP 440), e.g.,
-# `foca @ git+https://...`
-DIRECT_REFERENCE = re.compile(r"^\s*[A-Za-z0-9][A-Za-z0-9._-]*(\[[^\]]*\])?\s*@")
+# A release version `X.Y.Z` (no pre-release or build metadata)
+SEMVER = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+# A requirement that is a direct reference (PEP 508), e.g.,
+# `foca @ git+https://...`, also with extras (`foca[x] @ ...`)
+DIRECT_REFERENCE = re.compile(r"^\s*[A-Za-z0-9][A-Za-z0-9._-]*\s*(\[[^\]]*\])?\s*@")
 # The base image, with its tag
 BASE_IMAGE = re.compile(r"^FROM\s+elixircloud/foca:(?P<tag>[^@\s]+)", re.MULTILINE)
-RELEASE_IMAGE_TAG = re.compile(
-    r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-py3\.[0-9]+"
-)
-# A chart dependency's version (`version: <version>`, in `dependencies`)
-CHART_VERSION = re.compile(
-    r"^\s+version:\s*[\"']?(?P<version>[^\"'\s#]+)", re.MULTILINE
-)
-RELEASE_CHART_VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
+RELEASE_IMAGE_TAG = re.compile(SEMVER + r"-py3\.[0-9]+")
+# A chart dependency's version (`version: <version>`, in a list item of
+# `dependencies`); the chart is read line by line, without a YAML parser
+CHART_VERSION = re.compile(r"^\s+(?:-\s+)?version:\s*[\"']?(?P<version>[^\"'\s#]+)")
+RELEASE_CHART_VERSION = re.compile(SEMVER)
+
+
+def _chart_dependency_versions(path: Path) -> list[str]:
+    """Get the versions of the dependencies of a chart.
+
+    The `version` keys of the `dependencies` section, i.e., of the indented
+    lines after the line `dependencies:`, up to the next top-level key.
+
+    Args:
+        path: The chart's `Chart.yaml`.
+
+    Returns:
+        The versions, in order.
+    """
+    versions = []
+    in_dependencies = False
+    for line in path.read_text().splitlines():
+        if line and not line[0].isspace() and not line.startswith("#"):
+            in_dependencies = line.rstrip() == "dependencies:"
+        elif in_dependencies and (match := CHART_VERSION.match(line)):
+            versions.append(match["version"])
+    return versions
 
 
 def find_dev_pins(root: Path) -> list[str]:
@@ -62,9 +83,7 @@ def find_dev_pins(root: Path) -> list[str]:
             f"Dockerfile: base image tag '{match['tag']}' is not a release tag "
             "(<X.Y.Z>-py<X.Y>)"
         )
-    chart = (root / "deployment" / "Chart.yaml").read_text()
-    _, _, dependencies = chart.partition("\ndependencies:")
-    for version in CHART_VERSION.findall(dependencies):
+    for version in _chart_dependency_versions(root / "deployment" / "Chart.yaml"):
         if not RELEASE_CHART_VERSION.fullmatch(version):
             pins.append(
                 f"deployment/Chart.yaml: dependency version '{version}' is not "

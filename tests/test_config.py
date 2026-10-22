@@ -456,43 +456,62 @@ def test_package_data() -> None:
         assert any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns), path
 
 
-def test_base_image_foca() -> None:
-    """The FOCA version of the base image satisfies the `foca` requirement.
+def _foca_requirement() -> tuple[str, Requirement]:
+    """Get the `foca` requirement of the app (`pyproject.toml`).
 
-    So the image build does not install another FOCA on top of it. A direct
-    reference to a FOCA commit (temporary, see `scripts/check_release_pins.py`)
-    is left out of the image build: the base image must then be a development
-    image (tagged by date) of that commit, which the `Dockerfile` records.
+    Returns:
+        The requirement as written, and parsed.
     """
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    requirements = {
-        requirement.name: requirement
-        for requirement in map(Requirement, pyproject["project"]["dependencies"])
-    }
-    dockerfile = (ROOT / "Dockerfile").read_text()
+    (foca,) = [
+        (line, Requirement(line))
+        for line in pyproject["project"]["dependencies"]
+        if Requirement(line).name == "foca"
+    ]
+    return foca
+
+
+def _base_image_tag() -> str:
+    """Get the tag of the FOCA base image (`Dockerfile`), without Python."""
     match = re.search(
         r"^FROM elixircloud/foca:(?P<version>[^-@\s]+)",
-        dockerfile,
+        (ROOT / "Dockerfile").read_text(),
         flags=re.MULTILINE,
     )
     assert match, "No FOCA base image in the Dockerfile"
-    foca = requirements["foca"]
+    return match["version"]
+
+
+def test_base_image_foca() -> None:
+    """The base image has the FOCA that the `foca` requirement pins.
+
+    So the image build does not install another FOCA on top of it: a FOCA
+    release that satisfies the requirement or, for a direct reference to a
+    FOCA commit (temporary, see `scripts/check_release_pins.py`), which the
+    image build leaves out as written (`foca @ `), FOCA's development image
+    (tagged by date) of that commit, which the `Dockerfile` records.
+    """
+    (line, foca), tag = _foca_requirement(), _base_image_tag()
     if foca.url is None:
-        assert foca.specifier.contains(match["version"]), (
-            f"Base image has FOCA {match['version']}, but {foca} is required"
+        assert foca.specifier.contains(tag), (
+            f"Base image has FOCA {tag}, but {foca} is required"
         )
-        return
-    commit = re.fullmatch(
-        r"git\+https://github\.com/elixir-cloud-aai/foca@(?P<sha>[0-9a-f]{40})",
-        foca.url,
-    )
-    assert commit, f"FOCA must be pinned to a full commit SHA, not {foca.url}"
-    assert re.fullmatch(r"[0-9]{8}", match["version"]), (
-        "A FOCA commit needs FOCA's development image (tagged by date)"
-    )
-    assert f"## FOCA commit: {commit['sha']}\n" in dockerfile, (
-        "The Dockerfile must record the FOCA commit of its base image"
-    )
+    else:
+        assert line.startswith("foca @ "), (
+            "The Dockerfile only leaves out FOCA requirements written as `foca @ `"
+        )
+        commit = re.fullmatch(
+            r"git\+https://github\.com/elixir-cloud-aai/foca@(?P<sha>[0-9a-f]{40})",
+            foca.url,
+        )
+        assert commit, f"FOCA must be pinned to a full commit SHA, not {foca.url}"
+        assert re.fullmatch(r"[0-9]{8}", tag), (
+            "A FOCA commit needs FOCA's development image (tagged by date)"
+        )
+        dockerfile = (ROOT / "Dockerfile").read_text()
+        assert f"## FOCA commit: {commit['sha']}\n" in dockerfile, (
+            "The Dockerfile must record the FOCA commit of its base image"
+        )
 
 
 def test_python_version() -> None:
