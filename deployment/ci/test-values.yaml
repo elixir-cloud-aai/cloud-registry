@@ -6,8 +6,10 @@ mongodb:
 config:
   security:
     auth:
+      issuers: ["https://login.example.org/oidc/"]
       audience: ["test-client"]
       verify_audience: True
     access_control:
+      claim_groups: groups
       group_mapping:
         test-admins: admin

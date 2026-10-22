@@ -21,19 +21,28 @@ hostName: ""
 # App config overriding the base config in the image (`cloud_registry/config.yaml`
 # of the image's version); mappings are merged recursively, other values
 # (including lists) are replaced. Stored in a ConfigMap, so must not contain
-# secrets. Deployments must set `security.auth.audience` (rendering fails
-# without it, unless `security.auth.verify_audience` is false) and map an
-# admin group to the role `admin` (rendering fails without one, unless
-# `custom.access_control.require_admin` is false). Examples:
+# secrets. Deployments must set the trusted token issuers
+# (`security.auth.issuers`) and `security.auth.audience` (unless
+# `security.auth.verify_audience` is false), and map an admin group to the
+# role `admin` (unless `custom.access_control.require_admin` is false), with
+# the claim with the groups of users (`security.access_control.claim_groups`);
+# rendering fails without them (see deployment/README.md, Configuration).
+# Examples:
 config: {}
 #   security:
 #     auth:
+#       # Trusted token issuers (`iss` claim)
+#       issuers: ["https://login.example.org/oidc/"]
 #       # Client IDs of the apps calling the registry
 #       audience: ["my-portal-client-id"]
+#       # Claims released via user info only, not in access tokens
+#       userinfo_claims: ["groups", "name"]
 #     access_control:
+#       # Claim with the groups of users
+#       claim_groups: groups
 #       # Members of this group may manage all services
 #       group_mapping:
-#         "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN:ADMIN#aai.lifescience-ri.eu": admin
+#         registry-admins: admin
 #   log:
 #     handlers:
 #       console:

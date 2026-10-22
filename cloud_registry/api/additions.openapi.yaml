@@ -269,25 +269,25 @@ paths:
           $ref: '#/components/responses/InternalServerError'
         default:
           $ref: '#/components/responses/Error'
-  "/services/{serviceId}/permissions/groups/{entitlement}":
+  "/services/{serviceId}/permissions/groups/{group}":
     put:
       summary: Grant service permission to group.
       description: |
         Grant a group a role on a service, replacing any other role of the
         group on the service: `owner` (update and delete the service, manage
         its permissions) or `maintainer` (update the service). All members
-        of the group (users whose group claim, `eduperson_entitlement` for
-        LS Login, contains the group) have the role. Only for owners of the
-        service who are members of the group (`403` otherwise), and admins,
-        who can grant roles to any group. The last owner of a service (user
-        or group) cannot be downgraded (`409`).
+        of the group (users whose group claim, set by the deployment,
+        contains the group) have the role. Only for owners of the service
+        who are members of the group (`403` otherwise), and admins, who can
+        grant roles to any group. The last owner of a service (user or
+        group) cannot be downgraded (`409`).
       operationId: putServiceGroupPermission
       x-openapi-router-controller: cloud_registry.ga4gh.registry.permissions
       tags:
         - cloud-registry
       parameters:
         - $ref: '#/components/parameters/ServiceId'
-        - $ref: '#/components/parameters/Entitlement'
+        - $ref: '#/components/parameters/Group'
       requestBody:
         description: Role to grant.
         required: true
@@ -330,7 +330,7 @@ paths:
         - cloud-registry
       parameters:
         - $ref: '#/components/parameters/ServiceId'
-        - $ref: '#/components/parameters/Entitlement'
+        - $ref: '#/components/parameters/Group'
       responses:
         '200':
           description: The roles were revoked.
@@ -356,11 +356,11 @@ paths:
       summary: Get service verification.
       description: |
         Get the verification of a service, i.e., when an admin verified it
-        (e.g., checked that it accepts LS Login tokens). Unverified and
-        unknown services return `404`. The verification names the URL and
-        API type of the service; it is removed when the URL (in any way, as
-        written) or API type (`type.group`, `type.artifact`) of the service
-        changes.
+        (e.g., checked that it accepts tokens of the deployment's identity
+        provider). Unverified and unknown services return `404`. The
+        verification names the URL and API type of the service; it is
+        removed when the URL (in any way, as written) or API type
+        (`type.group`, `type.artifact`) of the service changes.
       operationId: getServiceVerification
       x-openapi-router-controller: cloud_registry.ga4gh.registry.verification
       security: []
@@ -533,22 +533,22 @@ components:
       in: path
       description: |
         Identifier of the user, i.e., the `sub` claim of the user's tokens
-        (e.g., `abc123@lifescience-ri.eu` for LS Login). Not `groups`: the
+        (e.g., `abc123@login.example.org`). Not `groups`: the
         path is then that of the roles of groups without a group, which is
         not found (`404`).
       required: true
       schema:
         type: string
-    Entitlement:
-      name: entitlement
+    Group:
+      name: group
       in: path
       description: |
         Group, i.e., a value of the group claim of the members' tokens
-        (`eduperson_entitlement` for LS Login, e.g.,
-        `urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN#aai.lifescience-ri.eu`),
-        URL-encoded (e.g., `#` as `%23`; may contain `/`, but not start
-        with it: the path then has a double slash, which is redirected to
-        the path without it, i.e., to another group).
+        (`security.access_control.claim_groups`, set by the deployment; e.g.,
+        `urn:example:group:registry-team#login.example.org`), URL-encoded
+        (e.g., `#` as `%23`; may contain `/`, but not start with it: the
+        path then has a double slash, which is redirected to the path
+        without it, i.e., to another group).
       required: true
       schema:
         type: string
@@ -647,7 +647,7 @@ components:
           type: string
           description: |
             The group, i.e., a value of the group claim of its members'
-            tokens (`eduperson_entitlement` for LS Login).
+            tokens (`security.access_control.claim_groups`).
         role:
           $ref: '#/components/schemas/Role'
     Me:

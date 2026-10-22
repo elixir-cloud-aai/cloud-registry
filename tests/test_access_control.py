@@ -34,7 +34,7 @@ from cloud_registry.utils import get_collection
 from tests.conftest import (
     ADMIN,
     COLLECTION_CLASS,
-    ENTITLEMENTS,
+    GROUPS,
     NAMES,
     TEAM_GROUP,
     USER,
@@ -55,7 +55,7 @@ SERVICE: dict[str, Any] = {
 ALICE, BOB, CAROL = USER, "bob@example.org", "carol@example.org"
 DAVE, ERIN = "dave@example.org", "erin@example.org"
 # Group of bob, which alice is not a member of
-OTHER_GROUP = ENTITLEMENTS[BOB][0]
+OTHER_GROUP = GROUPS[BOB][0]
 
 
 def headers(user: str | None = None) -> dict[str, str]:
@@ -262,7 +262,7 @@ def test_others_forbidden(client: FlaskClient) -> None:
 
 
 def test_admin(client: FlaskClient) -> None:
-    """Admins (via entitlement from user info) can modify anything."""
+    """Admins (via a group from user info) can modify anything."""
     service_id = register(client)
     assert update(client, service_id, ADMIN) == 200
     assert grant(client, service_id, CAROL, "owner", ADMIN) == 200

@@ -21,6 +21,10 @@ MONGODB = "cloud-registry-mongodb"
 # Name of the Secret with the MongoDB credentials, required as authentication
 # is enabled by default
 MONGODB_SECRET = "mongodb-credentials"  # noqa: S105 (a Secret's name, no credential)
+# Trusted token issuer, required (the base config trusts none)
+ISSUER = "https://login.example.org/oidc/"
+# Claim with the groups of users, required for group mappings
+GROUP_CLAIM = "groups"
 # Group mapped to the role `admin`, required by default
 ADMIN_GROUP = "test-admins"
 # Audience of the app's tokens, required by default
@@ -41,6 +45,8 @@ data:
 def render(
     *args: str,
     mongodb_secret: str | None = MONGODB_SECRET,
+    issuer: str | None = ISSUER,
+    group_claim: str | None = GROUP_CLAIM,
     admin_group: str | None = ADMIN_GROUP,
     audience: str | None = AUDIENCE,
     release: str = RELEASE,
@@ -52,6 +58,8 @@ def render(
         args: Arguments of `helm template`.
         mongodb_secret: Name of the Secret with the MongoDB credentials; not
             set if `None`.
+        issuer: Trusted token issuer; not set if `None`.
+        group_claim: Claim with the groups of users; not set if `None`.
         admin_group: Group mapped to the role `admin`; not set if `None`.
         audience: Audience of the app's tokens; not set if `None`.
         release: Name of the release.
@@ -76,6 +84,18 @@ def render(
         args = (
             "--set-json",
             f"config.security.access_control.group_mapping={mapping}",
+            *args,
+        )
+    if group_claim is not None:
+        args = (
+            "--set-json",
+            f"config.security.access_control.claim_groups={json.dumps(group_claim)}",
+            *args,
+        )
+    if issuer is not None:
+        args = (
+            "--set-json",
+            f"config.security.auth.issuers={json.dumps([issuer])}",
             *args,
         )
     if audience is not None:

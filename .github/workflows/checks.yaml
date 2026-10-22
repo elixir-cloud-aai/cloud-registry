@@ -254,9 +254,9 @@ jobs:
           curl --fail --silent --show-error --output /dev/null \
             --header 'Accept: application/json' "${PROBE_ENDPOINT}"
       # Check database-backed endpoints of the app as deployed (`test_mongodb`
-      # covers them with the tests). Writes need tokens of the trusted issuer
-      # (LS Login), so a verified service is inserted into the database
-      # directly
+      # covers them with the tests). Writes need tokens of a trusted issuer
+      # (the development config trusts a fictitious one), so a verified
+      # service is inserted into the database directly
       - name: Check API with MongoDB
         run: |
           docker compose exec -T mongodb mongosh --quiet serviceStore --eval '

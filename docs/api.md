@@ -17,7 +17,7 @@ under the API base path `/ga4gh/registry/v1`:
 | `/services/{serviceId}` | `DELETE` | owners, admins |
 | `/services/{serviceId}/permissions` | `GET` | owners, admins |
 | `/services/{serviceId}/permissions/{userId}` | `PUT`, `DELETE` | owners, admins |
-| `/services/{serviceId}/permissions/groups/{entitlement}` | `PUT`, `DELETE` | owners, admins (`PUT` by owners: groups they are members of) |
+| `/services/{serviceId}/permissions/groups/{group}` | `PUT`, `DELETE` | owners, admins (`PUT` by owners: groups they are members of) |
 | `/services/{serviceId}/verification` | `GET` | anyone |
 | `/services/{serviceId}/verification` | `PUT`, `DELETE` | admins |
 | `/verifications` | `GET` | anyone |
@@ -144,7 +144,8 @@ Services stored before this check are checked on startup (see
 ## Verified services
 
 Admins mark services as **verified** once they have checked them, e.g., that
-a service accepts LS Login tokens. What admins check is up to the
+a service accepts tokens of the deployment's identity provider. What admins
+check is up to the
 deployment; the registry only records when a service was verified. Owners
 can't verify their own services.
 

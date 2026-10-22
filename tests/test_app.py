@@ -36,6 +36,7 @@ from tests.conftest import (
     ADMIN_GROUP,
     APP_DIR,
     CONFIG_OVERLAY,
+    ISSUER,
     USER,
     MockResponse,
     make_headers,
@@ -1372,13 +1373,104 @@ def test_create_app_service_clients(
         tmp_path,
         {
             "security": {
-                "auth": {"audience": ["a"], **auth},
-                "access_control": {"group_mapping": {ADMIN_GROUP: "admin"}},
+                "auth": {"issuers": [ISSUER], "audience": ["a"], **auth},
+                "access_control": {
+                    "claim_groups": "groups",
+                    "group_mapping": {ADMIN_GROUP: "admin"},
+                },
             }
         },
     )
     with pytest.raises(RuntimeError, match="not supported"):
         cloud_registry.app.create_app()
+
+
+def test_create_app_requires_issuers(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
+) -> None:
+    """`create_app()` refuses to start without trusted token issuers.
+
+    The base config trusts none (deployments set them); FOCA refuses access
+    control without them.
+    """
+    _set_overlay(
+        monkeypatch,
+        tmp_path,
+        {
+            "security": {
+                "auth": {"audience": ["a"]},
+                "access_control": {
+                    "claim_groups": "groups",
+                    "group_mapping": {ADMIN_GROUP: "admin"},
+                },
+            }
+        },
+    )
+    with pytest.raises(ValidationError, match=r"auth\.issuers"):
+        cloud_registry.app.create_app()
+
+
+def test_create_app_requires_claim_groups(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
+) -> None:
+    """`create_app()` refuses a group mapping without a group claim.
+
+    Without `claim_groups`, no group would be admin.
+    """
+    _set_overlay(
+        monkeypatch,
+        tmp_path,
+        {
+            "security": {
+                "auth": {"issuers": [ISSUER], "audience": ["a"]},
+                "access_control": {"group_mapping": {ADMIN_GROUP: "admin"}},
+            }
+        },
+    )
+    with pytest.raises(RuntimeError, match="claim_groups"):
+        cloud_registry.app.create_app()
+
+
+@pytest.mark.parametrize("claim", ["  ", " groups", "groups\n"])
+def test_create_app_claim_groups_whitespace(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None, claim: str
+) -> None:
+    """`create_app()` refuses a group claim with surrounding whitespace.
+
+    FOCA looks up the claim as written, so users would have no groups.
+    """
+    _set_overlay(
+        monkeypatch,
+        tmp_path,
+        {
+            "security": {
+                "auth": {"issuers": [ISSUER], "audience": ["a"]},
+                "access_control": {"claim_groups": claim},
+            },
+            "custom": {"access_control": {"require_admin": False}},
+        },
+    )
+    with pytest.raises(RuntimeError, match="without surrounding whitespace"):
+        cloud_registry.app.create_app()
+
+
+def test_create_app_no_claim_groups(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`create_app()` warns without a group claim, as users have no groups."""
+    _set_overlay(
+        monkeypatch,
+        tmp_path,
+        {
+            "security": {"auth": {"issuers": [ISSUER], "audience": ["a"]}},
+            "custom": {"access_control": {"require_admin": False}},
+        },
+    )
+    cloud_registry.app.create_app()
+    assert "No group claim is set" in capsys.readouterr().err
 
 
 def test_create_app_group_subjects(
@@ -1396,8 +1488,9 @@ def test_create_app_group_subjects(
         tmp_path,
         {
             "security": {
-                "auth": {"audience": ["a"]},
+                "auth": {"issuers": [ISSUER], "audience": ["a"]},
                 "access_control": {
+                    "claim_groups": "groups",
                     "group_mapping": {ADMIN_GROUP: "admin"},
                     "keep_group_subjects": False,
                 },
@@ -1422,6 +1515,7 @@ def test_create_app_dev_overlay(
     err = capsys.readouterr().err
     assert "No group is mapped to the role 'admin'" in err
     assert "keep_group_subjects" not in err
+    assert "No group claim is set" not in err
 
 
 def test_create_app_duplicate_services(
@@ -1438,7 +1532,11 @@ def test_create_app_requires_admin(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
 ) -> None:
     """`create_app()` fails if no group is mapped to the role `admin`."""
-    _set_overlay(monkeypatch, tmp_path, {"security": {"auth": {"audience": ["a"]}}})
+    _set_overlay(
+        monkeypatch,
+        tmp_path,
+        {"security": {"auth": {"issuers": [ISSUER], "audience": ["a"]}}},
+    )
     with pytest.raises(RuntimeError, match="require_admin"):
         cloud_registry.app.create_app()
 
@@ -1454,7 +1552,7 @@ def test_create_app_admin_optional(
         monkeypatch,
         tmp_path,
         {
-            "security": {"auth": {"audience": ["a"]}},
+            "security": {"auth": {"issuers": [ISSUER], "audience": ["a"]}},
             "custom": {"access_control": {"require_admin": False}},
         },
     )
@@ -1472,7 +1570,7 @@ def _service_info_overlay(service_info: dict[str, Any]) -> dict[str, Any]:
         Config overlay.
     """
     return {
-        "security": {"auth": {"audience": ["a"]}},
+        "security": {"auth": {"issuers": [ISSUER], "audience": ["a"]}},
         "custom": {"access_control": {"require_admin": False}},
         "service_info": service_info,
     }
@@ -1616,7 +1714,11 @@ def test_main_check_fails(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
 ) -> None:
     """`main()` does not run the app if a startup check fails."""
-    _set_overlay(monkeypatch, tmp_path, {"security": {"auth": {"audience": ["a"]}}})
+    _set_overlay(
+        monkeypatch,
+        tmp_path,
+        {"security": {"auth": {"issuers": [ISSUER], "audience": ["a"]}}},
+    )
     ports = _mock_run(monkeypatch)
     with pytest.raises(RuntimeError, match="require_admin"):
         cloud_registry.app.main()

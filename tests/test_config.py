@@ -18,7 +18,14 @@ import yaml
 from cloud_registry.ga4gh.registry.service import KEY
 from cloud_registry.service_models.custom_config import CustomConfig
 from tests.conftest import CONFIG_OVERLAY
-from tests.helm import ADMIN_GROUP, AUDIENCE, CHART, HELM, Manifest, render
+from tests.helm import (
+    ADMIN_GROUP,
+    AUDIENCE,
+    CHART,
+    HELM,
+    Manifest,
+    render,
+)
 
 ROOT = Path(__file__).parents[1]
 CONFIG_FILE = ROOT / "cloud_registry" / "config.yaml"
@@ -133,7 +140,7 @@ def test_config_overlay(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     )
     assert config.security.auth.audience == ["a"]
     assert config.security.auth.verify_audience is True
-    assert config.security.auth.issuers  # kept from the base config
+    assert config.security.auth.verify_token_type is True  # kept from the base
     assert _custom(config).endpoints.service.external_host == "example.org"
     assert _custom(config).endpoints.service.external_port == 8080
     assert config.db is not None
@@ -148,11 +155,94 @@ def test_config_overlays(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     assert _custom(config).endpoints.service.external_host == "second"
 
 
-def test_config_requires_audience(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The base config alone is invalid: deployments must set the audience."""
+def test_config_no_identity_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The base config trusts no identity provider and maps no groups.
+
+    Issuers, audience, claims and group mappings are deployment
+    configuration, without defaults, so the base config alone is invalid, as
+    access control requires trusted issuers (FOCA).
+    """
+    base = yaml.safe_load(CONFIG_FILE.read_text())
+    auth = base["security"]["auth"]
+    assert auth["issuers"] == []
+    assert not {"audience", "userinfo_claims", "clients"} & set(auth)
+    access_control = base["security"]["access_control"]
+    assert not {"claim_groups", "group_mapping"} & set(access_control)
     monkeypatch.delenv("FOCA_CONFIG_OVERLAY", raising=False)
+    with pytest.raises(ValidationError, match=r"auth\.issuers"):
+        _parse_config()
+
+
+def test_config_requires_audience(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Deployments that set issuers must set the audience (FOCA)."""
+    overlay = {"security": {"auth": {"issuers": ["https://login.example.org/"]}}}
+    path = tmp_path / "overlay.yaml"
+    path.write_text(yaml.safe_dump(overlay))
+    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(path))
     with pytest.raises(ValidationError, match="audience"):
         _parse_config()
+
+
+# Values specific to an identity provider or deployment, which the
+# repository must not contain (examples use fictitious values)
+IDP_SPECIFIC = re.compile(
+    # Names not preceded or followed by letters (e.g., also `perun_groups`)
+    r"lifescience|(?<![a-z])ls[ -]login(?![a-z])|eduperson|(?<![a-z])perun(?![a-z])"
+    r"|(?<![a-z])ecp(?![a-z])|urn:geant",
+    re.IGNORECASE,
+)
+
+
+def _text_lines(path: Path) -> list[str]:
+    """Get the lines of a file, or none if it is not text (UTF-8).
+
+    Args:
+        path: The file.
+
+    Returns:
+        Its lines.
+    """
+    try:
+        return path.read_text(encoding="utf-8").splitlines()
+    except UnicodeDecodeError:
+        return []
+
+
+def test_text_lines(tmp_path: Path) -> None:
+    """Files that aren't UTF-8 text (e.g., images) have no lines."""
+    (tmp_path / "text.md").write_text("a\nb\n")
+    (tmp_path / "image.png").write_bytes(b"\x89PNG\r\n\x1a\n\xff")
+    assert _text_lines(tmp_path / "text.md") == ["a", "b"]
+    assert _text_lines(tmp_path / "image.png") == []
+
+
+def test_repository_generic() -> None:
+    """No file of the repository has identity provider specific values.
+
+    Guides for specific identity providers or deployments are kept
+    elsewhere.
+    """
+    files = (
+        subprocess.run(
+            ["git", "ls-files", "-z"],  # noqa: S607 (git from PATH)
+            capture_output=True,
+            check=True,
+            cwd=ROOT,
+        )
+        .stdout.decode()
+        .split("\0")
+    )
+    found = [
+        f"{name}:{number}: {line.strip()}"
+        for name in files
+        # This file names the values to find
+        if name not in ("", "tests/test_config.py") and (ROOT / name).is_file()
+        for number, line in enumerate(_text_lines(ROOT / name), start=1)
+        if IDP_SPECIFIC.search(line)
+    ]
+    assert found == []
 
 
 def test_config_dev_overlay(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -291,6 +381,99 @@ class TestChartOverlay:
             _render_overlay("--set", "hostName=example.org", admin_group=None)
         assert "must map a group to the role admin" in exc.value.stderr
 
+    @pytest.mark.parametrize(
+        "args",
+        [
+            (),
+            ("--set-json", "config.security.auth.issuers=[]"),
+            ("--set-json", "config.security.auth.issuers=null"),
+            ("--set-json", 'config.security.auth.issuers=[" "]'),
+            ("--set-json", 'config.security.auth.issuers=["https://x.org/", ""]'),
+            ("--set-json", "config.security.auth.issuers=[1]"),
+            ("--set-json", 'config.security.auth.issuers=[" https://x.org/"]'),
+            ("--set-string", "config.security.auth.issuers=https://x.org/"),
+            ("--set-json", "config.security.auth=null"),
+        ],
+        ids=[
+            "missing",
+            "empty",
+            "null",
+            "blank",
+            "one-blank",
+            "number",
+            "padded",
+            "string",
+            "auth-null",
+        ],
+    )
+    def test_issuers_required(self, args: tuple[str, ...]) -> None:
+        """Rendering fails without trusted token issuers.
+
+        The base config trusts none, and FOCA refuses access control without
+        them; checked before the audience.
+        """
+        with pytest.raises(subprocess.CalledProcessError) as exc:
+            _render_overlay(
+                "--set", "hostName=example.org", *args, issuer=None, audience=None
+            )
+        assert "config.security.auth.issuers must" in exc.value.stderr
+
+    def test_issuers(self) -> None:
+        """The issuers and the group claim are passed to the app.
+
+        Checked in the rendered overlay, as the test overlay sets them, too.
+        """
+        overlay = _render_overlay(
+            "--set",
+            "hostName=example.org",
+            issuer="https://issuer.example.org/",
+            group_claim="memberships",
+        )
+        assert overlay["security"]["auth"]["issuers"] == ["https://issuer.example.org/"]
+        assert overlay["security"]["access_control"]["claim_groups"] == "memberships"
+
+    @pytest.mark.parametrize(
+        "args",
+        [(), ("--set", "config.security.access_control.claim_groups= ")],
+        ids=["missing", "blank"],
+    )
+    def test_group_claim_required(self, args: tuple[str, ...]) -> None:
+        """Rendering fails with group mappings, but without a group claim.
+
+        As the app on startup, as no mapping would apply.
+        """
+        with pytest.raises(subprocess.CalledProcessError) as exc:
+            _render_overlay("--set", "hostName=example.org", *args, group_claim=None)
+        assert "config.security.access_control.claim_groups must" in exc.value.stderr
+
+    @pytest.mark.parametrize(
+        "value", ['["groups"]', "123", "true", "false", "0", '" groups"', '"  "']
+    )
+    def test_group_claim_invalid(self, value: str) -> None:
+        """Group claims that the app rejects are rejected.
+
+        Those that aren't strings (FOCA's config), and those with surrounding
+        whitespace, as FOCA looks up the claim as written. Checked after the
+        issuers.
+        """
+        with pytest.raises(subprocess.CalledProcessError) as exc:
+            _render_overlay(
+                "--set",
+                "hostName=example.org",
+                "--set-json",
+                f"config.security.access_control.claim_groups={value}",
+            )
+        assert "claim_groups must be the name of a claim" in exc.value.stderr
+        with pytest.raises(subprocess.CalledProcessError) as exc:
+            _render_overlay(
+                "--set",
+                "hostName=example.org",
+                "--set-json",
+                f"config.security.access_control.claim_groups={value}",
+                issuer=None,
+            )
+        assert "config.security.auth.issuers must" in exc.value.stderr
+
     def test_admin_group_optional(self) -> None:
         """Without admin groups, rendering works if admins are not required."""
         overlay = _render_overlay(
@@ -299,6 +482,7 @@ class TestChartOverlay:
             "--set",
             "config.custom.access_control.require_admin=false",
             admin_group=None,
+            group_claim=None,
         )
         assert overlay["custom"]["access_control"] == {"require_admin": False}
 
@@ -313,8 +497,6 @@ class TestChartOverlay:
             ("--set-string", "config.security.auth.verify_audience=true"),
             ("--set-json", "config.security.auth.verify_audience=null"),
             ("--set-json", 'config.security.auth.issuers=["https://x.org/"]'),
-            # FOCA refuses no issuers anyway, as access control needs them
-            ("--set-json", "config.security.auth.issuers=[]"),
         ],
         ids=[
             "missing",
@@ -325,7 +507,6 @@ class TestChartOverlay:
             "string",
             "null_verify",
             "issuers",
-            "no_issuers",
         ],
     )
     def test_audience_required(self, args: tuple[str, ...]) -> None:
