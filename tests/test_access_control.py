@@ -951,8 +951,8 @@ def _role_messages(caplog: pytest.LogCaptureFixture) -> list[str]:
     """Get the logged messages about roles, by FOCA's helpers and the app.
 
     Args:
-        caplog: Fixture capturing the log records (at level `INFO`, the
-            default of the app's log config).
+        caplog: Fixture capturing the log records, at level `INFO` (set by the
+            tests).
 
     Returns:
         Messages, in the order they were logged.
@@ -971,6 +971,7 @@ def test_role_changes_logged(
 
     The messages say who changed which role of whom on which service.
     """
+    caplog.set_level("INFO")
     service_id = register(client)
     assert grant(client, service_id, BOB, "maintainer") == 200
     assert grant(client, service_id, BOB, "owner") == 200
@@ -1265,6 +1266,7 @@ def test_group_role_changes_logged(
     client: FlaskClient, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Changes of roles of groups are logged like those of users."""
+    caplog.set_level("INFO")
     service_id = register(client)
     assert grant_group(client, service_id, TEAM_GROUP, "maintainer") == 200
     assert grant_group(client, service_id, TEAM_GROUP, "owner") == 200
