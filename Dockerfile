@@ -13,8 +13,8 @@ LABEL maintainer="alexander.kanitz@alumni.ethz.ch"
 LABEL maintainer.organisation="ELIXIR On-Cloud"
 
 ## Install dependencies (`project.dependencies` of `pyproject.toml`, read
-## with `tomllib` of the base image's Python, 3.11 or later) first, so that
-## code changes do not reinstall them; the FOCA image runs as non-root user
+## with `tomllib` of the base image's Python) first, so that code changes do
+## not reinstall them; the FOCA image runs as non-root user
 USER root
 COPY pyproject.toml /tmp/src/
 RUN python -c "import tomllib; print('\n'.join(tomllib.load(open('/tmp/src/pyproject.toml', 'rb'))['project']['dependencies']))" \

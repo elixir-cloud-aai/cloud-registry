@@ -93,8 +93,9 @@ permissions API. They keep the headers of the HTTP errors, e.g., `Allow`
 for `405 Method Not Allowed` and the Bearer challenge (`WWW-Authenticate:
 Bearer`, RFC 6750) for `401 Unauthorized` (see
 [Authentication](access-control.md#authentication)). Gunicorn rejects
-malformed requests itself, before they reach the app (e.g., with an invalid `Content-Length`, or a request line or
-headers over its limits), with HTML error pages.
+malformed requests itself, before they reach the app (e.g., with an invalid
+`Content-Length`, or a request line or headers over its limits), with HTML
+error pages.
 
 See [Access control](access-control.md) for the roles and [Verified
 services](#verified-services) for verifications. Extensions of the GA4GH

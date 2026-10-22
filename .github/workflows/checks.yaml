@@ -96,7 +96,7 @@ jobs:
           files: ./coverage.xml
           fail_ci_if_error: ${{ github.event_name == 'push' }}
           verbose: true
-  # The other test jobs use mongomock; this one runs all tests against
+  # The `test` job uses mongomock; this one runs all tests against
   # MongoDB (`MONGODB_TEST_URI`, see `tests/conftest.py`), the version of
   # `docker-compose.yaml` (8.0 doesn't start on some kernels of the runners:
   # https://jira.mongodb.org/browse/SERVER-121912); coverage is reported by
