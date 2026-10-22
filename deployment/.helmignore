@@ -21,3 +21,5 @@
 .idea/
 *.tmproj
 .vscode/
+# Digest of the dependencies, checked in CI and on release
+charts.sha256

@@ -13,6 +13,7 @@ pip install -e ".[dev]"  # the app, with the dev dependencies
 pre-commit install  # run the checks on every commit
 pre-commit run --all-files  # ruff, mypy, semgrep, ast-grep, actionlint
 pre-commit run --all-files --hook-stage manual gitleaks-all  # secrets
+helm dependency build deployment  # the library chart, for the chart tests
 pytest
 ```
 
@@ -136,9 +137,13 @@ files on branch `dev` point to the release (`/en/vX.Y.Z/`, `blob/vX.Y.Z/`);
 the release fails if any link to a version that moves is left
 (`scripts/chart_readme.py`). The README in the repository is unchanged.
 After approval in the `release` environment, it builds
-the image, checks that the app reports the release version, pushes exactly
-that image tagged `X.Y.Z` (and `latest`, if it is the highest stable release
-on `main`), and creates a GitHub release with the chart (`.tgz`) and the
+the image and pushes it by digest (untagged, with SBOM and provenance
+attestations), checks that the app reports the release version, attests
+its build provenance and signs it (see [Verifying
+images and charts](operations.md#verifying-images-and-charts)), tags exactly
+that image `X.Y.Z` (and `latest`, if it is the highest stable release on
+`main`), attests and signs the chart, and creates a GitHub release with the
+chart (`.tgz`), its Sigstore bundle (`.tgz.sigstore.json`) and the
 notes in `docs/releases/X.Y.Z.md` (for pre-releases, e.g., `X.Y.Zrc1.md`),
 or, if there are none, notes generated from the merged pull requests. Curated
 notes are published as written, so the release workflow fails if they contain
@@ -174,7 +179,46 @@ pushes; and the Docker Hub secrets (`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`,
 On Read the Docs, an automation rule activates the versions of tags (`v*`),
 so that the docs linked from packaged charts exist.
 
+The CI workflow builds the image of every pull request and push and scans
+it with [Trivy](https://trivy.dev/) (`.github/actions/scan-image`); the
+release workflow builds and scans the release commit's image again before
+publishing (in a job without its credentials), and a weekly workflow
+(`scan.yaml`) scans `latest`. They fail on critical and high
+vulnerabilities that have a fix, and upload all findings to code scanning
+(not for pull requests from forks, nor in the release workflow). To accept
+a finding (e.g., if it doesn't affect the app), add it to `.trivyignore.yaml`
+with the affected package versions (`purls`), the reason (`statement`) and an
+expiry date (`expired_at`), after which the scans fail again. Trivy also
+scans for secrets (critical and high ones fail the scans too); accept those
+under `secrets:` in the same file. Dependabot
+updates the actions, but not the Trivy version (`version:` in
+`.github/actions/scan-image/action.yml`): bump it by hand. Images of
+commits on `dev` are signed and attested like release images, by the CI
+workflow. All of this needs no secrets beyond the Docker Hub ones: signing
+uses the workflows' OIDC tokens (permission `id-token: write`). Re-running
+the release workflow builds, signs and tags a new image digest (the image
+build is not reproducible); the earlier digest stays signed.
+
 The CI workflow (which tests the chart) and the release workflow (which
 packages it) install the same Helm version (`version:` of `azure/setup-helm`
 in `checks.yaml` and `release.yaml`). Dependabot updates the action, but not
 that version: bump it by hand, in both workflows together.
+
+The chart is a thin chart over FOCA's library chart `foca-common` (see the
+[library chart's
+documentation](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.1.0/docs/helm-chart.md)):
+`deployment/Chart.yaml` pins its version, and `deployment/Chart.lock` locks
+it; `helm dependency build deployment` downloads it into `deployment/charts/`
+(ignored by Git), and the release workflow packages it with the chart. CI
+and the release workflow check the downloaded archive against its digest in
+`deployment/charts.sha256`, as OCI tags can be pushed again.
+Dependabot doesn't update it: to bump it, change the version in
+`Chart.yaml`, run `helm dependency update deployment` (which rewrites
+`Chart.lock`), update `deployment/charts.sha256` (`cd deployment && sha256sum
+charts/foca-common-X.Y.Z.tgz > charts.sha256`, after checking the archive),
+copy the library's `app-values.schema.json` to
+`deployment/values.schema.json` with the changes noted in its `$comment`,
+add values it introduces to `deployment/values.yaml`, update the links to
+the library's docs in `deployment/README.md` (the tests check that they point
+to the pinned version, `chart-vX.Y.Z`), and check the rendered chart with the
+tests and `helm template`.
