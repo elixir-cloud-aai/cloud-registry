@@ -104,17 +104,20 @@ def normalize_url(url: str) -> str:
 
 
 def check_url_scheme(url: str, schemes: Collection[str]) -> None:
-    """Check that a service URL uses one of the allowed schemes.
+    """Check that a service URL is valid and uses one of the allowed schemes.
+
+    See `foca.utils.urls.check_url()`, which checks the whole URL, like
+    `normalize_url()`; for URLs that `normalize_url()` accepts, only the
+    scheme can fail the check.
 
     Args:
-        url: Service URL, valid (cf. `normalize_url()`); leading and trailing
-            spaces are ignored.
+        url: Service URL; leading and trailing spaces are ignored.
         schemes: Allowed schemes, lowercase (cf.
             `custom.endpoints.services.url_schemes`).
 
     Raises:
-        InvalidService: The scheme of the URL is not one of `schemes`
-            (case-insensitive).
+        InvalidService: The URL is invalid, or its scheme is not one of
+            `schemes` (case-insensitive).
     """
     try:
         check_url(url.strip(" "), schemes=schemes, name="Service URLs")
@@ -491,6 +494,40 @@ def add_service_keys() -> None:
         raise RuntimeError(
             "Fix or delete these services (cf. https://cloud-registry.readthedocs.io"
             f"/en/latest/upgrading/#stored-services): {'; '.join(problems)}"
+        )
+
+
+def warn_invalid_urls() -> None:
+    """Warn of stored services with keys whose URLs are invalid.
+
+    For example, URLs accepted before stricter checks were introduced (cf.
+    "Stored services" in `docs/upgrading.md`). Such services are still
+    served, but can only be updated with a valid URL, and their keys may
+    differ from those of the same URL spelled validly, so registrations of
+    the service with such a spelling are not detected as duplicates.
+    Services without keys are checked when keys are added (cf.
+    `add_service_keys()`).
+    """
+    ids = []
+    for service in get_collection("services").find(
+        {KEY: {"$exists": True}},
+        {"_id": False, "id": True, "url": True},
+        sort=[("id", 1)],
+    ):
+        url = service.get("url")
+        if isinstance(url, str):
+            try:
+                normalize_url(url)
+                continue
+            except InvalidService:
+                pass
+        ids.append(f"'{service['id']}'")
+    if ids:
+        logger.warning(
+            "Services with invalid URLs are still served, but can only be "
+            "updated with a valid URL, and duplicates of them may not be "
+            "detected; update or delete them: %s",
+            escape_log_value(", ".join(ids)),
         )
 
 

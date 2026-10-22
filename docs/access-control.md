@@ -76,6 +76,10 @@ for the roles in `security.access_control.resource_roles` (`owner` and
 them). Groups must not be mapped to these roles
 (`security.access_control.group_mapping`), as all members of such a group
 would have the role on all services; FOCA refuses to start then.
+FOCA's service clients (`security.auth.service_clients`,
+`security.auth.on_behalf_of_header`) are not supported: the app refuses to
+start with them, as FOCA would make the clients (or the users they name)
+owners, which the registry's endpoints neither list nor manage.
 
 ## Roles of groups
 

@@ -1327,6 +1327,39 @@ def test_create_app_url_schemes(
     assert response.status_code == 200
 
 
+@pytest.mark.parametrize(
+    "auth",
+    [
+        {"service_clients": [{"client_id": "portal"}]},
+        {"on_behalf_of_header": "X-On-Behalf-Of"},
+    ],
+    ids=["service_clients", "on_behalf_of_header"],
+)
+def test_create_app_service_clients(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    auth: dict[str, Any],
+) -> None:
+    """`create_app()` refuses service clients, which the app doesn't support.
+
+    FOCA would make service clients (or the users they name) owners, which
+    the app's endpoints neither list nor manage.
+    """
+    _set_overlay(
+        monkeypatch,
+        tmp_path,
+        {
+            "security": {
+                "auth": {"audience": ["a"], **auth},
+                "access_control": {"group_mapping": {ADMIN_GROUP: "admin"}},
+            }
+        },
+    )
+    with pytest.raises(RuntimeError, match="not supported"):
+        cloud_registry.app.create_app()
+
+
 def test_create_app_group_subjects(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

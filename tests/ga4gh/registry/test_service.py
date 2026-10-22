@@ -24,6 +24,7 @@ from cloud_registry.ga4gh.registry.service import (
     check_strings,
     normalize_url,
     service_key,
+    warn_invalid_urls,
     warn_url_schemes,
 )
 from cloud_registry.utils import get_custom_config
@@ -878,6 +879,49 @@ class TestWarnUrlSchemes:
             )
             get_custom_config().endpoints.services.url_schemes = ["http", "https"]
             warn_url_schemes()
+        assert not caplog.records
+
+
+class TestWarnInvalidUrls:
+    """Tests for warning of stored services with keys and invalid URLs."""
+
+    def test_warned(
+        self,
+        unit_app: Flask,
+        services: Collection[dict[str, Any]],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Services with keys and invalid URLs are named, others not.
+
+        E.g., URLs accepted before stricter checks; services without keys are
+        checked when their keys are added.
+        """
+        for id, url in [
+            ("PIPE", "https://beacon.example.org/a|b"),
+            ("SHORT", "https://127.1"),
+            ("NOSTR", 1),
+            ("VALID", " https://third.example.org"),
+            ("HTTP", "http://fourth.example.org"),
+        ]:
+            services.insert_one({**MOCK_SERVICE, "id": id, "url": url, KEY: id})
+        services.insert_one({**MOCK_SERVICE, "id": "NOKEY", "url": "https://1.1"})
+        with unit_app.app_context(), caplog.at_level(logging.WARNING):
+            warn_invalid_urls()
+        assert len(caplog.records) == 1
+        message = caplog.records[0].getMessage()
+        assert message.endswith("'NOSTR', 'PIPE', 'SHORT'")
+        assert "duplicates" in message
+
+    def test_none(
+        self,
+        unit_app: Flask,
+        services: Collection[dict[str, Any]],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Without such services, nothing is logged."""
+        services.insert_one({**MOCK_SERVICE, "id": MOCK_ID, KEY: MOCK_ID})
+        with unit_app.app_context(), caplog.at_level(logging.WARNING):
+            warn_invalid_urls()
         assert not caplog.records
 
 

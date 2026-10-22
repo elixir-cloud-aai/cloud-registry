@@ -60,8 +60,11 @@ db.getSiblingDB("serviceStore").services.updateOne({id: "<id>"}, {$set: {url: "<
 Then start the app again; it adds the missing keys.
 
 Services that already have a key (stored by `dev` images built before URLs
-were checked) are not checked on startup: if their URLs are now invalid, they
-are still served, but can only be updated with a valid URL.
+were checked, or before the stricter checks above) are not checked again: if
+their URLs are now invalid, they are still served, but can only be updated
+with a valid URL, and registrations of the same service with a validly spelled
+URL may not be detected as duplicates. The app warns of them on startup,
+naming them; update or delete them as above.
 
 Services stored with `http` URLs (accepted before `https` became the only
 [allowed scheme](configuration.md#service-url-schemes) by default) are still

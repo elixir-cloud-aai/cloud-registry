@@ -96,6 +96,28 @@ def check_admin_groups() -> None:
         )
 
 
+def check_no_service_clients() -> None:
+    """Check that service clients are not configured, as they aren't supported.
+
+    With service clients (`security.auth.service_clients`), FOCA's ownership
+    helpers attribute new services to the client, or to the user it names
+    (`security.auth.on_behalf_of_header`), while the app's endpoints only
+    list and manage roles of users and groups, and take the token's subject
+    as the user.
+
+    Raises:
+        RuntimeError: Service clients or the header naming the user they act
+            for are configured.
+    """
+    auth = get_config().security.auth
+    if auth.service_clients or auth.on_behalf_of_header is not None:
+        raise RuntimeError(
+            "Service clients are not supported: remove "
+            "`security.auth.service_clients` and "
+            "`security.auth.on_behalf_of_header`"
+        )
+
+
 def _api_base_path() -> str:
     """Get the base path of the API handling the current request.
 
@@ -346,7 +368,8 @@ def _put_role(serviceId: str, subject: str, subject_type: SubjectType) -> None:
             the subject (cf. `grant_role()`), e.g., as it can't be stored in
             policy rules.
         foca.security.access_control.LastOwner: The subject is the last owner
-            of the service, and the role is not `owner` (`409`).
+            of the service, and the role is not `owner` (a werkzeug
+            `Conflict`, so `409`, cf. `cloud_registry.exceptions`).
         cloud_registry.exceptions.NotFound: The service doesn't exist, or
             was deleted meanwhile.
     """
@@ -397,7 +420,7 @@ def _delete_roles(serviceId: str, subject: str, subject_type: SubjectType) -> No
 
     Raises:
         foca.security.access_control.LastOwner: The subject is the last owner
-            of the service (`409`).
+            of the service (a werkzeug `Conflict`, so `409`).
         cloud_registry.exceptions.NotFound: The service doesn't exist, or
             the subject has no role on it.
     """
