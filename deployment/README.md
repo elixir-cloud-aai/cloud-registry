@@ -1,5 +1,13 @@
 # Helm chart
 
+The chart deploys the app and a MongoDB database on Kubernetes (and
+OpenShift). It is a thin chart over FOCA's library chart `foca-common`
+(version 0.1.0, see `Chart.yaml`), which renders all resources from the values
+described here and in `values.yaml` (see the [library chart's
+documentation](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.1.0/docs/helm-chart.md)). The chart attached to a release
+includes the library chart; the chart in the repository downloads it with
+`helm dependency build` (see [Installation](#installation)).
+
 ## Configuration
 
 The image contains the app's complete base config
@@ -10,7 +18,8 @@ config on startup (via `FOCA_CONFIG_OVERLAY`):
 
 - `hostName` sets the public URL of the app
   (`custom.endpoints.service`: `https://<hostName>:443`);
-- `db.host` is set to the release's MongoDB Service (`<app>-mongodb`);
+- `db.host` is set to the release's MongoDB Service (`<app>-mongodb`),
+  unless MongoDB is external (see [External MongoDB](#external-mongodb));
 - `config` overrides keys of the base config; it takes precedence over the
   generated values. Mappings are merged recursively, all other values
   (including lists) replace those of the base config. Do not change
@@ -96,7 +105,10 @@ cloudRegistry:
 
 `cloudRegistry.image` may also include a tag or digest (e.g.,
 `elixircloud/cloud-registry:0.3.0`, as in earlier chart versions); then
-`cloudRegistry.tag` must be empty. See [Versioning and
+`cloudRegistry.tag` must be empty. The image is pulled on every start of a pod
+(`cloudRegistry.imagePullPolicy: Always`), so that moving tags such as `dev`
+deploy the latest image; set `IfNotPresent` for fixed tags or digests, or
+`Never` for images loaded into the nodes (e.g., with `kind load`). See [Versioning and
 releases](https://cloud-registry.readthedocs.io/en/latest/development/#versioning-and-releases) for the image tags.
 
 ## Installation
@@ -114,10 +126,12 @@ helm install cloud-registry \
 ```
 
 To install the chart from the `deployment` folder of the repository instead
-(e.g., to test changes of the chart), set `cloudRegistry.tag` (see
-[Image](#image)), as the chart deploys the moving `dev` image otherwise:
+(e.g., to test changes of the chart), download the library chart (into
+`charts/`, the version locked in `Chart.lock`), and set `cloudRegistry.tag`
+(see [Image](#image)), as the chart deploys the moving `dev` image otherwise:
 
 ```bash
+helm dependency build .
 helm install cloud-registry . -n <namespace> -f values-prod.yaml
 ```
 
@@ -653,11 +667,13 @@ authentication, set `mongodb.auth.enabled: false` explicitly; any pod that
 can reach the MongoDB service (it is only exposed within the cluster) can
 then read and modify the data.
 
-MongoDB creates both users when it starts with an empty data directory (the
-app user may only access the app's database, `serviceStore`, which is also
-set in the init script, `templates/mongo-init-script.yaml`); the app connects
-as the app user. Credentials never appear in values files or
-ConfigMaps.
+MongoDB creates both users when it starts with an empty data directory, with
+an init script (ConfigMap `<app>-mongodb-init-script`); the app connects as
+the app user. The app user may only access the app's database,
+`serviceStore`, which also holds the rules of access control
+(`security.access_control.db_name`); if the config sets another database for
+them (`config.security.access_control.db_name`), the app user gets access to
+it too. Credentials never appear in values files or ConfigMaps.
 
 Commands that need privileges can use the root user's credentials from the
 container's environment, as in [Version](#version).
@@ -704,3 +720,29 @@ kubectl exec -it deploy/cloud-registry-mongodb -n <namespace> -- sh -c 'mongosh 
 ```javascript
 db.getSiblingDB("serviceStore").createUser({user: "cloud-registry", pwd: "<password>", roles: [{role: "readWrite", db: "serviceStore"}]})
 ```
+
+### External MongoDB
+
+To use a MongoDB outside the release (e.g., a managed database), set
+`mongodb.enabled: false` and its host (and port) in the config; the chart then
+deploys no MongoDB (no Deployment, Service, volume, init script or
+NetworkPolicy), and rendering fails without `config.db.host`:
+
+```yaml
+mongodb:
+  enabled: false
+  auth:
+    # Secret with the keys `username` and `password` of the app user
+    existingSecret: cloud-registry-mongodb-credentials
+config:
+  db:
+    host: mongodb.example.org
+    port: 27017
+```
+
+The app authenticates as the app user against its database (`serviceStore`),
+so create that user there, with the `readWrite` role on `serviceStore` (see
+[Authentication](#authentication)); the Secret needs no root credentials. With
+`mongodb.auth.enabled: false`, the app connects without credentials. Allow
+the app's pods to connect to the database, e.g., in the database's firewall
+(the chart's NetworkPolicies don't restrict connections from the app).

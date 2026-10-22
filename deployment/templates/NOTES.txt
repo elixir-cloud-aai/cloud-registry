@@ -1,5 +1,6 @@
-{{- $fullname := include "cloud-registry.fullname" . -}}
-{{- $exposed := or .Values.cloudRegistry.ingress.enabled (include "cloud-registry.routeEnabled" .) -}}
+{{- $context := dict "root" . "settings" (include "cloud-registry.settings" . | fromYaml) -}}
+{{- $fullname := include "foca-common.fullname" . -}}
+{{- $exposed := or .Values.cloudRegistry.ingress.enabled (include "foca-common.routeEnabled" $context) -}}
 {{- /*
 HTTPS, as advertised by the app (see the ConfigMap template): TLS is
 terminated by the ingress, the route or a proxy in front of the cluster.

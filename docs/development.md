@@ -13,6 +13,7 @@ pip install -e ".[dev]"  # the app, with the dev dependencies
 pre-commit install  # run the checks on every commit
 pre-commit run --all-files  # ruff, mypy, semgrep, ast-grep, actionlint
 pre-commit run --all-files --hook-stage manual gitleaks-all  # secrets
+helm dependency build deployment  # the library chart, for the chart tests
 pytest
 ```
 
@@ -166,3 +167,18 @@ The CI workflow (which tests the chart) and the release workflow (which
 packages it) install the same Helm version (`version:` of `azure/setup-helm`
 in `checks.yaml` and `release.yaml`). Dependabot updates the action, but not
 that version: bump it by hand, in both workflows together.
+
+The chart is a thin chart over FOCA's library chart `foca-common` (see the
+[library chart's
+documentation](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.1.0/docs/helm-chart.md)):
+`deployment/Chart.yaml` pins its version, and `deployment/Chart.lock` locks
+it; `helm dependency build deployment` downloads it into `deployment/charts/`
+(ignored by Git), and the release workflow packages it with the chart.
+Dependabot doesn't update it: to bump it, change the version in
+`Chart.yaml`, run `helm dependency update deployment` (which rewrites
+`Chart.lock`), copy the library's `app-values.schema.json` to
+`deployment/values.schema.json` with the changes noted in its `$comment`,
+add values it introduces to `deployment/values.yaml`, update the links to
+the library's docs in `deployment/README.md` (the tests check that they point
+to the pinned version, `chart-vX.Y.Z`), and check the rendered chart with the
+tests and `helm template`.

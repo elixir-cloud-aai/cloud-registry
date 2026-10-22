@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import shlex
 import subprocess
+import tarfile
 from typing import Any
 
 import pytest
@@ -246,6 +247,30 @@ def test_image_of_packaged_chart(
     )
     package = tmp_path / f"cloud-registry-{chart_version}.tgz"
     assert _app_image(chart=package) == f"elixircloud/cloud-registry:{app_version}"
+
+
+def test_packaged_chart_includes_library(tmp_path: Path) -> None:
+    """Packaged charts include the library chart, so they install offline.
+
+    That is the version locked in `Chart.lock`, as the release workflow
+    packages the chart after `helm dependency build`.
+    """
+    assert HELM is not None
+    subprocess.run(  # noqa: S603 (argument list, no shell)
+        [HELM, "package", str(CHART), "-d", str(tmp_path)],
+        capture_output=True,
+        check=True,
+    )
+    lock = yaml.safe_load((CHART / "Chart.lock").read_text())
+    (library,) = lock["dependencies"]
+    with tarfile.open(tmp_path / "cloud-registry-0.0.0.tgz") as package:
+        member = package.extractfile("cloud-registry/charts/foca-common/Chart.yaml")
+        assert member is not None
+        packaged = yaml.safe_load(member.read())
+    assert (packaged["name"], packaged["version"]) == (
+        library["name"],
+        library["version"],
+    )
 
 
 @pytest.mark.parametrize(
@@ -1015,6 +1040,102 @@ def test_db_host(release: str, app: str) -> None:
     assert ("Service", f"{app}-mongodb") in docs
     overlay = _overlay(_render("--set", "config.db.host=external"))
     assert overlay["db"] == {"host": "external"}
+
+
+def test_library_dependency() -> None:
+    """The chart's templates are those of a released FOCA library chart.
+
+    The library chart foca-common is pinned to a version of its OCI
+    repository, locked in `Chart.lock`; the schema is that of this version.
+    """
+    chart = yaml.safe_load((CHART / "Chart.yaml").read_text())
+    (dependency,) = chart["dependencies"]
+    assert dependency["name"] == "foca-common"
+    assert dependency["repository"] == "oci://ghcr.io/elixir-cloud-aai/charts"
+    assert re.fullmatch(r"\d+\.\d+\.\d+", dependency["version"])
+    lock = yaml.safe_load((CHART / "Chart.lock").read_text())
+    assert lock["dependencies"] == [dependency]
+    schema = json.loads((CHART / "values.schema.json").read_text())
+    assert f"foca-common {dependency['version']}," in schema["$comment"]
+
+
+def test_mongodb_external() -> None:
+    """With an external MongoDB, the app connects to the configured host.
+
+    No MongoDB resources are rendered; the app still gets the credentials of
+    its user from the Secret.
+    """
+    docs = _render(
+        "--set", "mongodb.enabled=false", "--set", "config.db.host=db.example.org"
+    )
+    assert {kind for kind, _ in docs} == {
+        "ConfigMap",
+        "Deployment",
+        "Ingress",
+        "Service",
+    }
+    assert not [name for _, name in docs if name.startswith(MONGODB)]
+    assert _overlay(docs)["db"] == {"host": "db.example.org"}
+    assert _secret_refs(_container(docs, APP)) == {
+        "MONGO_USERNAME": (MONGODB_SECRET, "username"),
+        "MONGO_PASSWORD": (MONGODB_SECRET, "password"),
+    }
+
+
+@pytest.mark.parametrize("host", [None, '""', '" "', "null"])
+def test_mongodb_external_requires_host(host: str | None) -> None:
+    """An external MongoDB needs a host in the config."""
+    args: tuple[str, ...] = ("--set", "mongodb.enabled=false")
+    if host is not None:
+        args = (*args, "--set-json", f"config.db.host={host}")
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render(*args)
+    assert "config.db.host must be set" in exc.value.stderr
+
+
+def test_mongodb_image_required() -> None:
+    """The bundled MongoDB needs an image."""
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render("--set", "mongodb.image=")
+    assert "mongodb.image must be set" in exc.value.stderr
+
+
+def test_image_pull_policy() -> None:
+    """Images are pulled on every start by default; the policy can be set."""
+    docs = _render()
+    for name in (APP, MONGODB):
+        assert _container(docs, name)["imagePullPolicy"] == "Always"
+    docs = _render(
+        "--set",
+        "cloudRegistry.imagePullPolicy=IfNotPresent",
+        "--set",
+        "mongodb.imagePullPolicy=Never",
+    )
+    assert _container(docs, APP)["imagePullPolicy"] == "IfNotPresent"
+    assert _container(docs, MONGODB)["imagePullPolicy"] == "Never"
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render("--set", "cloudRegistry.imagePullPolicy=Sometimes")
+    assert "imagePullPolicy" in exc.value.stderr
+
+
+def test_init_script_access_control_database() -> None:
+    """The app user gets access to the database of access control.
+
+    By default, that of the base config, the app's database; a database set
+    in the config is added.
+    """
+    config = yaml.safe_load(CONFIG_FILE.read_text())
+    (database,) = config["db"]["dbs"]
+    assert config["security"]["access_control"]["db_name"] == database
+    script = _render()[("ConfigMap", INIT_SCRIPT)]["data"]["create-app-user.js"]
+    assert f"roles: [{{ role: 'readWrite', db: '{database}' }}]" in script
+    docs = _render("--set", "config.security.access_control.db_name=accessControl")
+    script = docs[("ConfigMap", INIT_SCRIPT)]["data"]["create-app-user.js"]
+    assert f"db.getSiblingDB('{database}').createUser(" in script
+    assert (
+        f"roles: [{{ role: 'readWrite', db: '{database}' }},"
+        " { role: 'readWrite', db: 'accessControl' }]"
+    ) in script
 
 
 def test_ingress() -> None:
