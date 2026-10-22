@@ -74,14 +74,62 @@ As the app on startup, refuse to render without a group mapped to the role
 no such section, see `foca-common.configOverlay`)
 */ -}}
 {{- $mapping := dict -}}
+{{- $claimGroups := "" -}}
+{{- $issuers := list -}}
 {{- $security := get $config "security" -}}
-{{- if and (kindIs "map" $security) (kindIs "map" (get $security "access_control")) -}}
-{{- $mapping = get (get $security "access_control") "group_mapping" -}}
+{{- if kindIs "map" $security -}}
+{{- $securityAccessControl := get $security "access_control" -}}
+{{- if kindIs "map" $securityAccessControl -}}
+{{- /* Only if set, as `get` returns an empty string for missing keys */ -}}
+{{- if hasKey $securityAccessControl "group_mapping" -}}
+{{- $mapping = get $securityAccessControl "group_mapping" -}}
+{{- end -}}
+{{- if hasKey $securityAccessControl "claim_groups" -}}
+{{- $claimGroups = get $securityAccessControl "claim_groups" -}}
+{{- if kindIs "invalid" $claimGroups -}}
+{{- $claimGroups = "" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- $auth := get $security "auth" -}}
+{{- if kindIs "map" $auth -}}
+{{- $issuers = get $auth "issuers" | default list -}}
+{{- end -}}
+{{- end -}}
+{{- /*
+Checked in the order of the app's checks: the issuers, the group claim and
+the groups mapped to roles. Mirrors FOCA's check on startup (access control
+needs trusted token issuers): refuse to render without a list of non-blank
+issuers, as the base config trusts none; issuers are compared with the `iss`
+claim as written, so surrounding whitespace is refused, too
+*/ -}}
+{{- $issuersError := "config.security.auth.issuers must list the trusted token issuers (the iss claim of their tokens, e.g., https://login.example.org/oidc/, without surrounding whitespace): the app trusts none by default" -}}
+{{- if not (and (kindIs "slice" $issuers) $issuers) -}}
+{{- fail $issuersError -}}
+{{- end -}}
+{{- range $issuer := $issuers -}}
+{{- if not (and (kindIs "string" $issuer) (trim $issuer) (eq $issuer (trim $issuer))) -}}
+{{- fail $issuersError -}}
+{{- end -}}
+{{- end -}}
+{{- /* The claim is looked up as written, as by the app */ -}}
+{{- if not (kindIs "string" $claimGroups) -}}
+{{- fail "config.security.access_control.claim_groups must be the name of a claim (a string)" -}}
+{{- end -}}
+{{- if ne $claimGroups (trim $claimGroups) -}}
+{{- fail "config.security.access_control.claim_groups must be the name of a claim, without surrounding whitespace" -}}
 {{- end -}}
 {{- if kindIs "invalid" $mapping -}}
 {{- $mapping = dict -}}
 {{- else if not (kindIs "map" $mapping) -}}
 {{- fail "config.security.access_control.group_mapping must be a map of groups to roles" -}}
+{{- end -}}
+{{- /*
+As the app on startup, refuse to render group mappings without the claim
+with the groups of users, as no mapping would apply
+*/ -}}
+{{- if and $mapping (not $claimGroups) -}}
+{{- fail "config.security.access_control.claim_groups must name the claim with the groups of users (e.g., groups), as groups are mapped to roles (group_mapping); also add it to config.security.auth.userinfo_claims if the identity provider releases it via user info only" -}}
 {{- end -}}
 {{- $requireAdmin := "true" -}}
 {{- $accessControl := dict -}}

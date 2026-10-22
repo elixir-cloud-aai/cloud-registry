@@ -31,27 +31,32 @@ security:
         algorithms:
           - RS256
         allow_expired: False
-        # Only access tokens as per RFC 9068 (`typ` header `at+jwt`, as issued
-        # by LS Login); other tokens of the issuers, such as ID tokens, are
-        # rejected
+        # Only access tokens as per RFC 9068 (`typ` header `at+jwt`); other
+        # tokens of the issuers, such as ID tokens, are rejected
         verify_token_type: True
-        # Trusted token issuers (`iss` claim); tokens of other issuers are
-        # rejected
-        issuers:
-          - https://login.aai.lifescience-ri.eu/oidc/
-        # Deployments must set `audience`: only tokens of the apps calling the
-        # registry are accepted. LS Login sets the `aud` claim to the client
-        # ID of the app the user logged in with (e.g., the registry's front
-        # end, a portal or a gateway), so set `audience` to their client IDs,
-        # e.g.:
+        # The identity providers, their claims and the groups mapped to roles
+        # are deployment configuration, without defaults (see "Deployment
+        # configuration" in `docs/configuration.md`). Deployments must set:
+        # - `issuers`: the trusted token issuers (`iss` claim); tokens of
+        #   other issuers are rejected, and the app refuses to start without
+        #   any;
+        # - `audience`: the audiences of the apps calling the registry (`aud`
+        #   claim, usually the client IDs of its front end, portals or
+        #   gateways); FOCA refuses to start without it, unless
+        #   `verify_audience` is false.
+        # E.g.:
+        # issuers:
+        #   - https://login.example.org/oidc/
         # audience:
-        #   - <client ID>
-        # LS Login provides group memberships and names via user info only,
-        # not in access tokens; group memberships are needed for the admin
-        # role (see below), names are shown to owners of services
-        userinfo_claims:
-          - eduperson_entitlement
-          - name
+        #   - registry-portal
+        issuers: []
+        # Claims that the identity provider releases via user info only, not
+        # in access tokens, e.g., the group claim (`claim_groups`, needed for
+        # the admin role and roles of groups) and `name` (shown to owners of
+        # services); none by default. E.g.:
+        # userinfo_claims:
+        #   - groups
+        #   - name
     # Access control: anyone may read, any authenticated user may register
     # services and becomes their owner; owners may update and delete their
     # services and grant other users, or groups they are members of, the
@@ -73,12 +78,13 @@ security:
         resource_roles:
             - owner
             - maintainer
-        claim_groups: eduperson_entitlement
-        # Deployments map their admin groups (values of `claim_groups`) to
-        # the role `admin`; the app refuses to start without one, unless
-        # `custom.access_control.require_admin` is false. E.g., for ELIXIR:
+        # Deployments set the claim with the groups of users (`claim_groups`)
+        # and map their admin groups (values of that claim) to the role
+        # `admin` (`group_mapping`); the app refuses to start without them,
+        # unless `custom.access_control.require_admin` is false. E.g.:
+        # claim_groups: groups
         # group_mapping:
-        #   "urn:geant:lifescience-ri.eu:group:elixir:ECP_CLN:ADMIN#aai.lifescience-ri.eu": admin
+        #   registry-admins: admin
         # Also use all values of `claim_groups` (prefixed with `group:`) as
         # subjects, so that roles on services granted to groups apply while
         # `group_mapping` is set

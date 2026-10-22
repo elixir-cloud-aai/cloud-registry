@@ -5,6 +5,13 @@ and how to upgrade, e.g., [to 0.3.0](releases/0.3.0.md#upgrade). Upgrades of
 Helm releases are described in [Deployment](deployment.md#upgrades). This page
 describes how existing setups and data are affected.
 
+## From versions before 0.3.0
+
+Redeploy with a fresh install and an empty database instead of migrating the
+data, as described in the [upgrade steps of 0.3.0](releases/0.3.0.md#upgrade).
+The identity provider is deployment configuration now, without defaults (see
+[Deployment configuration](configuration.md#deployment-configuration)).
+
 ## Docker Compose data
 
 Earlier versions kept the data in `../data/cloud-registry/db`. To keep using
