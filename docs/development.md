@@ -126,8 +126,8 @@ the release fails if any link to a version that moves is left
 (`scripts/chart_readme.py`). The README in the repository is unchanged.
 After approval in the `release` environment, it builds
 the image and pushes it by digest (untagged, with SBOM and provenance
-attestations), checks that the app reports the release version, scans it
-(see below), attests its build provenance and signs it (see [Verifying
+attestations), checks that the app reports the release version, attests
+its build provenance and signs it (see [Verifying
 images and charts](operations.md#verifying-images-and-charts)), tags exactly
 that image `X.Y.Z` (and `latest`, if it is the highest stable release on
 `main`), attests and signs the chart, and creates a GitHub release with the
@@ -168,19 +168,24 @@ On Read the Docs, an automation rule activates the versions of tags (`v*`),
 so that the docs linked from packaged charts exist.
 
 The CI workflow builds the image of every pull request and push and scans
-it with [Trivy](https://trivy.dev/) (`.github/actions/scan-image`); the
-release workflow scans the release image before tagging it, and a weekly
-workflow (`scan.yaml`) scans `latest`. They fail on critical and high
+it with [Trivy](https://trivy.dev/) (`.github/actions/scan-image`), so a
+release commit is scanned (the release workflow requires a successful CI
+run for it, and doesn't run Trivy itself, next to its credentials), and a
+weekly workflow (`scan.yaml`) scans `latest`. They fail on critical and high
 vulnerabilities that have a fix, and upload all findings to code scanning
-(not for pull requests from forks, nor in the release workflow). To accept
+(not for pull requests from forks). To accept
 a finding (e.g., if it doesn't affect the app), add it to `.trivyignore.yaml`
 with the affected package versions (`purls`), the reason (`statement`) and an
-expiry date (`expired_at`), after which the scans fail again. Dependabot
+expiry date (`expired_at`), after which the scans fail again. Trivy also
+scans for secrets (critical and high ones fail the scans too); accept those
+under `secrets:` in the same file. Dependabot
 updates the actions, but not the Trivy version (`version:` in
 `.github/actions/scan-image/action.yml`): bump it by hand. Images of
 commits on `dev` are signed and attested like release images, by the CI
 workflow. All of this needs no secrets beyond the Docker Hub ones: signing
-uses the workflows' OIDC tokens (permission `id-token: write`).
+uses the workflows' OIDC tokens (permission `id-token: write`). Re-running
+the release workflow builds, signs and tags a new image digest (the image
+build is not reproducible); the earlier digest stays signed.
 
 The CI workflow (which tests the chart) and the release workflow (which
 packages it) install the same Helm version (`version:` of `azure/setup-helm`

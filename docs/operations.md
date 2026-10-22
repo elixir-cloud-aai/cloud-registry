@@ -62,7 +62,8 @@ attestation](https://docs.github.com/en/actions/concepts/security/artifact-attes
 of their provenance, and a keyless [Sigstore](https://www.sigstore.dev/)
 signature. To check that an image was built by the release workflow, run
 (with the [GitHub CLI](https://cli.github.com/) or
-[cosign](https://docs.sigstore.dev/cosign/system_config/installation/)):
+[cosign](https://docs.sigstore.dev/cosign/system_config/installation/) 3 or
+later, which reads the signatures in the Sigstore bundle format):
 
 ```bash
 gh attestation verify oci://docker.io/elixircloud/cloud-registry:0.3.0 \
@@ -73,8 +74,13 @@ cosign verify docker.io/elixircloud/cloud-registry:0.3.0 \
     --certificate-identity https://github.com/elixir-cloud-aai/cloud-registry/.github/workflows/release.yaml@refs/tags/v0.3.0
 ```
 
-Images of commits on `dev` (`dev`, `sha-<commit>`) are signed by the CI
-workflow instead (`checks.yaml@refs/heads/dev`). To show an image's SBOM or
+Replace `0.3.0` with the version to verify. Images of commits on `dev`
+(`dev`, `sha-<commit>`) are signed and attested by the CI workflow instead:
+use `--signer-workflow
+elixir-cloud-aai/cloud-registry/.github/workflows/checks.yaml` and
+`--certificate-identity
+https://github.com/elixir-cloud-aai/cloud-registry/.github/workflows/checks.yaml@refs/heads/dev`.
+To show an image's SBOM or
 provenance, run:
 
 ```bash
@@ -101,7 +107,7 @@ cosign verify-blob cloud-registry-0.3.0.tgz \
 ```
 
 Images are scanned for known vulnerabilities with
-[Trivy](https://trivy.dev/) in CI and again before a release image is
-tagged (both fail on fixable critical and high vulnerabilities), and the
-`latest` image weekly; the maintainers see the results in the repository's
+[Trivy](https://trivy.dev/) in CI, for every pull request and commit
+(including the release commits; CI fails on fixable critical and high
+vulnerabilities), and the `latest` image weekly; the maintainers see the results in the repository's
 code scanning alerts.

@@ -1,10 +1,13 @@
 # Release when a version tag (`vX.Y.Z`, or `vX.Y.ZaN`, `vX.Y.ZbN`,
 # `vX.Y.ZrcN` for pre-releases) is pushed: check the tag and that CI passed
 # for its commit, package the Helm chart, build and push the Docker image
-# (with SBOM and provenance attestations) by digest, check and scan it, attest
+# (with SBOM and provenance attestations) by digest, check it, attest
 # its build provenance, sign it (Sigstore keyless signing) and tag it, and
 # create the GitHub release with the chart attached, also attested and signed
-# (see "Verifying images and charts" in `docs/operations.md`). The tag is
+# (see "Verifying images and charts" in `docs/operations.md`). The image of
+# the release commit was scanned for vulnerabilities by CI (required below);
+# Trivy is not run here, next to the release credentials and signing
+# identity. A re-run builds, signs and tags a new digest. The tag is
 # the only source of the version: it is passed to the image build (the Docker
 # build gets no Git metadata) and set as the chart's `version` and
 # `appVersion`. Release notes are taken from `docs/releases/<version>.md` if
@@ -184,8 +187,9 @@ jobs:
           python-version: "3.13"
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      # OCI labels with the version (of the tag `X.Y.Z`), commit and source;
-      # the image is tagged after the checks below
+      # OCI labels with the version, commit and source; `tags` only sets the
+      # version label (the image is tagged by digest after the checks below,
+      # in "Tag image")
       - name: Generate image labels
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
@@ -226,14 +230,6 @@ jobs:
               echo "::error::Image reports version '${actual}', expected '${VERSION}'"
               exit 1
           fi
-      # Fails on fixable critical and high vulnerabilities (as in CI, which
-      # uploads the results; `.trivyignore.yaml` of the release commit)
-      - name: Scan image
-        uses: ./.github/actions/scan-image
-        with:
-          image: ${{ steps.image.outputs.name }}@${{ steps.push.outputs.digest }}
-          category: release
-          upload: "false"
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
