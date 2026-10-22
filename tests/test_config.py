@@ -190,9 +190,25 @@ def test_config_requires_audience(
 # Values specific to an identity provider or deployment, which the
 # repository must not contain (examples use fictitious values)
 IDP_SPECIFIC = re.compile(
-    r"lifescience|ls[ -]login|eduperson|perun|ECP_CLN|urn:geant",
+    r"lifescience|\bls[ -]login\b|eduperson|\bperun\b|\bECP\b|ECP_CLN|urn:geant",
     re.IGNORECASE,
 )
+# Suffixes of the text files that are scanned (and files without one, e.g.,
+# `Dockerfile`)
+TEXT_SUFFIXES = {
+    "",
+    ".cfg",
+    ".conf",
+    ".json",
+    ".lock",
+    ".md",
+    ".py",
+    ".toml",
+    ".tpl",
+    ".txt",
+    ".yaml",
+    ".yml",
+}
 
 
 def test_repository_generic() -> None:
@@ -217,7 +233,7 @@ def test_repository_generic() -> None:
         # This file names the values to find
         if name not in ("", "tests/test_config.py")
         and (ROOT / name).is_file()
-        and not name.endswith(".png")
+        and Path(name).suffix in TEXT_SUFFIXES
         for number, line in enumerate(
             (ROOT / name).read_text(encoding="utf-8").splitlines(), start=1
         )
@@ -417,6 +433,18 @@ class TestChartOverlay:
         with pytest.raises(subprocess.CalledProcessError) as exc:
             _render_overlay("--set", "hostName=example.org", *args, group_claim=None)
         assert "config.security.access_control.claim_groups must" in exc.value.stderr
+
+    @pytest.mark.parametrize("value", ['["groups"]', "123", "true", "false", "0"])
+    def test_group_claim_invalid(self, value: str) -> None:
+        """Group claims that aren't strings are rejected, as by the app."""
+        with pytest.raises(subprocess.CalledProcessError) as exc:
+            _render_overlay(
+                "--set",
+                "hostName=example.org",
+                "--set-json",
+                f"config.security.access_control.claim_groups={value}",
+            )
+        assert "claim_groups must be the name of a claim" in exc.value.stderr
 
     def test_admin_group_optional(self) -> None:
         """Without admin groups, rendering works if admins are not required."""

@@ -1431,6 +1431,25 @@ def test_create_app_requires_claim_groups(
         cloud_registry.app.create_app()
 
 
+def test_create_app_no_claim_groups(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`create_app()` warns without a group claim, as users have no groups."""
+    _set_overlay(
+        monkeypatch,
+        tmp_path,
+        {
+            "security": {"auth": {"issuers": [ISSUER], "audience": ["a"]}},
+            "custom": {"access_control": {"require_admin": False}},
+        },
+    )
+    cloud_registry.app.create_app()
+    assert "No group claim is set" in capsys.readouterr().err
+
+
 def test_create_app_group_subjects(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -1473,6 +1492,7 @@ def test_create_app_dev_overlay(
     err = capsys.readouterr().err
     assert "No group is mapped to the role 'admin'" in err
     assert "keep_group_subjects" not in err
+    assert "No group claim is set" not in err
 
 
 def test_create_app_duplicate_services(

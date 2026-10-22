@@ -66,14 +66,14 @@ def create_app() -> App:
     """Create the app from the config, with the registry's checks.
 
     Adds the error handler for validation errors (silencing Connexion's
-    validation log messages), checks the admin groups and that no service
-    clients are configured, requires a size limit of request bodies, adds
-    missing keys of services, and warns of stored services with invalid URLs
-    or URL schemes that are not allowed and of placeholders in the service
-    info. FOCA validates the config, e.g., that token issuers are trusted
-    (needed for access control) with an audience, and the service info
-    (`service_info`), and limits the size of request bodies
-    (`server.max_content_length`).
+    validation log messages), checks the admin groups and the group claim,
+    and that no service clients are configured, requires a size limit of
+    request bodies, adds missing keys of services, and warns of stored
+    services with invalid URLs or URL schemes that are not allowed and of
+    placeholders in the service info. FOCA validates the config, e.g., that
+    token issuers are trusted (needed for access control) with an audience,
+    and the service info (`service_info`), and limits the size of request
+    bodies (`server.max_content_length`).
 
     Gunicorn calls this in each worker, after forking (MongoDB clients must
     not be shared across forks), so the checks run in each worker; if they
@@ -85,10 +85,10 @@ def create_app() -> App:
     Raises:
         RuntimeError: Request bodies are not limited in size
             (`server.max_content_length` is null), groups are mapped
-            without a group claim, no group is
-            mapped to the role `admin` (unless admins are optional), service
-            clients are configured (which the app doesn't support), or stored
-            services are invalid or duplicates.
+            without a group claim, no group is mapped to the role `admin`
+            (unless admins are optional), service clients are configured
+            (which the app doesn't support), or stored services are invalid
+            or duplicates.
         pydantic.ValidationError: The config is invalid, e.g., no token
             issuers are trusted, or the service info is invalid (naming the
             invalid field).

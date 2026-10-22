@@ -80,11 +80,17 @@ no such section, see `foca-common.configOverlay`)
 {{- if kindIs "map" $security -}}
 {{- $securityAccessControl := get $security "access_control" -}}
 {{- if kindIs "map" $securityAccessControl -}}
-{{- /* `get` renders an empty string for missing keys */ -}}
+{{- /* Only if set, as `get` returns an empty string for missing keys */ -}}
 {{- if hasKey $securityAccessControl "group_mapping" -}}
 {{- $mapping = get $securityAccessControl "group_mapping" -}}
 {{- end -}}
-{{- $claimGroups = get $securityAccessControl "claim_groups" | default "" | toString | trim -}}
+{{- if hasKey $securityAccessControl "claim_groups" -}}
+{{- $rawClaimGroups := get $securityAccessControl "claim_groups" -}}
+{{- if not (or (kindIs "invalid" $rawClaimGroups) (kindIs "string" $rawClaimGroups)) -}}
+{{- fail "config.security.access_control.claim_groups must be the name of a claim (a string)" -}}
+{{- end -}}
+{{- $claimGroups = $rawClaimGroups | default "" | trim -}}
+{{- end -}}
 {{- end -}}
 {{- $auth := get $security "auth" -}}
 {{- if kindIs "map" $auth -}}
@@ -97,17 +103,18 @@ no such section, see `foca-common.configOverlay`)
 {{- fail "config.security.access_control.group_mapping must be a map of groups to roles" -}}
 {{- end -}}
 {{- /*
-As FOCA on startup (access control needs trusted token issuers), refuse to
-render without issuers: the base config trusts none
+Mirrors FOCA's check on startup (access control needs trusted token issuers):
+refuse to render without a list of non-blank issuers, as the base config
+trusts none
 */ -}}
-{{- $hasIssuers := and (kindIs "slice" $issuers) (gt (len $issuers) 0) -}}
-{{- range $issuer := (ternary $issuers (list) $hasIssuers) -}}
+{{- $issuersError := "config.security.auth.issuers must list the trusted token issuers (the iss claim of their tokens, e.g., https://login.example.org/oidc/): the app trusts none by default" -}}
+{{- if not (and (kindIs "slice" $issuers) $issuers) -}}
+{{- fail $issuersError -}}
+{{- end -}}
+{{- range $issuer := $issuers -}}
 {{- if not (and (kindIs "string" $issuer) (trim $issuer)) -}}
-{{- $hasIssuers = false -}}
+{{- fail $issuersError -}}
 {{- end -}}
-{{- end -}}
-{{- if not $hasIssuers -}}
-{{- fail "config.security.auth.issuers must list the trusted token issuers (the iss claim of their tokens, e.g., https://login.example.org/oidc/): the app trusts none by default" -}}
 {{- end -}}
 {{- /*
 As the app on startup, refuse to render group mappings without the claim

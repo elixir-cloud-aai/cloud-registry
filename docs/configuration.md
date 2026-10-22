@@ -77,8 +77,9 @@ Docker Compose mounts
 [`config.dev.yaml`](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/config.dev.yaml),
 an overlay for local development that trusts a fictitious token issuer
 (`https://login.example.org/oidc/`; set your own in a local override), accepts
-tokens for any audience and `http` service URLs, and requires no admins. To override more values locally,
-put them in `config.local.yaml` and mount it in a
+tokens for any audience and `http` service URLs, and requires no admins. To
+override more values locally, put them in `config.local.yaml` and mount it in
+a
 `docker-compose.override.yaml` (both are ignored by Git):
 
 ```yaml

@@ -61,7 +61,8 @@ def check_admin_groups() -> None:
     unless `custom.access_control.require_admin` is false. A warning is
     logged if groups are mapped, but `keep_group_subjects` is not set, as
     roles on services granted to groups don't apply then (and FOCA refuses
-    to grant them).
+    to grant them), and if no group claim is set, as users then have no
+    groups.
 
     Raises:
         RuntimeError: Groups are mapped to roles, but no group claim is set
@@ -78,6 +79,12 @@ def check_admin_groups() -> None:
             "groups of users (e.g., `groups`), and add it to "
             "`security.auth.userinfo_claims` if the identity provider "
             "releases it via user info only"
+        )
+    if not conf.claim_groups:
+        logger.warning(
+            "No group claim is set (`security.access_control.claim_groups`), "
+            "so users have no groups: roles on services can't be granted to "
+            "groups, and roles of groups don't apply"
         )
     # FOCA drops group claim values that aren't mapped once a mapping is set,
     # also an empty one
