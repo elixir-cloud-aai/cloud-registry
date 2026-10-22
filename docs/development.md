@@ -102,10 +102,21 @@ version to the image build. Images on Docker Hub
   `dev` (full SHA), to deploy a fixed commit.
 
 Features and fixes are merged into `dev`. Branch `main` only ever moves
-forward to commits on `dev` that are released. To release version `X.Y.Z`
-from commit `<sha>` on `dev`, after CI passed for it:
+forward to commits on `dev` that are released. First, shortly before the
+release, set its version and date in the citation metadata, which Zenodo
+archives with each release, and merge the change into `dev`; each version,
+also each pre-release (e.g., `X.Y.Zrc1`), needs its own such change:
 
 ```bash
+python scripts/citation.py set X.Y.Z  # date: today (UTC), or --date YYYY-MM-DD
+```
+
+Then, to release version `X.Y.Z` from commit `<sha>` on `dev` (with that
+change), after CI passed for it:
+
+```bash
+git switch --detach <sha>
+python scripts/citation.py check X.Y.Z  # as the release workflow does
 git push origin <sha>:main  # fails unless it is a fast-forward
 git tag -s vX.Y.Z <sha> -m "vX.Y.Z"
 git push origin vX.Y.Z
@@ -115,7 +126,8 @@ The tag must be annotated and signed (`git tag -s`), with a key that GitHub can
 verify (added to the tagger's GitHub account). The [release
 workflow](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/.github/workflows/release.yaml),
 triggered by the tag, checks that GitHub verified the signature, that the
-tag's commit is on `main`, and that the [CI
+tag's commit is on `main` and its `CITATION.cff` has the release version and
+a date that is not in the future (UTC), and that the [CI
 workflow](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/.github/workflows/checks.yaml)
 passed for it (a run for the push of the commit to `dev`; if CI hasn't
 finished or failed, re-run the release workflow once it passed). It packages
@@ -125,9 +137,13 @@ files on branch `dev` point to the release (`/en/vX.Y.Z/`, `blob/vX.Y.Z/`);
 the release fails if any link to a version that moves is left
 (`scripts/chart_readme.py`). The README in the repository is unchanged.
 After approval in the `release` environment, it builds
-the image, checks that the app reports the release version, pushes exactly
-that image tagged `X.Y.Z` (and `latest`, if it is the highest stable release
-on `main`), and creates a GitHub release with the chart (`.tgz`) and the
+the image and pushes it by digest (untagged, with SBOM and provenance
+attestations), checks that the app reports the release version, attests
+its build provenance and signs it (see [Verifying
+images and charts](operations.md#verifying-images-and-charts)), tags exactly
+that image `X.Y.Z` (and `latest`, if it is the highest stable release on
+`main`), attests and signs the chart, and creates a GitHub release with the
+chart (`.tgz`), its Sigstore bundle (`.tgz.sigstore.json`) and the
 notes in `docs/releases/X.Y.Z.md` (for pre-releases, e.g., `X.Y.Zrc1.md`),
 or, if there are none, notes generated from the merged pull requests. Curated
 notes are published as written, so the release workflow fails if they contain
@@ -172,6 +188,26 @@ pushes; and the Docker Hub secrets (`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`,
 `DOCKERHUB_ORG`) only in the two environments, not as repository secrets.
 On Read the Docs, an automation rule activates the versions of tags (`v*`),
 so that the docs linked from packaged charts exist.
+
+The CI workflow builds the image of every pull request and push and scans
+it with [Trivy](https://trivy.dev/) (`.github/actions/scan-image`); the
+release workflow builds and scans the release commit's image again before
+publishing (in a job without its credentials), and a weekly workflow
+(`scan.yaml`) scans `latest`. They fail on critical and high
+vulnerabilities that have a fix, and upload all findings to code scanning
+(not for pull requests from forks, nor in the release workflow). To accept
+a finding (e.g., if it doesn't affect the app), add it to `.trivyignore.yaml`
+with the affected package versions (`purls`), the reason (`statement`) and an
+expiry date (`expired_at`), after which the scans fail again. Trivy also
+scans for secrets (critical and high ones fail the scans too); accept those
+under `secrets:` in the same file. Dependabot
+updates the actions, but not the Trivy version (`version:` in
+`.github/actions/scan-image/action.yml`): bump it by hand. Images of
+commits on `dev` are signed and attested like release images, by the CI
+workflow. All of this needs no secrets beyond the Docker Hub ones: signing
+uses the workflows' OIDC tokens (permission `id-token: write`). Re-running
+the release workflow builds, signs and tags a new image digest (the image
+build is not reproducible); the earlier digest stays signed.
 
 The CI workflow (which tests the chart) and the release workflow (which
 packages it) install the same Helm version (`version:` of `azure/setup-helm`
