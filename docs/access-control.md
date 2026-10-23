@@ -131,6 +131,11 @@ role, or `null` for admins only:
             register-services: [p, reader, /ga4gh/registry/v1/services, POST]
 ```
 
+This only stops new registrations: owners and maintainers can still find out
+the same by changing one of their services to the URL and API type of
+another one. So grant the roles `owner` and `maintainer` only to users (and
+groups) who may read services.
+
 !!! danger "With great power comes great responsibility"
     Patches and rules in overlays can weaken or remove authentication and
     access control as easily as they add them. Review them like code, keep

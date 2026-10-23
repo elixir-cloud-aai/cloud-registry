@@ -117,9 +117,12 @@ change), after CI passed for it:
 ```bash
 git switch --detach <sha>
 # The release workflow's checks that need no tag, as it runs them
+python scripts/release_version.py outputs vX.Y.Z
 python scripts/citation.py check X.Y.Z
 python scripts/check_release_pins.py
 ! grep -n TODO docs/releases/X.Y.Z.md  # curated notes, if any
+readme="$(mktemp -d)/README.md" && cp deployment/README.md "${readme}"
+python scripts/chart_readme.py "${readme}" vX.Y.Z  # links of the chart
 git push origin <sha>:main  # fails unless it is a fast-forward
 git tag -s vX.Y.Z <sha> -m "vX.Y.Z"
 git push origin vX.Y.Z
