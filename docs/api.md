@@ -23,6 +23,9 @@ under the API base path `/ga4gh/registry/v1`:
 | `/verifications` | `GET` | anyone |
 | `/me` | `GET` | any authenticated user |
 
+Deployments can [require login](access-control.md#requiring-login-for-reads)
+for the reads by anyone, except `GET /service-info`.
+
 The [Swagger UI](getting-started.md#quick-start) of a deployment documents
 all operations and serves the API specification
 (`/ga4gh/registry/v1/openapi.json`).

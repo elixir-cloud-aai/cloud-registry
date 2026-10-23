@@ -623,13 +623,18 @@ class TestChartOverlay:
 
 
 def test_package_data() -> None:
-    """Files that the base config references are installed with the package."""
+    """Files that the base config references, and patches, are installed."""
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
     patterns = pyproject["tool"]["setuptools"]["package-data"]["cloud_registry"]
     config = yaml.safe_load(CONFIG_FILE.read_text())
     files = [
         config["security"]["access_control"]["model"],
-        *(path for spec in config["api"]["specs"] for path in spec["path"]),
+        *(path for spec in config["api"]["specs"].values() for path in spec["path"]),
+        # patches for deployments (see `docs/access-control.md`)
+        *(
+            str(path.relative_to(ROOT / "cloud_registry"))
+            for path in sorted((ROOT / "cloud_registry" / "api" / "patches").glob("*"))
+        ),
     ]
     for path in ["config.yaml", *files]:
         assert (ROOT / "cloud_registry" / path).is_file(), path

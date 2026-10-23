@@ -66,10 +66,24 @@ the API, not configured (see [Roles on
 services](access-control.md#roles-on-services)). The policies
 (`security.access_control.policies`, see FOCA's [access
 control](https://foca.readthedocs.io/en/latest/access-control/#configuring-policies))
-say what each role may do; an overlay may change them, but lists replace
-those of the base config, so copy all its rules and change those you need
-(e.g., remove the rule that lets any authenticated user register services,
-so that only admins can). Don't rename the roles `owner` and `maintainer`
+say what each role may do. They are named, so that an overlay can change,
+add or remove single rules by name (FOCA's [named
+entries](https://foca.readthedocs.io/en/latest/configuration/#named-entries)),
+e.g., remove the rule that lets any authenticated user register services, so
+that only admins can:
+
+```yaml
+security:
+    access_control:
+        policies:
+            register-services: null
+```
+
+An overlay that gives the policies as a list replaces all rules of the base
+config instead; FOCA refuses to start if an overlay gives named rules after
+one that gives a list. The same applies to the API specification
+(`api.specs`), named `registry`, e.g., to [require login for
+reads](access-control.md#requiring-login-for-reads). Don't rename the roles `owner` and `maintainer`
 (`security.access_control.resource_roles`), as the API is written for them.
 
 FOCA's service clients (`security.auth.service_clients`,

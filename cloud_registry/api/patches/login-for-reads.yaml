@@ -1,0 +1,27 @@
+# Patch of the API specification (`api.specs.registry`) that requires login
+# for all reads, except `GET /service-info`: sets the security requirements of
+# the public read operations to a bearer token. Any authenticated user may
+# then read, by the default policies (`read-*` rules of
+# `security.access_control.policies`). See "Requiring login for reads" in
+# `docs/access-control.md`
+paths:
+  /services:
+    get:
+      security:
+        - bearerAuth: []
+  /services/types:
+    get:
+      security:
+        - bearerAuth: []
+  /services/{serviceId}:
+    get:
+      security:
+        - bearerAuth: []
+  /services/{serviceId}/verification:
+    get:
+      security:
+        - bearerAuth: []
+  /verifications:
+    get:
+      security:
+        - bearerAuth: []

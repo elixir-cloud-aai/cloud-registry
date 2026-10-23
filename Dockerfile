@@ -44,7 +44,7 @@ USER 1000
 
 ## Probe the Swagger UI, which needs neither authentication nor the database;
 ## set `HEALTHCHECK_URL` if Gunicorn's `--bind` changes the port, or the config
-## changes the API base path or the Swagger UI setting (`api.specs[]`)
+## changes the API base path or the Swagger UI setting (`api.specs.registry`)
 ENV HEALTHCHECK_URL=http://localhost:8080/ga4gh/registry/v1/ui/
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen(os.environ['HEALTHCHECK_URL'], timeout=4)"]

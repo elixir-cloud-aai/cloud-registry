@@ -18,10 +18,10 @@ clients can discover your GA4GH services (or any other web services) and
 their API types, versions and operators in one place. Service entries comply
 with the [`ExternalService`
 schema](https://github.com/ga4gh-discovery/ga4gh-service-registry/blob/8c45be52940db92c2fa1cd821519c271c22b1c4c/service-registry.yaml#L158).
-Anyone can read them; users logged in with an OpenID Connect provider that
-you trust can register services and manage those they own, and admins can
-verify them. Run it with Docker Compose or deploy it to Kubernetes
-with its Helm chart; a [web front
+Anyone can read them (unless you require login); users logged in with an
+OpenID Connect provider that you trust can register services and manage those
+they own, and admins can verify them. Run it with Docker Compose or deploy it
+to Kubernetes with its Helm chart; a [web front
 end](https://github.com/elixir-cloud-aai/cloud-registry-ui) is available,
 too.
 <!-- --8<-- [end:synopsis] -->

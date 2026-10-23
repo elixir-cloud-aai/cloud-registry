@@ -9,6 +9,9 @@ them when upgrading FOCA.
 from collections.abc import Callable
 from copy import deepcopy
 from itertools import count
+import os
+from pathlib import Path
+import re
 from typing import Any
 from urllib.parse import quote
 
@@ -26,7 +29,9 @@ from foca.security.access_control import (
 from foca.security.access_control.enforcement import get_enforcer
 from pymongo.collection import Collection
 import pytest
+import yaml
 
+import cloud_registry.app
 from cloud_registry.exceptions import Unauthorized
 from cloud_registry.ga4gh.registry import permissions as permissions_module
 from cloud_registry.ga4gh.registry import server as server_module
@@ -34,6 +39,7 @@ from cloud_registry.utils import get_collection
 from tests.conftest import (
     ADMIN,
     COLLECTION_CLASS,
+    CONFIG_OVERLAY,
     GROUPS,
     NAMES,
     TEAM_GROUP,
@@ -1280,3 +1286,135 @@ def test_group_role_changes_logged(
         f"Roles on '{resource}' of group '{TEAM_GROUP}' revoked by user "
         f"'{ALICE}' (previous roles: owner)",
     ]
+
+
+# Read operations, which are public by default (`security: []`)
+READS = [
+    "/services",
+    "/services/types",
+    "/services/{id}",
+    "/services/{id}/verification",
+    "/verifications",
+]
+DOCS = Path(__file__).parents[1] / "docs" / "access-control.md"
+
+
+def _reads(client: FlaskClient, user: str | None) -> list[int]:
+    """Read a verified service and the lists, as a user.
+
+    Args:
+        client: Test client of the app.
+        user: User who reads; no token if `None`.
+
+    Returns:
+        Status codes of the read operations (`READS`), in order.
+    """
+    service_id = register(client)
+    response = client.put(
+        f"{BASE}/services/{service_id}/verification",
+        headers=headers(ADMIN),
+    )
+    assert response.status_code == 200, response.get_json()
+    return [
+        client.get(BASE + path.format(id=service_id), headers=headers(user)).status_code
+        for path in READS
+    ]
+
+
+def test_reads_public(client: FlaskClient) -> None:
+    """Reads are public by default, with and without token."""
+    assert _reads(client, None) == [200] * len(READS)
+    assert _reads(client, BOB) == [200] * len(READS)
+
+
+def _docs_overlay(after: str) -> dict[str, Any]:
+    """Get an overlay of the recipe "Requiring login for reads" of the docs.
+
+    Args:
+        after: Text of the recipe that the overlay follows.
+
+    Returns:
+        The overlay: the first YAML block after the text.
+    """
+    section = DOCS.read_text().split("## Requiring login for reads\n", 1)[1]
+    section = section.split("\n## ", 1)[0]
+    assert after in section, f"The recipe has no '{after}'"
+    block = re.search(r"```yaml[^\n]*\n(.*?)```", section.split(after, 1)[1], re.S)
+    assert block, f"The recipe has no overlay after '{after}'"
+    overlay: dict[str, Any] = yaml.safe_load(block[1])
+    return overlay
+
+
+def _create_app(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *overlays: dict[str, Any]
+) -> FlaskClient:
+    """Create the app with config overlays on top of the test overlay.
+
+    Args:
+        monkeypatch: Fixture to set the environment.
+        tmp_path: Directory to write the overlays to.
+        overlays: Config overlays, in order.
+
+    Returns:
+        Test client of the app.
+    """
+    paths = [str(CONFIG_OVERLAY)]
+    for index, overlay in enumerate(overlays):
+        path = tmp_path / f"overlay-{index}.yaml"
+        path.write_text(yaml.safe_dump(overlay))
+        paths.append(str(path))
+    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", os.pathsep.join(paths))
+    return cloud_registry.app.create_app().app.test_client()
+
+
+# The overlay of the recipe, and the rules for readers of its example
+RECIPE = "Apply it to the registry's API specification"
+READERS = "To allow reads for some users only"
+
+
+def test_login_for_reads(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The recipe of the docs requires login for all reads but service info.
+
+    Anonymous reads are rejected (`401`), any authenticated user may read (by
+    the default policies), and `GET /service-info` stays public. FOCA logs
+    the patch, which makes no operation public.
+    """
+    client = _create_app(monkeypatch, tmp_path, _docs_overlay(RECIPE))
+    err = capsys.readouterr().err
+    assert "Applied patches to API spec" in err
+    assert "api/patches/login-for-reads.yaml" in err
+    assert "not require authentication" not in err
+    assert _reads(client, None) == [401] * len(READS)
+    assert _reads(client, BOB) == [200] * len(READS)
+    assert _reads(client, ADMIN) == [200] * len(READS)
+    for path in ["/service-info", "/openapi.json", "/ui/"]:
+        assert client.get(BASE + path).status_code == 200, path
+    # other operations keep their protections
+    service_id = register(client)
+    response = client.get(
+        f"{BASE}/services/{service_id}/permissions", headers=headers(BOB)
+    )
+    assert response.status_code == 403
+    assert update(client, service_id, BOB) == 403
+
+
+def test_login_for_reads_readers(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
+) -> None:
+    """With the rules for readers of the docs, only readers may read.
+
+    Readers (here: members of the team group) may read services, not their
+    verifications; other users may read nothing, also not services they own.
+    """
+    readers = _docs_overlay(READERS)
+    # the groups of the test identity provider
+    readers["security"]["access_control"]["group_mapping"] = {TEAM_GROUP: "reader"}
+    client = _create_app(monkeypatch, tmp_path, _docs_overlay(RECIPE), readers)
+    assert _reads(client, ALICE) == [200, 200, 200, 403, 403]
+    assert _reads(client, BOB) == [403] * len(READS)
+    assert _reads(client, ADMIN) == [200] * len(READS)

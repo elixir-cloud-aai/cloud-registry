@@ -160,4 +160,9 @@ fallback_version = "0.0.0.dev0"
 include = ["cloud_registry*"]
 
 [tool.setuptools.package-data]
-cloud_registry = ["config.yaml", "api/*.yaml", "access_control/*.conf"]
+cloud_registry = [
+    "config.yaml",
+    "api/*.yaml",
+    "api/patches/*.yaml",
+    "access_control/*.conf",
+]
