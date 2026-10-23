@@ -8,13 +8,14 @@
 # tag it, and create the GitHub release with the chart attached, also
 # attested and signed (`publish`; see "Verifying images and charts" in
 # `docs/operations.md`). `push` and `publish` each need approval in the
-# `release` environment. A re-run builds, scans, signs and tags a new
-# digest. The tag is the only source of the version: it is passed to the
-# image build (the Docker build gets no Git metadata) and set as the chart's
-# `version` and `appVersion`. Release notes are taken from
-# `docs/releases/<version>.md` if it exists (the run fails if it contains
-# `TODO`), otherwise generated; add such notes to the `nav` of `mkdocs.yml`
-# too (the docs build fails otherwise).
+# `release` environment. Re-running all jobs builds, scans, signs and tags a
+# new digest; re-running failed jobs reuses the digest already pushed (and
+# scans it again if the scan failed). The tag is the only source of the
+# version: it is passed to the image build (the Docker build gets no Git
+# metadata) and set as the chart's `version` and `appVersion`. Release notes
+# are taken from `docs/releases/<version>.md` if it exists (the run fails if
+# it contains `TODO`), otherwise generated; add such notes to the `nav` of
+# `mkdocs.yml` too (the docs build fails otherwise).
 # Publishing runs in the `release` environment (required reviewer, Docker
 # Hub secrets). Release tags are immutable (tag ruleset). See "Versioning
 # and releases" in `docs/development.md`. Until 1.0.0, all releases are GitHub

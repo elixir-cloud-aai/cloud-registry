@@ -222,9 +222,10 @@ updates the actions, but not the Trivy version (`version:` in
 commits on `dev` are signed and attested like release images, by the CI
 workflow. All of this needs no secrets beyond the Docker Hub ones: signing
 uses the workflows' OIDC tokens (permission `id-token: write`). Re-running
-the release workflow builds, scans, signs and tags a new image digest (the
-image build is not reproducible); an earlier digest that was published
-stays signed.
+all jobs of the release workflow builds, scans, signs and tags a new image
+digest (the image build is not reproducible); an earlier digest that was
+published stays signed. Re-running only the failed jobs reuses the digest
+already pushed.
 
 The CI workflow (which tests the chart) and the release workflow (which
 packages it) install the same Helm version (`version:` of `azure/setup-helm`
