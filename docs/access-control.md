@@ -117,6 +117,23 @@ read verifications; admins may read everything.
 Owners and maintainers of services can still update them, but only read them
 with a rule that allows them to.
 
+Registration stays open to any authenticated user (`register-services`), and
+services are unique by URL and API type: registering a service again, or
+changing one to the URL and API type of another one, returns `409 Conflict`
+naming the registered service (`serviceId`, also in `detail`), whether the
+user may read it or not. So users who may not read services can still find
+out whether a service with a given URL and API type is registered, and its
+identifier. To prevent that, restrict registration, too, by replacing the
+rule by name in the same overlay, e.g., with a rule for the readers' role, or
+with `null` for admins only:
+
+```yaml title="readers.yaml"
+security:
+    access_control:
+        policies:
+            register-services: [p, reader, /ga4gh/registry/v1/services, POST]
+```
+
 !!! danger "With great power comes great responsibility"
     Patches and rules in overlays can weaken or remove authentication and
     access control as easily as they add them. Review them like code, keep
