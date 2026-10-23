@@ -128,8 +128,11 @@ than leading and trailing spaces), control or format characters are rejected
 
 Registering a service again (`POST /services`), or changing a service to the
 URL and API type of another one (`PUT`), returns `409 Conflict`, with the
-identifier of the registered service in `serviceId`, so that users can
-contact its owner or an admin.
+identifier of the registered service in `serviceId` (and in `detail`), so
+that users can contact its owner or an admin. Only users who may read the
+registered service (`GET /services/{serviceId}`) get its identifier; if a
+deployment [restricts reads](access-control.md#requiring-login-for-reads),
+other users get a `409` without it.
 
 As anyone logged in can register a URL first, including one of a deployment
 they don't operate, a squatter could block the real operator of a service.
