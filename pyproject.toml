@@ -80,8 +80,11 @@ exclude_also = ['if __name__ == "__main__":']
 fail_under = 100
 
 [project]
-name ="cloud-registry"
-authors = [{name = "ELIXIR On-Cloud"}, {email = "alexander.kanitz@alumni.ethz.ch"}]
+name = "cloud-registry"
+authors = [
+    {name = "ELIXIR On-Cloud", email = "cloud-service@elixir-europe.org"},
+    {name = "Alexander Kanitz"},
+]
 keywords = [
     "ga4gh", "service", "registry", "elixir", "cloud", "rest", "restful",
     "api", "app", "server", "openapi", "swagger", "mongodb", "python", "flask"
@@ -146,7 +149,7 @@ file = "README.md"
 content-type = "text/markdown"
 
 [project.urls]
-homepage = "https://github.com/elixir-cloud-aai/cloud-registry.git"
+homepage = "https://github.com/elixir-cloud-aai/cloud-registry"
 Documentation = "https://cloud-registry.readthedocs.io"
 
 [tool.setuptools_scm]
