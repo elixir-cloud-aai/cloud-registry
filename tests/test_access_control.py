@@ -35,6 +35,8 @@ import cloud_registry.app
 from cloud_registry.exceptions import Unauthorized
 from cloud_registry.ga4gh.registry import permissions as permissions_module
 from cloud_registry.ga4gh.registry import server as server_module
+from cloud_registry.ga4gh.registry.permissions import may_read_service
+from cloud_registry.ga4gh.registry.service import DuplicateService
 from cloud_registry.utils import get_collection
 from tests.conftest import (
     ADMIN,
@@ -1435,3 +1437,118 @@ def test_login_for_reads_readers(
     assert _reads(client, service_id, ALICE) == [200, 200, 200, 403, 403]
     assert _reads(client, service_id, BOB) == [403] * len(READS)
     assert _reads(client, service_id, ADMIN) == [200] * len(READS)
+
+
+def _duplicates(
+    client: FlaskClient, existing_id: str, user: str
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Register a service, and change one, to the URL and type of another one.
+
+    Args:
+        client: Test client of the app.
+        existing_id: Identifier of the registered service.
+        user: User who registers (and owns) the services.
+
+    Returns:
+        Problem details of the `409` responses: of registering the service
+        again (`POST`) and of changing another service of the user to it
+        (`PUT`).
+    """
+    existing = client.get(f"{BASE}/services/{existing_id}", headers=headers(ADMIN))
+    assert existing.status_code == 200, existing.get_json()
+    service = {
+        key: value
+        for key, value in existing.get_json().items()
+        if key not in ("id", "createdAt", "updatedAt")
+    }
+    responses = [
+        client.post(f"{BASE}/services", json=service, headers=headers(user)),
+        client.put(
+            f"{BASE}/services/{register(client, user)}",
+            json=service,
+            headers=headers(user),
+        ),
+    ]
+    for response in responses:
+        assert response.status_code == 409, response.get_json()
+    return responses[0].get_json(), responses[1].get_json()
+
+
+def _assert_named(problem: dict[str, Any], existing_id: str) -> None:
+    """Assert that the problem details of a `409` name the registered service.
+
+    Args:
+        problem: Problem details.
+        existing_id: Identifier of the registered service.
+    """
+    assert problem["serviceId"] == existing_id
+    assert existing_id in problem["detail"]
+
+
+def _assert_hidden(problem: dict[str, Any], existing_id: str) -> None:
+    """Assert that the problem details of a `409` hide the registered service.
+
+    Args:
+        problem: Problem details.
+        existing_id: Identifier of the registered service.
+    """
+    assert problem == {
+        "title": "Conflict",
+        "status": 409,
+        "detail": DuplicateService.HIDDEN_DESCRIPTION,
+    }
+    assert existing_id not in str(problem)
+
+
+def test_duplicates_public_reads(client: FlaskClient) -> None:
+    """With public reads, `409` names the registered service to every user."""
+    existing_id = register(client)
+    for user in (ALICE, BOB, ADMIN):
+        for problem in _duplicates(client, existing_id, user):
+            _assert_named(problem, existing_id)
+
+
+def test_duplicates_login_for_reads(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
+) -> None:
+    """With login for reads by any user, `409` names the registered service."""
+    client = _create_app(monkeypatch, tmp_path, _docs_overlay("overlay.yaml"))
+    existing_id = register(client)
+    for user in (ALICE, BOB, ADMIN):
+        for problem in _duplicates(client, existing_id, user):
+            _assert_named(problem, existing_id)
+
+
+def test_duplicates_login_for_reads_readers(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
+) -> None:
+    """With the rules for readers, `409` names the service to readers only.
+
+    Readers (members of the team group) and admins learn the registered
+    service, other users get a `409` without it, also for services they
+    registered themselves.
+    """
+    readers = _docs_overlay("readers.yaml")
+    readers["security"]["access_control"]["group_mapping"] = {TEAM_GROUP: "reader"}
+    client = _create_app(monkeypatch, tmp_path, _docs_overlay("overlay.yaml"), readers)
+    for owner in (ALICE, BOB):
+        existing_id = register(client, owner)
+        for user in (ALICE, ADMIN):
+            for problem in _duplicates(client, existing_id, user):
+                _assert_named(problem, existing_id)
+        for problem in _duplicates(client, existing_id, BOB):
+            _assert_hidden(problem, existing_id)
+
+
+@pytest.mark.parametrize("service_id", ["a/b", "a/verification", "a/permissions"])
+def test_may_read_service_unrouted(client: FlaskClient, service_id: str) -> None:
+    """Identifiers not routed to `GET /services/{serviceId}` can't be read.
+
+    Also not those routed to other operations, which policies may allow.
+
+    Args:
+        client: Test client of the app.
+        service_id: Service identifier.
+    """
+    with client.application.test_request_context(f"{BASE}/services", method="POST"):
+        assert not may_read_service(service_id)

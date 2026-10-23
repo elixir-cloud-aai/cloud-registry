@@ -7,10 +7,16 @@ from flask import Response, request
 from foca.security.access_control import is_admin
 from foca.utils.logging import escape_log_value, log_traffic
 
-from cloud_registry.exceptions import BadRequest, NotFound, problem, shorten_detail
+from cloud_registry.exceptions import (
+    BadRequest,
+    NotFound,
+    problem,
+    shorten_detail,
+)
 from cloud_registry.ga4gh.registry.permissions import (
     add_owner,
     current_user,
+    may_read_service,
     remove_owner,
     remove_permissions,
 )
@@ -200,7 +206,8 @@ def _register_service(
     Returns:
         Identifier of the service; if it is new, with status `201` and its URL
         as `Location`. Or an error response: `400` for invalid URLs, `409`
-        naming the registered service with the same URL and API type.
+        for a registered service with the same URL and API type, naming it
+        only if the user may read it (cf. `may_read_service()`).
 
     Raises:
         cloud_registry.exceptions.BadRequest: The owner role can't be stored
@@ -224,7 +231,17 @@ def _register_service(
             "Service not registered: %s",
             escape_log_value(shorten_detail(exc.description)),
         )
-        return problem(exc, serviceId=exc.existing_id)
+        # only users who may read the registered service learn which one it
+        # is, by the same decision as for `GET /services/{serviceId}`
+        if may_read_service(exc.existing_id):
+            return problem(exc, serviceId=exc.existing_id)
+        # FOCA logs the denied check like a request
+        logger.info(
+            "Registered service with the same URL and API type not named: "
+            "'%s' may not read it.",
+            current_user(),
+        )
+        return problem(exc.hidden())
     if service.verification_removed:
         logger.info(
             "Verification of service '%s' removed by an update by '%s' (URL or "

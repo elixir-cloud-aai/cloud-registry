@@ -119,13 +119,15 @@ with a rule that allows them to.
 
 Registration stays open to any authenticated user (`register-services`), and
 services are unique by URL and API type: registering a service again, or
-changing one to the URL and API type of another one, returns `409 Conflict`
-naming the registered service (`serviceId`, also in `detail`), whether the
-user may read it or not. So users who may not read services can still find
-out whether a service with a given URL and API type is registered, and its
-identifier. To prevent that, restrict registration, too, by adding a rule of
-the same name to the policies of `readers.yaml` above, e.g., for the readers'
-role, or `null` for admins only:
+changing one to the URL and API type of another one, returns `409 Conflict`.
+It names the registered service (`serviceId`, also in `detail`) only to
+users who may read it, by the same decision as for
+`GET /services/{serviceId}` (here: readers and admins); other users get a
+`409` without it. They can still find out whether a service with a given
+URL and API type is registered (`409` rather than `201`), which can't be
+avoided while duplicates are rejected. To prevent that, restrict registration,
+too, by adding a rule of the same name to the policies of `readers.yaml`
+above, e.g., for the readers' role, or `null` for admins only:
 
 ```yaml
             register-services: [p, reader, /ga4gh/registry/v1/services, POST]
