@@ -12,7 +12,7 @@ info:
     url: 'http://www.apache.org/licenses/LICENSE-2.0'
   contact:
     name: 'ELIXIR On-Cloud'
-    email: 'alexander.kanitz@alumni.ethz.ch'
+    email: 'cloud-service@elixir-europe.org'
 servers:
   - url: /ga4gh/registry/v1
 # Read operations of the GA4GH specifications are public: the security
