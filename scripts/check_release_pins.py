@@ -8,8 +8,9 @@ annotations on standard error, if:
 - a requirement of `pyproject.toml` (`project.dependencies`,
   `project.optional-dependencies`, `dependency-groups` or
   `build-system.requires`) is a direct reference (`<name> @ <URL>`, e.g., a
-  Git commit) or names a pre-release or development version (e.g.,
-  `>=0.17.0rc1`);
+  Git commit), names a pre-release or development version (e.g.,
+  `>=0.17.0rc1`), or a local version (e.g., `==0.17.0+gabc1234`, a build of
+  a commit);
 - an image of FOCA in the `Dockerfile` (`elixircloud/foca`, as the base
   image of any stage, or in `--from=`) has no release tag
   (`<X.Y.Z>-py<X.Y>`, e.g., a dated development image); images named via
@@ -43,6 +44,9 @@ PRE_RELEASE = re.compile(
     r"[0-9][._-]?(a|b|c|rc|alpha|beta|pre|preview|dev)[0-9]*(?![a-z])",
     re.IGNORECASE,
 )
+# A local version label (PEP 440) in a version specifier, e.g.,
+# `0.17.0+gabc1234`
+LOCAL_VERSION = re.compile(r"[0-9]\+[A-Za-z0-9]")
 # An image of FOCA, with its tag if it has one: a base image (`FROM`, in any
 # stage, also with options such as `--platform=...`) or an image that files
 # are copied or mounted from (`--from=`, `from=`), also with a registry or a
@@ -137,10 +141,14 @@ def _requirement_pins(
     for requirement in requirements:
         if isinstance(requirement, dict):
             continue
+        # The version specifiers, without name, extras and markers
+        specifier = re.sub(NAME, "", requirement).split(";")[0]
         if DIRECT_REFERENCE.match(requirement):
             pins.append(f"pyproject.toml: {kind} '{requirement}' is a direct reference")
-        elif PRE_RELEASE.search(re.sub(NAME, "", requirement).split(";")[0]):
+        elif PRE_RELEASE.search(specifier):
             pins.append(f"pyproject.toml: {kind} '{requirement}' names a pre-release")
+        elif LOCAL_VERSION.search(specifier):
+            pins.append(f"pyproject.toml: {kind} '{requirement}' names a local version")
     return pins
 
 

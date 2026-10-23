@@ -109,6 +109,15 @@ def test_release_pins(tmp_path: Path) -> None:
             "'3.14'' names a pre-release",
         ),
         (
+            {"dependencies": '"foca==0.17.0+gabc1234",'},
+            "pyproject.toml: dependency 'foca==0.17.0+gabc1234' names a local version",
+        ),
+        (
+            {"dependencies": "\"foca===0.17.0+local.1; python_version >= '3'\","},
+            "pyproject.toml: dependency 'foca===0.17.0+local.1; python_version >= "
+            "'3'' names a local version",
+        ),
+        (
             {"tag": "20261022-py3.13"},
             "Dockerfile: FOCA image tag '20261022-py3.13' is not a release tag "
             "(<X.Y.Z>-py<X.Y>)",
@@ -141,6 +150,8 @@ def test_release_pins(tmp_path: Path) -> None:
         "extras-spaces",
         "pre-release",
         "dev-marker",
+        "local",
+        "local-marker",
         "dated-image",
         "no-python",
         "chart-rc",
