@@ -10,12 +10,18 @@
 FROM elixircloud/foca:20261022-py3.13@sha256:cb33b4dfd65bca19ece7b2d49d25fab53c8fdbc9479831ea4a518ee16478c19f
 
 ##### METADATA #####
-LABEL software="Cloud Registry"
-LABEL software.description="GA4GH Service Registry API implementation by ELIXIR On-Cloud"
-LABEL software.website="https://github.com/elixir-cloud-aai/cloud-registry"
-LABEL software.license="https://spdx.org/licenses/Apache-2.0"
-LABEL maintainer="alexander.kanitz@alumni.ethz.ch"
-LABEL maintainer.organisation="ELIXIR On-Cloud"
+## OCI annotations; images built from the FOCA image inherit its own, so all
+## static ones are set here. CI's `docker/metadata-action` sets the version,
+## revision and creation date and overrides title, description, URLs and
+## licenses with the repository's metadata
+LABEL org.opencontainers.image.title="Cloud Registry"
+LABEL org.opencontainers.image.description="GA4GH Service Registry API implementation by ELIXIR On-Cloud"
+LABEL org.opencontainers.image.url="https://github.com/elixir-cloud-aai/cloud-registry"
+LABEL org.opencontainers.image.source="https://github.com/elixir-cloud-aai/cloud-registry"
+LABEL org.opencontainers.image.documentation="https://cloud-registry.readthedocs.io/"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+LABEL org.opencontainers.image.authors="ELIXIR On-Cloud <cloud-service@elixir-europe.org>"
+LABEL org.opencontainers.image.vendor="ELIXIR On-Cloud"
 
 ## Install dependencies (`project.dependencies` of `pyproject.toml`) first,
 ## so that code changes do not reinstall them; the FOCA image runs as non-root
