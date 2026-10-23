@@ -1394,7 +1394,7 @@ def test_login_for_reads(
     Swagger UI stay public. FOCA logs the patch, which makes no operation
     public.
     """
-    client = _create_app(monkeypatch, tmp_path, _docs_overlay("login-for-reads.yaml"))
+    client = _create_app(monkeypatch, tmp_path, _docs_overlay("overlay.yaml"))
     err = capsys.readouterr().err
     assert "Applied patches to API spec" in err
     assert "api/patches/login-for-reads.yaml" in err
@@ -1428,9 +1428,7 @@ def test_login_for_reads_readers(
     assert list(mapping.values()) == ["reader"]
     # the team group of the test identity provider instead of the example's
     readers["security"]["access_control"]["group_mapping"] = {TEAM_GROUP: "reader"}
-    client = _create_app(
-        monkeypatch, tmp_path, _docs_overlay("login-for-reads.yaml"), readers
-    )
+    client = _create_app(monkeypatch, tmp_path, _docs_overlay("overlay.yaml"), readers)
     service_id = _verified_service(client)
     # in the order of `READS`: services, types, service, its verification,
     # verifications

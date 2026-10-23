@@ -73,7 +73,7 @@ Apply it to the registry's API specification (named `registry` in the base
 config) in an overlay (the path is relative to the directory of the base
 config, where the patch is installed):
 
-```yaml title="login-for-reads.yaml"
+```yaml title="overlay.yaml"
 api:
     specs:
         registry:
