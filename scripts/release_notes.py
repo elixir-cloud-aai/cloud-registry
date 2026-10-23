@@ -62,9 +62,6 @@ UNDERLINE = re.compile(r" {0,3}(?:(?:-[ \t]*)+|=+[ \t]*|(?:[*_][ \t]*){3,})")
 # Opening and closing lines of fenced code blocks: a block closes with a line
 # of the same character, at least as long as the opening one, and nothing else
 FENCE = re.compile(r"[ \t]*(?P<marker>`{3,}|~{3,})(?P<rest>.*)")
-# A single HTML comment on a line of its own, which counts as a blank line
-# (comments over several lines are not supported)
-COMMENT = re.compile(r"[ \t]*<!--(?:(?!-->).)*-->[ \t]*")
 # Top-level list items (bullets or numbered)
 ITEM = re.compile(r"(?:[-*+]|[0-9]+[.)])(?:[ \t]|$)")
 # The end of a bullet: its issue and pull request numbers, e.g., `(#12, #34)`
@@ -85,6 +82,27 @@ class Finding:
 
     line: int
     message: str
+
+
+def _is_comment(line: str) -> bool:
+    """Return whether a line is a single HTML comment, which counts as blank.
+
+    Comments over several lines are not supported. Lines are checked one by
+    one, so this is no HTML filter (the notes are published as written).
+
+    Args:
+        line: Line of the notes.
+
+    Returns:
+        Whether the line, without surrounding whitespace, is one comment.
+    """
+    text = line.strip()
+    return (
+        len(text) >= len("<!---->")
+        and text.startswith("<!--")
+        and text.endswith("-->")
+        and "-->" not in text[len("<!--") : -len("-->")]
+    )
 
 
 def _heading_finding(
@@ -194,7 +212,7 @@ class _Checker:
         if heading:
             self._heading(number, len(heading["level"]), heading["title"] or "")
             return
-        blank = not line.strip() or COMMENT.fullmatch(line) is not None
+        blank = not line.strip() or _is_comment(line)
         if not blank and UNDERLINE.fullmatch(line):
             self.findings.append(
                 Finding(
