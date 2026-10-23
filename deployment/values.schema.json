@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
-  "$comment": "app-values.schema.json of the library chart foca-common (the version in Chart.yaml: 0.2.0 for release 0.3.0, which requires FOCA 0.17), with the values key of the app (cloudRegistry), which also requires the Gunicorn settings and the preStop delay, and with the MongoDB image pinned to a minor version, and without the Celery worker and broker, which the app does not use",
+  "$comment": "app-values.schema.json of the library chart foca-common (the version in Chart.yaml: 0.2.0 for release 0.3.0, which requires FOCA 0.17), with the values key of the app (cloudRegistry), which also requires the Gunicorn settings and the preStop delay, and with the MongoDB image pinned to a minor version, without the Celery worker and broker, which the app does not use, and with networkPolicy.ingressFrom allowed to be empty (no default peers; rendering fails if the policy is enabled without any)",
   "$defs": {
     "tmpSizeLimit": {
       "type": [
@@ -97,7 +97,6 @@
             },
             "ingressFrom": {
               "type": "array",
-              "minItems": 1,
               "items": {
                 "type": "object",
                 "minProperties": 1,
@@ -146,7 +145,7 @@
                   }
                 ]
               },
-              "description": "NetworkPolicy peers allowed to connect to the app (by default, the namespace ingress-nginx); must not be empty"
+              "description": "NetworkPolicy peers allowed to connect to the app, e.g., the pods of the ingress controller or Gateway (none by default); rendering fails if the policy is enabled without any"
             }
           }
         },

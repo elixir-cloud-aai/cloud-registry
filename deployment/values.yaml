@@ -96,18 +96,17 @@ cloudRegistry:
       issuer: letsencrypt-prod
   # NetworkPolicy allowing connections to the app only from `ingressFrom`
   # (and the kubelet's probes; see deployment/README.md, Network policies);
-  # clusters without NetworkPolicy support ignore it. Disabled by default:
-  # before enabling it, make `ingressFrom` match the ingress controller
+  # clusters without NetworkPolicy support ignore it. Disabled by default: to
+  # enable it, set `ingressFrom` to the pods of the cluster's ingress
+  # controller or Gateway
   networkPolicy:
     enabled: false
     # NetworkPolicy peers (`spec.ingress[].from`) allowed to connect to the
-    # app; by default, the namespace of ingress-nginx. Must not be empty
-    # (which would allow all sources); on OpenShift, use the router's
-    # namespaces (`policy-group.network.openshift.io/ingress: ""`)
-    ingressFrom:
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: ingress-nginx
+    # app, e.g., the namespace of the ingress controller or the Gateway's
+    # proxies (see deployment/README.md, Network policies, for examples).
+    # None by default, as they depend on the cluster; rendering fails if the
+    # policy is enabled without any (which would allow all sources)
+    ingressFrom: []
   # Security contexts of the pod and the container; the image runs as user
   # 1000, and with a read-only root file system, temporary files go to an
   # `emptyDir` at `/tmp`. On OpenShift, `runAsUser`, `runAsGroup` and
