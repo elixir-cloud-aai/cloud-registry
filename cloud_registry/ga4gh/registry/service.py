@@ -59,9 +59,16 @@ RESERVED_IDS = frozenset({".", "..", "types"})
 class DuplicateService(Conflict):
     """A service with the same URL and API type is registered.
 
+    The description names the registered service; for users who may not
+    read it, responses use `HIDDEN_DESCRIPTION` instead (cf.
+    `server._register_service()`).
+
     Attributes:
+        HIDDEN_DESCRIPTION: Description without the registered service.
         existing_id: Identifier of the registered service.
     """
+
+    HIDDEN_DESCRIPTION = "A service with the same URL and API type is registered."
 
     def __init__(self, existing_id: str) -> None:
         """Create the exception for a service with the same URL and API type.

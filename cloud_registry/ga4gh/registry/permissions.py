@@ -19,6 +19,7 @@ which deployments set) may do everything.
 
 import logging
 from typing import Any
+from urllib.parse import quote
 
 from flask import current_app, request
 from flask.globals import request_ctx
@@ -29,6 +30,7 @@ from foca.security.access_control import (
     get_current_subject,
     grant_role,
     is_admin,
+    is_permitted,
     list_roles,
     list_subject_roles,
     remove_resource,
@@ -36,6 +38,7 @@ from foca.security.access_control import (
     revoke_roles,
 )
 from foca.security.access_control import add_owner as add_resource_owner
+from foca.security.access_control.enforcement import _enforces_access_control
 from foca.utils.logging import escape_log_value
 
 from cloud_registry.exceptions import (
@@ -198,6 +201,43 @@ def service_path(serviceId: str) -> str:
         handling the current request.
     """
     return f"{services_path()}/{serviceId}"
+
+
+def may_read_service(serviceId: str) -> bool:
+    """Check whether the current user may get a service (`GET`).
+
+    The same decision as for a request to `GET /services/{serviceId}` with
+    the token of the current request: the route of that request decides
+    whether FOCA enforces policies on it (only if reads require login, cf.
+    "Requiring login for reads" in `docs/access-control.md`), and if so, its
+    policies are evaluated by FOCA's `is_permitted()`, for the path and
+    method of that request.
+
+    Args:
+        serviceId: Service identifier.
+
+    Returns:
+        Whether the current user may get the service; `False` if no route
+        matches the request (e.g., for identifiers that aren't one path
+        segment).
+    """
+    connexion_context = getattr(request_ctx, "connexion_context", None)
+    # a request context for the read, with the validated token of the
+    # current request (Connexion's security handlers store it on the request
+    # context); the identifier is encoded, as in requests, and routed decoded
+    path = service_path(quote(serviceId, safe=""))
+    with current_app.test_request_context(path, method="GET"):
+        rule = request.url_rule
+        view = None if rule is None else current_app.view_functions.get(rule.endpoint)
+        if view is None:
+            return False
+        # as in FOCA's own check of routes (`ownership_server`), whose
+        # helper is internal
+        if not _enforces_access_control(view):
+            return True
+        # an attribute that Connexion adds
+        request_ctx.connexion_context = connexion_context  # type: ignore[attr-defined]
+        return is_permitted()
 
 
 def _get_current_claims() -> dict[str, Any]:
