@@ -174,8 +174,9 @@ reinstall FOCA, but fails unless the base image has FOCA of that commit,
 `scripts/image_requirements.py`).
 Dependabot ignores the base image meanwhile. Such pins are temporary: the
 release workflow fails
-while a dependency is a direct reference, the base image has no release tag,
-or a chart dependency is a pre-release (`scripts/check_release_pins.py`,
+while a dependency (also an optional one) is a direct reference or names a
+pre-release, the base image has no release tag, or a chart dependency has
+another version than a release (`scripts/check_release_pins.py`,
 tested in `tests/test_check_release_pins.py`), so replace them by the
 released versions before releasing. This applies to pre-releases of the
 app, too: they are built on FOCA releases.

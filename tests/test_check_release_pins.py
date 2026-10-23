@@ -100,6 +100,15 @@ def test_release_pins(tmp_path: Path) -> None:
             " is a direct reference",
         ),
         (
+            {"dependencies": '"foca>=0.17.0rc1,<0.18",'},
+            "pyproject.toml: dependency 'foca>=0.17.0rc1,<0.18' names a pre-release",
+        ),
+        (
+            {"dependencies": "\"connexion==3.0.dev0; python_version < '3.14'\","},
+            "pyproject.toml: dependency 'connexion==3.0.dev0; python_version < "
+            "'3.14'' names a pre-release",
+        ),
+        (
             {"tag": "20261022-py3.13"},
             "Dockerfile: base image tag '20261022-py3.13' is not a release tag "
             "(<X.Y.Z>-py<X.Y>)",
@@ -119,21 +128,77 @@ def test_release_pins(tmp_path: Path) -> None:
             "deployment/Chart.yaml: dependency version '~0.2.0' is not a "
             "release version",
         ),
+        (
+            {"chart_version": "0.2.0 || 0.2.1-rc1  # a comment"},
+            "deployment/Chart.yaml: dependency version '0.2.0 || 0.2.1-rc1' is "
+            "not a release version",
+        ),
     ],
     ids=[
         "git",
         "url",
         "no-spaces",
         "extras-spaces",
+        "pre-release",
+        "dev-marker",
         "dated-image",
         "no-python",
         "chart-rc",
         "chart-range",
+        "chart-alternatives",
     ],
 )
 def test_dev_pins(tmp_path: Path, kwargs: dict[str, str], error: str) -> None:
     """Pins of development versions are found."""
     assert check_release_pins.find_dev_pins(_write(tmp_path, **kwargs)) == [error]
+
+
+@pytest.mark.parametrize(
+    "requirement",
+    ["foca>=0.17.0", "rcpackage>=1.0", "dev-tools[a]>=2.0.post1", "abc==1.0.0b1"],
+    ids=["release", "name-rc", "post-release", "beta"],
+)
+def test_requirement_versions(tmp_path: Path, requirement: str) -> None:
+    """Only versions are checked for pre-releases, not names or extras."""
+    pins = check_release_pins.find_dev_pins(
+        _write(tmp_path, dependencies=f'"{requirement}",')
+    )
+    assert pins == (
+        [f"pyproject.toml: dependency '{requirement}' names a pre-release"]
+        if requirement == "abc==1.0.0b1"
+        else []
+    )
+
+
+def test_optional_dependencies(tmp_path: Path) -> None:
+    """Optional dependencies are checked, too."""
+    root = _write(tmp_path)
+    pyproject = root / "pyproject.toml"
+    pyproject.write_text(
+        pyproject.read_text()
+        + '[project.optional-dependencies]\ndev = ["x @ https://example.org/x.zip"]\n'
+    )
+    assert check_release_pins.find_dev_pins(root) == [
+        "pyproject.toml: dependency 'x @ https://example.org/x.zip' is a direct "
+        "reference"
+    ]
+
+
+@pytest.mark.parametrize(
+    "dependencies",
+    [
+        "dependencies: [{name: a, version: 1.0.0-rc1}]\n",
+        "dependencies:\n  - {name: a, version: 1.0.0-rc1}\n",
+    ],
+    ids=["flow-list", "flow-item"],
+)
+def test_chart_dependencies_flow(tmp_path: Path, dependencies: str) -> None:
+    """Dependencies in flow style are reported, as they can't be checked."""
+    root = _write(tmp_path)
+    (root / "deployment" / "Chart.yaml").write_text(f"name: app\n{dependencies}")
+    assert check_release_pins.find_dev_pins(root) == [
+        "deployment/Chart.yaml: dependencies in flow style can't be checked"
+    ]
 
 
 def test_no_base_image(tmp_path: Path) -> None:
@@ -191,7 +256,7 @@ def test_chart_dependencies(tmp_path: Path) -> None:
         """apiVersion: v2
 name: app
 version: 0.0.0
-dependencies:
+dependencies:  # A comment
   - name: foca-common
     version: 0.2.0
     repository: oci://ghcr.io/elixir-cloud-aai/charts
