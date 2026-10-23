@@ -672,7 +672,7 @@ def test_wheel_contents(tmp_path: Path) -> None:
     )
     for name in ["pyproject.toml", "README.md", "LICENSE"]:
         shutil.copy(ROOT / name, source / name)
-    subprocess.run(  # noqa: S603 (fixed arguments, no shell)
+    result = subprocess.run(  # noqa: S603 (fixed arguments, no shell)
         [
             sys.executable,
             "-m",
@@ -684,9 +684,11 @@ def test_wheel_contents(tmp_path: Path) -> None:
             str(source),
         ],
         capture_output=True,
-        check=True,
+        text=True,
+        check=False,
         env={**os.environ, "SETUPTOOLS_SCM_PRETEND_VERSION": "0.0.0"},
     )
+    assert result.returncode == 0, result.stdout + result.stderr
     (wheel,) = (tmp_path / "dist").glob("*.whl")
     with zipfile.ZipFile(wheel) as archive:
         contents = set(archive.namelist())

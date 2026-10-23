@@ -112,12 +112,14 @@ def _chart_dependencies(path: Path) -> list[dict[str, str] | None]:
     return dependencies
 
 
-def _requirement_pins(requirements: Iterable[object], kind: str) -> list[str]:
+def _requirement_pins(
+    requirements: Iterable[str | dict[str, str]], kind: str
+) -> list[str]:
     """Find requirements of `pyproject.toml` on development versions.
 
     Args:
-        requirements: The requirements (PEP 508); other entries (e.g.,
-            includes of dependency groups) are skipped.
+        requirements: The requirements (PEP 508); includes of
+            dependency groups (`{include-group = ...}`) are skipped.
         kind: What they are, for the descriptions (e.g., `dependency`).
 
     Returns:
@@ -125,7 +127,7 @@ def _requirement_pins(requirements: Iterable[object], kind: str) -> list[str]:
     """
     pins = []
     for requirement in requirements:
-        if not isinstance(requirement, str):
+        if isinstance(requirement, dict):
             continue
         if DIRECT_REFERENCE.match(requirement):
             pins.append(f"pyproject.toml: {kind} '{requirement}' is a direct reference")

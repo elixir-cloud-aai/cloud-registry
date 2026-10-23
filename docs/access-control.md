@@ -123,14 +123,11 @@ changing one to the URL and API type of another one, returns `409 Conflict`
 naming the registered service (`serviceId`, also in `detail`), whether the
 user may read it or not. So users who may not read services can still find
 out whether a service with a given URL and API type is registered, and its
-identifier. To prevent that, restrict registration, too, by replacing the
-rule by name in the same overlay, e.g., with a rule for the readers' role, or
-with `null` for admins only:
+identifier. To prevent that, restrict registration, too, by adding a rule of
+the same name to the policies of `readers.yaml` above, e.g., for the readers'
+role, or `null` for admins only:
 
-```yaml title="readers.yaml"
-security:
-    access_control:
-        policies:
+```yaml
             register-services: [p, reader, /ga4gh/registry/v1/services, POST]
 ```
 
