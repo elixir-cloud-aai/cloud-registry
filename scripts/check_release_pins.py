@@ -57,7 +57,8 @@ _FOCA_IMAGE = (
     r"(?::(?P<tag>[^@\s,\"']+))?(?![^@\s,\"'])"
 )
 BASE_IMAGE = re.compile(
-    r"(?:^[ \t]*FROM[ \t]+(?:--\S+[ \t]+)*|(?<![^\s,=\"'])-{0,2}from=)" + _FOCA_IMAGE,
+    r"(?:(?P<base>^[ \t]*FROM[ \t]+(?:--\S+[ \t]+)*)|(?<![^\s,=\"'])-{0,2}from=)"
+    + _FOCA_IMAGE,
     re.IGNORECASE | re.MULTILINE,
 )
 RELEASE_IMAGE_TAG = re.compile(SEMVER + r"-py3\.[0-9]+")
@@ -191,7 +192,8 @@ def find_dev_pins(root: Path) -> list[str]:
         re.sub(r"(?m)^[ \t]*#.*\n", "", (root / "Dockerfile").read_text()),
     )
     images = list(BASE_IMAGE.finditer(dockerfile))
-    if not images:
+    # Images in `--from=` are checked, too, but aren't base images
+    if not any(image["base"] is not None for image in images):
         pins.append("Dockerfile: no elixircloud/foca base image")
     for image in images:
         if image["tag"] is None:

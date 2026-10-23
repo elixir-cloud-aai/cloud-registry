@@ -375,6 +375,10 @@ def test_script(tmp_path: Path) -> None:
             "FROM \\\n  # a comment\n  elixircloud/foca:dev\n",
             ["Dockerfile: FOCA image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
         ),
+        (
+            "FROM python:3.13\nCOPY --from=elixircloud/foca:0.17.0-py3.13 /x /x\n",
+            ["Dockerfile: no elixircloud/foca base image"],
+        ),
     ],
     ids=[
         "later-stage",
@@ -390,6 +394,7 @@ def test_script(tmp_path: Path) -> None:
         "mount-from-first",
         "quoted-mount",
         "comments",
+        "copy-from-only",
     ],
 )
 def test_base_images(tmp_path: Path, dockerfile: str, errors: list[str]) -> None:
