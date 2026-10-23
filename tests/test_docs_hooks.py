@@ -3,7 +3,7 @@
 import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 import pytest
 
@@ -75,9 +75,10 @@ def _is_readthedocs(url: str) -> bool:
         url: URL to check.
 
     Returns:
-        Whether the URL's host is `readthedocs.io` or one of its subdomains.
+        Whether the URL's host is `readthedocs.io` or one of its subdomains,
+        also if spelled with percent-encodings or a trailing dot.
     """
-    host = urlsplit(url).hostname or ""
+    host = unquote(urlsplit(url).hostname or "").rstrip(".")
     return host == "readthedocs.io" or host.endswith(".readthedocs.io")
 
 
@@ -86,6 +87,8 @@ def _is_readthedocs(url: str) -> bool:
     [
         (DOCS_URL, True),
         ("https://readthedocs.io/", True),
+        ("https://cloud-registry.readthedocs.io./en/0.2.0/", True),
+        ("https://cloud-registry.readthedocs%2Eio/en/0.2.0/", True),
         ("https://readthedocs.io.example.com/", False),
         ("https://example.com/readthedocs.io/", False),
         ("#readthedocs.io", False),
