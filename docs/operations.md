@@ -110,4 +110,7 @@ Images are scanned for known vulnerabilities with
 [Trivy](https://trivy.dev/) in CI and again before a release is published
 (both fail on fixable critical and high vulnerabilities), and the `latest`
 image weekly; the maintainers see the results in the repository's
-code scanning alerts.
+code scanning alerts. The published images (releases and `dev`) are the
+scanned ones: the workflows push each image by digest, untagged, scan
+exactly that digest, and only if the scan passes sign and tag it, so a
+signed or tagged image has always passed the scan.
