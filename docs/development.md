@@ -256,18 +256,23 @@ so that the docs linked from packaged charts exist.
 The CI workflow builds the image of every pull request and scans it with
 [Trivy](https://trivy.dev/) (`.github/actions/scan-image`), and a weekly
 workflow (`scan.yaml`) scans `latest`. For pushes to `dev` and for releases,
-the workflows push the image by digest, untagged, scan exactly that digest
-in a job without credentials or signing identity, and only if the scan
-passes attest, sign and tag it, so that the published images are the
-scanned ones; a digest that fails the scan stays untagged and unsigned. The
-scans fail on critical and high
-vulnerabilities that have a fix, and upload all findings to code scanning
-(not for pull requests from forks, nor in the release workflow). To accept
-a finding (e.g., if it doesn't affect the app), add it to `.trivyignore.yaml`
-with the affected package versions (`purls`), the reason (`statement`) and an
-expiry date (`expired_at`), after which the scans fail again. Trivy also
-scans for secrets (critical and high ones fail the scans too); accept those
-under `secrets:` in the same file. Dependabot
+the workflows push the image by digest, untagged, scan exactly that digest in
+a job without credentials or signing identity, and only if the scan passes
+attest, sign and tag it, so that the published images are the scanned ones; a
+digest that fails the scan stays untagged and unsigned. The scans fail on
+critical and high vulnerabilities that have a fix, and upload the findings
+that have a fix (all severities) to code scanning (Security tab; not for pull
+requests from forks, nor in the release workflow); findings without a fix
+appear there once a fix is released. The weekly scan also uploads a full
+report, findings without a fix included, as the workflow artifact
+`trivy-report-release-image` of each run (`trivy-report.json` and
+`trivy-report.txt`, a table; Actions tab, "Scan release image"); it is not
+uploaded to code scanning. Accepted findings are left out of all results. To
+accept a finding (e.g., if it doesn't affect the app), add it to
+`.trivyignore.yaml` with the affected package versions (`purls`), the reason
+(`statement`) and an expiry date (`expired_at`), after which the scans fail
+again. Trivy also scans for secrets (critical and high ones fail the scans
+too); accept those under `secrets:` in the same file. Dependabot
 updates the actions, but not the Trivy version (`version:` in
 `.github/actions/scan-image/action.yml`): bump it by hand. Images of
 commits on `dev` are signed and attested like release images, by the CI
