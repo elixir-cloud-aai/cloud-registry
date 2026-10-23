@@ -4,9 +4,12 @@ import fnmatch
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
+import sys
 import tomllib
 from typing import Any
+import zipfile
 
 from foca.config.config_parser import ConfigParser
 from foca.models.config import Config, IndexConfig
@@ -622,24 +625,75 @@ class TestChartOverlay:
         assert Path(env["FOCA_CONFIG_OVERLAY"]).name == "overlay.yaml"
 
 
-def test_package_data() -> None:
-    """Files that the base config references, and patches, are installed."""
-    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    patterns = pyproject["tool"]["setuptools"]["package-data"]["cloud_registry"]
+def _package_data() -> list[str]:
+    """Get the data files that the app needs installed with the package.
+
+    Returns:
+        The base config, the files that it references and the patches for
+        deployments (see `docs/access-control.md`), relative to the package
+        directory.
+    """
     config = yaml.safe_load(CONFIG_FILE.read_text())
-    files = [
+    return [
+        "config.yaml",
         config["security"]["access_control"]["model"],
         *(path for spec in config["api"]["specs"].values() for path in spec["path"]),
-        # patches for deployments (see `docs/access-control.md`)
         *(
             str(path.relative_to(ROOT / "cloud_registry"))
             for path in sorted((ROOT / "cloud_registry" / "api" / "patches").glob("*"))
         ),
     ]
-    for path in ["config.yaml", *files]:
+
+
+def test_package_data() -> None:
+    """Files that the base config references, and patches, are installed."""
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    patterns = pyproject["tool"]["setuptools"]["package-data"]["cloud_registry"]
+    files = _package_data()
+    assert "api/patches/login-for-reads.yaml" in files
+    for path in files:
         assert (ROOT / "cloud_registry" / path).is_file(), path
         # setuptools matches the patterns from the package directory
         assert any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns), path
+
+
+def test_wheel_contents(tmp_path: Path) -> None:
+    """The wheel contains the package data, e.g., the login-for-reads patch.
+
+    The tests run on an editable install, which reads the files from the
+    source tree, so the wheel (as the image installs it) is built from a
+    copy of the sources, with the build requirements of the dev environment.
+    """
+    source = tmp_path / "source"
+    shutil.copytree(
+        ROOT / "cloud_registry",
+        source / "cloud_registry",
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    for name in ["pyproject.toml", "README.md", "LICENSE"]:
+        shutil.copy(ROOT / name, source / name)
+    result = subprocess.run(  # noqa: S603 (fixed arguments, no shell)
+        [
+            sys.executable,
+            "-m",
+            "build",
+            "--wheel",
+            "--no-isolation",
+            "--outdir",
+            str(tmp_path / "dist"),
+            str(source),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "SETUPTOOLS_SCM_PRETEND_VERSION": "0.0.0"},
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    (wheel,) = (tmp_path / "dist").glob("*.whl")
+    with zipfile.ZipFile(wheel) as archive:
+        contents = set(archive.namelist())
+    for path in _package_data():
+        assert f"cloud_registry/{path}" in contents, path
 
 
 def _foca_requirement() -> Requirement:

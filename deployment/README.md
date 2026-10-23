@@ -33,7 +33,12 @@ from 0.3.0 on (the first one tagged from Git; see its [release
 notes](https://cloud-registry.readthedocs.io/en/latest/releases/0.3.0/)), or `dev` and `sha-<commit>` images of
 commits since the upgrade to FOCA 0.15. Older images ignore the overlay or
 the service info (`config.service_info`), and the chart rejects their way of
-setting it (`config.custom.endpoints.service_info`).
+setting it (`config.custom.endpoints.service_info`). Named entries and spec
+patches in `config` (e.g., `config.api.specs.registry.patches`, to [require
+login for
+reads](https://cloud-registry.readthedocs.io/en/latest/access-control/#requiring-login-for-reads), or
+policies by name) need images built with FOCA 0.17: release 0.3.0 or later,
+or `dev` and `sha-<commit>` images of commits since the upgrade to FOCA 0.17.
 
 The identity provider is deployment configuration, without defaults (see
 [Deployment
