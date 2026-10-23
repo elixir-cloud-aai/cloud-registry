@@ -11,6 +11,10 @@ Commands:
         whether it is a GitHub pre-release (`prerelease`).
     `latest <tag>`: whether the image of the release is tagged `latest`
         (`latest`), given the tags on `main`, one per line, on standard input.
+    `previous <tag>`: the tag of the previous release (`previous_tag`, empty
+        if there is none), after which GitHub's generated release notes
+        start, given the tags in the history of the release commit, one per
+        line, on standard input.
 
 Only the stdlib is used, so the workflow runs it without installing the app.
 """
@@ -26,9 +30,11 @@ import sys
 # alpha, beta and release candidate versions
 TAG = re.compile(
     r"v(?P<major>0|[1-9][0-9]*)\.(?P<minor>0|[1-9][0-9]*)\.(?P<patch>0|[1-9][0-9]*)"
-    r"(?P<pre>(?:a|b|rc)(?:0|[1-9][0-9]*))?",
+    r"(?:(?P<pre_kind>a|b|rc)(?P<pre_number>0|[1-9][0-9]*))?",
     re.ASCII,
 )
+# Kinds of pre-releases, in their order (stable releases come after them)
+PRE_RELEASES = ("a", "b", "rc")
 
 
 @dataclass(frozen=True)
@@ -45,6 +51,9 @@ class Release:
         prerelease: Whether the release is a GitHub pre-release: alpha, beta
             and release candidate versions, and all releases before 1.0.0.
         number: Major, minor and patch number, to order stable releases.
+        order: Key to order all releases: the number, then the kind (alpha,
+            beta and release candidate versions before the stable one) and
+            the number of the pre-release.
     """
 
     version: str
@@ -52,6 +61,7 @@ class Release:
     stable: bool
     prerelease: bool
     number: tuple[int, int, int]
+    order: tuple[int, int, int, int, int]
 
     def outputs(self) -> list[str]:
         """Return the outputs of the release as `GITHUB_OUTPUT` lines."""
@@ -82,13 +92,16 @@ def parse_tag(tag: str) -> Release:
         )
     number = (int(match["major"]), int(match["minor"]), int(match["patch"]))
     base = ".".join(map(str, number))
-    pre = match["pre"]
+    pre_kind = match["pre_kind"]
+    pre = f"{pre_kind}{match['pre_number']}" if pre_kind else None
+    kind = PRE_RELEASES.index(pre_kind) if pre_kind else len(PRE_RELEASES)
     return Release(
         version=tag.removeprefix("v"),
         chart_version=f"{base}-{pre}" if pre else base,
         stable=pre is None,
         prerelease=pre is not None or number[0] == 0,
         number=number,
+        order=(*number, kind, int(match["pre_number"] or 0)),
     )
 
 
@@ -121,6 +134,36 @@ def is_latest(tag: str, tags: Iterable[str]) -> bool:
     return release.number in numbers and release.number == max(numbers)
 
 
+def previous_tag(tag: str, tags: Iterable[str]) -> str | None:
+    """Return the tag of the release before a release.
+
+    Args:
+        tag: Git tag of the release.
+        tags: Git tags in the history of the release commit; tags that are no
+            release versions are ignored.
+
+    Returns:
+        For a stable release, the highest stable release below it; for an
+        alpha, beta or release candidate version, the highest release of any
+        kind below it; `None` if there is none (e.g., for the first release).
+
+    Raises:
+        ValueError: If `tag` is not a canonical release version.
+    """
+    release = parse_tag(tag)
+    candidates = []
+    for other in tags:
+        try:
+            other_release = parse_tag(other)
+        except ValueError:
+            continue
+        if other_release.order < release.order and (
+            other_release.stable or not release.stable
+        ):
+            candidates.append((other_release.order, other))
+    return max(candidates)[1] if candidates else None
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Print the outputs of a command (see the module's docstring).
 
@@ -134,22 +177,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Derive the version and the kind of a release from its tag."
     )
-    parser.add_argument("command", choices=["outputs", "latest"])
+    parser.add_argument("command", choices=["outputs", "latest", "previous"])
     parser.add_argument("tag", help="release tag, e.g., v1.2.3 or v1.2.3rc1")
     args = parser.parse_args(argv)
     # Undecodable bytes are replaced, so that tags with them are ignored as
     # invalid tags (instead of failing with a `UnicodeDecodeError`)
     tags = (
         sys.stdin.buffer.read().decode("utf-8", "replace").splitlines()
-        if args.command == "latest"
+        if args.command in {"latest", "previous"}
         else []
     )
     try:
         if args.command == "outputs":
             lines = parse_tag(args.tag).outputs()
-        else:
+        elif args.command == "latest":
             latest = is_latest(args.tag, tags)
             lines = [f"latest={str(latest).lower()}"]
+        else:
+            lines = [f"previous_tag={previous_tag(args.tag, tags) or ''}"]
     except ValueError as error:
         print(f"::error::{error}", file=sys.stderr)
         return 1
