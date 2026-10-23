@@ -121,6 +121,7 @@ python scripts/release_version.py outputs vX.Y.Z
 python scripts/citation.py check X.Y.Z
 python scripts/check_release_pins.py
 ! grep -n TODO docs/releases/X.Y.Z.md  # curated notes, if any
+[ ! -f docs/releases/X.Y.Z.md ] || python scripts/release_notes.py check docs/releases/X.Y.Z.md
 readme="$(mktemp -d)/README.md" && cp deployment/README.md "${readme}"
 python scripts/chart_readme.py "${readme}" vX.Y.Z  # links of the chart
 git push origin <sha>:main  # fails unless it is a fast-forward
@@ -165,12 +166,7 @@ it attests the build provenance of the scanned digest and signs it (see
 tags exactly that image `X.Y.Z` (and `latest`, if it is the highest stable
 release on `main`), attests and signs the chart, and creates a GitHub
 release with the chart (`.tgz`), its Sigstore bundle (`.tgz.sigstore.json`)
-and the notes in `docs/releases/X.Y.Z.md` (for pre-releases, e.g.,
-`X.Y.Zrc1.md`), or, if there are none, notes generated from the merged pull
-requests. Curated
-notes are published as written, so the release workflow fails if they contain
-`TODO`; on re-runs, it replaces the notes of an existing release with them
-(also overwriting manual edits). Add curated notes to the
+and the release notes (see below). Add curated notes to the
 [changelog](changelog.md) in `mkdocs.yml` (`nav`; the docs build fails
 otherwise), and refer to pages of the docs by name rather than by relative
 links, which don't work in GitHub releases. No packages are published to
@@ -181,10 +177,11 @@ GitHub pre-releases (never marked as the latest release). Images of commits
 on `dev` are published by the CI workflow (environment `dev-images`).
 
 The release workflow derives the version, the chart version, the kind of
-release (stable, GitHub pre-release) and whether the image is tagged `latest`
-from the tag with `scripts/release_version.py`, which is tested over a table
-of tags (`tests/test_release_version.py`) and checked like the app (ruff,
-mypy, coverage); change these rules there, not in the workflow.
+release (stable, GitHub pre-release), whether the image is tagged `latest`
+and the previous release (for the generated notes) from the tag with
+`scripts/release_version.py`, which is tested over a table of tags
+(`tests/test_release_version.py`) and checked like the app (ruff, mypy,
+coverage); change these rules there, not in the workflow.
 
 To test unreleased changes of FOCA, `pyproject.toml` may pin a FOCA commit
 (`foca @ git+https://github.com/elixir-cloud-aai/foca@<sha>`), with FOCA's
@@ -206,11 +203,43 @@ tested in `tests/test_check_release_pins.py`), so replace them by the
 released versions before releasing. This applies to pre-releases of the
 app, too: they are built on FOCA releases.
 
-In curated notes, link all changes of the release as the compare view from
-the previous release's tag (e.g.,
-`https://github.com/elixir-cloud-aai/cloud-registry/compare/vA.B.C...vX.Y.Z`)
-rather than naming a range of pull requests, which goes stale when more pull
-requests are merged before the release.
+Release notes follow the format agreed for all repositories of ELIXIR
+On-Cloud:
+
+1. An intro paragraph saying what the release brings, with a link to the
+   upgrade steps (e.g., on the [Upgrading](upgrading.md) page) if there are
+   any.
+2. Grouped sections, with empty ones left out, in this order:
+   `## Breaking changes`, `## Features`, `## Security`, `## Fixes`,
+   `## Documentation`, `## Maintenance`. They hold bullets only, and each
+   bullet ends with its issue and pull request numbers, e.g., `(#12, #34)`
+   (several pairs separated by semicolons, e.g., `(#12, #34; #56, #78)`).
+3. `## Commits`: GitHub's generated notes, verbatim (including "New
+   Contributors"), without their `## What's Changed` header, as they credit
+   the authors.
+4. Last, GitHub's generated `**Full Changelog**: ...` line (no compare link
+   of our own).
+
+The curated notes in `docs/releases/X.Y.Z.md` (for pre-releases, e.g.,
+`X.Y.Zrc1.md`) hold parts 1 and 2, without a title (the release's title is
+its tag); the release workflow adds parts 3 and 4 from GitHub's
+[generate-notes](https://docs.github.com/en/rest/releases/releases#generate-release-notes-content-for-a-release)
+API, for the changes since the previous published release in the history of the
+release commit (for stable releases the previous stable release, or the previous
+pre-release if there is no stable one, as the generated notes can't start
+before the first tag; for alpha, beta and release candidate versions the
+previous release of any kind; all changes for the first release). Generated
+notes in an unexpected format (without the `**Full Changelog**` line) are
+kept as they are, with a warning, as the image is published by then. Without
+curated notes, the release gets GitHub's generated notes alone. Curated notes
+are published as written, so the release workflow fails if they contain
+`TODO` or are not in this format (`scripts/release_notes.py check`, tested in
+`tests/test_release_notes.py`, which also checks the notes in
+`docs/releases/`), and so does the CI job "Check release readiness" on pushes
+(see above); on re-runs, it replaces the notes of an existing release (also
+overwriting manual edits). Detailed
+upgrade steps belong on the [Upgrading](upgrading.md) page, linked from the
+intro.
 
 Maintainers: the workflows rely on these repository settings: environment
 `dev-images` limited to branch `dev`; environment `release` with a required

@@ -288,9 +288,13 @@ jobs:
           python scripts/check_release_pins.py 2> pins.txt || status=1
           sed "s/^::error::/::${level}::/" pins.txt
           notes="docs/releases/${version}.md"
-          if [[ -f "${notes}" ]] && grep -n "TODO" "${notes}"; then
-              echo "::${level}::${notes} contains TODO: finish the release notes before tagging v${version}"
-              status=1
+          if [[ -f "${notes}" ]]; then
+              if grep -n "TODO" "${notes}"; then
+                  echo "::${level}::${notes} contains TODO: finish the release notes before tagging v${version}"
+                  status=1
+              fi
+              python scripts/release_notes.py check "${notes}" 2> notes.txt || status=1
+              sed "s/^::error /::${level} /" notes.txt
           fi
           if [[ "${level}" == "error" ]]; then
               exit "${status}"

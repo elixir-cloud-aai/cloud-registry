@@ -221,11 +221,11 @@ def test_text_lines(tmp_path: Path) -> None:
     assert _text_lines(tmp_path / "image.png") == []
 
 
-def test_repository_generic() -> None:
-    """No file of the repository has identity provider specific values.
+def _repository_lines() -> list[tuple[str, int, str]]:
+    """Get the lines of the repository's text files.
 
-    Guides for specific identity providers or deployments are kept
-    elsewhere.
+    Returns:
+        The file name, line number and line of each line.
     """
     files = (
         subprocess.run(
@@ -237,13 +237,53 @@ def test_repository_generic() -> None:
         .stdout.decode()
         .split("\0")
     )
+    return [
+        (name, number, line)
+        for name in files
+        if name and (ROOT / name).is_file()
+        for number, line in enumerate(_text_lines(ROOT / name), start=1)
+    ]
+
+
+def test_repository_generic() -> None:
+    """No file of the repository has identity provider specific values.
+
+    Guides for specific identity providers or deployments are kept
+    elsewhere.
+    """
     found = [
         f"{name}:{number}: {line.strip()}"
-        for name in files
+        for name, number, line in _repository_lines()
         # This file names the values to find
-        if name not in ("", "tests/test_config.py") and (ROOT / name).is_file()
-        for number, line in enumerate(_text_lines(ROOT / name), start=1)
-        if IDP_SPECIFIC.search(line)
+        if name != "tests/test_config.py" and IDP_SPECIFIC.search(line)
+    ]
+    assert found == []
+
+
+# E-mail addresses, with a domain name of valid (also internationalized) labels
+EMAIL = re.compile(r"[\w.%+-]+@((?:[^\W_](?:(?:[^\W_]|-)*[^\W_])?\.)+[^\W\d_]{2,})")
+# The service address, and the GA4GH address of the vendored specifications
+ADDRESSES = {"cloud-service@elixir-europe.org", "ga4gh-discovery-networks@ga4gh.org"}
+# Domains reserved for examples
+EXAMPLE_DOMAIN = re.compile(r"(?:.+\.)?example\.(?:com|net|org)", re.IGNORECASE)
+
+
+def test_email_pattern() -> None:
+    """Addresses are found also with internationalized domain names."""
+    text = "a@x.example.org, b@bücher.example.org, c@-x.org, d@x-.org"
+    assert [m[0] for m in EMAIL.finditer(text)] == [
+        "a@x.example.org",
+        "b@bücher.example.org",
+    ]
+
+
+def test_repository_no_personal_email_addresses() -> None:
+    """No file has e-mail addresses but the service and example addresses."""
+    found = [
+        f"{name}:{number}: {match[0]}"
+        for name, number, line in _repository_lines()
+        for match in EMAIL.finditer(line)
+        if match[0].lower() not in ADDRESSES and not EXAMPLE_DOMAIN.fullmatch(match[1])
     ]
     assert found == []
 

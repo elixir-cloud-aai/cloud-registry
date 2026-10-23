@@ -2,7 +2,8 @@
 
 Changes of each release are listed in the [release notes on
 GitHub](https://github.com/elixir-cloud-aai/cloud-registry/releases), which
-are published from the notes in `docs/releases/` where these exist (see
+are published from the notes in `docs/releases/` where these exist, followed
+by GitHub's generated list of changes (see
 [Versioning and releases](development.md#versioning-and-releases)):
 
 - [0.3.0](releases/0.3.0.md)
