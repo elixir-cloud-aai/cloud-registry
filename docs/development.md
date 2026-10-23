@@ -251,7 +251,9 @@ intro.
 
 Maintainers: the workflows rely on these repository settings: environment
 `dev-images` limited to branch `dev`; environment `release` with a required
-reviewer; a tag ruleset for `v*` that restricts who may create them and
+reviewer and limited to tags `v*` (deployment branches and tags: "Selected
+branches and tags", a tag rule `v*`, so that no workflow of another branch
+can use its secrets); a tag ruleset for `v*` that restricts who may create them and
 prevents moving or deleting them; `main` protected against non-fast-forward
 pushes; and the Docker Hub secrets (`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`)
 only in the two environments, not as repository secrets. The Docker Hub

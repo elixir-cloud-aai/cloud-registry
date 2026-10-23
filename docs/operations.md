@@ -68,17 +68,20 @@ later, which reads the signatures in the Sigstore bundle format):
 ```bash
 gh attestation verify oci://docker.io/elixircloud/cloud-registry:0.3.0 \
     --repo elixir-cloud-aai/cloud-registry \
-    --signer-workflow elixir-cloud-aai/cloud-registry/.github/workflows/release.yaml
+    --signer-workflow elixir-cloud-aai/cloud-registry/.github/workflows/release.yaml \
+    --source-ref refs/tags/v0.3.0
 cosign verify docker.io/elixircloud/cloud-registry:0.3.0 \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
     --certificate-identity https://github.com/elixir-cloud-aai/cloud-registry/.github/workflows/release.yaml@refs/tags/v0.3.0
 ```
 
-Replace `0.3.0` with the version to verify. Images of commits on `dev`
+Replace `0.3.0` with the version to verify. `--source-ref` and the ref in
+`--certificate-identity` check that the workflow ran for the release tag,
+not for another branch. Images of commits on `dev`
 (`dev`, `sha-<commit>`) are signed and attested by the CI workflow instead:
 use `--signer-workflow
-elixir-cloud-aai/cloud-registry/.github/workflows/checks.yaml` and
-`--certificate-identity
+elixir-cloud-aai/cloud-registry/.github/workflows/checks.yaml`,
+`--source-ref refs/heads/dev` and `--certificate-identity
 https://github.com/elixir-cloud-aai/cloud-registry/.github/workflows/checks.yaml@refs/heads/dev`.
 To show an image's SBOM or
 provenance, run:
@@ -99,7 +102,8 @@ gh release download v0.3.0 --repo elixir-cloud-aai/cloud-registry \
     --pattern 'cloud-registry-0.3.0.tgz*'
 gh attestation verify cloud-registry-0.3.0.tgz \
     --repo elixir-cloud-aai/cloud-registry \
-    --signer-workflow elixir-cloud-aai/cloud-registry/.github/workflows/release.yaml
+    --signer-workflow elixir-cloud-aai/cloud-registry/.github/workflows/release.yaml \
+    --source-ref refs/tags/v0.3.0
 cosign verify-blob cloud-registry-0.3.0.tgz \
     --bundle cloud-registry-0.3.0.tgz.sigstore.json \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
