@@ -325,8 +325,10 @@ jobs:
         run: docker compose logs
   # On pushes, builds the image once and pushes it by digest only (untagged,
   # with SBOM and provenance attestations, `mode=max`), for `scan` to scan and
-  # `publish` to sign and tag, as in `release.yaml`. Nothing refers to an
-  # untagged digest, so one that fails the scan is never published
+  # `publish` to sign and tag, as in `release.yaml`. Runs alongside the tests,
+  # so that the scan starts early; digests of runs that fail (or fail the
+  # scan) are never signed or tagged, but stay on Docker Hub, untagged
+  # (pullable by digest only)
   push:
     name: Push app image
     runs-on: ubuntu-latest
@@ -359,11 +361,6 @@ jobs:
           echo "version=$(python -m setuptools_scm)" >> "$GITHUB_OUTPUT"
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - name: Log in to Docker Hub
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          username: ${{ secrets.DOCKERHUB_LOGIN }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
       # OCI labels with the version, commit and source; the tags are set by
       # `publish`, after the scan
       - name: Generate image labels
@@ -375,6 +372,11 @@ jobs:
           tags: type=raw,value=dev
           labels: |
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
+      - name: Log in to Docker Hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_LOGIN }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Build and push image by digest
         id: push
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -397,9 +399,9 @@ jobs:
   # same way (`release.yaml`), and `latest` is scanned weekly (`scan.yaml`)
   scan:
     name: Scan image
-    # `push` is skipped for pull requests
+    # For pull requests, `push` is skipped
     needs: push
-    if: ${{ !cancelled() && (needs.push.result == 'success' || needs.push.result == 'skipped') }}
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || needs.push.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -421,7 +423,9 @@ jobs:
           load: true
           # Single image, for the local Docker daemon (no attestations)
           provenance: false
-          tags: cloud-registry:scan
+          # Named as the pushed image, so that code scanning matches the
+          # findings of both
+          tags: ${{ env.IMAGE_NAME }}:scan
       - name: Determine image
         id: image
         env:
@@ -429,7 +433,7 @@ jobs:
           DIGEST: ${{ needs.push.outputs.digest }}
         run: |
           if [[ "${EVENT_NAME}" != "push" ]]; then
-            echo "image=cloud-registry:scan" >> "$GITHUB_OUTPUT"
+            echo "image=${IMAGE_NAME}:scan" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if [[ ! "${DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]; then

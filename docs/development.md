@@ -145,10 +145,10 @@ it attests the build provenance of the scanned digest and signs it (see
 [Verifying images and charts](operations.md#verifying-images-and-charts)),
 tags exactly that image `X.Y.Z` (and `latest`, if it is the highest stable
 release on `main`), attests and signs the chart, and creates a GitHub
-release with the
-chart (`.tgz`), its Sigstore bundle (`.tgz.sigstore.json`) and the
-notes in `docs/releases/X.Y.Z.md` (for pre-releases, e.g., `X.Y.Zrc1.md`),
-or, if there are none, notes generated from the merged pull requests. Curated
+release with the chart (`.tgz`), its Sigstore bundle (`.tgz.sigstore.json`)
+and the notes in `docs/releases/X.Y.Z.md` (for pre-releases, e.g.,
+`X.Y.Zrc1.md`), or, if there are none, notes generated from the merged pull
+requests. Curated
 notes are published as written, so the release workflow fails if they contain
 `TODO`; on re-runs, it replaces the notes of an existing release with them
 (also overwriting manual edits). Add curated notes to the
@@ -223,7 +223,8 @@ commits on `dev` are signed and attested like release images, by the CI
 workflow. All of this needs no secrets beyond the Docker Hub ones: signing
 uses the workflows' OIDC tokens (permission `id-token: write`). Re-running
 the release workflow builds, scans, signs and tags a new image digest (the
-image build is not reproducible); the earlier digest stays signed.
+image build is not reproducible); an earlier digest that was published
+stays signed.
 
 The CI workflow (which tests the chart) and the release workflow (which
 packages it) install the same Helm version (`version:` of `azure/setup-helm`
