@@ -223,7 +223,9 @@ chart creates no HTTPRoute: disable the Ingress (`enabled: false`; on
 clusters without Routes, the chart then creates none) and attach an HTTPRoute
 of your own to the Gateway, next to the release, with the app's Service as
 its backend (`backendRefs`, port `8080`); to keep the permissions API off the
-internet, match only the path prefix `/ga4gh/registry/v1/`.
+internet, match only the path prefix `/ga4gh/registry/v1/`. On OpenShift,
+the chart still creates a Route for all paths (see above), so there, block
+`/admin/` in front of the router as well.
 
 The Ingress is configured with:
 
@@ -406,7 +408,9 @@ allow rules) before relying on these restrictions.
       #     matchLabels:
       #       app.kubernetes.io/name: traefik
       # Envoy Gateway (Gateway API, default deployment mode): the proxies of
-      # the Gateway `gateway` in the namespace `gateway-system`
+      # the Gateway `gateway` in the namespace `gateway-system`, which run in
+      # the controller's namespace `envoy-gateway-system` (in the Gateway
+      # namespace mode, select the Gateway's namespace instead)
       # - namespaceSelector:
       #     matchLabels:
       #       kubernetes.io/metadata.name: envoy-gateway-system
