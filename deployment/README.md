@@ -469,8 +469,9 @@ threads, so slow or stuck requests don't count. Keep `keepalive` longer than
 the ingress controller's keep-alive timeout for upstream connections
 (e.g., 60 seconds for ingress-nginx, `upstream-keepalive-timeout`; Traefik's
 90 seconds are longer than the default, so raise `keepalive`, e.g., to 100;
-Envoy Gateway keeps idle connections for an hour unless its
-`BackendTrafficPolicy` sets a shorter `connectionIdleTimeout`): otherwise, it
+Envoy Gateway keeps idle connections for an hour, so set
+`timeout.http.connectionIdleTimeout` in a `BackendTrafficPolicy` below
+`keepalive`, e.g., to `60s`): otherwise, it
 may reuse a connection just as Gunicorn closes it, and the request fails with
 `502` (non-idempotent requests, e.g., `POST`, are not retried). Idle
 connections wait in the worker's poller, not in its threads.
