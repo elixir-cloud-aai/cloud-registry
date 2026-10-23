@@ -325,8 +325,43 @@ def test_script(tmp_path: Path) -> None:
             "FROM elixircloud/foca:0.17.0-py3.12\n",
             [],
         ),
+        (
+            "FROM elixircloud/foca:0.17.0-py3.13\nFROM \\\n  elixircloud/foca:dev\n",
+            ["Dockerfile: base image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+        ),
+        (
+            "FROM elixircloud/foca:0.17.0-py3.13\n"
+            "FROM index.docker.io/elixircloud/foca:dev\n",
+            ["Dockerfile: base image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+        ),
+        (
+            "FROM elixircloud/foca:0.17.0-py3.13\n"
+            "FROM ${REGISTRY}elixircloud/foca:dev\n",
+            ["Dockerfile: base image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+        ),
+        (
+            "FROM elixircloud/foca:0.17.0-py3.13\n"
+            "COPY --from=elixircloud/foca:dev /app /app\n",
+            ["Dockerfile: base image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+        ),
+        (
+            "FROM elixircloud/foca:0.17.0-py3.13\n"
+            "RUN --mount=type=bind,from=elixircloud/foca:dev,target=/x true\n",
+            ["Dockerfile: base image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+        ),
     ],
-    ids=["later-stage", "options", "no-tag", "other-image", "all-releases"],
+    ids=[
+        "later-stage",
+        "options",
+        "no-tag",
+        "other-image",
+        "all-releases",
+        "continued-line",
+        "registry",
+        "variable",
+        "copy-from",
+        "mount-from",
+    ],
 )
 def test_base_images(tmp_path: Path, dockerfile: str, errors: list[str]) -> None:
     """All FOCA base images of the `Dockerfile` are checked, in any stage."""
@@ -367,14 +402,16 @@ def test_base_images(tmp_path: Path, dockerfile: str, errors: list[str]) -> None
     ],
     ids=["file-repository", "no-version", "alias-repository", "item-on-own-line"],
 )
+@pytest.mark.parametrize("key", ["dependencies", '"dependencies"', "'dependencies'"])
 def test_chart_dependency_sources(
-    tmp_path: Path, dependency: str, errors: list[str]
+    tmp_path: Path, dependency: str, errors: list[str], key: str
 ) -> None:
-    """Chart dependencies need a version and a chart repository."""
+    """Chart dependencies need a version and a chart repository.
+
+    The key `dependencies` may be quoted.
+    """
     root = _write(tmp_path)
-    (root / "deployment" / "Chart.yaml").write_text(
-        f"name: app\ndependencies:\n{dependency}"
-    )
+    (root / "deployment" / "Chart.yaml").write_text(f"name: app\n{key}:\n{dependency}")
     assert check_release_pins.find_dev_pins(root) == errors
 
 

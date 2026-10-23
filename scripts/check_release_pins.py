@@ -10,8 +10,9 @@ annotations on standard error, if:
   `build-system.requires`) is a direct reference (`<name> @ <URL>`, e.g., a
   Git commit) or names a pre-release or development version (e.g.,
   `>=0.17.0rc1`);
-- a base image of the `Dockerfile` (`elixircloud/foca`, in any stage) has
-  no release tag (`<X.Y.Z>-py<X.Y>`, e.g., a dated development image);
+- an image of FOCA in the `Dockerfile` (`elixircloud/foca`, as the base
+  image of any stage, or in `--from=`) has no release tag
+  (`<X.Y.Z>-py<X.Y>`, e.g., a dated development image);
 - a dependency of the Helm chart (`deployment/Chart.yaml`) has no version or
   another version than a release (`X.Y.Z`, e.g., a pre-release or a range),
   has no chart repository (`oci://` or `https://`, e.g., `file://` or an
@@ -41,11 +42,14 @@ PRE_RELEASE = re.compile(
     r"[0-9][._-]?(a|b|c|rc|alpha|beta|pre|preview|dev)[0-9]*(?![a-z])",
     re.IGNORECASE,
 )
-# A base image of FOCA, with its tag if it has one, in any stage, also with
-# options (`--platform=...`) or the registry (`docker.io/`)
+# An image of FOCA, with its tag if it has one: a base image (`FROM`, in any
+# stage, also with options such as `--platform=...`) or an image that files
+# are copied or mounted from (`--from=`, `from=`), also with a registry or a
+# variable in front (`docker.io/`, `${REGISTRY}`); lines continued with `\`
+# are joined first
+_FOCA_IMAGE = r"(?:[^\s@]*?[/}])?elixircloud/foca(?::(?P<tag>[^@\s,]+))?(?![^@\s,])"
 BASE_IMAGE = re.compile(
-    r"^[ \t]*FROM[ \t]+(?:--\S+[ \t]+)*(?:docker\.io/)?elixircloud/foca"
-    r"(?::(?P<tag>[^@\s]+))?(?![^@\s])",
+    r"(?:^[ \t]*FROM[ \t]+(?:--\S+[ \t]+)*|(?<![^\s,])-{0,2}from=)" + _FOCA_IMAGE,
     re.IGNORECASE | re.MULTILINE,
 )
 RELEASE_IMAGE_TAG = re.compile(SEMVER + r"-py3\.[0-9]+")
@@ -86,7 +90,7 @@ def _chart_dependencies(path: Path) -> list[dict[str, str] | None]:
     for line in path.read_text().splitlines():
         if line and line[0] not in " \t-#":
             key, _, value = line.split("#", 1)[0].partition(":")
-            in_dependencies = key.strip() == "dependencies"
+            in_dependencies = key.strip().strip("\"'") == "dependencies"
             item_indent = None
             if in_dependencies and value.strip():
                 dependencies.append(None)
@@ -169,7 +173,8 @@ def find_dev_pins(root: Path) -> list[str]:
             "build requirement",
         ),
     ]
-    images = list(BASE_IMAGE.finditer((root / "Dockerfile").read_text()))
+    dockerfile = re.sub(r"\\[ \t]*\n", " ", (root / "Dockerfile").read_text())
+    images = list(BASE_IMAGE.finditer(dockerfile))
     if not images:
         pins.append("Dockerfile: no elixircloud/foca base image")
     for image in images:
