@@ -50,7 +50,10 @@ them.
       resource names) and `apiServer`, and move any changes made to the
       `app-config` ConfigMap to `config`;
     - rename `host_name` to `hostName` and `cloud_registry` to
-      `cloudRegistry` (rendering fails while the old keys are set);
+      `cloudRegistry` (rendering fails while the old keys are set), and
+      `mongodb.volumeSize` to `mongodb.persistence.size` (rendering fails
+      with `volumeSize`; see
+      [Persistence](deployment.md#persistence));
     - optionally, enable the app's NetworkPolicy
       (`cloudRegistry.networkPolicy.enabled: true`), with
       `cloudRegistry.networkPolicy.ingressFrom` set to the pods of the

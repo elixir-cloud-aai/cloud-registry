@@ -107,10 +107,7 @@ dependencies = [
     "connexion>=2.15.1,<3.0.0",
     # FOCA minors are bumped by hand, together with the base image in the
     # `Dockerfile` (`.github/dependabot.yml`).
-    # TEMPORARY: a commit on FOCA's `dev` branch, to test unreleased changes
-    # of FOCA 0.17 (#178); replaced by the release (#179) before the next
-    # release, which `scripts/check_release_pins.py` enforces
-    "foca @ git+https://github.com/elixir-cloud-aai/foca@db6998cae4e1f1fbbbaafd7a26795f3bbfa4511a",
+    "foca>=0.17.0,<0.18",
     "gunicorn>=26.2.0,<27",
 ]
 

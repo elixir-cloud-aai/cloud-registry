@@ -1,6 +1,6 @@
 dependencies:
 - name: foca-common
   repository: oci://ghcr.io/elixir-cloud-aai/charts
-  version: 0.1.0
-digest: sha256:9e67b3ebd35aa5d996e026bf5b45f2979af3d9ee2a2f501168a012e26d2ea788
-generated: "2026-10-22T22:26:15.352841967+02:00"
+  version: 0.2.0
+digest: sha256:4acdf623734905ba9748bd375a1a9b864003c6364d2d89d985460b7e49735190
+generated: "2026-10-23T21:27:30.19734148+02:00"

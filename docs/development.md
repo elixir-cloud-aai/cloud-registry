@@ -191,8 +191,9 @@ later commits of that day; the `Dockerfile` records the commit as
 `## FOCA commit: <sha>`, which the tests check, and the image build doesn't
 reinstall FOCA, but fails unless the base image has FOCA of that commit,
 `scripts/image_requirements.py`).
-Dependabot ignores the base image meanwhile. Such pins are temporary: the
-release workflow fails
+Meanwhile, add a Dependabot `ignore` of `elixircloud/foca` (all updates;
+remove it with the release pin), as updates of the dated tag's digest
+would change FOCA. Such pins are temporary: the release workflow fails
 while a requirement (also an optional one, a dependency group or a build
 requirement) is a direct reference or names a pre-release or a local version
 (`+<label>`), a FOCA base image
@@ -303,7 +304,7 @@ that version: bump it by hand, in both workflows together.
 
 The chart is a thin chart over FOCA's library chart `foca-common` (see the
 [library chart's
-documentation](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.1.0/docs/helm-chart.md)):
+documentation](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/helm-chart.md)):
 `deployment/Chart.yaml` pins its version, and `deployment/Chart.lock` locks
 it; `helm dependency build deployment` downloads it into `deployment/charts/`
 (ignored by Git), and the release workflow packages it with the chart. CI
