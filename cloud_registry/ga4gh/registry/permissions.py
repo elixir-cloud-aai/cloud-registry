@@ -213,12 +213,12 @@ def may_read_service(serviceId: str) -> bool:
     policies are evaluated by FOCA's `is_permitted()`, for the path and
     method of that request.
 
-    Args:
-        serviceId: Service identifier.
-
     The check relies on internals of FOCA (`_enforces_access_control()`) and
     Connexion (`connexion_context`), as FOCA has no public helper for the
     decision on another request; the tests pin it to that of `GET`.
+
+    Args:
+        serviceId: Service identifier.
 
     Returns:
         Whether the current user may get the service; `False` if the request
