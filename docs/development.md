@@ -238,7 +238,10 @@ notes in an unexpected format (without the `**Full Changelog**` line) are
 kept as they are, with a warning, as the image is published by then. Without
 curated notes, the release gets GitHub's generated notes alone. Curated notes
 are published as written, so the release workflow fails if they contain
-`TODO` or are not in this format (`scripts/release_notes.py check`, tested in
+`TODO`, are not in this format or link to versions that move (the latest
+docs, `/en/latest/`, or files on branch `dev`, `blob/dev/`; link the
+release's, e.g., `/en/vX.Y.Z/`, `blob/vX.Y.Z/`, as the published notes
+don't change) (`scripts/release_notes.py check`, tested in
 `tests/test_release_notes.py`, which also checks the notes in
 `docs/releases/`), and so does the CI job "Check release readiness" on pushes
 (see above); on re-runs, it replaces the notes of an existing release (also

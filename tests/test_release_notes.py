@@ -373,3 +373,46 @@ def test_script(tmp_path: Path) -> None:
         release_notes.body(CURATED, GENERATED)[0],
         "",
     )
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        "https://cloud-registry.readthedocs.io/en/latest/upgrading/",
+        "https://cloud-registry.readthedocs.io/en/stable/",
+        "https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/README.md",
+        "https://github.com/elixir-cloud-aai/cloud-registry/tree/main/docs",
+        "https://github.com/elixir-cloud-aai/cloud-registry/releases/latest",
+        "https://raw.githubusercontent.com/elixir-cloud-aai/cloud-registry/dev/x",
+    ],
+)
+def test_check_moving_links(link: str) -> None:
+    """Links to versions that move are rejected, also in sections."""
+    markdown = f"Intro, [docs]({link}).\n\n## Fixes\n\n- Fix, see <{link}> (#1)\n"
+    assert _messages(markdown) == [(1, "Link to a"), (5, "Link to a")]
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        "https://cloud-registry.readthedocs.io/en/v0.3.0/upgrading/",
+        "https://github.com/elixir-cloud-aai/cloud-registry/blob/v0.3.0/README.md",
+        "https://github.com/elixir-cloud-aai/cloud-registry/tree/dev-notes/docs",
+        "https://example.org/en/latest/",
+    ],
+)
+def test_check_versioned_links(link: str) -> None:
+    """Links to a release, and other sites' links, are accepted."""
+    assert release_notes.check(f"Intro, [docs]({link}).\n") == []
+
+
+def test_moving_links_as_chart_readme() -> None:
+    """The links to versions that move are those of `chart_readme.py`."""
+    spec = importlib.util.spec_from_file_location(
+        "chart_readme", ROOT / "scripts/chart_readme.py"
+    )
+    assert spec and spec.loader
+    chart_readme = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(chart_readme)
+    assert release_notes.UNVERSIONED.pattern == chart_readme.UNVERSIONED.pattern
+    assert release_notes.UNVERSIONED.flags == chart_readme.UNVERSIONED.flags
