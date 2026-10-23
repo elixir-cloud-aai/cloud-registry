@@ -2,7 +2,12 @@
 ## Pinned by digest, so that rebuilds (e.g., of a release) use the same base
 ## image; Dependabot updates the tag and digest together
 ## (`.github/dependabot.yml`)
-FROM elixircloud/foca:0.16.0-py3.13@sha256:b401fbd4c56a6978118dca85dacf88cf5b8c17593b03a302537b9b48cb17eeef
+## TEMPORARY: FOCA's development image built from the commit that
+## `pyproject.toml` pins (#178), replaced by the release image (#179) before
+## the next release (`scripts/check_release_pins.py`); dated tags move with
+## later commits of the day, so only the digest identifies the image
+## FOCA commit: db6998cae4e1f1fbbbaafd7a26795f3bbfa4511a
+FROM elixircloud/foca:20261022-py3.13@sha256:cb33b4dfd65bca19ece7b2d49d25fab53c8fdbc9479831ea4a518ee16478c19f
 
 ##### METADATA #####
 LABEL software="Cloud Registry"
@@ -12,13 +17,14 @@ LABEL software.license="https://spdx.org/licenses/Apache-2.0"
 LABEL maintainer="alexander.kanitz@alumni.ethz.ch"
 LABEL maintainer.organisation="ELIXIR On-Cloud"
 
-## Install dependencies (`project.dependencies` of `pyproject.toml`, read
-## with `tomllib` of the base image's Python) first, so that code changes do
-## not reinstall them; the FOCA image runs as non-root user
+## Install dependencies (`project.dependencies` of `pyproject.toml`) first,
+## so that code changes do not reinstall them; the FOCA image runs as non-root
+## user. A direct reference to a FOCA commit (temporary) is left out, as the
+## image has no Git: the build fails unless the base image has FOCA of that
+## commit (`scripts/image_requirements.py`)
 USER root
-COPY pyproject.toml /tmp/src/
-RUN python -c "import tomllib; print('\n'.join(tomllib.load(open('/tmp/src/pyproject.toml', 'rb'))['project']['dependencies']))" \
-    > /tmp/src/requirements.txt \
+COPY pyproject.toml scripts/image_requirements.py /tmp/src/
+RUN python /tmp/src/image_requirements.py /tmp/src/pyproject.toml > /tmp/src/requirements.txt \
   && pip install --no-cache-dir -r /tmp/src/requirements.txt
 
 ## Install app (non-editable; the base config is installed with the package,
