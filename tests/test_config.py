@@ -222,7 +222,7 @@ def test_text_lines(tmp_path: Path) -> None:
 
 
 def _repository_lines() -> list[tuple[str, int, str]]:
-    """Get the lines of the repository's text files, except this one.
+    """Get the lines of the repository's text files.
 
     Returns:
         The file name, line number and line of each line.
@@ -240,8 +240,7 @@ def _repository_lines() -> list[tuple[str, int, str]]:
     return [
         (name, number, line)
         for name in files
-        # This file names the values to find
-        if name not in ("", "tests/test_config.py") and (ROOT / name).is_file()
+        if name and (ROOT / name).is_file()
         for number, line in enumerate(_text_lines(ROOT / name), start=1)
     ]
 
@@ -255,7 +254,8 @@ def test_repository_generic() -> None:
     found = [
         f"{name}:{number}: {line.strip()}"
         for name, number, line in _repository_lines()
-        if IDP_SPECIFIC.search(line)
+        # This file names the values to find
+        if name != "tests/test_config.py" and IDP_SPECIFIC.search(line)
     ]
     assert found == []
 
@@ -270,8 +270,11 @@ EXAMPLE_DOMAIN = re.compile(r"(?:.+\.)?example\.(?:com|net|org)", re.IGNORECASE)
 
 def test_email_pattern() -> None:
     """Addresses are found also with internationalized domain names."""
-    text = "a@x.org, b@bücher.de, c@-x.org, d@x-.org"
-    assert [m[0] for m in EMAIL.finditer(text)] == ["a@x.org", "b@bücher.de"]
+    text = "a@x.example.org, b@bücher.example.org, c@-x.org, d@x-.org"
+    assert [m[0] for m in EMAIL.finditer(text)] == [
+        "a@x.example.org",
+        "b@bücher.example.org",
+    ]
 
 
 def test_repository_no_personal_email_addresses() -> None:
