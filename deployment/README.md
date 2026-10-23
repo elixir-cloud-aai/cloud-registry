@@ -452,7 +452,7 @@ cloudRegistry:
     threads: 4          # threads per worker, i.e., requests served at once
     timeout: 30         # seconds until workers whose main loop hangs restart
     gracefulTimeout: 20 # seconds to finish requests on shutdown
-    keepalive: 75       # seconds until idle keep-alive connections are closed
+    keepalive: 100      # seconds until idle keep-alive connections are closed
     extraArgs: []       # further options, e.g., ["--access-logfile", "-"]
 ```
 
@@ -471,9 +471,9 @@ startup checks; if they fail, Gunicorn exits and the container restarts
 `timeout` restarts workers whose main loop stops responding; requests run in
 threads, so slow or stuck requests don't count. Keep `keepalive` longer than
 the ingress controller's keep-alive timeout for upstream connections
-(e.g., 60 seconds for ingress-nginx, `upstream-keepalive-timeout`; Traefik's
-90 seconds are longer than the default, so raise `keepalive`, e.g., to 100;
-Envoy Gateway keeps idle connections for an hour, so set
+(the default, 100 seconds, is longer than the 60 seconds of ingress-nginx,
+`upstream-keepalive-timeout`, and the 90 seconds of Traefik; Envoy Gateway
+keeps idle connections for an hour, so set
 `timeout.http.connectionIdleTimeout` in a `BackendTrafficPolicy` below
 `keepalive`, e.g., to `60s`): otherwise, it
 may reuse a connection just as Gunicorn closes it, and the request fails with

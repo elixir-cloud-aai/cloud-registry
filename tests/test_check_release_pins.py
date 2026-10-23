@@ -1,6 +1,7 @@
 """Tests of the release pin check (`scripts/check_release_pins.py`)."""
 
 import importlib.util
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -37,6 +38,13 @@ dependencies:
     version: {version}
     repository: oci://ghcr.io/elixir-cloud-aai/charts
 """
+LOCK = """dependencies:
+- name: foca-common
+  repository: oci://ghcr.io/elixir-cloud-aai/charts
+  version: {version}
+digest: sha256:{digest}
+generated: "2026-10-22T22:26:15.352841967+02:00"
+"""
 DIGEST = "0" * 64
 
 
@@ -52,7 +60,8 @@ def _write(
         root: Directory to write them to.
         dependencies: Lines of `project.dependencies` in `pyproject.toml`.
         tag: Tag of the base image in the `Dockerfile`.
-        chart_version: Version of the chart's dependency.
+        chart_version: Version of the chart's dependency, also locked and
+            named by the values schema.
 
     Returns:
         The directory.
@@ -61,7 +70,23 @@ def _write(
     (root / "pyproject.toml").write_text(PYPROJECT.format(dependencies=dependencies))
     (root / "Dockerfile").write_text(DOCKERFILE.format(tag=tag, digest=DIGEST))
     (root / "deployment" / "Chart.yaml").write_text(CHART.format(version=chart_version))
+    (root / "deployment" / "Chart.lock").write_text(
+        LOCK.format(version=chart_version, digest=DIGEST)
+    )
+    _write_schema(root, f"Schema of the library chart foca-common {chart_version}.")
     return root
+
+
+def _write_schema(root: Path, comment: object) -> None:
+    """Write the chart's values schema.
+
+    Args:
+        root: Root directory of the repository.
+        comment: The schema's `$comment`.
+    """
+    (root / "deployment" / "values.schema.json").write_text(
+        json.dumps({"$schema": "x", "$comment": comment, "type": "object"})
+    )
 
 
 def test_release_pins(tmp_path: Path) -> None:
@@ -464,3 +489,96 @@ def test_build_requirements(tmp_path: Path) -> None:
         "pyproject.toml: build requirement 'setuptools-scm @ "
         "git+https://example.org/scm' is a direct reference",
     ]
+
+
+def _schema_error(named: str, pinned: str) -> str:
+    """Return the error for a values schema of another library version.
+
+    Args:
+        named: The versions that the schema's `$comment` names.
+        pinned: The version that the chart pins.
+
+    Returns:
+        The error.
+    """
+    return (
+        f"deployment/values.schema.json: its $comment names foca-common {named} "
+        "(the version that the release requires, whose values schema it is), but "
+        f"deployment/Chart.yaml pins {pinned}"
+    )
+
+
+def test_repository_schema_names_library() -> None:
+    """The values schema of this repository names one library chart version.
+
+    Whether it is the version that the chart pins is checked for releases
+    only, as the chart may wait for a release of the library.
+    """
+    schema = json.loads((ROOT / "deployment" / "values.schema.json").read_text())
+    assert (
+        len(list(check_release_pins.LIBRARY_VERSION.finditer(schema["$comment"]))) == 1
+    )
+
+
+@pytest.mark.parametrize(
+    ("comment", "named"),
+    [
+        ("Schema of the library chart foca-common 0.1.0.", "0.1.0"),
+        ("Schema of the library chart foca-common.", "(no version)"),
+        ("foca-common 0.2.0 or foca-common 0.3.0", "0.2.0, 0.3.0"),
+        ("foca-common 0.2.0-rc1", "(no version)"),
+        ("my-foca-common 0.2.0", "(no version)"),
+        (["foca-common 0.2.0"], "(no version)"),
+    ],
+    ids=["other", "none", "several", "pre-release", "other-chart", "not-text"],
+)
+def test_library_schema(tmp_path: Path, comment: object, named: str) -> None:
+    """The values schema must name the version of the library chart."""
+    root = _write(tmp_path)
+    _write_schema(root, comment)
+    assert check_release_pins.find_dev_pins(root) == [_schema_error(named, "0.2.0")]
+
+
+@pytest.mark.parametrize("schema", ["{", "[]"], ids=["invalid", "not-object"])
+def test_library_schema_unreadable(tmp_path: Path, schema: str) -> None:
+    """A values schema without a readable `$comment` names no version."""
+    root = _write(tmp_path)
+    (root / "deployment" / "values.schema.json").write_text(schema)
+    assert check_release_pins.find_dev_pins(root) == [
+        _schema_error("(no version)", "0.2.0")
+    ]
+
+
+@pytest.mark.parametrize(
+    ("lock", "locked"),
+    [
+        (LOCK.format(version="0.1.0", digest=DIGEST), "0.1.0"),
+        ("dependencies:\n- name: foca-common\n", "no version"),
+        ("dependencies: []\n", "no version"),
+        (None, "no version"),
+    ],
+    ids=["other", "no-version", "none", "no-lock"],
+)
+def test_library_lock(tmp_path: Path, lock: str | None, locked: str) -> None:
+    """The lock file must lock the version of the library chart."""
+    root = _write(tmp_path)
+    path = root / "deployment" / "Chart.lock"
+    if lock is None:
+        path.unlink()
+    else:
+        path.write_text(lock)
+    assert check_release_pins.find_dev_pins(root) == [
+        f"deployment/Chart.lock: 'foca-common' is locked at {locked}, not at "
+        "0.2.0 as in deployment/Chart.yaml"
+    ]
+
+
+def test_library_version_mismatch(tmp_path: Path) -> None:
+    """A chart on another library version than the release requires fails.
+
+    E.g., if the app requires a new FOCA release, but the chart was not moved
+    to the matching library version.
+    """
+    root = _write(tmp_path, chart_version="0.1.0")
+    _write_schema(root, "Schema of the library chart foca-common 0.2.0.")
+    assert check_release_pins.find_dev_pins(root) == [_schema_error("0.2.0", "0.1.0")]

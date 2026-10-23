@@ -12,6 +12,10 @@ organization (see "Versioning and releases" in `docs/development.md`):
    Contributors"), without their `## What's Changed` header.
 4. Last, GitHub's generated `**Full Changelog**: ...` line.
 
+The release body never changes, so curated notes must not link to versions
+that move (`UNVERSIONED`, e.g., the latest docs or branch `dev`), but to the
+release's (e.g., `/en/vX.Y.Z/`, `blob/vX.Y.Z/`).
+
 The curated notes (`docs/releases/<version>.md`) hold parts 1 and 2; the
 release workflow (`.github/workflows/release.yaml`) adds parts 3 and 4 from
 GitHub's `generate-notes` API.
@@ -69,6 +73,27 @@ ITEM = re.compile(r"(?:[-*+]|[0-9]+[.)])(?:[ \t]|$)")
 REFERENCES = re.compile(r".*\(#[0-9]+(?:[,;][ \t]*#[0-9]+)*\)", re.ASCII)
 
 BULLETS_ONLY = "Sections hold bullets only, e.g., - <change> (#12, #34)"
+
+# Docs on Read the Docs and repository on GitHub, and links to versions of
+# them that move, as in `scripts/chart_readme.py` (copied, so that each
+# script runs on its own; the tests check that they match)
+DOCS_HOST = "cloud-registry.readthedocs.io"
+REPOSITORY = "elixir-cloud-aai/cloud-registry"
+_MOVING = r"(?![\w.-])"
+UNVERSIONED = re.compile(
+    rf"{re.escape(DOCS_HOST)}/(?:en/)?(?:latest|stable){_MOVING}"
+    rf"|github\.com/{re.escape(REPOSITORY)}/"
+    rf"(?:blob|tree|raw|edit|blame|commits)/(?:refs/heads/)?(?:dev|main|HEAD)"
+    rf"{_MOVING}"
+    rf"|github\.com/{re.escape(REPOSITORY)}/releases/latest{_MOVING}"
+    rf"|raw\.githubusercontent\.com/{re.escape(REPOSITORY)}/"
+    rf"(?:refs/heads/)?(?:dev|main|HEAD){_MOVING}",
+    re.ASCII | re.IGNORECASE,
+)
+MOVING_LINK = (
+    "Link to a version that moves (e.g., latest docs, branch dev): the release"
+    " body never changes, so link the release's (/en/vX.Y.Z/, blob/vX.Y.Z/)"
+)
 
 
 @dataclass(frozen=True)
@@ -325,10 +350,17 @@ def check(markdown: str) -> list[Finding]:
         headings of `SECTIONS` (level 2, each once, in their order, none
         empty), holding bullets only, each ending with its issue and pull
         request numbers, and none of the parts that the release workflow adds
-        (`## Commits`, the `**Full Changelog**` line). An HTML comment on a
-        line of its own counts as a blank line.
+        (`## Commits`, the `**Full Changelog**` line), and no links to
+        versions that move (`UNVERSIONED`). An HTML comment on a line of
+        its own counts as a blank line.
     """
-    return _Checker().run(markdown.removeprefix("\ufeff").splitlines())
+    lines = markdown.removeprefix("\ufeff").splitlines()
+    findings = _Checker().run(lines) + [
+        Finding(number, MOVING_LINK)
+        for number, line in enumerate(lines, start=1)
+        if UNVERSIONED.search(line)
+    ]
+    return sorted(findings, key=lambda finding: finding.line)
 
 
 def body(curated: str, generated: str) -> tuple[str, list[str]]:

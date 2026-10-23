@@ -19,7 +19,13 @@ annotations on standard error, if:
   another version than a release (`X.Y.Z`, e.g., a pre-release or a range),
   has no chart repository (`oci://` or `https://`, e.g., `file://` or an
   alias), or is given in flow style (`{...}`, `[...]`), which the check
-  can't read.
+  can't read;
+- the library chart `foca-common` has another version in
+  `deployment/Chart.yaml` than in `deployment/Chart.lock`, or than the one
+  that the `$comment` of `deployment/values.schema.json` names
+  (`foca-common X.Y.Z`): the comment names the version that the release
+  requires (the values schema is that version's), so that no other version
+  is released by accident, also not in pre-releases.
 
 Usage: `python scripts/check_release_pins.py [<repository root>]`.
 
@@ -27,6 +33,7 @@ Only the stdlib is used, so the workflow runs it without installing the app.
 """
 
 from collections.abc import Iterable, Sequence
+import json
 from pathlib import Path
 import re
 import sys
@@ -74,6 +81,12 @@ CHART_KEY = re.compile(
 LIST_ITEM = re.compile(r"[ \t]*-(?:[ \t]+|$)(?P<flow>[{\[])?")
 RELEASE_CHART_VERSION = re.compile(SEMVER)
 CHART_REPOSITORY = re.compile(r"(oci|https)://\S+")
+# The library chart of FOCA apps, and its version as the `$comment` of the
+# values schema names it (`foca-common X.Y.Z`)
+LIBRARY_CHART = "foca-common"
+LIBRARY_VERSION = re.compile(
+    rf"(?<![\w.-]){re.escape(LIBRARY_CHART)} (?P<version>{SEMVER})(?![\w+-]|\.[0-9])"
+)
 
 
 def _chart_dependencies(path: Path) -> list[dict[str, str] | None]:
@@ -123,6 +136,68 @@ def _chart_dependencies(path: Path) -> list[dict[str, str] | None]:
                 key_indent = start
                 current[match["key"]] = match["value"]
     return dependencies
+
+
+def _library_pins(root: Path, dependencies: list[dict[str, str] | None]) -> list[str]:
+    """Find another version of the library chart than the release requires.
+
+    That is the version of `LIBRARY_CHART` that the `$comment` of the
+    values schema names; the lock file must have it, too. Charts without the
+    library chart, or without a release version of it (reported already),
+    are skipped.
+
+    Args:
+        root: Root directory of the repository.
+        dependencies: The dependencies of `deployment/Chart.yaml`.
+
+    Returns:
+        A description of each mismatch.
+    """
+    version = next(
+        (
+            dependency.get("version")
+            for dependency in dependencies
+            if dependency is not None and dependency.get("name") == LIBRARY_CHART
+        ),
+        None,
+    )
+    if version is None or not RELEASE_CHART_VERSION.fullmatch(version):
+        return []
+    pins = []
+    lock = root / "deployment" / "Chart.lock"
+    locked = [
+        dependency.get("version") or "no version"
+        for dependency in (_chart_dependencies(lock) if lock.is_file() else [])
+        if dependency is not None and dependency.get("name") == LIBRARY_CHART
+    ]
+    if locked != [version]:
+        pins.append(
+            f"deployment/Chart.lock: '{LIBRARY_CHART}' is locked at "
+            f"{', '.join(locked) or 'no version'}, not at {version} as in "
+            "deployment/Chart.yaml"
+        )
+    try:
+        comment = json.loads(
+            (root / "deployment" / "values.schema.json").read_text()
+        ).get("$comment")
+    except (OSError, ValueError, AttributeError):
+        comment = None
+    named = sorted(
+        {
+            match["version"]
+            for match in LIBRARY_VERSION.finditer(
+                comment if isinstance(comment, str) else ""
+            )
+        }
+    )
+    if named != [version]:
+        pins.append(
+            "deployment/values.schema.json: its $comment names "
+            f"{LIBRARY_CHART} {', '.join(named) or '(no version)'} (the "
+            "version that the release requires, whose values schema it is), "
+            f"but deployment/Chart.yaml pins {version}"
+        )
+    return pins
 
 
 def _requirement_pins(
@@ -203,7 +278,8 @@ def find_dev_pins(root: Path) -> list[str]:
                 f"Dockerfile: FOCA image tag '{image['tag']}' is not a release tag "
                 "(<X.Y.Z>-py<X.Y>)"
             )
-    for dependency in _chart_dependencies(root / "deployment" / "Chart.yaml"):
+    dependencies = _chart_dependencies(root / "deployment" / "Chart.yaml")
+    for dependency in dependencies:
         if dependency is None:
             pins.append(
                 "deployment/Chart.yaml: dependencies in flow style can't be checked"
@@ -224,6 +300,7 @@ def find_dev_pins(root: Path) -> list[str]:
                 f"deployment/Chart.yaml: dependency '{name}' has repository "
                 f"'{repository}', not a chart repository (oci:// or https://)"
             )
+    pins.extend(_library_pins(root, dependencies))
     return pins
 
 

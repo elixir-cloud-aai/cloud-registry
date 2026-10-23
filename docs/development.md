@@ -200,7 +200,12 @@ requirement) is a direct reference or names a pre-release or a local version
 another version than a release or no chart repository (`oci://`,
 `https://`; e.g., `file://`) (`scripts/check_release_pins.py`,
 tested in `tests/test_check_release_pins.py`), so replace them by the
-released versions before releasing. This applies to pre-releases of the
+released versions before releasing. It also fails unless
+`deployment/Chart.yaml` and `Chart.lock` pin the version of the library
+chart that the `$comment` of `deployment/values.schema.json` names
+(`foca-common X.Y.Z`): the version that the release requires, whose values
+schema the chart copies. When moving to a new FOCA minor version, update
+the comment with the library chart. This applies to pre-releases of the
 app, too: they are built on FOCA releases.
 
 Release notes follow the format agreed for all repositories of ELIXIR
@@ -233,7 +238,10 @@ notes in an unexpected format (without the `**Full Changelog**` line) are
 kept as they are, with a warning, as the image is published by then. Without
 curated notes, the release gets GitHub's generated notes alone. Curated notes
 are published as written, so the release workflow fails if they contain
-`TODO` or are not in this format (`scripts/release_notes.py check`, tested in
+`TODO`, are not in this format or link to versions that move (the latest
+docs, `/en/latest/`, or files on branch `dev`, `blob/dev/`; link the
+release's, e.g., `/en/vX.Y.Z/`, `blob/vX.Y.Z/`, as the published notes
+don't change) (`scripts/release_notes.py check`, tested in
 `tests/test_release_notes.py`, which also checks the notes in
 `docs/releases/`), and so does the CI job "Check release readiness" on pushes
 (see above); on re-runs, it replaces the notes of an existing release (also
@@ -243,13 +251,16 @@ intro.
 
 Maintainers: the workflows rely on these repository settings: environment
 `dev-images` limited to branch `dev`; environment `release` with a required
-reviewer; a tag ruleset for `v*` that restricts who may create them and
-prevents moving or deleting them; `main` protected against non-fast-forward
+reviewer and a deployment tag rule `v*` (so that no workflow of another
+branch can use its secrets); a tag ruleset for `v*` that restricts who may
+create them and prevents moving or deleting them; `main` protected against non-fast-forward
 pushes; and the Docker Hub secrets (`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`)
 only in the two environments, not as repository secrets. The Docker Hub
 organization is the repository variable `DOCKERHUB_ORG` (by default
 `elixircloud`; forks set it to the organization they publish to), so that
-the scan jobs, which have no secrets, know the image name too.
+the scan jobs, which have no secrets, know the image name too, and the
+released chart's default image (`cloudRegistry.image`) is the published
+one (the chart's README still names upstream's default).
 On Read the Docs, the default branch is set to `dev` explicitly, so that
 `latest` shows `dev` whatever the repository's default branch is, and an
 automation rule activates the versions of tags (`v*`), so that the docs
@@ -303,7 +314,9 @@ Dependabot doesn't update it: to bump it, change the version in
 `Chart.lock`), update `deployment/charts.sha256` (`cd deployment && sha256sum
 charts/foca-common-X.Y.Z.tgz > charts.sha256`, after checking the archive),
 copy the library's `app-values.schema.json` to
-`deployment/values.schema.json` with the changes noted in its `$comment`,
+`deployment/values.schema.json` with the changes noted in its `$comment`
+(which names the new version, `foca-common X.Y.Z`, as the release pin check
+requires),
 add values it introduces to `deployment/values.yaml`, update the links to
 the library's docs in `deployment/README.md` (the tests check that they point
 to the pinned version, `chart-vX.Y.Z`), and check the rendered chart with the

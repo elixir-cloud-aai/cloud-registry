@@ -153,7 +153,7 @@ cloudRegistry:
     # ingress controller (e.g., 60 seconds for ingress-nginx, 90 seconds for
     # Traefik; see deployment/README.md, Server), which would otherwise
     # reuse connections as they are closed (failing requests with `502`)
-    keepalive: 75
+    keepalive: 100
     # Further Gunicorn options, e.g., `["--access-logfile", "-"]` for an
     # access log (the app logs each request already); rendering fails for
     # `--bind`/`-b` (the chart's ports are 8080), `--preload` (MongoDB clients
