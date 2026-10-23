@@ -110,14 +110,17 @@ security:
             get-me: [p, "*", /ga4gh/registry/v1/me, GET]
             # no policy for `/services/:id/verification` (PUT, DELETE):
             # only admins may verify services
-            # Any authenticated user may read services, their types (matched
-            # by `/services/:id`) and verifications. Only evaluated if a
-            # deployment requires login for the reads, which are public
-            # otherwise
-            read-services: [p, "*", /ga4gh/registry/v1/services, GET]
-            read-service: [p, "*", "/ga4gh/registry/v1/services/:id", GET]
-            read-service-verification: [p, "*", "/ga4gh/registry/v1/services/:id/verification", GET]
-            read-verifications: [p, "*", /ga4gh/registry/v1/verifications, GET]
+
+            # Any authenticated user may read: list services, get a service
+            # or the service types (`/services/types` matches
+            # `/services/:id`), get the verification of a service and list
+            # verifications. Only evaluated if a deployment requires login for
+            # these reads, which are public otherwise (see "Requiring login
+            # for reads" in `docs/access-control.md`)
+            list-services: [p, "*", /ga4gh/registry/v1/services, GET]
+            get-service: [p, "*", "/ga4gh/registry/v1/services/:id", GET]
+            get-service-verification: [p, "*", "/ga4gh/registry/v1/services/:id/verification", GET]
+            list-verifications: [p, "*", /ga4gh/registry/v1/verifications, GET]
 
 # Database configuration
 # Cf. https://foca.readthedocs.io/en/latest/configuration/db/

@@ -1299,22 +1299,34 @@ READS = [
 DOCS = Path(__file__).parents[1] / "docs" / "access-control.md"
 
 
-def _reads(client: FlaskClient, user: str | None) -> list[int]:
-    """Read a verified service and the lists, as a user.
+def _verified_service(client: FlaskClient) -> str:
+    """Register and verify a service.
 
     Args:
         client: Test client of the app.
+
+    Returns:
+        Identifier of the service.
+    """
+    service_id = register(client)
+    response = client.put(
+        f"{BASE}/services/{service_id}/verification", headers=headers(ADMIN)
+    )
+    assert response.status_code == 200, response.get_json()
+    return service_id
+
+
+def _reads(client: FlaskClient, service_id: str, user: str | None) -> list[int]:
+    """Read a service and the lists, as a user.
+
+    Args:
+        client: Test client of the app.
+        service_id: Identifier of a verified service.
         user: User who reads; no token if `None`.
 
     Returns:
         Status codes of the read operations (`READS`), in order.
     """
-    service_id = register(client)
-    response = client.put(
-        f"{BASE}/services/{service_id}/verification",
-        headers=headers(ADMIN),
-    )
-    assert response.status_code == 200, response.get_json()
     return [
         client.get(BASE + path.format(id=service_id), headers=headers(user)).status_code
         for path in READS
@@ -1323,24 +1335,26 @@ def _reads(client: FlaskClient, user: str | None) -> list[int]:
 
 def test_reads_public(client: FlaskClient) -> None:
     """Reads are public by default, with and without token."""
-    assert _reads(client, None) == [200] * len(READS)
-    assert _reads(client, BOB) == [200] * len(READS)
+    service_id = _verified_service(client)
+    assert _reads(client, service_id, None) == [200] * len(READS)
+    assert _reads(client, service_id, BOB) == [200] * len(READS)
 
 
-def _docs_overlay(after: str) -> dict[str, Any]:
+def _docs_overlay(title: str) -> dict[str, Any]:
     """Get an overlay of the recipe "Requiring login for reads" of the docs.
 
     Args:
-        after: Text of the recipe that the overlay follows.
+        title: Title of the overlay's YAML block (`title="<title>"`).
 
     Returns:
-        The overlay: the first YAML block after the text.
+        The overlay.
     """
     section = DOCS.read_text().split("## Requiring login for reads\n", 1)[1]
     section = section.split("\n## ", 1)[0]
-    assert after in section, f"The recipe has no '{after}'"
-    block = re.search(r"```yaml[^\n]*\n(.*?)```", section.split(after, 1)[1], re.S)
-    assert block, f"The recipe has no overlay after '{after}'"
+    block = re.search(
+        rf'```yaml title="{re.escape(title)}"\n(.*?)```', section, re.DOTALL
+    )
+    assert block, f"The recipe has no overlay '{title}'"
     overlay: dict[str, Any] = yaml.safe_load(block[1])
     return overlay
 
@@ -1367,11 +1381,6 @@ def _create_app(
     return cloud_registry.app.create_app().app.test_client()
 
 
-# The overlay of the recipe, and the rules for readers of its example
-RECIPE = "Apply it to the registry's API specification"
-READERS = "To allow reads for some users only"
-
-
 def test_login_for_reads(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -1381,21 +1390,22 @@ def test_login_for_reads(
     """The recipe of the docs requires login for all reads but service info.
 
     Anonymous reads are rejected (`401`), any authenticated user may read (by
-    the default policies), and `GET /service-info` stays public. FOCA logs
-    the patch, which makes no operation public.
+    the default policies), and `GET /service-info`, the specification and the
+    Swagger UI stay public. FOCA logs the patch, which makes no operation
+    public.
     """
-    client = _create_app(monkeypatch, tmp_path, _docs_overlay(RECIPE))
+    client = _create_app(monkeypatch, tmp_path, _docs_overlay("login-for-reads.yaml"))
     err = capsys.readouterr().err
     assert "Applied patches to API spec" in err
     assert "api/patches/login-for-reads.yaml" in err
     assert "not require authentication" not in err
-    assert _reads(client, None) == [401] * len(READS)
-    assert _reads(client, BOB) == [200] * len(READS)
-    assert _reads(client, ADMIN) == [200] * len(READS)
+    service_id = _verified_service(client)
+    assert _reads(client, service_id, None) == [401] * len(READS)
+    assert _reads(client, service_id, BOB) == [200] * len(READS)
+    assert _reads(client, service_id, ADMIN) == [200] * len(READS)
     for path in ["/service-info", "/openapi.json", "/ui/"]:
         assert client.get(BASE + path).status_code == 200, path
     # other operations keep their protections
-    service_id = register(client)
     response = client.get(
         f"{BASE}/services/{service_id}/permissions", headers=headers(BOB)
     )
@@ -1408,13 +1418,22 @@ def test_login_for_reads_readers(
 ) -> None:
     """With the rules for readers of the docs, only readers may read.
 
-    Readers (here: members of the team group) may read services, not their
-    verifications; other users may read nothing, also not services they own.
+    Readers (here: members of the team group) may list and get services and
+    get the types, not read verifications; other users may read nothing, also
+    not services they own; admins may read everything.
     """
-    readers = _docs_overlay(READERS)
-    # the groups of the test identity provider
+    readers = _docs_overlay("readers.yaml")
+    mapping = readers["security"]["access_control"]["group_mapping"]
+    # only readers are mapped, the admin group of the deployment is kept
+    assert list(mapping.values()) == ["reader"]
+    # the team group of the test identity provider instead of the example's
     readers["security"]["access_control"]["group_mapping"] = {TEAM_GROUP: "reader"}
-    client = _create_app(monkeypatch, tmp_path, _docs_overlay(RECIPE), readers)
-    assert _reads(client, ALICE) == [200, 200, 200, 403, 403]
-    assert _reads(client, BOB) == [403] * len(READS)
-    assert _reads(client, ADMIN) == [200] * len(READS)
+    client = _create_app(
+        monkeypatch, tmp_path, _docs_overlay("login-for-reads.yaml"), readers
+    )
+    service_id = _verified_service(client)
+    # in the order of `READS`: services, types, service, its verification,
+    # verifications
+    assert _reads(client, service_id, ALICE) == [200, 200, 200, 403, 403]
+    assert _reads(client, service_id, BOB) == [403] * len(READS)
+    assert _reads(client, service_id, ADMIN) == [200] * len(READS)

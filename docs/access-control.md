@@ -73,7 +73,7 @@ Apply it to the registry's API specification (named `registry` in the base
 config) in an overlay (the path is relative to the directory of the base
 config, where the patch is installed):
 
-```yaml title="overlay.yaml"
+```yaml title="login-for-reads.yaml"
 api:
     specs:
         registry:
@@ -84,27 +84,35 @@ api:
 With the Helm chart, put the same in the `config` value. Requests to the
 patched reads without a valid token are then rejected with `401
 Unauthorized`; any authenticated user may read, by the default policies
-(`read-services`, `read-service`, `read-service-verification` and
-`read-verifications` in `security.access_control.policies`, which are only
-evaluated for reads that require login). `GET /service-info`, the API
+(in `security.access_control.policies`, which are only evaluated for reads
+that require login): `list-services`, `get-service` (also for
+`/services/types`, which matches `/services/:id`), `get-service-verification`
+and `list-verifications`. `GET /service-info`, the API
 specification (`/openapi.json`) and the Swagger UI (`/ui/`) stay public.
 
-To allow reads for some users only, replace these rules by name in the
-overlay, e.g., with rules for a role that a group is mapped to (see
-[Admins](#admins) for `group_mapping`; `null` removes a rule):
+If an overlay of the deployment gives the policies as a list, which replaces
+the rules of the base config, add these rules to the list (FOCA refuses named
+rules after a list, see [Configuration](configuration.md#deployment-configuration)).
 
-```yaml
+To allow reads for some users only, replace these rules by name in the
+overlay, e.g., with rules for a role that a group is mapped to, in addition to
+the deployment's admin groups (see [Admins](#admins) for `group_mapping`;
+`null` removes a rule):
+
+```yaml title="readers.yaml"
 security:
     access_control:
         group_mapping:
-            registry-admins: admin
             registry-readers: reader
         policies:
-            read-services: [p, reader, /ga4gh/registry/v1/services, GET]
-            read-service: [p, reader, "/ga4gh/registry/v1/services/:id", GET]
-            read-service-verification: null
-            read-verifications: null
+            list-services: [p, reader, /ga4gh/registry/v1/services, GET]
+            get-service: [p, reader, "/ga4gh/registry/v1/services/:id", GET]
+            get-service-verification: null
+            list-verifications: null
 ```
+
+Readers may then list and get services and get the service types, but not
+read verifications; admins may read everything.
 
 Owners and maintainers of services can still update them, but only read them
 with a rule that allows them to.

@@ -81,10 +81,12 @@ security:
 
 An overlay that gives the policies as a list replaces all rules of the base
 config instead; FOCA refuses to start if an overlay gives named rules after
-one that gives a list. The same applies to the API specification
-(`api.specs`), named `registry`, e.g., to [require login for
-reads](access-control.md#requiring-login-for-reads). Don't rename the roles `owner` and `maintainer`
+one that gives a list. Don't rename the roles `owner` and `maintainer`
 (`security.access_control.resource_roles`), as the API is written for them.
+
+The API specification (`api.specs`) is named `registry`, too, so that an
+overlay can change it by name, e.g., to [require login for
+reads](access-control.md#requiring-login-for-reads).
 
 FOCA's service clients (`security.auth.service_clients`,
 `security.auth.on_behalf_of_header`) are not supported; the app refuses to

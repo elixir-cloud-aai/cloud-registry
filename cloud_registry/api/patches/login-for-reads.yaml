@@ -1,8 +1,7 @@
 # Patch of the API specification (`api.specs.registry`) that requires login
 # for all reads, except `GET /service-info`: sets the security requirements of
-# the public read operations to a bearer token. Any authenticated user may
-# then read, by the default policies (`read-*` rules of
-# `security.access_control.policies`). See "Requiring login for reads" in
+# the public read operations to a bearer token (`bearerAuth`, the security
+# scheme of the GA4GH specifications). See "Requiring login for reads" in
 # `docs/access-control.md`
 paths:
   /services:
