@@ -12,7 +12,8 @@ annotations on standard error, if:
   `>=0.17.0rc1`);
 - an image of FOCA in the `Dockerfile` (`elixircloud/foca`, as the base
   image of any stage, or in `--from=`) has no release tag
-  (`<X.Y.Z>-py<X.Y>`, e.g., a dated development image);
+  (`<X.Y.Z>-py<X.Y>`, e.g., a dated development image); images named via
+  build arguments (`ARG`, `FROM ${BASE}`) aren't resolved;
 - a dependency of the Helm chart (`deployment/Chart.yaml`) has no version or
   another version than a release (`X.Y.Z`, e.g., a pre-release or a range),
   has no chart repository (`oci://` or `https://`, e.g., `file://` or an
@@ -45,11 +46,14 @@ PRE_RELEASE = re.compile(
 # An image of FOCA, with its tag if it has one: a base image (`FROM`, in any
 # stage, also with options such as `--platform=...`) or an image that files
 # are copied or mounted from (`--from=`, `from=`), also with a registry or a
-# variable in front (`docker.io/`, `${REGISTRY}`); lines continued with `\`
-# are joined first
-_FOCA_IMAGE = r"(?:[^\s@]*?[/}])?elixircloud/foca(?::(?P<tag>[^@\s,]+))?(?![^@\s,])"
+# variable in front (`docker.io/`, `${REGISTRY}`); comment lines are removed
+# and lines continued with `\` joined first
+_FOCA_IMAGE = (
+    r"(?:[^\s@\"']*?[/}])?elixircloud/foca"
+    r"(?::(?P<tag>[^@\s,\"']+))?(?![^@\s,\"'])"
+)
 BASE_IMAGE = re.compile(
-    r"(?:^[ \t]*FROM[ \t]+(?:--\S+[ \t]+)*|(?<![^\s,])-{0,2}from=)" + _FOCA_IMAGE,
+    r"(?:^[ \t]*FROM[ \t]+(?:--\S+[ \t]+)*|(?<![^\s,=\"'])-{0,2}from=)" + _FOCA_IMAGE,
     re.IGNORECASE | re.MULTILINE,
 )
 RELEASE_IMAGE_TAG = re.compile(SEMVER + r"-py3\.[0-9]+")
@@ -173,16 +177,20 @@ def find_dev_pins(root: Path) -> list[str]:
             "build requirement",
         ),
     ]
-    dockerfile = re.sub(r"\\[ \t]*\n", " ", (root / "Dockerfile").read_text())
+    dockerfile = re.sub(
+        r"\\[ \t]*\n",
+        " ",
+        re.sub(r"(?m)^[ \t]*#.*\n", "", (root / "Dockerfile").read_text()),
+    )
     images = list(BASE_IMAGE.finditer(dockerfile))
     if not images:
         pins.append("Dockerfile: no elixircloud/foca base image")
     for image in images:
         if image["tag"] is None:
-            pins.append("Dockerfile: base image has no tag (<X.Y.Z>-py<X.Y>)")
+            pins.append("Dockerfile: FOCA image has no tag (<X.Y.Z>-py<X.Y>)")
         elif not RELEASE_IMAGE_TAG.fullmatch(image["tag"]):
             pins.append(
-                f"Dockerfile: base image tag '{image['tag']}' is not a release tag "
+                f"Dockerfile: FOCA image tag '{image['tag']}' is not a release tag "
                 "(<X.Y.Z>-py<X.Y>)"
             )
     for dependency in _chart_dependencies(root / "deployment" / "Chart.yaml"):

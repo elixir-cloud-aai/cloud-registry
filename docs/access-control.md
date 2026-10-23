@@ -133,8 +133,13 @@ role, or `null` for admins only:
 
 This only stops new registrations: owners and maintainers can still find out
 the same by changing one of their services to the URL and API type of
-another one. So grant the roles `owner` and `maintainer` only to users (and
-groups) who may read services.
+another one. Owners grant these roles to any user or group (see [Roles on
+services](#roles-on-services)), and users who registered services while
+registration was open keep theirs. So admins should review the roles on
+services when restricting reads (`GET /services/<id>/permissions`), and
+deployments that don't want owners to grant roles can restrict
+`owners-change-permissions` and `owners-change-group-permissions` by name
+in the same overlay, too.
 
 !!! danger "With great power comes great responsibility"
     Patches and rules in overlays can weaken or remove authentication and

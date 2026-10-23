@@ -110,12 +110,12 @@ def test_release_pins(tmp_path: Path) -> None:
         ),
         (
             {"tag": "20261022-py3.13"},
-            "Dockerfile: base image tag '20261022-py3.13' is not a release tag "
+            "Dockerfile: FOCA image tag '20261022-py3.13' is not a release tag "
             "(<X.Y.Z>-py<X.Y>)",
         ),
         (
             {"tag": "0.17.0"},
-            "Dockerfile: base image tag '0.17.0' is not a release tag "
+            "Dockerfile: FOCA image tag '0.17.0' is not a release tag "
             "(<X.Y.Z>-py<X.Y>)",
         ),
         (
@@ -220,7 +220,7 @@ def test_main(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     dev.mkdir()
     assert check_release_pins.main([str(_write(dev, tag="20261022-py3.13"))]) == 1
     assert capsys.readouterr().err == (
-        "::error::Dockerfile: base image tag '20261022-py3.13' is not a release "
+        "::error::Dockerfile: FOCA image tag '20261022-py3.13' is not a release "
         "tag (<X.Y.Z>-py<X.Y>): pin the released version before releasing\n"
     )
 
@@ -304,17 +304,17 @@ def test_script(tmp_path: Path) -> None:
             "FROM elixircloud/foca:0.17.0-py3.13 AS build\n"
             f"FROM elixircloud/foca:20261022-py3.13@sha256:{DIGEST}\n",
             [
-                "Dockerfile: base image tag '20261022-py3.13' is not a release "
+                "Dockerfile: FOCA image tag '20261022-py3.13' is not a release "
                 "tag (<X.Y.Z>-py<X.Y>)"
             ],
         ),
         (
             "from --platform=linux/amd64 docker.io/elixircloud/foca:dev\n",
-            ["Dockerfile: base image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+            ["Dockerfile: FOCA image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
         ),
         (
             f"FROM elixircloud/foca@sha256:{DIGEST}\n",
-            ["Dockerfile: base image has no tag (<X.Y.Z>-py<X.Y>)"],
+            ["Dockerfile: FOCA image has no tag (<X.Y.Z>-py<X.Y>)"],
         ),
         (
             "FROM elixircloud/foca-other:dev\n",
@@ -327,27 +327,42 @@ def test_script(tmp_path: Path) -> None:
         ),
         (
             "FROM elixircloud/foca:0.17.0-py3.13\nFROM \\\n  elixircloud/foca:dev\n",
-            ["Dockerfile: base image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+            ["Dockerfile: FOCA image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
         ),
         (
             "FROM elixircloud/foca:0.17.0-py3.13\n"
             "FROM index.docker.io/elixircloud/foca:dev\n",
-            ["Dockerfile: base image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+            ["Dockerfile: FOCA image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
         ),
         (
             "FROM elixircloud/foca:0.17.0-py3.13\n"
             "FROM ${REGISTRY}elixircloud/foca:dev\n",
-            ["Dockerfile: base image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+            ["Dockerfile: FOCA image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
         ),
         (
             "FROM elixircloud/foca:0.17.0-py3.13\n"
             "COPY --from=elixircloud/foca:dev /app /app\n",
-            ["Dockerfile: base image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+            ["Dockerfile: FOCA image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
         ),
         (
             "FROM elixircloud/foca:0.17.0-py3.13\n"
             "RUN --mount=type=bind,from=elixircloud/foca:dev,target=/x true\n",
-            ["Dockerfile: base image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+            ["Dockerfile: FOCA image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+        ),
+        (
+            "FROM elixircloud/foca:0.17.0-py3.13\n"
+            "RUN --mount=from=elixircloud/foca:dev,target=/x true\n",
+            ["Dockerfile: FOCA image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+        ),
+        (
+            "FROM elixircloud/foca:0.17.0-py3.13\n"
+            'RUN --mount="type=bind,from=elixircloud/foca:dev" true\n',
+            ["Dockerfile: FOCA image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+        ),
+        (
+            "# COPY --from=elixircloud/foca:dev /x /x\n"
+            "FROM \\\n  # a comment\n  elixircloud/foca:dev\n",
+            ["Dockerfile: FOCA image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
         ),
     ],
     ids=[
@@ -361,6 +376,9 @@ def test_script(tmp_path: Path) -> None:
         "variable",
         "copy-from",
         "mount-from",
+        "mount-from-first",
+        "quoted-mount",
+        "comments",
     ],
 )
 def test_base_images(tmp_path: Path, dockerfile: str, errors: list[str]) -> None:
