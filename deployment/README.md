@@ -173,9 +173,10 @@ Resource names are derived from the release name, so that several releases
 can be installed in one namespace:
 
 - **App** (Deployment, Service, Ingress, HTTPRoute or Route, NetworkPolicy;
-  ConfigMap `<app>-config`, HTTPRoute `<app>-https-redirect`): `<app>` is `<release>-cloud-registry`, or the release
-  name if it contains `cloud-registry` (e.g., `cloud-registry` for the
-  release `cloud-registry`, `prod-cloud-registry` for the release `prod`);
+  ConfigMap `<app>-config`, HTTPRoute `<app>-https-redirect`): `<app>` is
+  `<release>-cloud-registry`, or the release name if it contains
+  `cloud-registry` (e.g., `cloud-registry` for the release
+  `cloud-registry`, `prod-cloud-registry` for the release `prod`);
 - **MongoDB** (Deployment, Service, PersistentVolumeClaim, NetworkPolicy;
   ConfigMap `<app>-mongodb-init-script`): `<app>-mongodb`; the app connects
   to this Service.
@@ -430,8 +431,8 @@ allow rules) before relying on these restrictions.
   the cluster: set them to the pods of the cluster's ingress controller (or
   the OpenShift router, or the Gateway's proxies) when enabling the policy;
   otherwise, the app is unreachable through the Ingress (or HTTPRoute, or
-  Route). Rendering fails if the policy is enabled without peers (which would allow all
-  sources). Namespaces are selected by their label
+  Route). Rendering fails if the policy is enabled without peers (which
+  would allow all sources). Namespaces are selected by their label
   `kubernetes.io/metadata.name` (set on all namespaces from Kubernetes 1.21;
   label them on older clusters). Pick the peers of your setup (see
   [NetworkPolicy
@@ -622,8 +623,9 @@ Deployment is called after `cloud_registry.appName`, by default
    `host_name` to `hostName` and `cloud_registry` to `cloudRegistry`
    (camelCase, following Helm's conventions; rendering fails while the old
    keys are set), and `mongodb.volumeSize` to `mongodb.persistence.size`
-   (deprecated, see [Persistence](#persistence)). From chart version 2, move any changes made to the
-   `app-config` ConfigMap to `config`, and create the Secret with the MongoDB
+   (rendering fails with `volumeSize`, see [Persistence](#persistence)).
+   From chart version 2, move any changes made to the `app-config`
+   ConfigMap to `config`, and create the Secret with the MongoDB
    credentials (see [Authentication](#authentication)); from chart version 3,
    keep `mongodb.auth.existingSecret`. MongoDB creates the users from the
    Secret on its first start with the new, empty volume. Dumps of newer
@@ -686,8 +688,10 @@ and `cloudRegistry` (rendering fails while the old keys are set): rename
 them in the values file, and upgrade with it (`-f`), not with
 `--reuse-values`, which would bring back the old keys stored in the release
 (use `--reset-values` if needed). Rename `mongodb.volumeSize` to
-`mongodb.persistence.size` as well, and keep persistence and the claim as
-they are in this upgrade (see [Persistence](#persistence)). The Ingress no
+`mongodb.persistence.size` as well (rendering fails while `volumeSize` is
+set, as the chart sets `persistence.size`), and keep MongoDB, persistence
+and the claim as they are in this upgrade (see [Persistence](#persistence)).
+The Ingress no
 longer sets the size limit of request bodies for ingress-nginx
 (`nginx.ingress.kubernetes.io/proxy-body-size`); with the app's default
 limit, that of ingress-nginx is the same (1 MiB), so set the annotation only
@@ -866,12 +870,18 @@ Without persistence (`enabled: false`), the data is kept in an `emptyDir`
 Kubernetes doesn't allow changing `accessModes` or `storageClass` of an
 existing claim, and allows a larger `size` only if its storage class allows
 volume expansion; such upgrades fail. `mongodb.volumeSize`, the size in
-earlier charts, still sets `persistence.size`, but is deprecated, and
-rendering fails if both are set: rename it in the values file. For releases
+earlier charts, is deprecated: rendering fails while it is set, as the
+chart's values set `persistence.size` (only with `--set-json
+mongodb.persistence.size=null` would `volumeSize` set the size), so rename
+it to `mongodb.persistence.size` in the values file. For releases
 installed with an earlier chart from the repository, whose claim doesn't
-have the annotation yet, don't disable persistence or switch to an
-`existingClaim` in the same upgrade, which would delete the claim, and
-usually its data: upgrade first, then change these settings (see [MongoDB
+have the annotation yet, don't disable persistence or MongoDB
+(`mongodb.enabled: false`), or switch to an `existingClaim`, in the same
+upgrade: on upgrades, Helm checks the annotation on the claim in the
+cluster, so it would delete the claim, and usually its data. Upgrade first,
+then change these settings, or annotate the claim first (`kubectl annotate
+pvc <app>-mongodb helm.sh/resource-policy=keep -n <namespace>`). A rollback
+to a revision without the annotation removes it again (see [MongoDB
 persistence](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/migration-0.17.md#mongodb-persistence)
 in FOCA's documentation).
 
@@ -895,8 +905,10 @@ config:
 ```
 
 For an installed release, setting `mongodb.enabled: false` deletes the
-bundled MongoDB, but keeps its PersistentVolumeClaim (`<app>-mongodb`, see
-[Persistence](#persistence)) with the data: dump the data first and restore
+bundled MongoDB, but keeps its PersistentVolumeClaim (`<app>-mongodb`) with
+the data, once a deployed revision has annotated the claim (see
+[Persistence](#persistence); not for releases installed with an earlier
+chart, in the upgrade to this one): dump the data first and restore
 it into the external MongoDB (see the steps of [From the legacy
 charts](#from-the-legacy-charts), with the release's MongoDB Deployment,
 `<app>-mongodb`), then delete the claim.

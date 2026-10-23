@@ -191,7 +191,9 @@ later commits of that day; the `Dockerfile` records the commit as
 `## FOCA commit: <sha>`, which the tests check, and the image build doesn't
 reinstall FOCA, but fails unless the base image has FOCA of that commit,
 `scripts/image_requirements.py`).
-Dependabot ignores the base image meanwhile. Such pins are temporary: the
+Meanwhile, add a Dependabot `ignore` of `elixircloud/foca` (all updates;
+remove it with the release pin), as updates of the dated tag's digest
+would change FOCA. Such pins are temporary: the
 release workflow fails
 while a requirement (also an optional one, a dependency group or a build
 requirement) is a direct reference or names a pre-release or a local version

@@ -480,10 +480,14 @@ def test_mongodb_persistence_existing_claim() -> None:
 
 
 def test_mongodb_volume_size_deprecated() -> None:
-    """`mongodb.volumeSize` of earlier charts still sets the claim's size.
+    """`mongodb.volumeSize` of earlier charts fails to render.
 
-    Unless `mongodb.persistence.size` is set, too: then rendering fails.
+    As the chart's values set `mongodb.persistence.size`, too; only without
+    it (`null`) does `volumeSize` set the claim's size.
     """
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render("--set", "mongodb.volumeSize=2Gi")
+    assert "volumeSize" in exc.value.stderr
     args = (
         "--set",
         "mongodb.volumeSize=2Gi",
@@ -492,9 +496,24 @@ def test_mongodb_volume_size_deprecated() -> None:
     )
     claim = _render(*args)[("PersistentVolumeClaim", MONGODB)]
     assert claim["spec"]["resources"]["requests"]["storage"] == "2Gi"
-    with pytest.raises(subprocess.CalledProcessError) as exc:
-        _render("--set", "mongodb.volumeSize=2Gi")
-    assert "volumeSize" in exc.value.stderr
+
+
+def test_mongodb_persistence_disabled() -> None:
+    """Without persistence, MongoDB keeps its data in an `emptyDir` of `size`."""
+    docs = _render("--set", "mongodb.persistence.enabled=false")
+    assert ("PersistentVolumeClaim", MONGODB) not in docs
+    volumes = docs[("Deployment", MONGODB)]["spec"]["template"]["spec"]["volumes"]
+    assert not [volume for volume in volumes if "persistentVolumeClaim" in volume]
+    assert {"sizeLimit": "1Gi"} in [volume.get("emptyDir") for volume in volumes]
+
+
+@pytest.mark.parametrize("storage_class", ["fast", "-"])
+def test_mongodb_persistence_storage_class(storage_class: str) -> None:
+    """The claim's storage class can be set; `-` disables dynamic provisioning."""
+    args = ("--set", f"mongodb.persistence.storageClass={storage_class}")
+    claim = _render(*args)[("PersistentVolumeClaim", MONGODB)]
+    expected = "" if storage_class == "-" else storage_class
+    assert claim["spec"]["storageClassName"] == expected
 
 
 @pytest.mark.parametrize(
@@ -1206,10 +1225,11 @@ def test_library_dependency() -> None:
 def test_schema_of_library() -> None:
     """The values schema is that of the library chart, with the app's key.
 
-    That is the library's `app-values.schema.json` with the documented
-    changes: the app's values (`cloudRegistry`) also require the Gunicorn
-    settings and the `preStop` delay, MongoDB's image is pinned to a minor
-    version, and there is no Celery worker or broker. The `$comment` names
+    That is the library's `app-values.schema.json` with the changes that
+    its `$comment` documents: the app's values (`cloudRegistry`) also
+    require the Gunicorn settings and the `preStop` delay, MongoDB's image
+    is pinned to a minor version, and there is no Celery worker or broker.
+    The `$comment` names
     the library's version, which the release pin check compares with the
     pinned one.
     """
@@ -1374,7 +1394,7 @@ def test_ingress_options() -> None:
     ]
 
 
-def test_ingress_body_size_default() -> None:
+def test_max_content_length_default() -> None:
     """The app's default limit of request bodies is that of ingress-nginx.
 
     1 MiB, as in the base config and the chart's settings, so the chart sets
@@ -1384,7 +1404,7 @@ def test_ingress_body_size_default() -> None:
     assert config["server"]["max_content_length"] == MAX_CONTENT_LENGTH == 2**20
 
 
-def test_ingress_body_size_app(tmp_path: Path) -> None:
+def test_max_content_length_no_annotation(tmp_path: Path) -> None:
     """The app's limit of request bodies sets no annotation of the Ingress.
 
     Also from values files, which have floats; the overlay has the limit.
@@ -1409,7 +1429,7 @@ def test_ingress_body_size_app(tmp_path: Path) -> None:
     ],
     ids=["null", "zero", "string"],
 )
-def test_ingress_body_size_invalid(args: tuple[str, ...]) -> None:
+def test_max_content_length_invalid(args: tuple[str, ...]) -> None:
     """Rendering fails unless the app's body size limit is a positive integer.
 
     FOCA refuses `null`; 0 would reject all request bodies.
@@ -1419,7 +1439,7 @@ def test_ingress_body_size_invalid(args: tuple[str, ...]) -> None:
     assert "max_content_length" in exc.value.stderr
 
 
-def test_ingress_body_size_custom_null() -> None:
+def test_custom_null() -> None:
     """`config.custom: null` is like no custom config.
 
     The generated custom config is kept.
@@ -1552,6 +1572,38 @@ def test_http_route_requires_parent_refs() -> None:
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render(*NO_INGRESS, "--set", "cloudRegistry.httpRoute.enabled=true")
     assert "parentRefs" in exc.value.stderr
+    # Also the redirect
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render(
+            *HTTP_ROUTE, "--set", "cloudRegistry.httpRoute.httpsRedirect.enabled=true"
+        )
+    assert "parentRefs" in exc.value.stderr
+
+
+def test_http_route_options() -> None:
+    """The HTTPRoute gets the annotations and filters of the values."""
+    annotations = {"a.example.org/b": "c"}
+    filters = [
+        {
+            "type": "ExtensionRef",
+            "extensionRef": {
+                "group": "traefik.io",
+                "kind": "Middleware",
+                "name": "limits",
+            },
+        }
+    ]
+    docs = _render(
+        *HTTP_ROUTE,
+        "--set-json",
+        f"cloudRegistry.httpRoute.annotations={json.dumps(annotations)}",
+        "--set-json",
+        f"cloudRegistry.httpRoute.filters={json.dumps(filters)}",
+    )
+    route = docs[("HTTPRoute", APP)]
+    assert route["metadata"]["annotations"] == annotations
+    (rule,) = route["spec"]["rules"]
+    assert rule["filters"] == filters
 
 
 @pytest.mark.parametrize(

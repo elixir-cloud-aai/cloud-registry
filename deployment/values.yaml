@@ -204,8 +204,8 @@ mongodb:
   # external MongoDB in `config.db`, and its app user's credentials via
   # `auth.existingSecret` (see deployment/README.md, External MongoDB).
   # Setting it to false for an installed release deletes the bundled
-  # MongoDB, but keeps its claim with the data (`persistence.resourcePolicy`):
-  # dump the data first
+  # MongoDB, but keeps its claim with the data (`persistence.resourcePolicy`,
+  # once a deployed revision has annotated the claim): dump the data first
   enabled: true
   # MongoDB 8.0 refuses to start on Linux kernels 6.19 to 7.0.13
   # (https://jira.mongodb.org/browse/SERVER-121912); see the deployment docs
@@ -245,8 +245,8 @@ mongodb:
   # revision has set the annotation); reinstalling the release with the same
   # name and namespace uses it again. Delete the claim by hand to remove the
   # data. Empty: Helm deletes the claim (see deployment/README.md, MongoDB).
-  # Replaces `volumeSize` of the earlier charts (deprecated; it still sets
-  # `size`, but rendering fails if both are set)
+  # Replaces `volumeSize` of the earlier charts (deprecated; rendering fails
+  # while it is set, as `size` is set here)
   persistence:
     enabled: true
     size: 1Gi

@@ -51,7 +51,8 @@ them.
       `app-config` ConfigMap to `config`;
     - rename `host_name` to `hostName` and `cloud_registry` to
       `cloudRegistry` (rendering fails while the old keys are set), and
-      `mongodb.volumeSize` to `mongodb.persistence.size` (deprecated; see
+      `mongodb.volumeSize` to `mongodb.persistence.size` (rendering fails
+      with `volumeSize`; see
       [Persistence](deployment.md#persistence));
     - optionally, enable the app's NetworkPolicy
       (`cloudRegistry.networkPolicy.enabled: true`), with
