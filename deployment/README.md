@@ -609,8 +609,8 @@ Deployment is called after `cloud_registry.appName`, by default
    ```
 
    (Annotating the claim with `helm.sh/resource-policy=keep` does not keep
-   it: Helm reads that annotation from the chart's manifests, not from the
-   cluster.)
+   it: on uninstall, Helm reads that annotation from the release's
+   manifests, not from the cluster.)
 
 4. Uninstall the release:
 
@@ -691,11 +691,10 @@ them in the values file, and upgrade with it (`-f`), not with
 `mongodb.persistence.size` as well (rendering fails while `volumeSize` is
 set, as the chart sets `persistence.size`), and keep MongoDB, persistence
 and the claim as they are in this upgrade (see [Persistence](#persistence)).
-The Ingress no
-longer sets the size limit of request bodies for ingress-nginx
-(`nginx.ingress.kubernetes.io/proxy-body-size`); with the app's default
-limit, that of ingress-nginx is the same (1 MiB), so set the annotation only
-with a higher limit (see [Ingress](#ingress)).
+The Ingress no longer sets the size limit of request bodies for
+ingress-nginx (`nginx.ingress.kubernetes.io/proxy-body-size`); with the
+app's default limit, that of ingress-nginx is the same (1 MiB), so set the
+annotation only with a higher limit (see [Ingress](#ingress)).
 
 ## Probes
 
@@ -880,10 +879,12 @@ have the annotation yet, don't disable persistence or MongoDB
 upgrade: on upgrades, Helm checks the annotation on the claim in the
 cluster, so it would delete the claim, and usually its data. Upgrade first,
 then change these settings, or annotate the claim first (`kubectl annotate
-pvc <app>-mongodb helm.sh/resource-policy=keep -n <namespace>`). A rollback
-to a revision without the annotation removes it again (see [MongoDB
+pvc <app>-mongodb helm.sh/resource-policy=keep -n <namespace>`; this
+protects the claim on upgrades only, not on `helm uninstall`, which reads
+the release's manifests); see [MongoDB
 persistence](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/migration-0.17.md#mongodb-persistence)
-in FOCA's documentation).
+in FOCA's documentation. A rollback to a revision without the annotation
+removes it from the claim again.
 
 ### External MongoDB
 

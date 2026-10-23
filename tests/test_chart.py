@@ -1229,9 +1229,8 @@ def test_schema_of_library() -> None:
     its `$comment` documents: the app's values (`cloudRegistry`) also
     require the Gunicorn settings and the `preStop` delay, MongoDB's image
     is pinned to a minor version, and there is no Celery worker or broker.
-    The `$comment` names
-    the library's version, which the release pin check compares with the
-    pinned one.
+    The `$comment` names the library's version, which the release pin
+    check compares with the pinned one.
     """
     chart = yaml.safe_load((CHART / "Chart.yaml").read_text())
     (dependency,) = chart["dependencies"]

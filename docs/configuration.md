@@ -191,8 +191,8 @@ config apply only to Flask's development server
 them does not move the image's traffic.
 
 Serve the app behind a reverse proxy that buffers requests (e.g.,
-ingress-nginx, or Traefik with its `buffering` middleware): Gunicorn's threads read requests
-themselves, so slow clients can tie them up.
+ingress-nginx, or Traefik with its `buffering` middleware): Gunicorn's
+threads read requests themselves, so slow clients can tie them up.
 
 ## Service info
 
