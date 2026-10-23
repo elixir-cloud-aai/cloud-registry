@@ -89,6 +89,8 @@ def _messages(markdown: str) -> list[tuple[int, str]]:
         # HTML comments, and a byte order mark
         "<!-- Notes of 0.3.0 -->\nIntro.\n\n## Fixes\n\n<!-- comment -->\n- Fix (#1)\n",
         "\ufeffIntro.\n\n## Fixes\n\n- Fix (#1)\n",
+        "Intro.\n\n## Fixes\n\n- Fix (#1)\n    <!-- c -->\n- Fix (#2)\n<!-- c -->\n",
+        "Intro.\n\n## Fixes\n\n- Fix (#1)\n\n<!-- c -->\n\n- Fix (#2)\n",
         # Numbers wrapped over lines
         "Intro.\n\n## Fixes\n\n- Fix (#1,\n  #2; #3,\n  #4)\n",
         # Hashes that are no headings
@@ -106,6 +108,10 @@ def test_check_valid(markdown: str) -> None:
         # No intro
         ("", [(1, "No intro paragraph")]),
         ("<!-- comment -->\n", [(1, "No intro paragraph")]),
+        (
+            "<!-- a --> Intro <!-- b -->\n\n## Fixes\n\n- Fix (#1)\n",
+            [],
+        ),
         (
             "<!-- comment -->\n## Fixes\n\n- Fix (#1)\n",
             [(2, "No intro paragraph")],

@@ -62,8 +62,9 @@ UNDERLINE = re.compile(r" {0,3}(?:(?:-[ \t]*)+|=+[ \t]*|(?:[*_][ \t]*){3,})")
 # Opening and closing lines of fenced code blocks: a block closes with a line
 # of the same character, at least as long as the opening one, and nothing else
 FENCE = re.compile(r"[ \t]*(?P<marker>`{3,}|~{3,})(?P<rest>.*)")
-# HTML comments on a line of their own, which count as blank lines
-COMMENT = re.compile(r"[ \t]*<!--.*-->[ \t]*")
+# A single HTML comment on a line of its own, which counts as a blank line
+# (comments over several lines are not supported)
+COMMENT = re.compile(r"[ \t]*<!--(?:(?!-->).)*-->[ \t]*")
 # Top-level list items (bullets or numbered)
 ITEM = re.compile(r"(?:[-*+]|[0-9]+[.)])(?:[ \t]|$)")
 # The end of a bullet: its issue and pull request numbers, e.g., `(#12, #34)`
@@ -206,7 +207,8 @@ class _Checker:
             self.intro = self.intro or not blank
         elif blank:
             if self.item:
-                self.item.append((number, line))
+                # As a blank line (also comments)
+                self.item.append((number, ""))
         elif ITEM.match(line):
             self._close_item()
             self.item = [(number, line)]
@@ -305,7 +307,7 @@ def check(markdown: str) -> list[Finding]:
         once, in their order, none empty), holding bullets only, each ending
         with its issue and pull request numbers, and none of the parts that
         the release workflow adds (`## Commits`, the `**Full Changelog**`
-        line). HTML comments on lines of their own count as blank lines.
+        line). An HTML comment on a line of its own counts as a blank line.
     """
     return _Checker().run(markdown.removeprefix("﻿").splitlines())
 
