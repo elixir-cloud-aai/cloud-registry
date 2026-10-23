@@ -172,7 +172,7 @@ with settings for a small container in
 one worker process with 4 threads, workers restarted if their main loop
 doesn't respond for 30 seconds (requests run in threads, so slow requests
 don't count), 20 seconds to finish requests on shutdown, idle keep-alive
-connections closed after 75 seconds, and Gunicorn's size limits of the request
+connections closed after 100 seconds, and Gunicorn's size limits of the request
 line and headers. Keep the keep-alive timeout longer than that of a reverse
 proxy in front of the app for its connections to the app (e.g., 60 seconds
 for ingress-nginx, 90 seconds for Traefik): otherwise, the proxy may reuse a
