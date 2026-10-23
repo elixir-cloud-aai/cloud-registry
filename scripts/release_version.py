@@ -11,10 +11,14 @@ Commands:
         whether it is a GitHub pre-release (`prerelease`).
     `latest <tag>`: whether the image of the release is tagged `latest`
         (`latest`), given the tags on `main`, one per line, on standard input.
-    `previous <tag>`: the tag of the previous release (`previous_tag`, empty
-        if there is none), after which GitHub's generated release notes
-        start, given the tags of published releases in the history of the
-        release commit, one per line, on standard input.
+    `previous <tag> --published <file>`: the tag of the previous release
+        (`previous_tag`, empty if there is none), after which GitHub's
+        generated release notes start, given the tags in the history of the
+        release commit, one per line, on standard input, and the tags of
+        published releases, one per line, in `<file>` (only tags in both
+        count). All of standard input is read, also when `<file>` is empty
+        (the first release), so that the command writing it never fails
+        with a broken pipe.
 
 Only the stdlib is used, so the workflow runs it without installing the app.
 """
@@ -22,6 +26,7 @@ Only the stdlib is used, so the workflow runs it without installing the app.
 import argparse
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 import re
 import sys
 
@@ -178,14 +183,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             process if `None`.
 
     Returns:
-        The exit status: 0 on success, 1 if the tag is not a release version.
+        The exit status: 0 on success, 1 if the tag is not a release version
+        or the file of published tags can't be read.
     """
     parser = argparse.ArgumentParser(
         description="Derive the version and the kind of a release from its tag."
     )
     parser.add_argument("command", choices=["outputs", "latest", "previous"])
     parser.add_argument("tag", help="release tag, e.g., v1.2.3 or v1.2.3rc1")
+    parser.add_argument(
+        "--published",
+        type=Path,
+        metavar="FILE",
+        help="tags of published releases, one per line (`previous` only)",
+    )
     args = parser.parse_args(argv)
+    if (args.command == "previous") != (args.published is not None):
+        parser.error("--published is required for, and only for, `previous`")
     # Undecodable bytes are replaced, so that tags with them are ignored as
     # invalid tags (instead of failing with a `UnicodeDecodeError`)
     tags = (
@@ -193,6 +207,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command in {"latest", "previous"}
         else []
     )
+    if args.published is not None:
+        try:
+            published = set(
+                args.published.read_bytes().decode("utf-8", "replace").splitlines()
+            )
+        except OSError as error:
+            print(f"::error::Cannot read published tags: {error}", file=sys.stderr)
+            return 1
+        tags = [tag for tag in tags if tag in published]
     try:
         if args.command == "outputs":
             lines = parse_tag(args.tag).outputs()
