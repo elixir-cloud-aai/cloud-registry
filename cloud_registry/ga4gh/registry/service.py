@@ -60,8 +60,7 @@ class DuplicateService(Conflict):
     """A service with the same URL and API type is registered.
 
     The description names the registered service; for users who may not
-    read it, responses use `HIDDEN_DESCRIPTION` instead (cf.
-    `server._register_service()`).
+    read it, responses use `hidden()` instead.
 
     Attributes:
         HIDDEN_DESCRIPTION: Description without the registered service.
@@ -69,6 +68,14 @@ class DuplicateService(Conflict):
     """
 
     HIDDEN_DESCRIPTION = "A service with the same URL and API type is registered."
+
+    def hidden(self) -> Conflict:
+        """Get the conflict without the registered service.
+
+        Returns:
+            Conflict whose description doesn't name the registered service.
+        """
+        return Conflict(self.HIDDEN_DESCRIPTION)
 
     def __init__(self, existing_id: str) -> None:
         """Create the exception for a service with the same URL and API type.

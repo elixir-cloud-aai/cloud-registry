@@ -9,7 +9,6 @@ from foca.utils.logging import escape_log_value, log_traffic
 
 from cloud_registry.exceptions import (
     BadRequest,
-    Conflict,
     NotFound,
     problem,
     shorten_detail,
@@ -236,7 +235,13 @@ def _register_service(
         # is, by the same decision as for `GET /services/{serviceId}`
         if may_read_service(exc.existing_id):
             return problem(exc, serviceId=exc.existing_id)
-        return problem(Conflict(DuplicateService.HIDDEN_DESCRIPTION))
+        # FOCA logs the denied check like a request
+        logger.info(
+            "Registered service with the same URL and API type not named: "
+            "'%s' may not read it.",
+            current_user(),
+        )
+        return problem(exc.hidden())
     if service.verification_removed:
         logger.info(
             "Verification of service '%s' removed by an update by '%s' (URL or "

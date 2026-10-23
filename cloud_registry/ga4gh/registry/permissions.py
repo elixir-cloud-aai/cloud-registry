@@ -216,10 +216,15 @@ def may_read_service(serviceId: str) -> bool:
     Args:
         serviceId: Service identifier.
 
+    The check relies on internals of FOCA (`_enforces_access_control()`) and
+    Connexion (`connexion_context`), as FOCA has no public helper for the
+    decision on another request; the tests pin it to that of `GET`.
+
     Returns:
-        Whether the current user may get the service; `False` if no route
-        matches the request (e.g., for identifiers that aren't one path
-        segment).
+        Whether the current user may get the service; `False` if the request
+        isn't routed to `GET /services/{serviceId}` for the identifier (e.g.,
+        for identifiers with slashes, which are routed to other operations or
+        none).
     """
     connexion_context = getattr(request_ctx, "connexion_context", None)
     # a request context for the read, with the validated token of the
@@ -229,7 +234,7 @@ def may_read_service(serviceId: str) -> bool:
     with current_app.test_request_context(path, method="GET"):
         rule = request.url_rule
         view = None if rule is None else current_app.view_functions.get(rule.endpoint)
-        if view is None:
+        if view is None or request.view_args != {"serviceId": serviceId}:
             return False
         # as in FOCA's own check of routes (`ownership_server`), whose
         # helper is internal

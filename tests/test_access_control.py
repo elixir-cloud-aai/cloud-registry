@@ -1471,8 +1471,7 @@ def _duplicates(
     ]
     for response in responses:
         assert response.status_code == 409, response.get_json()
-    post, put = (response.get_json() for response in responses)
-    return post, put
+    return responses[0].get_json(), responses[1].get_json()
 
 
 def _assert_named(problem: dict[str, Any], existing_id: str) -> None:
@@ -1515,7 +1514,7 @@ def test_duplicates_login_for_reads(
     """With login for reads by any user, `409` names the registered service."""
     client = _create_app(monkeypatch, tmp_path, _docs_overlay("overlay.yaml"))
     existing_id = register(client)
-    for user in (BOB, ADMIN):
+    for user in (ALICE, BOB, ADMIN):
         for problem in _duplicates(client, existing_id, user):
             _assert_named(problem, existing_id)
 
@@ -1541,7 +1540,15 @@ def test_duplicates_login_for_reads_readers(
             _assert_hidden(problem, existing_id)
 
 
-def test_may_read_service_unrouted(client: FlaskClient) -> None:
-    """Identifiers that no route matches can't be read."""
+@pytest.mark.parametrize("service_id", ["a/b", "a/verification", "a/permissions"])
+def test_may_read_service_unrouted(client: FlaskClient, service_id: str) -> None:
+    """Identifiers not routed to `GET /services/{serviceId}` can't be read.
+
+    Also not those routed to other operations, which policies may allow.
+
+    Args:
+        client: Test client of the app.
+        service_id: Service identifier.
+    """
     with client.application.test_request_context(f"{BASE}/services", method="POST"):
-        assert not may_read_service("a/b")
+        assert not may_read_service(service_id)
