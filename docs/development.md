@@ -134,7 +134,8 @@ tag is pushed fails again on re-runs: the release then needs a new patch
 version, with its own citation metadata and notes. Run these checks before
 tagging, therefore. The CI job "Check release readiness" runs the pin and
 the notes checks, too, for the version in `CITATION.cff` while it has no
-tag: on pull requests as warnings, on pushes to `dev` as errors, which fail
+tag (or its tag is on the checked commit): on pull requests as warnings, on
+pushes to `dev` as errors, which fail
 the CI run that the release workflow requires for the release commit. The
 image scan of the release workflow can still fail after the tag, e.g., on a
 vulnerability published since CI last scanned the image; the remedy is the

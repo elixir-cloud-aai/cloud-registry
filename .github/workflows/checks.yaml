@@ -244,9 +244,10 @@ jobs:
   # The release workflow's checks of pins and curated notes, before the
   # immutable tag exists: for the version in `CITATION.cff` (set before a
   # release, see "Versioning and releases" in `docs/development.md`) while
-  # it has no tag. Not a required check, and not needed for publishing; on
-  # pull requests, findings are warnings. On pushes, findings fail the run,
-  # which the release workflow requires to pass for the release commit
+  # it has no tag, or its tag is on this commit. Not a required check, and
+  # not needed for publishing; on pull requests, findings are warnings. On
+  # pushes, findings fail the run, which the release workflow requires to
+  # pass for the release commit
   release_readiness:
     name: Check release readiness
     runs-on: ubuntu-latest
@@ -264,13 +265,18 @@ jobs:
       - name: Check pins and release notes
         env:
           EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
         run: |
           version="$(sed -En "s/^version:[[:space:]]*[\"']?([0-9A-Za-z.+-]+)[\"']?[[:space:]]*(#.*)?$/\1/p" CITATION.cff)"
           if [[ -z "${version}" ]]; then
               echo "No version in CITATION.cff: no release in preparation"
               exit 0
           fi
-          if git ls-remote --exit-code --tags origin "refs/tags/v${version}" > /dev/null; then
+          # The commit of the (annotated) tag, if any: later commits are
+          # skipped, but not the tagged commit itself (e.g., if it was
+          # tagged before this job ran)
+          tagged="$(git ls-remote origin "refs/tags/v${version}^{}" | cut -f1)"
+          if [[ -n "${tagged}" && "${tagged}" != "${SHA}" ]]; then
               echo "v${version} is tagged: no release in preparation"
               exit 0
           fi
