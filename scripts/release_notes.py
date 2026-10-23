@@ -151,7 +151,7 @@ class _Checker:
 
     Attributes:
         findings: Findings so far.
-        intro: Whether the intro has text.
+        intro: Whether the intro has a paragraph (not only lists or code).
         heading_line: Line of the current heading (0 in the intro).
         valid: Whether the current heading is a valid section.
         bullets: Number of bullets in the current section.
@@ -197,6 +197,10 @@ class _Checker:
             number: Number of the line.
             line: Text of the line.
         """
+        fence = FENCE.fullmatch(line)
+        if self.fence or fence:
+            self._code(number, line, fence)
+            return
         if line.lstrip().startswith(FULL_CHANGELOG):
             self.findings.append(
                 Finding(
@@ -204,10 +208,6 @@ class _Checker:
                     f"'{FULL_CHANGELOG}' line: the release workflow adds GitHub's",
                 )
             )
-        fence = FENCE.fullmatch(line)
-        if self.fence or fence:
-            self._code(number, line, fence)
-            return
         heading = HEADING.fullmatch(line)
         if heading:
             self._heading(number, len(heading["level"]), heading["title"] or "")
@@ -222,7 +222,8 @@ class _Checker:
                 )
             )
         elif self.heading_line == 0:
-            self.intro = self.intro or not blank
+            # A paragraph, not a list
+            self.intro = self.intro or not (blank or ITEM.match(line))
         elif blank:
             if self.item:
                 # As a blank line (also comments)
@@ -251,9 +252,8 @@ class _Checker:
         """
         if self.fence is None and fence:
             self.fence = fence["marker"]
-            if self.heading_line == 0:
-                self.intro = True
-            elif not self.item and self.valid:
+            # Code blocks in the intro don't make it one
+            if self.heading_line and not self.item and self.valid:
                 self.findings.append(Finding(number, BULLETS_ONLY))
         elif (
             self.fence
@@ -321,13 +321,14 @@ def check(markdown: str) -> list[Finding]:
 
     Returns:
         The findings, in the order of their lines; none if the notes have an
-        intro paragraph, then only headings of `SECTIONS` (level 2, each
-        once, in their order, none empty), holding bullets only, each ending
-        with its issue and pull request numbers, and none of the parts that
-        the release workflow adds (`## Commits`, the `**Full Changelog**`
-        line). An HTML comment on a line of its own counts as a blank line.
+        intro paragraph (lists and code blocks alone don't count), then only
+        headings of `SECTIONS` (level 2, each once, in their order, none
+        empty), holding bullets only, each ending with its issue and pull
+        request numbers, and none of the parts that the release workflow adds
+        (`## Commits`, the `**Full Changelog**` line). An HTML comment on a
+        line of its own counts as a blank line.
     """
-    return _Checker().run(markdown.removeprefix("﻿").splitlines())
+    return _Checker().run(markdown.removeprefix("\ufeff").splitlines())
 
 
 def body(curated: str, generated: str) -> tuple[str, list[str]]:

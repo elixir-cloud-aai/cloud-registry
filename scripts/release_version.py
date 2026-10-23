@@ -13,8 +13,8 @@ Commands:
         (`latest`), given the tags on `main`, one per line, on standard input.
     `previous <tag>`: the tag of the previous release (`previous_tag`, empty
         if there is none), after which GitHub's generated release notes
-        start, given the tags in the history of the release commit, one per
-        line, on standard input.
+        start, given the tags of published releases in the history of the
+        release commit, one per line, on standard input.
 
 Only the stdlib is used, so the workflow runs it without installing the app.
 """
@@ -139,8 +139,8 @@ def previous_tag(tag: str, tags: Iterable[str]) -> str | None:
 
     Args:
         tag: Git tag of the release.
-        tags: Git tags in the history of the release commit; tags that are no
-            release versions are ignored.
+        tags: Git tags of the published releases in the history of the
+            release commit; tags that are no release versions are ignored.
 
     Returns:
         For a stable release, the highest stable release below it, or, if

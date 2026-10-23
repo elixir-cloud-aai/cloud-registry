@@ -393,14 +393,22 @@ jobs:
       # GitHub's generated notes list the merged pull requests since the
       # previous release in the history of the release commit (see
       # `scripts/release_version.py`), or since the start for the first
-      # release
+      # release. Only tags with a published GitHub release count, so that the
+      # changes of a tag whose release failed (and was replaced by a new
+      # patch version) are listed in the next release
       - name: Determine the previous release
         id: previous
         env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
           set -o pipefail
+          published="$(mktemp)"
+          gh release list --limit 1000 --exclude-drafts --json tagName \
+              --jq '.[].tagName' > "${published}"
           git tag -l 'v*' --merged HEAD \
+              | { grep -Fx -f "${published}" || [[ $? -eq 1 ]]; } \
               | python scripts/release_version.py previous "${TAG}" >> "${GITHUB_OUTPUT}"
       - name: Create release
         env:

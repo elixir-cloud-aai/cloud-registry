@@ -121,7 +121,7 @@ python scripts/release_version.py outputs vX.Y.Z
 python scripts/citation.py check X.Y.Z
 python scripts/check_release_pins.py
 ! grep -n TODO docs/releases/X.Y.Z.md  # curated notes, if any
-python scripts/release_notes.py check docs/releases/X.Y.Z.md  # their format, if any
+[ ! -f docs/releases/X.Y.Z.md ] || python scripts/release_notes.py check docs/releases/X.Y.Z.md
 readme="$(mktemp -d)/README.md" && cp deployment/README.md "${readme}"
 python scripts/chart_readme.py "${readme}" vX.Y.Z  # links of the chart
 git push origin <sha>:main  # fails unless it is a fast-forward
@@ -224,8 +224,8 @@ The curated notes in `docs/releases/X.Y.Z.md` (for pre-releases, e.g.,
 `X.Y.Zrc1.md`) hold parts 1 and 2, without a title (the release's title is
 its tag); the release workflow adds parts 3 and 4 from GitHub's
 [generate-notes](https://docs.github.com/en/rest/releases/releases#generate-release-notes-content-for-a-release)
-API, for the changes since the previous release in the history of the release
-commit (for stable releases the previous stable release, or the previous
+API, for the changes since the previous published release in the history of the
+release commit (for stable releases the previous stable release, or the previous
 pre-release if there is no stable one, as the generated notes can't start
 before the first tag; for alpha, beta and release candidate versions the
 previous release of any kind; all changes for the first release). Generated

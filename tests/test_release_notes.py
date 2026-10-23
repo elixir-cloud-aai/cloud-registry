@@ -91,6 +91,8 @@ def _messages(markdown: str) -> list[tuple[int, str]]:
         "\ufeffIntro.\n\n## Fixes\n\n- Fix (#1)\n",
         "Intro.\n\n## Fixes\n\n- Fix (#1)\n    <!-- c -->\n- Fix (#2)\n<!-- c -->\n",
         "Intro.\n\n## Fixes\n\n- Fix (#1)\n\n<!-- c -->\n\n- Fix (#2)\n",
+        # Code blocks may show the generated parts
+        "Intro.\n\n```md\n**Full Changelog**: https://x/compare/a...b\n```\n",
         # Numbers wrapped over lines
         "Intro.\n\n## Fixes\n\n- Fix (#1,\n  #2; #3,\n  #4)\n",
         # Hashes that are no headings
@@ -108,6 +110,9 @@ def test_check_valid(markdown: str) -> None:
         # No intro
         ("", [(1, "No intro paragraph")]),
         ("<!-- comment -->\n", [(1, "No intro paragraph")]),
+        # Lists and code blocks are no intro paragraph
+        ("- Item\n\n## Fixes\n\n- Fix (#1)\n", [(3, "No intro paragraph")]),
+        ("```\ncode\n```\n\n## Fixes\n\n- Fix (#1)\n", [(5, "No intro paragraph")]),
         (
             "<!-- a --> Intro <!-- b -->\n\n## Fixes\n\n- Fix (#1)\n",
             [],
