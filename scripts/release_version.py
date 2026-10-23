@@ -175,6 +175,20 @@ def previous_tag(tag: str, tags: Iterable[str]) -> str | None:
     return max(below, key=lambda candidate: candidate[1])[2]
 
 
+def read_lines(data: bytes) -> list[str]:
+    """Return the lines of a list of tags.
+
+    Args:
+        data: Tags, one per line, as UTF-8.
+
+    Returns:
+        The lines, without line breaks; undecodable bytes are replaced, so
+        that tags with them are ignored as invalid tags (instead of failing
+        with a `UnicodeDecodeError`).
+    """
+    return data.decode("utf-8", "replace").splitlines()
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Print the outputs of a command (see the module's docstring).
 
@@ -200,18 +214,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if (args.command == "previous") != (args.published is not None):
         parser.error("--published is required for, and only for, `previous`")
-    # Undecodable bytes are replaced, so that tags with them are ignored as
-    # invalid tags (instead of failing with a `UnicodeDecodeError`)
     tags = (
-        sys.stdin.buffer.read().decode("utf-8", "replace").splitlines()
+        read_lines(sys.stdin.buffer.read())
         if args.command in {"latest", "previous"}
         else []
     )
-    if args.published is not None:
+    # `--published` is given exactly when the command is `previous` (above)
+    if args.command == "previous":
         try:
-            published = set(
-                args.published.read_bytes().decode("utf-8", "replace").splitlines()
-            )
+            published = set(read_lines(args.published.read_bytes()))
         except OSError as error:
             print(f"::error::Cannot read published tags: {error}", file=sys.stderr)
             return 1

@@ -408,5 +408,5 @@ def test_script_reads_all_input(tmp_path: Path) -> None:
         # unless the script reads all of it
         for number in range(100_000):
             process.stdin.write(f"v0.0.{number}\n".encode())
-        stdout, stderr = process.communicate()
+        stdout, stderr = process.communicate(timeout=60)
     assert (process.returncode, stdout, stderr) == (0, b"previous_tag=\n", b"")
