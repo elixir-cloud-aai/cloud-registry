@@ -590,20 +590,23 @@ components:
         after normalizing common spellings (e.g., case of schemes and hosts,
         default ports, trailing slashes, queries and fragments; see
         https://cloud-registry.readthedocs.io/en/latest/api/#duplicate-services).
-        `serviceId` names the registered service; contact its owner or an
-        admin.
+        For users who may read the registered service (`GET
+        /services/{serviceId}`), `serviceId` names it (also in `detail`);
+        contact its owner or an admin. For other users (e.g., if a deployment
+        requires login for reads), the problem details neither have
+        `serviceId` nor name the service in `detail`.
       content:
         application/json:
           schema:
             allOf:
               - $ref: '#/components/schemas/Error'
               - type: object
-                required:
-                  - serviceId
                 properties:
                   serviceId:
                     type: string
-                    description: Identifier of the registered service.
+                    description: |
+                      Identifier of the registered service; only for users
+                      who may read it.
   schemas:
     ServiceId:
       description: Service identifier.
