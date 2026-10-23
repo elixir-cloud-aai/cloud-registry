@@ -28,6 +28,9 @@ authors:
   - given-names: CJ
     family-names: Herrmann
     orcid: "https://orcid.org/0000-0003-1649-3463"
+    affiliation: >-
+      Biozentrum, University of Basel, Basel, Switzerland; SIB Swiss Institute
+      of Bioinformatics, Lausanne, Switzerland
   - given-names: Aditya
     family-names: Arora
   - given-names: Tristan
