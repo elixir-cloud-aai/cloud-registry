@@ -132,9 +132,13 @@ Tags can't be moved or deleted (see the repository settings below), and the
 release workflow checks the tagged commit, so a check that fails after the
 tag is pushed fails again on re-runs: the release then needs a new patch
 version, with its own citation metadata and notes. Run these checks before
-tagging, therefore. The image scan of the release workflow can still fail
-after the tag, e.g., on a vulnerability published since CI last scanned the
-image; the remedy is the same.
+tagging, therefore. The CI job "Check release readiness" runs the pin and
+the notes checks, too, for the version in `CITATION.cff` while it has no
+tag: on pull requests as warnings, on pushes to `dev` as errors, which fail
+the CI run that the release workflow requires for the release commit. The
+image scan of the release workflow can still fail after the tag, e.g., on a
+vulnerability published since CI last scanned the image; the remedy is the
+same.
 
 The tag must be annotated and signed (`git tag -s`), with a key that GitHub can
 verify (added to the tagger's GitHub account). The [release
