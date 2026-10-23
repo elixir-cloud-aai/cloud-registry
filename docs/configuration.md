@@ -174,9 +174,9 @@ doesn't respond for 30 seconds (requests run in threads, so slow requests
 don't count), 20 seconds to finish requests on shutdown, idle keep-alive
 connections closed after 75 seconds, and Gunicorn's size limits of the request
 line and headers. Keep the keep-alive timeout longer than that of a reverse
-proxy in front of the app for its connections to the app (60 seconds for
-ingress-nginx): otherwise, the proxy may reuse a connection just as Gunicorn
-closes it, and the request fails (`502`). To change the settings, set
+proxy in front of the app for its connections to the app (e.g., 60 seconds
+for ingress-nginx, 90 seconds for Traefik): otherwise, the proxy may reuse a
+connection just as Gunicorn closes it, and the request fails (`502`). To change the settings, set
 `GUNICORN_CMD_ARGS` to [Gunicorn
 options](https://gunicorn.org/reference/settings/) (e.g., `--workers 2
 --threads 8`); Docker Compose passes it on from the host, and the Helm chart

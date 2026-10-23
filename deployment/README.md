@@ -216,11 +216,16 @@ rate limits, as below) are examples to add to the values, and the size limit
 of request bodies for ingress-nginx (see below) is ignored by other
 controllers. ingress-nginx is retired (it gets no releases or security fixes
 after March 2026): prefer another ingress controller (e.g., Traefik), or the
-Gateway API, its successor. For the Gateway API, this version of the chart
-creates no HTTPRoute: disable the Ingress (`enabled: false`; on clusters
-without Routes, the chart then creates none) and attach an HTTPRoute of your
-own to the app's Service (port `http`), next to the release. The Ingress is
-configured with:
+Gateway API.
+
+The Gateway API is the successor of the Ingress API. This version of the
+chart creates no HTTPRoute: disable the Ingress (`enabled: false`; on
+clusters without Routes, the chart then creates none) and attach an HTTPRoute
+of your own to the Gateway, next to the release, with the app's Service as
+its backend (`backendRefs`, port `8080`); to keep the permissions API off the
+internet, match only the path prefix `/ga4gh/registry/v1/`.
+
+The Ingress is configured with:
 
 - `className` sets the Ingress class (default: the cluster's default class);
 - `annotations` sets annotations, e.g., for the ingress controller; they
@@ -463,9 +468,10 @@ startup checks; if they fail, Gunicorn exits and the container restarts
 threads, so slow or stuck requests don't count. Keep `keepalive` longer than
 the ingress controller's keep-alive timeout for upstream connections
 (e.g., 60 seconds for ingress-nginx, `upstream-keepalive-timeout`; Traefik's
-90 seconds are longer than the default, so raise `keepalive`, e.g., to 100):
-otherwise, it may
-reuse a connection just as Gunicorn closes it, and the request fails with
+90 seconds are longer than the default, so raise `keepalive`, e.g., to 100;
+Envoy Gateway keeps idle connections for an hour unless its
+`BackendTrafficPolicy` sets a shorter `connectionIdleTimeout`): otherwise, it
+may reuse a connection just as Gunicorn closes it, and the request fails with
 `502` (non-idempotent requests, e.g., `POST`, are not retried). Idle
 connections wait in the worker's poller, not in its threads.
 

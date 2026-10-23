@@ -150,7 +150,8 @@ cloudRegistry:
     gracefulTimeout: 20
     # Seconds after which idle keep-alive connections are closed (0: no
     # keep-alive); keep it longer than the upstream keep-alive timeout of the
-    # ingress controller (60 seconds for ingress-nginx), which would otherwise
+    # ingress controller (e.g., 60 seconds for ingress-nginx, 90 seconds for
+    # Traefik; see deployment/README.md, Server), which would otherwise
     # reuse connections as they are closed (failing requests with `502`)
     keepalive: 75
     # Further Gunicorn options, e.g., `["--access-logfile", "-"]` for an

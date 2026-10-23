@@ -1173,11 +1173,12 @@ def test_schema_of_library() -> None:
         "ingressFrom"
     ]
     assert ingress_from.pop("minItems") == 1
-    ingress_from["description"] = (
-        "NetworkPolicy peers allowed to connect to the app, e.g., the pods of"
-        " the ingress controller or Gateway (none by default); rendering fails"
-        " if the policy is enabled without any"
-    )
+    # Without the default of the library (the namespace of ingress-nginx)
+    ingress_from_app = schema["$defs"]["app"]["properties"]["networkPolicy"][
+        "properties"
+    ]["ingressFrom"]
+    assert "ingress-nginx" not in ingress_from_app["description"]
+    ingress_from["description"] = ingress_from_app["description"]
     assert schema["$defs"] == library["$defs"]
     properties = dict(schema["properties"])
     assert properties.pop("cloudRegistry") == {
