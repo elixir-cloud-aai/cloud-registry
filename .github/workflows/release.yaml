@@ -169,6 +169,13 @@ jobs:
           helm lint deployment --strict -f deployment/ci/test-values.yaml
           chart="$(mktemp -d)/cloud-registry"
           cp -R deployment "${chart}"
+          # The default image is the published one, also in forks that
+          # publish to another organization (`DOCKERHUB_ORG`); `values.yaml`
+          # is rewritten (by yq) only then
+          image="${IMAGE_NAME#docker.io/}"
+          if [[ "$(yq .cloudRegistry.image "${chart}/values.yaml")" != "${image}" ]]; then
+              IMAGE="${image}" yq -i '.cloudRegistry.image = strenv(IMAGE)' "${chart}/values.yaml"
+          fi
           python scripts/chart_readme.py "${chart}/README.md" "v${VERSION}"
           helm package "${chart}" \
               --version "${CHART_VERSION}" --app-version "${VERSION}" -d dist
@@ -179,6 +186,8 @@ jobs:
           library="$(tar -xzOf "${package}" cloud-registry/charts/foca-common/Chart.yaml \
               | yq .version)"
           [[ "${library}" == "$(yq '.dependencies[0].version' deployment/Chart.lock)" ]]
+          [[ "$(tar -xzOf "${package}" cloud-registry/values.yaml | yq .cloudRegistry.image)" \
+              == "${image}" ]]
       - name: Upload chart
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
