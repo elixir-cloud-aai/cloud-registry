@@ -242,7 +242,9 @@ def test_chart_dependencies_indentless(tmp_path: Path) -> None:
     """Dependencies listed without indentation are checked, too."""
     root = _write(tmp_path)
     (root / "deployment" / "Chart.yaml").write_text(
-        "name: app\ndependencies:\n- name: a\n  version: 1.0.0-rc1\nversion: 0.0.0\n"
+        "name: app\ndependencies:\n- name: a\n  version: 1.0.0-rc1\n"
+        "  repository: https://example.org/charts\n  tags:\n  - b\n  - c\n"
+        "version: 0.0.0\n"
     )
     assert check_release_pins.find_dev_pins(root) == [
         "deployment/Chart.yaml: dependency version '1.0.0-rc1' is not a release version"
@@ -263,6 +265,10 @@ dependencies:  # A comment
   # A comment
   - version: "1.0.0-rc1"
     name: other
+    repository: "https://example.org/charts"  # A comment
+    import-values:
+      - child: x
+        version: 2.0.0-rc1
 
 maintainers:
   - name: someone
@@ -289,3 +295,101 @@ def test_script(tmp_path: Path) -> None:
     )
     assert (result.returncode, result.stdout) == (1, "")
     assert "dependency version '0.2.0-rc1'" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("dockerfile", "errors"),
+    [
+        (
+            "FROM elixircloud/foca:0.17.0-py3.13 AS build\n"
+            f"FROM elixircloud/foca:20261022-py3.13@sha256:{DIGEST}\n",
+            [
+                "Dockerfile: base image tag '20261022-py3.13' is not a release "
+                "tag (<X.Y.Z>-py<X.Y>)"
+            ],
+        ),
+        (
+            "from --platform=linux/amd64 docker.io/elixircloud/foca:dev\n",
+            ["Dockerfile: base image tag 'dev' is not a release tag (<X.Y.Z>-py<X.Y>)"],
+        ),
+        (
+            f"FROM elixircloud/foca@sha256:{DIGEST}\n",
+            ["Dockerfile: base image has no tag (<X.Y.Z>-py<X.Y>)"],
+        ),
+        (
+            "FROM elixircloud/foca-other:dev\n",
+            ["Dockerfile: no elixircloud/foca base image"],
+        ),
+        (
+            "FROM elixircloud/foca:0.17.0-py3.13\n"
+            "FROM elixircloud/foca:0.17.0-py3.12\n",
+            [],
+        ),
+    ],
+    ids=["later-stage", "options", "no-tag", "other-image", "all-releases"],
+)
+def test_base_images(tmp_path: Path, dockerfile: str, errors: list[str]) -> None:
+    """All FOCA base images of the `Dockerfile` are checked, in any stage."""
+    root = _write(tmp_path)
+    (root / "Dockerfile").write_text(dockerfile)
+    assert check_release_pins.find_dev_pins(root) == errors
+
+
+@pytest.mark.parametrize(
+    ("dependency", "errors"),
+    [
+        (
+            "  - name: foca-common\n    version: 0.2.0\n"
+            "    repository: file://../../foca/deployment/foca-common\n",
+            [
+                "deployment/Chart.yaml: dependency 'foca-common' has repository "
+                "'file://../../foca/deployment/foca-common', not a chart repository "
+                "(oci:// or https://)"
+            ],
+        ),
+        (
+            "  - name: foca-common\n"
+            "    repository: oci://ghcr.io/elixir-cloud-aai/charts\n",
+            ["deployment/Chart.yaml: dependency 'foca-common' has no version"],
+        ),
+        (
+            "  - name: foca-common\n    version: 0.2.0\n    repository: '@local'\n",
+            [
+                "deployment/Chart.yaml: dependency 'foca-common' has repository "
+                "'@local', not a chart repository (oci:// or https://)"
+            ],
+        ),
+        (
+            "  -\n    name: foca-common\n    version: 0.2.0\n"
+            "    repository: oci://ghcr.io/elixir-cloud-aai/charts\n",
+            [],
+        ),
+    ],
+    ids=["file-repository", "no-version", "alias-repository", "item-on-own-line"],
+)
+def test_chart_dependency_sources(
+    tmp_path: Path, dependency: str, errors: list[str]
+) -> None:
+    """Chart dependencies need a version and a chart repository."""
+    root = _write(tmp_path)
+    (root / "deployment" / "Chart.yaml").write_text(
+        f"name: app\ndependencies:\n{dependency}"
+    )
+    assert check_release_pins.find_dev_pins(root) == errors
+
+
+def test_build_requirements(tmp_path: Path) -> None:
+    """Build requirements and dependency groups are checked, too."""
+    root = _write(tmp_path)
+    pyproject = root / "pyproject.toml"
+    pyproject.write_text(
+        '[build-system]\nrequires = ["setuptools>=77", '
+        '"setuptools-scm @ git+https://example.org/scm"]\n'
+        + pyproject.read_text()
+        + '[dependency-groups]\ntest = ["pytest>=9.0rc1", {include-group = "x"}]\n'
+    )
+    assert check_release_pins.find_dev_pins(root) == [
+        "pyproject.toml: dependency 'pytest>=9.0rc1' names a pre-release",
+        "pyproject.toml: build requirement 'setuptools-scm @ "
+        "git+https://example.org/scm' is a direct reference",
+    ]
