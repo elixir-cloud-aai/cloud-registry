@@ -116,11 +116,22 @@ change), after CI passed for it:
 
 ```bash
 git switch --detach <sha>
-python scripts/citation.py check X.Y.Z  # as the release workflow does
+# The release workflow's checks that need no tag, as it runs them
+python scripts/citation.py check X.Y.Z
+python scripts/check_release_pins.py
+! grep -n TODO docs/releases/X.Y.Z.md  # curated notes, if any
 git push origin <sha>:main  # fails unless it is a fast-forward
 git tag -s vX.Y.Z <sha> -m "vX.Y.Z"
 git push origin vX.Y.Z
 ```
+
+Tags can't be moved or deleted (see the repository settings below), and the
+release workflow checks the tagged commit, so a check that fails after the
+tag is pushed fails again on re-runs: the release then needs a new patch
+version, with its own citation metadata and notes. Run these checks before
+tagging, therefore. The image scan of the release workflow can still fail
+after the tag, e.g., on a vulnerability published since CI last scanned the
+image; the remedy is the same.
 
 The tag must be annotated and signed (`git tag -s`), with a key that GitHub can
 verify (added to the tagger's GitHub account). The [release
@@ -174,9 +185,11 @@ reinstall FOCA, but fails unless the base image has FOCA of that commit,
 `scripts/image_requirements.py`).
 Dependabot ignores the base image meanwhile. Such pins are temporary: the
 release workflow fails
-while a dependency (also an optional one) is a direct reference or names a
-pre-release, the base image has no release tag, or a chart dependency has
-another version than a release (`scripts/check_release_pins.py`,
+while a requirement (also an optional one, a dependency group or a build
+requirement) is a direct reference or names a pre-release, a FOCA base image
+(in any stage) has no release tag, or a chart dependency has no version,
+another version than a release or no chart repository (`oci://`,
+`https://`; e.g., `file://`) (`scripts/check_release_pins.py`,
 tested in `tests/test_check_release_pins.py`), so replace them by the
 released versions before releasing. This applies to pre-releases of the
 app, too: they are built on FOCA releases.
