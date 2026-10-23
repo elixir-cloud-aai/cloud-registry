@@ -3,6 +3,7 @@
 import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -67,6 +68,39 @@ def test_adapt_links_skips_code_blocks() -> None:
     ]
 
 
+def _is_readthedocs(url: str) -> bool:
+    """Tell whether a URL points to a site on Read the Docs.
+
+    Args:
+        url: URL to check.
+
+    Returns:
+        Whether the URL's host is `readthedocs.io` or one of its subdomains.
+    """
+    host = urlsplit(url).hostname or ""
+    return host == "readthedocs.io" or host.endswith(".readthedocs.io")
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        (DOCS_URL, True),
+        ("https://readthedocs.io/", True),
+        ("https://readthedocs.io.example.com/", False),
+        ("https://example.com/readthedocs.io/", False),
+        ("#readthedocs.io", False),
+    ],
+)
+def test_is_readthedocs(url: str, expected: bool) -> None:
+    """Only URLs on the Read the Docs host count as links to the docs.
+
+    Args:
+        url: URL to check.
+        expected: Whether the URL is on Read the Docs.
+    """
+    assert _is_readthedocs(url) is expected
+
+
 def test_readme_links_are_absolute() -> None:
     """The chart's README has no relative links (they break in the package)."""
     readme = (ROOT / "deployment/README.md").read_text(encoding="utf-8")
@@ -79,7 +113,7 @@ def test_readme_links_are_absolute() -> None:
     assert [
         target
         for target in targets
-        if "readthedocs.io" in target and not target.startswith(DOCS_URL)
+        if _is_readthedocs(target) and not target.startswith(DOCS_URL)
     ] == []
 
 
