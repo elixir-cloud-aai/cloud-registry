@@ -48,10 +48,9 @@ INIT_SCRIPT = f"{MONGODB}-init-script"
 TMP = "/tmp"  # noqa: S108 (a path in the container)
 # Default size limit of the temporary directories
 TMP_SIZE_LIMIT = "64Mi"
-# Annotation of ingress-nginx for the size limit of request bodies; by
-# default the app's limit, in bytes
+# Annotation of ingress-nginx for the size limit of request bodies, which
+# the chart doesn't set (ingress-nginx's default is the app's, 1 MiB)
 BODY_SIZE = "nginx.ingress.kubernetes.io/proxy-body-size"
-BODY_SIZE_LIMIT = str(MAX_CONTENT_LENGTH)
 PROBES = ("startupProbe", "readinessProbe", "livenessProbe")
 # Environment variables of the app with literal values (no credentials)
 APP_ENV = {"FOCA_CONFIG_OVERLAY", "GUNICORN_CMD_ARGS"}
@@ -443,6 +442,59 @@ def test_names(release: str, app: str) -> None:
         ("Service", app),
         ("Service", mongodb),
     }
+
+
+def test_mongodb_persistence() -> None:
+    """MongoDB's claim of 1 GiB is kept when the release is uninstalled.
+
+    Helm keeps it (`helm.sh/resource-policy: keep`) unless the resource
+    policy is empty.
+    """
+    claim = _render()[("PersistentVolumeClaim", MONGODB)]
+    assert claim["metadata"]["annotations"] == {"helm.sh/resource-policy": "keep"}
+    assert claim["spec"]["accessModes"] == ["ReadWriteOnce"]
+    assert claim["spec"]["resources"]["requests"]["storage"] == "1Gi"
+    assert "storageClassName" not in claim["spec"]
+    docs = _render(
+        "--set",
+        "mongodb.persistence.resourcePolicy=",
+        "--set",
+        "mongodb.persistence.size=5Gi",
+    )
+    claim = docs[("PersistentVolumeClaim", MONGODB)]
+    assert "annotations" not in claim["metadata"]
+    assert claim["spec"]["resources"]["requests"]["storage"] == "5Gi"
+
+
+def test_mongodb_persistence_existing_claim() -> None:
+    """With an existing claim, MongoDB uses it, and the chart creates none."""
+    docs = _render("--set", "mongodb.persistence.existingClaim=data")
+    assert ("PersistentVolumeClaim", MONGODB) not in docs
+    volumes = docs[("Deployment", MONGODB)]["spec"]["template"]["spec"]["volumes"]
+    claims = [
+        volume["persistentVolumeClaim"]
+        for volume in volumes
+        if "persistentVolumeClaim" in volume
+    ]
+    assert claims == [{"claimName": "data"}]
+
+
+def test_mongodb_volume_size_deprecated() -> None:
+    """`mongodb.volumeSize` of earlier charts still sets the claim's size.
+
+    Unless `mongodb.persistence.size` is set, too: then rendering fails.
+    """
+    args = (
+        "--set",
+        "mongodb.volumeSize=2Gi",
+        "--set-json",
+        "mongodb.persistence.size=null",
+    )
+    claim = _render(*args)[("PersistentVolumeClaim", MONGODB)]
+    assert claim["spec"]["resources"]["requests"]["storage"] == "2Gi"
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render("--set", "mongodb.volumeSize=2Gi")
+    assert "volumeSize" in exc.value.stderr
 
 
 @pytest.mark.parametrize(
@@ -1157,9 +1209,9 @@ def test_schema_of_library() -> None:
     That is the library's `app-values.schema.json` with the documented
     changes: the app's values (`cloudRegistry`) also require the Gunicorn
     settings and the `preStop` delay, MongoDB's image is pinned to a minor
-    version, there is no Celery worker or broker, and the app's
-    `networkPolicy.ingressFrom` may be empty (its default; the template fails
-    if the policy is enabled without peers).
+    version, and there is no Celery worker or broker. The `$comment` names
+    the library's version, which the release pin check compares with the
+    pinned one.
     """
     chart = yaml.safe_load((CHART / "Chart.yaml").read_text())
     (dependency,) = chart["dependencies"]
@@ -1169,16 +1221,7 @@ def test_schema_of_library() -> None:
         assert member is not None
         library = json.loads(member.read())
     schema = json.loads((CHART / "values.schema.json").read_text())
-    ingress_from = library["$defs"]["app"]["properties"]["networkPolicy"]["properties"][
-        "ingressFrom"
-    ]
-    assert ingress_from.pop("minItems") == 1
-    # Without the default of the library (the namespace of ingress-nginx)
-    ingress_from_app = schema["$defs"]["app"]["properties"]["networkPolicy"][
-        "properties"
-    ]["ingressFrom"]
-    assert "ingress-nginx" not in ingress_from_app["description"]
-    ingress_from["description"] = ingress_from_app["description"]
+    assert f"foca-common {dependency['version']} " in schema["$comment"]
     assert schema["$defs"] == library["$defs"]
     properties = dict(schema["properties"])
     assert properties.pop("cloudRegistry") == {
@@ -1293,11 +1336,11 @@ def test_init_script_access_control_database() -> None:
 def test_ingress() -> None:
     """The Ingress routes the host to the app's Service.
 
-    It has no class by default; its only annotation limits request bodies
-    (for ingress-nginx) to the app's limit.
+    It has no class and no annotations by default, as the chart sets none
+    for particular ingress controllers.
     """
     ingress = _render()[("Ingress", APP)]
-    assert ingress["metadata"]["annotations"] == {BODY_SIZE: BODY_SIZE_LIMIT}
+    assert "annotations" not in ingress["metadata"]
     assert "ingressClassName" not in ingress["spec"]
     assert "tls" not in ingress["spec"]
     (rule,) = ingress["spec"]["rules"]
@@ -1325,7 +1368,6 @@ def test_ingress_options() -> None:
         "a.example.org/b": "c",
         "cert-manager.io/cluster-issuer": "letsencrypt-prod",
         "kubernetes.io/tls-acme": "false",
-        BODY_SIZE: BODY_SIZE_LIMIT,
     }
     assert ingress["spec"]["tls"] == [
         {"hosts": ["x"], "secretName": f"{APP}-ingress-secret"}
@@ -1333,28 +1375,29 @@ def test_ingress_options() -> None:
 
 
 def test_ingress_body_size_default() -> None:
-    """By default, ingress-nginx limits request bodies as the app does.
+    """The app's default limit of request bodies is that of ingress-nginx.
 
-    To the default limit of the app, as in the base config.
+    1 MiB, as in the base config and the chart's settings, so the chart sets
+    no annotation for ingress-nginx (see deployment/README.md, Ingress).
     """
     config = yaml.safe_load(CONFIG_FILE.read_text())
-    assert config["server"]["max_content_length"] == MAX_CONTENT_LENGTH
-    annotations = _render()[("Ingress", APP)]["metadata"]["annotations"]
-    assert annotations[BODY_SIZE] == BODY_SIZE_LIMIT
+    assert config["server"]["max_content_length"] == MAX_CONTENT_LENGTH == 2**20
 
 
 def test_ingress_body_size_app(tmp_path: Path) -> None:
-    """The size limit of request bodies of ingress-nginx follows the app's.
+    """The app's limit of request bodies sets no annotation of the Ingress.
 
-    Also from values files, which have floats.
+    Also from values files, which have floats; the overlay has the limit.
     """
     docs = _render("--set", "config.server.max_content_length=8388608")
-    assert docs[("Ingress", APP)]["metadata"]["annotations"] == {BODY_SIZE: "8388608"}
+    assert "annotations" not in docs[("Ingress", APP)]["metadata"]
+    assert _overlay(docs)["server"]["max_content_length"] == 8388608
     values_file = tmp_path / "values.yaml"
     config = {"server": {"max_content_length": 8388608}}
     values_file.write_text(yaml.safe_dump({"config": config}))
-    ingress = _render("-f", str(values_file))[("Ingress", APP)]
-    assert ingress["metadata"]["annotations"] == {BODY_SIZE: "8388608"}
+    docs = _render("-f", str(values_file))
+    assert "annotations" not in docs[("Ingress", APP)]["metadata"]
+    assert _overlay(docs)["server"]["max_content_length"] == 8388608
 
 
 @pytest.mark.parametrize(
@@ -1369,7 +1412,7 @@ def test_ingress_body_size_app(tmp_path: Path) -> None:
 def test_ingress_body_size_invalid(args: tuple[str, ...]) -> None:
     """Rendering fails unless the app's body size limit is a positive integer.
 
-    0 would mean no limit for ingress-nginx.
+    FOCA refuses `null`; 0 would reject all request bodies.
     """
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render(*args)
@@ -1379,31 +1422,25 @@ def test_ingress_body_size_invalid(args: tuple[str, ...]) -> None:
 def test_ingress_body_size_custom_null() -> None:
     """`config.custom: null` is like no custom config.
 
-    Ingress-nginx gets the app's default limit, and the generated custom
-    config is kept.
+    The generated custom config is kept.
     """
     docs = _render("--set", "config.custom=null")
-    ingress = docs[("Ingress", APP)]
-    assert ingress["metadata"]["annotations"] == {BODY_SIZE: BODY_SIZE_LIMIT}
     assert _overlay(docs)["custom"]["endpoints"]["service"]["external_host"] == "x"
 
 
 def test_server_null() -> None:
     """`config.server: null` is like no server config.
 
-    Ingress-nginx gets the app's default limit, and the overlay has no
-    `server` (FOCA would refuse `null`).
+    The overlay has no `server` (FOCA would refuse `null`).
     """
     docs = _render("--set-json", "config.server=null")
-    ingress = docs[("Ingress", APP)]
-    assert ingress["metadata"]["annotations"] == {BODY_SIZE: BODY_SIZE_LIMIT}
     assert "server" not in _overlay(docs)
 
 
 def test_ingress_body_size_annotation() -> None:
-    """An annotation's size limit of request bodies overrides the app's.
+    """The size limit of request bodies of ingress-nginx can be set.
 
-    `null` removes it.
+    As an annotation of the Ingress; `null` removes it.
     """
 
     def render(limit: str | None) -> Manifest:
@@ -1434,6 +1471,89 @@ def test_route() -> None:
     assert ("Route", APP) not in docs
 
 
+def test_route_disabled() -> None:
+    """`cloudRegistry.route.enabled: false` turns off the OpenShift Route."""
+    docs = _render(
+        *NO_INGRESS, *ROUTE_API, "--set", "cloudRegistry.route.enabled=false"
+    )
+    assert not [kind for kind, _ in docs if kind in ("Ingress", "Route", "HTTPRoute")]
+
+
+def test_route_annotations() -> None:
+    """The OpenShift Route gets the annotations of `cloudRegistry.route`."""
+    annotations = {"haproxy.router.openshift.io/rate-limit-connections": "true"}
+    docs = _render(
+        *NO_INGRESS,
+        *ROUTE_API,
+        "--set-json",
+        f"cloudRegistry.route.annotations={json.dumps(annotations)}",
+    )
+    assert docs[("Route", APP)]["metadata"]["annotations"] == annotations
+
+
+# An HTTPRoute attached to the HTTPS listener of a shared Gateway, with the
+# redirect from HTTP to HTTPS attached to its HTTP listener
+GATEWAY = {"name": "gateway", "namespace": "gateway-system"}
+HTTP_ROUTE = (
+    *NO_INGRESS,
+    "--set",
+    "cloudRegistry.httpRoute.enabled=true",
+    "--set-json",
+    "cloudRegistry.httpRoute.parentRefs="
+    f"{json.dumps([GATEWAY | {'sectionName': 'https'}])}",
+)
+HTTPS_REDIRECT = (
+    "--set",
+    "cloudRegistry.httpRoute.httpsRedirect.enabled=true",
+    "--set-json",
+    "cloudRegistry.httpRoute.httpsRedirect.parentRefs="
+    f"{json.dumps([GATEWAY | {'sectionName': 'http'}])}",
+)
+
+
+def test_http_route_disabled() -> None:
+    """There is no HTTPRoute by default."""
+    assert not [kind for kind, _ in _render(*ROUTE_API) if kind == "HTTPRoute"]
+
+
+def test_http_route() -> None:
+    """The HTTPRoute routes the host to the app's Service, via the Gateway.
+
+    It replaces the Ingress and, on OpenShift, the Route; the redirect from
+    HTTP to HTTPS is a second HTTPRoute, if enabled.
+    """
+    docs = _render(*HTTP_ROUTE, *ROUTE_API)
+    assert not [kind for kind, _ in docs if kind in ("Ingress", "Route")]
+    route = docs[("HTTPRoute", APP)]
+    assert route["apiVersion"] == "gateway.networking.k8s.io/v1"
+    assert route["spec"]["parentRefs"] == [GATEWAY | {"sectionName": "https"}]
+    assert route["spec"]["hostnames"] == ["x"]
+    (rule,) = route["spec"]["rules"]
+    (backend,) = rule["backendRefs"]
+    assert (backend["name"], backend["port"]) == (APP, 8080)
+    assert ("HTTPRoute", f"{APP}-https-redirect") not in docs
+    docs = _render(*HTTP_ROUTE, *HTTPS_REDIRECT)
+    redirect = docs[("HTTPRoute", f"{APP}-https-redirect")]
+    assert redirect["spec"]["parentRefs"] == [GATEWAY | {"sectionName": "http"}]
+    (rule,) = redirect["spec"]["rules"]
+    (redirect_filter,) = rule["filters"]
+    assert redirect_filter["requestRedirect"]["scheme"] == "https"
+
+
+def test_http_route_with_ingress() -> None:
+    """Rendering fails if both the Ingress and the HTTPRoute are enabled."""
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render(*HTTP_ROUTE[len(NO_INGRESS) :])
+    assert "httpRoute" in exc.value.stderr
+
+
+def test_http_route_requires_parent_refs() -> None:
+    """Rendering fails if the HTTPRoute is enabled without a Gateway."""
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render(*NO_INGRESS, "--set", "cloudRegistry.httpRoute.enabled=true")
+    assert "parentRefs" in exc.value.stderr
+
+
 @pytest.mark.parametrize(
     ("args", "exposed", "tls_note"),
     [
@@ -1441,22 +1561,38 @@ def test_route() -> None:
         (("--set", "cloudRegistry.ingress.https.enabled=true"), True, False),
         (ROUTE_API, True, True),
         ((*NO_INGRESS, *ROUTE_API), True, False),
+        (HTTP_ROUTE, True, False),
         (NO_INGRESS, False, False),
+        (
+            (*NO_INGRESS, *ROUTE_API, "--set", "cloudRegistry.route.enabled=false"),
+            False,
+            False,
+        ),
     ],
-    ids=["ingress", "ingress-https", "ingress-route-api", "route", "none"],
+    ids=[
+        "ingress",
+        "ingress-https",
+        "ingress-route-api",
+        "route",
+        "http-route",
+        "none",
+        "route-disabled",
+    ],
 )
 def test_notes(args: tuple[str, ...], exposed: bool, tls_note: bool) -> None:
     """The notes show how to reach the app.
 
     They show the app's HTTPS URL (as advertised by the app) with a request,
-    noting if the Ingress has no TLS, or warn and show a port forward if the
-    app is not exposed.
+    noting if the Ingress has no TLS, how to check the HTTPRoute, or warn and
+    show a port forward if the app is not exposed.
     """
     notes = render_notes("--set", "hostName=x", "--namespace", "registry", *args)
     url = "https://x" if exposed else "http://localhost:8080"
     assert f'curl -X GET "{url}/ga4gh/registry/v1/service-info"' in notes
     assert ("WARNING" in notes) is not exposed
     assert ("TLS must be terminated in front" in notes) is tls_note
+    check = f"kubectl get httproute {APP} -n registry -o yaml"
+    assert (check in notes) is (args == HTTP_ROUTE)
     forward = f"kubectl port-forward svc/{APP} 8080:8080 -n registry\n"
     assert (forward in notes) is not exposed
     assert f"kubectl rollout status deploy/{APP} -n registry" in notes

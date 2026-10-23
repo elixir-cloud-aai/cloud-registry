@@ -4,7 +4,7 @@ The chart deploys the app and a MongoDB database on Kubernetes (and
 OpenShift). It is a thin chart over FOCA's library chart `foca-common` (the
 version in `Chart.yaml`), which renders all resources from the values
 described here and in `values.yaml` (see the [library chart's
-documentation](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.1.0/docs/helm-chart.md)).
+documentation](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/helm-chart.md)).
 The chart attached to a release includes the library chart; the chart in the
 repository downloads it with `helm dependency build` (see
 [Installation](#installation)).
@@ -172,8 +172,8 @@ cloud-registry -n <namespace>` shows them again).
 Resource names are derived from the release name, so that several releases
 can be installed in one namespace:
 
-- **App** (Deployment, Service, Ingress or Route, NetworkPolicy; ConfigMap
-  `<app>-config`): `<app>` is `<release>-cloud-registry`, or the release
+- **App** (Deployment, Service, Ingress, HTTPRoute or Route, NetworkPolicy;
+  ConfigMap `<app>-config`, HTTPRoute `<app>-https-redirect`): `<app>` is `<release>-cloud-registry`, or the release
   name if it contains `cloud-registry` (e.g., `cloud-registry` for the
   release `cloud-registry`, `prod-cloud-registry` for the release `prod`);
 - **MongoDB** (Deployment, Service, PersistentVolumeClaim, NetworkPolicy;
@@ -199,33 +199,30 @@ kubectl get pods -n <namespace> -l app.kubernetes.io/instance=cloud-registry
 
 ## Ingress
 
-By default, the chart creates an Ingress for `hostName`
-(`cloudRegistry.ingress`) that routes all paths (`/`) to the app, including
+The chart exposes the app for `hostName` in one of three ways: an Ingress
+(`cloudRegistry.ingress`, enabled by default), a Gateway API HTTPRoute
+(`cloudRegistry.httpRoute`, see [Gateway API](#gateway-api)), or, if neither
+is enabled, an OpenShift Route (`cloudRegistry.route`, see [OpenShift
+Route](#openshift-route)). Each routes all paths (`/`) to the app, including
 FOCA's permissions API (`/admin/access-control/`, for admins only; see
 [Permissions API](https://cloud-registry.readthedocs.io/en/latest/operations/#permissions-api)). To keep that API off
 the internet, block `/admin/` in the proxy in front of the cluster, or
-disable the chart's Ingress (`enabled: false`) and create one of your own
-that routes only `/ga4gh/registry/v1/` to the app's Service (port `http`).
-On OpenShift, the chart then creates a Route for all paths instead (see
-[OpenShift Route](#openshift-route)), so there, block `/admin/` in front of
-the router.
+disable the chart's Ingress (`enabled: false`) and Route
+(`cloudRegistry.route.enabled: false`) and create an Ingress or HTTPRoute of
+your own that routes only `/ga4gh/registry/v1/` to the app's Service (port
+`http`).
 
-The chart works with any ingress controller and sets no controller-specific
-values by default: annotations for a controller (e.g., for TLS redirects or
-rate limits, as below) are examples to add to the values, and the size limit
-of request bodies for ingress-nginx (see below) is ignored by other
-controllers. ingress-nginx is retired (it gets no releases or security fixes
-after March 2026): prefer another ingress controller (e.g., Traefik), or the
-Gateway API.
-
-The Gateway API is the successor of the Ingress API. This version of the
-chart creates no HTTPRoute: disable the Ingress (`enabled: false`; on
-clusters without Routes, the chart then creates none) and attach an HTTPRoute
-of your own to the Gateway, next to the release, with the app's Service as
-its backend (`backendRefs`, port `8080`); to keep the permissions API off the
-internet, match only the path prefix `/ga4gh/registry/v1/`. On OpenShift,
-the chart still creates a Route for all paths (see above), so there, block
-`/admin/` in front of the router as well.
+The chart works with any ingress controller or Gateway implementation and
+sets no controller-specific values: annotations for a controller (e.g., for
+size limits of request bodies, TLS redirects or rate limits, as below) are
+examples to add to the values. ingress-nginx is retired (it gets no releases
+or security fixes after March 2026): prefer the Gateway API, or another
+ingress controller (e.g., Traefik). FOCA's library chart documentation has
+the values for common setups ([Exposing the
+app](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/helm-chart.md#exposing-the-app):
+Gateway API, ingress-nginx, Traefik, OpenShift and cloud load balancers),
+including how to migrate from ingress-nginx to the Gateway API without
+downtime.
 
 The Ingress is configured with:
 
@@ -239,22 +236,29 @@ The Ingress is configured with:
 
 The app rejects request bodies over `config.server.max_content_length` bytes
 (default: 1 MiB; see [Request size
-limit](https://cloud-registry.readthedocs.io/en/latest/configuration/#request-size-limit)). The Ingress sets the
-same limit for ingress-nginx, in bytes
-(`nginx.ingress.kubernetes.io/proxy-body-size`), so that larger requests are
-rejected before they reach the app (other ingress controllers ignore the
-annotation); to raise the limit, e.g., to 8 MiB, set only the app's:
+limit](https://cloud-registry.readthedocs.io/en/latest/configuration/#request-size-limit)), in every setup. A limit
+at the proxy rejects larger requests before they reach the app; the chart
+sets none, as it depends on the proxy (keep it at or above the app's limit).
+ingress-nginx limits request bodies to 1 MiB by default, the app's default;
+to raise the limit, e.g., to 8 MiB, set the app's and that of ingress-nginx
+(`nginx.ingress.kubernetes.io/proxy-body-size`):
 
 ```yaml
 config:
   server:
     max_content_length: 8388608
+cloudRegistry:
+  ingress:
+    annotations:
+      nginx.ingress.kubernetes.io/proxy-body-size: 8m
 ```
 
-Set `cloudRegistry.ingress.annotations` to give ingress-nginx another limit,
-or set the annotation to `null` to remove it. Other ingress controllers, and
-OpenShift Routes, ignore the annotation; check their documentation for how to
-limit request bodies. Without such a limit, only the app's applies.
+Other ingress controllers ignore the annotation; for their limits (e.g.,
+Traefik's `buffering` middleware, Envoy Gateway's `BackendTrafficPolicy`),
+see [Exposing the
+app](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/helm-chart.md#exposing-the-app).
+OpenShift Routes don't limit request bodies; only the app's limit applies
+there.
 
 ### TLS
 
@@ -306,12 +310,56 @@ addresses (e.g., `use-forwarded-headers` or the PROXY protocol), otherwise all
 requests count for the proxy. For OpenShift Routes, see the
 `haproxy.router.openshift.io/rate-limit-connections` annotations.
 
+### Gateway API
+
+The Gateway API is the successor of the Ingress API. With
+`cloudRegistry.httpRoute.enabled`, the chart creates an HTTPRoute (named
+like the app) attached to an existing Gateway (`parentRefs`, e.g., the HTTPS
+listener of a shared Gateway, which terminates TLS), and, with
+`httpsRedirect`, a second one (`<app>-https-redirect`) that redirects HTTP
+to HTTPS (`301`), attached to the Gateway's HTTP listener. The Ingress must
+be disabled, as rendering fails if both are enabled:
+
+```yaml
+cloudRegistry:
+  ingress:
+    enabled: false
+  httpRoute:
+    enabled: true
+    parentRefs:
+    - name: gateway
+      namespace: gateway-system
+      sectionName: https
+    httpsRedirect:
+      enabled: true
+      parentRefs:
+      - name: gateway
+        namespace: gateway-system
+        sectionName: http
+```
+
+The Gateway's listeners must allow routes from the release's namespace, and
+`parentRefs` and `httpsRedirect.parentRefs` must name different listeners
+(`sectionName` in both, or `port` in both), so that HTTPS requests aren't
+redirected. The Gateway API has no standard settings for body sizes and
+rate limits: use the policies of the implementation, or filters that the
+HTTPRoute refers to (`httpRoute.filters`); see [Gateway
+API](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/helm-chart.md#gateway-api)
+in FOCA's documentation for examples, e.g., for Envoy Gateway, and for the
+NetworkPolicy peers of the Gateway's proxies. Helm's notes after installing
+show how to check that the route was accepted.
+
 ### OpenShift Route
 
-With `enabled: false`, the chart creates an OpenShift Route for all paths,
-with TLS termination at the router, instead, if the cluster serves Routes
-(`route.openshift.io/v1`); otherwise the app is only reachable within the
-cluster, and Helm prints a warning after installing.
+With neither the Ingress nor the HTTPRoute enabled, the chart creates an
+OpenShift Route for all paths, with TLS termination at the router (which
+redirects HTTP to HTTPS), instead, if the cluster serves Routes
+(`route.openshift.io/v1`) and `cloudRegistry.route.enabled` is `true` (the
+default; set it to `false`, e.g., for a Route of your own that serves only
+some paths); otherwise the app is only reachable within the cluster, and
+Helm prints a warning after installing. `cloudRegistry.route.annotations`
+sets annotations of the Route, e.g., for rate limits of the router (see
+[Rate limits](#rate-limits)).
 
 ## Security context
 
@@ -381,47 +429,29 @@ allow rules) before relying on these restrictions.
   connect, on the app's port. There are none by default, as they depend on
   the cluster: set them to the pods of the cluster's ingress controller (or
   the OpenShift router, or the Gateway's proxies) when enabling the policy;
-  otherwise, the app is unreachable through the Ingress (or Route). Rendering
-  fails if the policy is enabled without peers (which would allow all
+  otherwise, the app is unreachable through the Ingress (or HTTPRoute, or
+  Route). Rendering fails if the policy is enabled without peers (which would allow all
   sources). Namespaces are selected by their label
   `kubernetes.io/metadata.name` (set on all namespaces from Kubernetes 1.21;
-  label them on older clusters). Pick the peers of your setup, and add any
-  other clients in the cluster that call the app's Service directly, e.g.:
+  label them on older clusters). Pick the peers of your setup (see
+  [NetworkPolicy
+  peers](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/helm-chart.md#networkpolicy-peers)
+  in FOCA's documentation for those of common ingress controllers, Gateway
+  implementations and OpenShift), and add any other clients in the cluster
+  that call the app's Service directly, e.g., for Traefik on k3s:
 
   ```yaml
   cloudRegistry:
     networkPolicy:
       enabled: true
       ingressFrom:
-      # ingress-nginx: its pods in the namespace `ingress-nginx`
+      # Traefik, e.g., on k3s: its pods in the namespace `kube-system`
       - namespaceSelector:
           matchLabels:
-            kubernetes.io/metadata.name: ingress-nginx
+            kubernetes.io/metadata.name: kube-system
         podSelector:
           matchLabels:
-            app.kubernetes.io/name: ingress-nginx
-      # Traefik, e.g., on k3s: its pods in the namespace `kube-system`
-      # - namespaceSelector:
-      #     matchLabels:
-      #       kubernetes.io/metadata.name: kube-system
-      #   podSelector:
-      #     matchLabels:
-      #       app.kubernetes.io/name: traefik
-      # Envoy Gateway (Gateway API, default deployment mode): the proxies of
-      # the Gateway `gateway` in the namespace `gateway-system`, which run in
-      # the controller's namespace `envoy-gateway-system` (in the Gateway
-      # namespace mode, select the Gateway's namespace instead)
-      # - namespaceSelector:
-      #     matchLabels:
-      #       kubernetes.io/metadata.name: envoy-gateway-system
-      #   podSelector:
-      #     matchLabels:
-      #       gateway.envoyproxy.io/owning-gateway-namespace: gateway-system
-      #       gateway.envoyproxy.io/owning-gateway-name: gateway
-      # OpenShift: the router's namespaces
-      # - namespaceSelector:
-      #     matchLabels:
-      #       policy-group.network.openshift.io/ingress: ""
+            app.kubernetes.io/name: traefik
       # A client in the release's namespace
       - podSelector:
           matchLabels:
@@ -591,7 +621,8 @@ Deployment is called after `cloud_registry.appName`, by default
    while it is set; `fullnameOverride` sets the names instead), and rename
    `host_name` to `hostName` and `cloud_registry` to `cloudRegistry`
    (camelCase, following Helm's conventions; rendering fails while the old
-   keys are set). From chart version 2, move any changes made to the
+   keys are set), and `mongodb.volumeSize` to `mongodb.persistence.size`
+   (deprecated, see [Persistence](#persistence)). From chart version 2, move any changes made to the
    `app-config` ConfigMap to `config`, and create the Secret with the MongoDB
    credentials (see [Authentication](#authentication)); from chart version 3,
    keep `mongodb.auth.existingSecret`. MongoDB creates the users from the
@@ -654,7 +685,13 @@ The values keys `host_name` and `cloud_registry` are renamed to `hostName`
 and `cloudRegistry` (rendering fails while the old keys are set): rename
 them in the values file, and upgrade with it (`-f`), not with
 `--reuse-values`, which would bring back the old keys stored in the release
-(use `--reset-values` if needed).
+(use `--reset-values` if needed). Rename `mongodb.volumeSize` to
+`mongodb.persistence.size` as well, and keep persistence and the claim as
+they are in this upgrade (see [Persistence](#persistence)). The Ingress no
+longer sets the size limit of request bodies for ingress-nginx
+(`nginx.ingress.kubernetes.io/proxy-body-size`); with the app's default
+limit, that of ingress-nginx is the same (1 MiB), so set the annotation only
+with a higher limit (see [Ingress](#ingress)).
 
 ## Probes
 
@@ -801,6 +838,43 @@ kubectl exec -it deploy/cloud-registry-mongodb -n <namespace> -- sh -c 'mongosh 
 db.getSiblingDB("serviceStore").createUser({user: "cloud-registry", pwd: "<password>", roles: [{role: "readWrite", db: "serviceStore"}]})
 ```
 
+### Persistence
+
+MongoDB keeps its data in a PersistentVolumeClaim (`<app>-mongodb`) of 1 GiB
+by default, set via `mongodb.persistence`:
+
+```yaml
+mongodb:
+  persistence:
+    enabled: true
+    size: 1Gi
+    accessModes: ["ReadWriteOnce"]
+    storageClass: ""     # the cluster's default class if empty
+    existingClaim: ""    # a claim outside the release, instead of the chart's
+    resourcePolicy: keep # empty: Helm deletes the claim with the release
+```
+
+The claim is annotated with `helm.sh/resource-policy: keep`, so Helm keeps
+it, and the database, when the release is uninstalled, or when an upgrade
+removes it from the release (by disabling persistence or MongoDB, or
+switching to `existingClaim`). Reinstalling a release of the same name in
+the same namespace uses it again, with its data and users; delete it by hand
+to remove the data (`kubectl delete pvc <app>-mongodb -n <namespace>`).
+Without persistence (`enabled: false`), the data is kept in an `emptyDir`
+(limited to `size`) and lost when MongoDB's pod is replaced, e.g., for tests.
+
+Kubernetes doesn't allow changing `accessModes` or `storageClass` of an
+existing claim, and allows a larger `size` only if its storage class allows
+volume expansion; such upgrades fail. `mongodb.volumeSize`, the size in
+earlier charts, still sets `persistence.size`, but is deprecated, and
+rendering fails if both are set: rename it in the values file. For releases
+installed with an earlier chart from the repository, whose claim doesn't
+have the annotation yet, don't disable persistence or switch to an
+`existingClaim` in the same upgrade, which would delete the claim, and
+usually its data: upgrade first, then change these settings (see [MongoDB
+persistence](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/migration-0.17.md#mongodb-persistence)
+in FOCA's documentation).
+
 ### External MongoDB
 
 To use a MongoDB outside the release (e.g., a managed database), set
@@ -821,11 +895,11 @@ config:
 ```
 
 For an installed release, setting `mongodb.enabled: false` deletes the
-bundled MongoDB with its PersistentVolumeClaim (`<app>-mongodb`), and usually
-its data with it: dump the data first and restore it into the external
-MongoDB (see the steps of [From the legacy charts](#from-the-legacy-charts),
-with the release's MongoDB Deployment, `<app>-mongodb`), or set the reclaim
-policy of the volume to `Retain` before upgrading.
+bundled MongoDB, but keeps its PersistentVolumeClaim (`<app>-mongodb`, see
+[Persistence](#persistence)) with the data: dump the data first and restore
+it into the external MongoDB (see the steps of [From the legacy
+charts](#from-the-legacy-charts), with the release's MongoDB Deployment,
+`<app>-mongodb`), then delete the claim.
 
 The app authenticates as the app user against its database (`serviceStore`),
 so create that user there, with the `readWrite` role on `serviceStore` and on

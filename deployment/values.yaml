@@ -76,24 +76,62 @@ cloudRegistry:
   # Path of the app's startup, readiness and liveness probes; change it if
   # the config disables the Swagger UI
   probePath: /ga4gh/registry/v1/ui/
-  # Ingress for `hostName`; if disabled, an OpenShift Route is created
-  # instead, if the cluster serves Routes (see deployment/README.md, Ingress)
+  # The app is exposed for `hostName` via one of: an Ingress (`ingress`), a
+  # Gateway API HTTPRoute (`httpRoute`; disable the Ingress to enable it) or,
+  # if neither is enabled and the cluster serves Routes, an OpenShift Route
+  # (`route`); see deployment/README.md, Ingress
   ingress:
     enabled: true
     # Ingress class (`spec.ingressClassName`); the cluster's default class if
     # empty
     className: ""
-    # Annotations of the Ingress, e.g., for the ingress controller; they take
-    # precedence over those set by the chart: for `https`, and
-    # `nginx.ingress.kubernetes.io/proxy-body-size`, the size limit of request
-    # bodies of the app (`config.server.max_content_length`) for
-    # ingress-nginx. `null` removes an annotation set by the chart
+    # Annotations of the Ingress, e.g., for the ingress controller's size
+    # limit of request bodies, TLS redirect or rate limits; the chart sets
+    # none for particular controllers (see deployment/README.md, Ingress).
+    # They take precedence over those set by the chart for `https`; `null`
+    # removes one of these
     annotations: {}
     https:
       # Request a certificate from cert-manager (via `issuer`, a
       # ClusterIssuer) and serve HTTPS
       enabled: false
       issuer: letsencrypt-prod
+  # Gateway API HTTPRoute (`gateway.networking.k8s.io/v1`) for `hostName`,
+  # attached to an existing Gateway, whose listener terminates TLS; requires
+  # `ingress.enabled: false` (see deployment/README.md, Gateway API)
+  httpRoute:
+    enabled: false
+    # Annotations of the HTTPRoute
+    annotations: {}
+    # Gateways (or listeners, via `sectionName` or `port`) to attach to;
+    # required if enabled, e.g., the HTTPS listener of a shared Gateway:
+    # `[{name: gateway, namespace: gateway-system, sectionName: https}]`.
+    # The Gateway's listener must allow routes from the release's namespace
+    parentRefs: []
+    # Filters of the route's rule (`HTTPRouteFilter`s), e.g., an
+    # `ExtensionRef` to a resource of the Gateway implementation that limits
+    # body sizes or rates; the Gateway API has no standard for these, so the
+    # app's `config.server.max_content_length` stays the enforcing limit
+    filters: []
+    # A second HTTPRoute (`<app>-https-redirect`) that redirects HTTP to
+    # HTTPS (`301`), attached to the Gateway's HTTP listener(s) in
+    # `parentRefs` (required if enabled), e.g.,
+    # `[{name: gateway, namespace: gateway-system, sectionName: http}]`; they
+    # must not attach to the listeners of `httpRoute.parentRefs` (set
+    # `sectionName` in both, or `port` in both). It has no annotations
+    httpsRedirect:
+      enabled: false
+      parentRefs: []
+  # OpenShift Route for all paths (TLS at the router, which redirects HTTP
+  # to HTTPS)
+  route:
+    # Create the Route if neither the Ingress nor the HTTPRoute is enabled
+    # and the cluster serves Routes; false, e.g., for a Route or HTTPRoute
+    # of your own
+    enabled: true
+    # Annotations of the Route, e.g., for rate limits of the router
+    # (`haproxy.router.openshift.io/rate-limit-connections`)
+    annotations: {}
   # NetworkPolicy allowing connections to the app only from `ingressFrom`
   # (and the kubelet's probes; see deployment/README.md, Network policies);
   # clusters without NetworkPolicy support ignore it. Disabled by default: to
@@ -166,7 +204,8 @@ mongodb:
   # external MongoDB in `config.db`, and its app user's credentials via
   # `auth.existingSecret` (see deployment/README.md, External MongoDB).
   # Setting it to false for an installed release deletes the bundled
-  # MongoDB's volume, usually with its data: dump the data first
+  # MongoDB, but keeps its claim with the data (`persistence.resourcePolicy`):
+  # dump the data first
   enabled: true
   # MongoDB 8.0 refuses to start on Linux kernels 6.19 to 7.0.13
   # (https://jira.mongodb.org/browse/SERVER-121912); see the deployment docs
@@ -195,7 +234,26 @@ mongodb:
   # policies); clusters without NetworkPolicy support ignore it
   networkPolicy:
     enabled: true
-  volumeSize: 1Gi
+  # Volume with MongoDB's data: a PersistentVolumeClaim (`<app>-mongodb`) of
+  # `size`, with `accessModes` and `storageClass` (the cluster's default
+  # class if empty, `-` for no dynamic provisioning), or the existing claim
+  # `existingClaim`. If disabled, the data is kept in an `emptyDir` (limited
+  # to `size`) and lost when MongoDB's pod is replaced, e.g., for tests.
+  # With `resourcePolicy: keep`, Helm keeps the claim (and the database) when
+  # the release is uninstalled, or when the claim is removed from it (by
+  # disabling persistence or switching to an existing claim, once a deployed
+  # revision has set the annotation); reinstalling the release with the same
+  # name and namespace uses it again. Delete the claim by hand to remove the
+  # data. Empty: Helm deletes the claim (see deployment/README.md, MongoDB).
+  # Replaces `volumeSize` of the earlier charts (deprecated; it still sets
+  # `size`, but rendering fails if both are set)
+  persistence:
+    enabled: true
+    size: 1Gi
+    accessModes: ["ReadWriteOnce"]
+    storageClass: ""
+    existingClaim: ""
+    resourcePolicy: keep
   # Security contexts of the pod and the container; the image starts as root
   # and switches to user `mongodb` (999), so the user is set here, and
   # `fsGroup` makes the data volume writable for it. On OpenShift,

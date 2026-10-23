@@ -1,9 +1,11 @@
 {{- $context := dict "root" . "settings" (include "cloud-registry.settings" . | fromYaml) -}}
 {{- $fullname := include "foca-common.fullname" . -}}
-{{- $exposed := or .Values.cloudRegistry.ingress.enabled (include "foca-common.routeEnabled" $context) -}}
+{{- $httpRoute := dig "httpRoute" "enabled" false .Values.cloudRegistry -}}
+{{- $exposed := or .Values.cloudRegistry.ingress.enabled $httpRoute (include "foca-common.routeEnabled" $context) -}}
 {{- /*
 HTTPS, as advertised by the app (see `cloud-registry.settings`): TLS is
-terminated by the ingress, the route or a proxy in front of the cluster.
+terminated by the ingress, the Gateway, the route or a proxy in front of
+the cluster.
 */ -}}
 {{- $url := "http://localhost:8080" -}}
 {{- if $exposed -}}
@@ -17,11 +19,20 @@ NOTE: The Ingress has no TLS (cloudRegistry.ingress.https.enabled is false),
 so TLS must be terminated in front of the cluster for the URLs below (see
 deployment/README.md, TLS).
 {{- end }}
+{{- if $httpRoute }}
+
+The HTTPRoute serves the app via the Gateway in
+cloudRegistry.httpRoute.parentRefs: make sure that its listener terminates
+TLS for {{ .Values.hostName }}, and check that the route is accepted with
+`kubectl get httproute {{ $fullname }} -n {{ .Release.Namespace }} -o yaml`.
+{{- end }}
 {{- if not $exposed }}
 
-WARNING: Neither an Ingress (cloudRegistry.ingress.enabled is false) nor an
-OpenShift Route (the cluster does not serve route.openshift.io/v1) was
-created, so the app is only reachable within the cluster. To access it from
+WARNING: Neither an Ingress (cloudRegistry.ingress.enabled is false), an
+HTTPRoute (cloudRegistry.httpRoute.enabled is false) nor an OpenShift Route
+(cloudRegistry.route.enabled is false, or the cluster does not serve
+route.openshift.io/v1) was created, so the app is only reachable within the
+cluster, unless resources outside the release expose it. To access it from
 this machine, run:
 
   kubectl port-forward svc/{{ $fullname }} 8080:8080 -n {{ .Release.Namespace }}

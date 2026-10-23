@@ -160,9 +160,9 @@ larger. The app refuses to start with `null` (which would remove the limit in
 FOCA).
 
 Set the same limit at the ingress or reverse proxy in front of the app, so
-that it rejects larger requests itself; the Helm chart sets the limit of
-ingress-nginx from `server.max_content_length` (see
-[Ingress](deployment.md#ingress)).
+that it rejects larger requests itself; the Helm chart sets none, as it
+depends on the proxy (e.g., ingress-nginx limits request bodies to 1 MiB by
+default, the app's default; see [Ingress](deployment.md#ingress)).
 
 ## Server
 
