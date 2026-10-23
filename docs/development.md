@@ -200,7 +200,12 @@ requirement) is a direct reference or names a pre-release or a local version
 another version than a release or no chart repository (`oci://`,
 `https://`; e.g., `file://`) (`scripts/check_release_pins.py`,
 tested in `tests/test_check_release_pins.py`), so replace them by the
-released versions before releasing. This applies to pre-releases of the
+released versions before releasing. It also fails unless
+`deployment/Chart.yaml` and `Chart.lock` pin the version of the library
+chart that the `$comment` of `deployment/values.schema.json` names
+(`foca-common X.Y.Z`): the version that the release requires, whose values
+schema the chart copies. When moving to a new FOCA minor version, update
+the comment with the library chart. This applies to pre-releases of the
 app, too: they are built on FOCA releases.
 
 Release notes follow the format agreed for all repositories of ELIXIR
