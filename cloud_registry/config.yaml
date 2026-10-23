@@ -57,7 +57,9 @@ security:
         # userinfo_claims:
         #   - groups
         #   - name
-    # Access control: anyone may read, any authenticated user may register
+    # Access control: anyone may read (the read operations are public;
+    # deployments may require login for them, see "Requiring login for reads"
+    # in `docs/access-control.md`), any authenticated user may register
     # services and becomes their owner; owners may update and delete their
     # services and grant other users, or groups they are members of, the
     # roles `owner` or `maintainer` (update only) on them; admins may do
@@ -90,23 +92,35 @@ security:
         # `group_mapping` is set
         keep_group_subjects: True
         # Managed on startup (removed rules are deleted); cannot be changed
-        # via the permissions API
+        # via the permissions API. Named, so that overlays can change, add or
+        # remove single rules by name (`null` removes a rule)
         policies:
             # any authenticated user may register services (and becomes
             # their owner)
-            - [p, "*", /ga4gh/registry/v1/services, POST]
+            register-services: [p, "*", /ga4gh/registry/v1/services, POST]
             # owners may update and delete their services and manage their
             # permissions; maintainers may update them
-            - [p, owner, "/ga4gh/registry/v1/services/:id", "(PUT)|(DELETE)"]
-            - [p, owner, "/ga4gh/registry/v1/services/:id/permissions", GET]
-            - [p, owner, "/ga4gh/registry/v1/services/:id/permissions/:user", "(PUT)|(DELETE)"]
+            owners-change-services: [p, owner, "/ga4gh/registry/v1/services/:id", "(PUT)|(DELETE)"]
+            owners-list-permissions: [p, owner, "/ga4gh/registry/v1/services/:id/permissions", GET]
+            owners-change-permissions: [p, owner, "/ga4gh/registry/v1/services/:id/permissions/:user", "(PUT)|(DELETE)"]
             # groups may contain slashes
-            - [p, owner, "/ga4gh/registry/v1/services/:id/permissions/groups/*", "(PUT)|(DELETE)"]
-            - [p, maintainer, "/ga4gh/registry/v1/services/:id", PUT]
+            owners-change-group-permissions: [p, owner, "/ga4gh/registry/v1/services/:id/permissions/groups/*", "(PUT)|(DELETE)"]
+            maintainers-update-services: [p, maintainer, "/ga4gh/registry/v1/services/:id", PUT]
             # any authenticated user may get their identifier and roles
-            - [p, "*", /ga4gh/registry/v1/me, GET]
+            get-me: [p, "*", /ga4gh/registry/v1/me, GET]
             # no policy for `/services/:id/verification` (PUT, DELETE):
             # only admins may verify services
+
+            # Any authenticated user may read: list services, get a service
+            # or the service types (`/services/types` matches
+            # `/services/:id`), get the verification of a service and list
+            # verifications. Only evaluated if a deployment requires login for
+            # these reads, which are public otherwise (see "Requiring login
+            # for reads" in `docs/access-control.md`)
+            list-services: [p, "*", /ga4gh/registry/v1/services, GET]
+            get-service: [p, "*", "/ga4gh/registry/v1/services/:id", GET]
+            get-service-verification: [p, "*", "/ga4gh/registry/v1/services/:id/verification", GET]
+            list-verifications: [p, "*", /ga4gh/registry/v1/verifications, GET]
 
 # Database configuration
 # Cf. https://foca.readthedocs.io/en/latest/configuration/db/
@@ -143,23 +157,26 @@ db:
 
 # API configuration
 # Cf. https://foca.readthedocs.io/en/latest/configuration/api/
+# Named (`registry`), so that overlays can change it, e.g., patch it (see
+# "Requiring login for reads" in `docs/access-control.md`)
 api:
     specs:
-        - path:
-            - api/20201108.11d2c12.service-info.yaml
-            - api/20201108.e0358db.openapi.yaml
-            - api/additions.openapi.yaml
-          add_operation_fields:
-              x-openapi-router-controller: cloud_registry.ga4gh.registry.server
-          add_security_fields:
-              x-bearerInfoFunc: foca.security.auth.validate_token
-          disable_auth: False
-          connexion:
-              strict_validation: True
-              validate_responses: True
-              options:
-                  swagger_ui: True
-                  serve_spec: True
+        registry:
+            path:
+              - api/20201108.11d2c12.service-info.yaml
+              - api/20201108.e0358db.openapi.yaml
+              - api/additions.openapi.yaml
+            add_operation_fields:
+                x-openapi-router-controller: cloud_registry.ga4gh.registry.server
+            add_security_fields:
+                x-bearerInfoFunc: foca.security.auth.validate_token
+            disable_auth: False
+            connexion:
+                strict_validation: True
+                validate_responses: True
+                options:
+                    swagger_ui: True
+                    serve_spec: True
 
 # Service info, served at `GET /service-info` by FOCA, according to the GA4GH
 # `Service` schema (validated on startup); `version` defaults to the version

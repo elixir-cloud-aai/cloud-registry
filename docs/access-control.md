@@ -1,7 +1,8 @@
 # Access control
 
-Services and service info can be read by anyone. Writing requires an access
-token of an OpenID Connect provider that the deployment trusts (see
+Services and service info can be read by anyone, unless the deployment
+[requires login for reads](#requiring-login-for-reads). Writing requires an
+access token of an OpenID Connect provider that the deployment trusts (see
 [Authentication](#authentication)). The identity provider, its claims and the
 groups mapped to roles are deployment configuration, without defaults (see
 [Deployment configuration](configuration.md#deployment-configuration)).
@@ -13,7 +14,8 @@ Access control is implemented with
 ## Authentication
 
 Read operations (`GET`, except `/services/{serviceId}/permissions` and `/me`,
-see the [table of endpoints](api.md)) are public. All other operations require
+see the [table of endpoints](api.md)) are public by default (see [Requiring
+login for reads](#requiring-login-for-reads)). All other operations require
 an access token of a trusted issuer, sent as a bearer token:
 
 ```bash
@@ -50,6 +52,78 @@ info endpoint with the token, for identity providers that don't put them in
 access tokens, so the token must be allowed to release them (e.g., request the
 corresponding scopes when logging in). Tokens are validated by
 [FOCA](https://foca.readthedocs.io/en/latest/authentication/).
+
+## Requiring login for reads
+
+Deployments can require login for all reads, except `GET /service-info`, with
+a config overlay, using FOCA's [spec
+patches](https://foca.readthedocs.io/en/latest/configuration/api/#patching-specifications)
+and [named
+entries](https://foca.readthedocs.io/en/latest/configuration/#named-entries).
+The app ships a patch for this,
+[`cloud_registry/api/patches/login-for-reads.yaml`](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/cloud_registry/api/patches/login-for-reads.yaml),
+which sets the security requirements of the public read operations to a
+bearer token:
+
+```yaml
+--8<-- "cloud_registry/api/patches/login-for-reads.yaml"
+```
+
+Apply it to the registry's API specification (named `registry` in the base
+config) in an overlay (the path is relative to the directory of the base
+config, where the patch is installed):
+
+```yaml title="overlay.yaml"
+api:
+    specs:
+        registry:
+            patches:
+                - api/patches/login-for-reads.yaml
+```
+
+With the Helm chart, put the same in the `config` value. Requests to the
+patched reads without a valid token are then rejected with `401
+Unauthorized`; any authenticated user may read, by the default policies
+(in `security.access_control.policies`, which are only evaluated for reads
+that require login): `list-services`, `get-service` (also for
+`/services/types`, which matches `/services/:id`), `get-service-verification`
+and `list-verifications`. `GET /service-info`, the API
+specification (`/openapi.json`) and the Swagger UI (`/ui/`) stay public.
+
+If an overlay of the deployment gives the policies as a list, which replaces
+the rules of the base config, add these rules to the list (FOCA refuses named
+rules after a list, see [Configuration](configuration.md#deployment-configuration)).
+
+To allow reads for some users only, replace these rules by name in the
+overlay, e.g., with rules for a role that a group is mapped to, in addition to
+the deployment's admin groups (see [Admins](#admins) for `group_mapping`;
+`null` removes a rule):
+
+```yaml title="readers.yaml"
+security:
+    access_control:
+        group_mapping:
+            registry-readers: reader
+        policies:
+            list-services: [p, reader, /ga4gh/registry/v1/services, GET]
+            get-service: [p, reader, "/ga4gh/registry/v1/services/:id", GET]
+            get-service-verification: null
+            list-verifications: null
+```
+
+Readers may then list and get services and get the service types, but not
+read verifications; admins may read everything.
+
+Owners and maintainers of services can still update them, but only read them
+with a rule that allows them to.
+
+!!! danger "With great power comes great responsibility"
+    Patches and rules in overlays can weaken or remove authentication and
+    access control as easily as they add them. Review them like code, keep
+    them as small as possible, and check the startup logs, which list the
+    applied patches and warn of operations that patches make public (see
+    FOCA's [patching
+    specifications](https://foca.readthedocs.io/en/latest/configuration/api/#patching-specifications)).
 
 ## Roles on services
 
