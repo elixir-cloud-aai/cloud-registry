@@ -27,6 +27,7 @@ from foca.security.access_control import (
     ownership as ownership_module,
 )
 from foca.security.access_control.enforcement import get_enforcer
+from foca.security.access_control.foca_casbin_adapter.adapter import Adapter
 from pymongo.collection import Collection
 import pytest
 import yaml
@@ -565,6 +566,31 @@ def test_failed_grant_keeps_rights(
         patch.setattr(ownership_module, "_replace_resource_role", fail)
         assert grant(client, service_id, BOB, "maintainer") == 500
     assert sorted(permissions(client, service_id)) == [(ALICE, "owner"), (BOB, "owner")]
+
+
+def test_failed_grant_cleanup_keeps_rights(
+    client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If removing the other roles fails, the new role is removed again.
+
+    FOCA's adapter stores the new role first; when removing the subject's
+    other roles fails, it removes the new one, so that a failed grant never
+    leaves the subject with more rights.
+    """
+    service_id = register(client)
+    assert grant(client, service_id, BOB, "maintainer") == 200
+
+    def fail(*args: Any, **kwargs: Any) -> None:
+        """Fail to remove the other roles."""
+        raise RuntimeError("database unavailable")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Adapter, "_keep_latest_role", fail)
+        assert grant(client, service_id, BOB, "owner") == 500
+    assert sorted(permissions(client, service_id)) == [
+        (ALICE, "owner"),
+        (BOB, "maintainer"),
+    ]
 
 
 def test_permissions_of_unknown_service(client: FlaskClient) -> None:

@@ -1559,6 +1559,28 @@ def test_http_route() -> None:
     assert redirect_filter["requestRedirect"]["scheme"] == "https"
 
 
+@pytest.mark.parametrize(
+    "redirect_ref",
+    [{"sectionName": "https"}, {}],
+    ids=["same-listener", "whole-gateway"],
+)
+def test_http_route_redirect_same_listener(redirect_ref: dict[str, str]) -> None:
+    """Rendering fails if the redirect may attach to the app route's listener.
+
+    That would redirect HTTPS requests, too (in a loop).
+    """
+    refs = json.dumps([GATEWAY | redirect_ref])
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render(
+            *HTTP_ROUTE,
+            "--set",
+            "cloudRegistry.httpRoute.httpsRedirect.enabled=true",
+            "--set-json",
+            f"cloudRegistry.httpRoute.httpsRedirect.parentRefs={refs}",
+        )
+    assert "httpsRedirect" in exc.value.stderr
+
+
 def test_http_route_with_ingress() -> None:
     """Rendering fails if both the Ingress and the HTTPRoute are enabled."""
     with pytest.raises(subprocess.CalledProcessError) as exc:
