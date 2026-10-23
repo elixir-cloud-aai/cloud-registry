@@ -53,8 +53,9 @@ them.
       `cloudRegistry` (rendering fails while the old keys are set);
     - optionally, enable the app's NetworkPolicy
       (`cloudRegistry.networkPolicy.enabled: true`), with
-      `cloudRegistry.networkPolicy.ingressFrom` matching the cluster's
-      ingress controller (default: the namespace `ingress-nginx`). MongoDB's
+      `cloudRegistry.networkPolicy.ingressFrom` set to the pods of the
+      cluster's ingress controller or Gateway (there are no default peers; see
+      [Network policies](deployment.md#network-policies)). MongoDB's
       NetworkPolicy is enabled by default and only lets the app's pods
       connect (see [Network policies](deployment.md#network-policies)).
 5. Install the chart attached to the release (`cloud-registry-0.3.0.tgz`):

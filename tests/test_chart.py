@@ -29,8 +29,18 @@ from tests.test_config import CONFIG_FILE
 
 NO_AUTH = ("--set", "mongodb.auth.enabled=false")
 NO_INGRESS = ("--set", "cloudRegistry.ingress.enabled=false")
-# The app's NetworkPolicy is enabled (MongoDB's is by default)
-APP_POLICY = ("--set", "cloudRegistry.networkPolicy.enabled=true")
+# Peers allowed to connect to the app in tests (there are none by default):
+# the namespace of an ingress controller
+INGRESS_PEERS = [
+    {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "ingress"}}}
+]
+# The app's NetworkPolicy is enabled, with peers (MongoDB's is by default)
+APP_POLICY = (
+    "--set",
+    "cloudRegistry.networkPolicy.enabled=true",
+    "--set-json",
+    f"cloudRegistry.networkPolicy.ingressFrom={json.dumps(INGRESS_PEERS)}",
+)
 # The cluster serves OpenShift Routes
 ROUTE_API = ("--api-versions", "route.openshift.io/v1")
 INIT_SCRIPT = f"{MONGODB}-init-script"
@@ -1147,7 +1157,9 @@ def test_schema_of_library() -> None:
     That is the library's `app-values.schema.json` with the documented
     changes: the app's values (`cloudRegistry`) also require the Gunicorn
     settings and the `preStop` delay, MongoDB's image is pinned to a minor
-    version, and there is no Celery worker or broker.
+    version, there is no Celery worker or broker, and the app's
+    `networkPolicy.ingressFrom` may be empty (its default; the template fails
+    if the policy is enabled without peers).
     """
     chart = yaml.safe_load((CHART / "Chart.yaml").read_text())
     (dependency,) = chart["dependencies"]
@@ -1157,6 +1169,16 @@ def test_schema_of_library() -> None:
         assert member is not None
         library = json.loads(member.read())
     schema = json.loads((CHART / "values.schema.json").read_text())
+    ingress_from = library["$defs"]["app"]["properties"]["networkPolicy"]["properties"][
+        "ingressFrom"
+    ]
+    assert ingress_from.pop("minItems") == 1
+    # Without the default of the library (the namespace of ingress-nginx)
+    ingress_from_app = schema["$defs"]["app"]["properties"]["networkPolicy"][
+        "properties"
+    ]["ingressFrom"]
+    assert "ingress-nginx" not in ingress_from_app["description"]
+    ingress_from["description"] = ingress_from_app["description"]
     assert schema["$defs"] == library["$defs"]
     properties = dict(schema["properties"])
     assert properties.pop("cloudRegistry") == {
@@ -1440,16 +1462,6 @@ def test_notes(args: tuple[str, ...], exposed: bool, tls_note: bool) -> None:
     assert f"kubectl rollout status deploy/{APP} -n registry" in notes
 
 
-# Default peers allowed to connect to the app: the namespace of ingress-nginx
-INGRESS_NGINX = [
-    {
-        "namespaceSelector": {
-            "matchLabels": {"kubernetes.io/metadata.name": "ingress-nginx"}
-        }
-    }
-]
-
-
 def _network_policies(docs: Docs) -> dict[str, Manifest]:
     """Get the NetworkPolicies by name.
 
@@ -1520,16 +1532,30 @@ def test_network_policy_disabled() -> None:
     assert not _network_policies(docs)
 
 
-def test_network_policy_app() -> None:
-    """If enabled, only ingress-nginx may connect to the app by default.
+def test_network_policy_app_no_default_peers() -> None:
+    """The app's NetworkPolicy has no peers by default, of no controller.
 
-    Only its namespace may connect, on the app's port.
+    So enabling it without peers fails, instead of guessing the cluster's
+    ingress controller or Gateway.
+    """
+    values = yaml.safe_load((CHART / "values.yaml").read_text())
+    policy = values["cloudRegistry"]["networkPolicy"]
+    assert policy == {"enabled": False, "ingressFrom": []}
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render("--set", "cloudRegistry.networkPolicy.enabled=true")
+    assert "ingressFrom must list at least one NetworkPolicy peer" in exc.value.stderr
+
+
+def test_network_policy_app() -> None:
+    """If enabled, only the given peers may connect to the app.
+
+    They may connect on the app's port.
     """
     docs = _render(*APP_POLICY)
     policy = _network_policies(docs)[APP]
     assert policy["spec"]["podSelector"] == {"matchLabels": _pod_labels(docs, APP)}
     assert _only_ingress(policy) == [
-        {"from": INGRESS_NGINX, "ports": [{"port": 8080, "protocol": "TCP"}]}
+        {"from": INGRESS_PEERS, "ports": [{"port": 8080, "protocol": "TCP"}]}
     ]
     assert _container(docs, APP)["ports"][0]["containerPort"] == 8080
     assert MONGODB in _network_policies(docs)
@@ -1565,7 +1591,7 @@ def test_network_policy_app_ingress_from(tmp_path: Path) -> None:
     [
         (
             ("--set-json", "cloudRegistry.networkPolicy.ingressFrom=[]"),
-            "'/cloudRegistry/networkPolicy/ingressFrom': minItems",
+            "ingressFrom must list at least one NetworkPolicy peer",
         ),
         (
             ("--set-json", "cloudRegistry.networkPolicy.ingressFrom=[{}]"),

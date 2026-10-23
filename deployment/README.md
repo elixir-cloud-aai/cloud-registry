@@ -208,7 +208,26 @@ disable the chart's Ingress (`enabled: false`) and create one of your own
 that routes only `/ga4gh/registry/v1/` to the app's Service (port `http`).
 On OpenShift, the chart then creates a Route for all paths instead (see
 [OpenShift Route](#openshift-route)), so there, block `/admin/` in front of
-the router. The Ingress is configured with:
+the router.
+
+The chart works with any ingress controller and sets no controller-specific
+values by default: annotations for a controller (e.g., for TLS redirects or
+rate limits, as below) are examples to add to the values, and the size limit
+of request bodies for ingress-nginx (see below) is ignored by other
+controllers. ingress-nginx is retired (it gets no releases or security fixes
+after March 2026): prefer another ingress controller (e.g., Traefik), or the
+Gateway API.
+
+The Gateway API is the successor of the Ingress API. This version of the
+chart creates no HTTPRoute: disable the Ingress (`enabled: false`; on
+clusters without Routes, the chart then creates none) and attach an HTTPRoute
+of your own to the Gateway, next to the release, with the app's Service as
+its backend (`backendRefs`, port `8080`); to keep the permissions API off the
+internet, match only the path prefix `/ga4gh/registry/v1/`. On OpenShift,
+the chart still creates a Route for all paths (see above), so there, block
+`/admin/` in front of the router as well.
+
+The Ingress is configured with:
 
 - `className` sets the Ingress class (default: the cluster's default class);
 - `annotations` sets annotations, e.g., for the ingress controller; they
@@ -223,8 +242,8 @@ The app rejects request bodies over `config.server.max_content_length` bytes
 limit](https://cloud-registry.readthedocs.io/en/latest/configuration/#request-size-limit)). The Ingress sets the
 same limit for ingress-nginx, in bytes
 (`nginx.ingress.kubernetes.io/proxy-body-size`), so that larger requests are
-rejected before they reach the app; to raise the limit, e.g., to 8 MiB, set
-only the app's:
+rejected before they reach the app (other ingress controllers ignore the
+annotation); to raise the limit, e.g., to 8 MiB, set only the app's:
 
 ```yaml
 config:
@@ -244,12 +263,13 @@ The app advertises HTTPS URLs on port 443 (e.g., in `Location` headers; see
 (`https.enabled: false`) and serves plain HTTP, so TLS must be terminated in
 front of the cluster (e.g., by a load balancer); Helm's notes after installing
 say so. Otherwise, set `https.enabled: true` to serve HTTPS with a certificate
-from cert-manager; ingress-nginx then redirects HTTP requests to HTTPS by
-default.
+from cert-manager; how HTTP requests are redirected to HTTPS depends on the
+ingress controller (ingress-nginx does by default; Traefik does on an HTTP
+entry point configured to redirect).
 
-If TLS is terminated in front of the cluster, ingress-nginx can't tell HTTP
-from HTTPS requests by itself, so it doesn't redirect them. Optionally, have
-it redirect requests that the proxy in front marks as HTTP
+For example, if TLS is terminated in front of the cluster, ingress-nginx
+can't tell HTTP from HTTPS requests by itself, so it doesn't redirect them.
+Optionally, have it redirect requests that the proxy in front marks as HTTP
 (`X-Forwarded-Proto`), if the controller trusts that header
 (`use-forwarded-headers` in its ConfigMap; otherwise, all requests are
 redirected, in a loop):
@@ -266,10 +286,11 @@ Better yet, let the proxy in front redirect HTTP requests itself.
 ### Rate limits
 
 The app doesn't limit how often or how many services a user registers. Limit
-the request rate at the ingress instead, e.g., per client IP address with
-ingress-nginx (requests per second, a burst of 5 times as many, and
-concurrent connections; excess requests get `503`, or the status set by the
-controller's `limit-req-status-code`):
+the request rate at the ingress instead, with the settings of the ingress
+controller (e.g., Traefik's `rateLimit` middleware). For example, per client
+IP address with ingress-nginx (requests per second, a burst of 5 times as
+many, and concurrent connections; excess requests get `503`, or the status
+set by the controller's `limit-req-status-code`):
 
 ```yaml
 cloudRegistry:
@@ -357,12 +378,14 @@ allow rules) before relying on these restrictions.
   up).
 - **App** (`cloudRegistry.networkPolicy.enabled`, default `false`): only the
   NetworkPolicy peers in `cloudRegistry.networkPolicy.ingressFrom` may
-  connect, on the app's port. The default allows the namespace
-  `ingress-nginx`, where ingress-nginx usually runs, by its label
+  connect, on the app's port. There are none by default, as they depend on
+  the cluster: set them to the pods of the cluster's ingress controller (or
+  the OpenShift router, or the Gateway's proxies) when enabling the policy;
+  otherwise, the app is unreachable through the Ingress (or Route). Rendering
+  fails if the policy is enabled without peers (which would allow all
+  sources). Namespaces are selected by their label
   `kubernetes.io/metadata.name` (set on all namespaces from Kubernetes 1.21;
-  label it on older clusters), so before enabling the policy, check that it
-  matches the cluster's ingress controller (or the OpenShift router);
-  otherwise, the app is unreachable through the Ingress (or Route). Add any
+  label them on older clusters). Pick the peers of your setup, and add any
   other clients in the cluster that call the app's Service directly, e.g.:
 
   ```yaml
@@ -370,26 +393,42 @@ allow rules) before relying on these restrictions.
     networkPolicy:
       enabled: true
       ingressFrom:
-      # The pods of ingress-nginx in the namespace `ingress-nginx` (stricter
-      # than the default, which allows all pods of that namespace)
+      # ingress-nginx: its pods in the namespace `ingress-nginx`
       - namespaceSelector:
           matchLabels:
             kubernetes.io/metadata.name: ingress-nginx
         podSelector:
           matchLabels:
             app.kubernetes.io/name: ingress-nginx
+      # Traefik, e.g., on k3s: its pods in the namespace `kube-system`
+      # - namespaceSelector:
+      #     matchLabels:
+      #       kubernetes.io/metadata.name: kube-system
+      #   podSelector:
+      #     matchLabels:
+      #       app.kubernetes.io/name: traefik
+      # Envoy Gateway (Gateway API, default deployment mode): the proxies of
+      # the Gateway `gateway` in the namespace `gateway-system`, which run in
+      # the controller's namespace `envoy-gateway-system` (in the Gateway
+      # namespace mode, select the Gateway's namespace instead)
+      # - namespaceSelector:
+      #     matchLabels:
+      #       kubernetes.io/metadata.name: envoy-gateway-system
+      #   podSelector:
+      #     matchLabels:
+      #       gateway.envoyproxy.io/owning-gateway-namespace: gateway-system
+      #       gateway.envoyproxy.io/owning-gateway-name: gateway
+      # OpenShift: the router's namespaces
+      # - namespaceSelector:
+      #     matchLabels:
+      #       policy-group.network.openshift.io/ingress: ""
       # A client in the release's namespace
       - podSelector:
           matchLabels:
             app.kubernetes.io/name: my-portal
-      # On OpenShift: the router's namespace
-      # - namespaceSelector:
-      #     matchLabels:
-      #       policy-group.network.openshift.io/ingress: ""
   ```
 
-  `ingressFrom` replaces the default; rendering fails if it is empty (which
-  would allow all sources), and the schema rejects unknown peer fields and an
+  The schema rejects unknown peer fields and an
   `ipBlock` without `cidr` or combined with selectors. An ingress controller
   in the host network (e.g., `hostNetwork: true`) connects from the nodes'
   addresses, which namespace selectors don't match; allow them with an
@@ -431,9 +470,13 @@ startup checks; if they fail, Gunicorn exits and the container restarts
 
 `timeout` restarts workers whose main loop stops responding; requests run in
 threads, so slow or stuck requests don't count. Keep `keepalive` longer than
-the ingress controller's keep-alive timeout for upstream connections (60
-seconds for ingress-nginx, `upstream-keepalive-timeout`): otherwise, it may
-reuse a connection just as Gunicorn closes it, and the request fails with
+the ingress controller's keep-alive timeout for upstream connections
+(e.g., 60 seconds for ingress-nginx, `upstream-keepalive-timeout`; Traefik's
+90 seconds are longer than the default, so raise `keepalive`, e.g., to 100;
+Envoy Gateway keeps idle connections for an hour, so set
+`timeout.http.connectionIdleTimeout` in a `BackendTrafficPolicy` below
+`keepalive`, e.g., to `60s`): otherwise, it
+may reuse a connection just as Gunicorn closes it, and the request fails with
 `502` (non-idempotent requests, e.g., `POST`, are not retried). Idle
 connections wait in the worker's poller, not in its threads.
 
