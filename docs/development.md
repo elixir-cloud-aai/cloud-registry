@@ -138,14 +138,17 @@ the release fails if any link to a version that moves is left
 (`scripts/chart_readme.py`). The README in the repository is unchanged.
 After approval in the `release` environment, it builds
 the image and pushes it by digest (untagged, with SBOM and provenance
-attestations), checks that the app reports the release version, attests
-its build provenance and signs it (see [Verifying
-images and charts](operations.md#verifying-images-and-charts)), tags exactly
-that image `X.Y.Z` (and `latest`, if it is the highest stable release on
-`main`), attests and signs the chart, and creates a GitHub release with the
-chart (`.tgz`), its Sigstore bundle (`.tgz.sigstore.json`) and the
-notes in `docs/releases/X.Y.Z.md` (for pre-releases, e.g., `X.Y.Zrc1.md`),
-or, if there are none, notes generated from the merged pull requests. Curated
+attestations) and checks that the app reports the release version; it then
+scans exactly that digest for vulnerabilities, in a job without credentials.
+After a second approval in the `release` environment (once the scan passed),
+it attests the build provenance of the scanned digest and signs it (see
+[Verifying images and charts](operations.md#verifying-images-and-charts)),
+tags exactly that image `X.Y.Z` (and `latest`, if it is the highest stable
+release on `main`), attests and signs the chart, and creates a GitHub
+release with the chart (`.tgz`), its Sigstore bundle (`.tgz.sigstore.json`)
+and the notes in `docs/releases/X.Y.Z.md` (for pre-releases, e.g.,
+`X.Y.Zrc1.md`), or, if there are none, notes generated from the merged pull
+requests. Curated
 notes are published as written, so the release workflow fails if they contain
 `TODO`; on re-runs, it replaces the notes of an existing release with them
 (also overwriting manual edits). Add curated notes to the
@@ -191,16 +194,22 @@ Maintainers: the workflows rely on these repository settings: environment
 `dev-images` limited to branch `dev`; environment `release` with a required
 reviewer; a tag ruleset for `v*` that restricts who may create them and
 prevents moving or deleting them; `main` protected against non-fast-forward
-pushes; and the Docker Hub secrets (`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`,
-`DOCKERHUB_ORG`) only in the two environments, not as repository secrets.
+pushes; and the Docker Hub secrets (`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`)
+only in the two environments, not as repository secrets. The Docker Hub
+organization is the repository variable `DOCKERHUB_ORG` (by default
+`elixircloud`; forks set it to the organization they publish to), so that
+the scan jobs, which have no secrets, know the image name too.
 On Read the Docs, an automation rule activates the versions of tags (`v*`),
 so that the docs linked from packaged charts exist.
 
-The CI workflow builds the image of every pull request and push and scans
-it with [Trivy](https://trivy.dev/) (`.github/actions/scan-image`); the
-release workflow builds and scans the release commit's image again before
-publishing (in a job without its credentials), and a weekly workflow
-(`scan.yaml`) scans `latest`. They fail on critical and high
+The CI workflow builds the image of every pull request and scans it with
+[Trivy](https://trivy.dev/) (`.github/actions/scan-image`), and a weekly
+workflow (`scan.yaml`) scans `latest`. For pushes to `dev` and for releases,
+the workflows push the image by digest, untagged, scan exactly that digest
+in a job without credentials or signing identity, and only if the scan
+passes attest, sign and tag it, so that the published images are the
+scanned ones; a digest that fails the scan stays untagged and unsigned. The
+scans fail on critical and high
 vulnerabilities that have a fix, and upload all findings to code scanning
 (not for pull requests from forks, nor in the release workflow). To accept
 a finding (e.g., if it doesn't affect the app), add it to `.trivyignore.yaml`
@@ -213,8 +222,10 @@ updates the actions, but not the Trivy version (`version:` in
 commits on `dev` are signed and attested like release images, by the CI
 workflow. All of this needs no secrets beyond the Docker Hub ones: signing
 uses the workflows' OIDC tokens (permission `id-token: write`). Re-running
-the release workflow builds, signs and tags a new image digest (the image
-build is not reproducible); the earlier digest stays signed.
+all jobs of the release workflow builds, scans, signs and tags a new image
+digest (the image build is not reproducible); an earlier digest that was
+published stays signed. Re-running only the failed jobs reuses the digest
+already pushed.
 
 The CI workflow (which tests the chart) and the release workflow (which
 packages it) install the same Helm version (`version:` of `azure/setup-helm`
