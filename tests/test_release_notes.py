@@ -80,6 +80,15 @@ def _messages(markdown: str) -> list[tuple[int, str]]:
         "Intro.\n\n## Fixes ##\n\n- Fix (#1)\n",
         # Code blocks in the intro, headings in code blocks
         "Intro.\n\n```text\n## Unknown\n```\n\n## Fixes\n\n- Fix (#1)\n",
+        # Fences close only with the same character, at least as long, and
+        # nothing else on the line
+        "Intro.\n\n## Fixes\n\n- Fix (#1):\n\n  ````md\n  ```\n  ## No\n  ```\n"
+        "  ````\n\n  More (#2)\n",
+        "Intro.\n\n## Fixes\n\n- Fix (#1):\n\n  ```\n  ~~~\n  ``` x\n  ```\n\n"
+        "  More (#2)\n",
+        # HTML comments, and a byte order mark
+        "<!-- Notes of 0.3.0 -->\nIntro.\n\n## Fixes\n\n<!-- comment -->\n- Fix (#1)\n",
+        "\ufeffIntro.\n\n## Fixes\n\n- Fix (#1)\n",
         # Numbers wrapped over lines
         "Intro.\n\n## Fixes\n\n- Fix (#1,\n  #2; #3,\n  #4)\n",
         # Hashes that are no headings
@@ -96,6 +105,12 @@ def test_check_valid(markdown: str) -> None:
     [
         # No intro
         ("", [(1, "No intro paragraph")]),
+        ("<!-- comment -->\n", [(1, "No intro paragraph")]),
+        (
+            "<!-- comment -->\n## Fixes\n\n- Fix (#1)\n",
+            [(2, "No intro paragraph")],
+        ),
+        ("\ufeff## Fixes\n\n- Fix (#1)\n", [(1, "No intro paragraph")]),
         ("\n\n", [(2, "No intro paragraph")]),
         (
             "## Fixes\n\n- Fix (#1)\n",
@@ -195,7 +210,7 @@ def test_curated_notes(notes: Path) -> None:
 
 def test_body() -> None:
     """The body is the curated notes, then the generated ones, without header."""
-    text = release_notes.body(CURATED, GENERATED)
+    text, warnings = release_notes.body(CURATED, GENERATED)
     assert text == (
         f"{CURATED.strip()}\n\n## Commits\n\n"
         f"{GENERATED.removeprefix("## What's Changed\n")}\n"
@@ -204,13 +219,27 @@ def test_body() -> None:
         "\n\n**Full Changelog**: https://github.com/o/r/compare/v0.2.0...v0.3.0\n"
     )
     assert "What's Changed" not in text
+    assert warnings == []
+
+
+def test_body_comment() -> None:
+    """The header is also dropped after a comment (e.g., of a configuration)."""
+    generated = f"<!-- Release notes generated using configuration -->\n\n{GENERATED}"
+    text, warnings = release_notes.body("Intro.\n", generated)
+    assert text.startswith(
+        "Intro.\n\n## Commits\n\n<!-- Release notes generated using configuration"
+        " -->\n\n* feat: add a feature"
+    )
+    assert "What's Changed" not in text
+    assert warnings == []
 
 
 def test_body_no_changes() -> None:
     """Without changes in the generated notes, the body has no `Commits`."""
     generated = "**Full Changelog**: https://github.com/o/r/commits/v0.3.0\n"
     assert release_notes.body("Intro.\n", generated) == (
-        "Intro.\n\n**Full Changelog**: https://github.com/o/r/commits/v0.3.0\n"
+        "Intro.\n\n**Full Changelog**: https://github.com/o/r/commits/v0.3.0\n",
+        [],
     )
 
 
@@ -223,17 +252,25 @@ def test_body_crlf() -> None:
 
 
 @pytest.mark.parametrize(
-    "generated",
+    ("generated", "commits"),
     [
-        "",
-        "## What's Changed\n* fix by @a in https://x/pull/1\n",
-        "**Full Changelog**: https://x/commits/v1\n\nMore text.\n",
+        ("", ""),
+        (
+            "## What's Changed\n* fix by @a in https://x/pull/1\n",
+            "\n\n## Commits\n\n* fix by @a in https://x/pull/1",
+        ),
+        (
+            "**Full Changelog**: https://x/commits/v1\n\nMore text.\n",
+            "\n\n## Commits\n\n**Full Changelog**: https://x/commits/v1\n\nMore text.",
+        ),
     ],
 )
-def test_body_invalid_generated(generated: str) -> None:
-    """Generated notes must end with the `**Full Changelog**` line."""
-    with pytest.raises(ValueError, match="Full Changelog"):
-        release_notes.body(CURATED, generated)
+def test_body_unexpected_generated(generated: str, commits: str) -> None:
+    """Generated notes without a final `**Full Changelog**` line are kept."""
+    assert release_notes.body("Intro.\n", generated) == (
+        f"Intro.{commits}\n",
+        ["Generated notes don't end with a '**Full Changelog**: ' line"],
+    )
 
 
 def test_main_check(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -254,6 +291,21 @@ def test_main_check_findings(
     assert capsys.readouterr() == ("", f"::error file={notes},line=3::Empty section\n")
 
 
+@pytest.mark.parametrize("command", ["check", "body"])
+def test_main_unreadable(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], command: str
+) -> None:
+    """Files that can't be read fail with an error annotation."""
+    notes = tmp_path / "0.3.0.md"
+    args = [command, str(notes)] + (
+        [str(tmp_path / "x.md")] if command == "body" else []
+    )
+    assert release_notes.main(args) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith("::error::Can't read the notes: ")
+
+
 def test_main_body(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """`body` prints the body of the release."""
     notes = tmp_path / "0.3.0.md"
@@ -261,7 +313,7 @@ def test_main_body(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     generated = tmp_path / "generated.md"
     generated.write_text(GENERATED, encoding="utf-8")
     assert release_notes.main(["body", str(notes), str(generated)]) == 0
-    assert capsys.readouterr() == (release_notes.body(CURATED, GENERATED), "")
+    assert capsys.readouterr() == (release_notes.body(CURATED, GENERATED)[0], "")
 
 
 def test_main_body_findings(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -276,18 +328,19 @@ def test_main_body_findings(tmp_path: Path, capsys: pytest.CaptureFixture[str]) 
     assert "No intro paragraph" in captured.err
 
 
-def test_main_body_invalid_generated(
+def test_main_body_unexpected_generated(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`body` fails without output if the generated notes are unexpected."""
+    """`body` warns of unexpected generated notes, and keeps them."""
     notes = tmp_path / "0.3.0.md"
-    notes.write_text(CURATED, encoding="utf-8")
+    notes.write_text("Intro.\n", encoding="utf-8")
     generated = tmp_path / "generated.md"
-    generated.write_text("## What's Changed\n", encoding="utf-8")
-    assert release_notes.main(["body", str(notes), str(generated)]) == 1
+    generated.write_text("Changes.\n", encoding="utf-8")
+    assert release_notes.main(["body", str(notes), str(generated)]) == 0
     assert capsys.readouterr() == (
-        "",
-        "::error::Generated notes don't end with a '**Full Changelog**: ' line\n",
+        "Intro.\n\n## Commits\n\nChanges.\n",
+        "::warning::Generated notes don't end with a '**Full Changelog**: ' line;"
+        " kept as they are\n",
     )
 
 
@@ -306,6 +359,6 @@ def test_script(tmp_path: Path) -> None:
     )
     assert (result.returncode, result.stdout, result.stderr) == (
         0,
-        release_notes.body(CURATED, GENERATED),
+        release_notes.body(CURATED, GENERATED)[0],
         "",
     )

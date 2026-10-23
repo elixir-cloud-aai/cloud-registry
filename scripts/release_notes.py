@@ -23,13 +23,13 @@ Commands:
         generated notes (the `body` of the `generate-notes` response, in a
         file).
 
-Errors are printed as GitHub annotations to standard error. Only the stdlib
-is used, so the workflow runs it without installing the app.
+Errors (and warnings) are printed as GitHub annotations to standard error.
+Only the stdlib is used, so the workflow runs it without installing the app.
 """
 
 import argparse
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import re
 import sys
@@ -45,7 +45,7 @@ SECTIONS = (
 )
 # Added by the release workflow, after the curated sections
 COMMITS = "Commits"
-# First line of GitHub's generated notes, which is dropped
+# Header of GitHub's generated notes, which is dropped
 WHATS_CHANGED = "## What's Changed"
 # Start of the last line of GitHub's generated notes, which the curated notes
 # must not have
@@ -59,12 +59,18 @@ HEADING = re.compile(
 # `___`), which are rejected: a line of `-` or `=` under a paragraph makes it
 # a heading
 UNDERLINE = re.compile(r" {0,3}(?:(?:-[ \t]*)+|=+[ \t]*|(?:[*_][ \t]*){3,})")
-# Opening and closing lines of fenced code blocks
-FENCE = re.compile(r"[ \t]*(?:```|~~~)")
+# Opening and closing lines of fenced code blocks: a block closes with a line
+# of the same character, at least as long as the opening one, and nothing else
+FENCE = re.compile(r"[ \t]*(?P<marker>`{3,}|~{3,})(?P<rest>.*)")
+# HTML comments on a line of their own, which count as blank lines
+COMMENT = re.compile(r"[ \t]*<!--.*-->[ \t]*")
 # Top-level list items (bullets or numbered)
 ITEM = re.compile(r"(?:[-*+]|[0-9]+[.)])(?:[ \t]|$)")
 # The end of a bullet: its issue and pull request numbers, e.g., `(#12, #34)`
+# (only the pull request's if it closes no issue)
 REFERENCES = re.compile(r".*\(#[0-9]+(?:[,;][ \t]*#[0-9]+)*\)", re.ASCII)
+
+BULLETS_ONLY = "Sections hold bullets only, e.g., - <change> (#12, #34)"
 
 
 @dataclass(frozen=True)
@@ -120,6 +126,173 @@ def _heading_finding(
     return None
 
 
+@dataclass
+class _Checker:
+    """State of the check of curated release notes, line by line.
+
+    Attributes:
+        findings: Findings so far.
+        intro: Whether the intro has text.
+        heading_line: Line of the current heading (0 in the intro).
+        valid: Whether the current heading is a valid section.
+        bullets: Number of bullets in the current section.
+        last: Index in `SECTIONS` of the last valid section, if any.
+        item: Lines of the current bullet (number, text).
+        fence: Marker of the open fenced code block (e.g., ```` ``` ````), if
+            any.
+        previous_blank: Whether the previous line is blank.
+    """
+
+    findings: list[Finding] = field(default_factory=list)
+    intro: bool = False
+    heading_line: int = 0
+    valid: bool = False
+    bullets: int = 0
+    last: int | None = None
+    item: list[tuple[int, str]] = field(default_factory=list)
+    fence: str | None = None
+    previous_blank: bool = True
+
+    def run(self, lines: list[str]) -> list[Finding]:
+        """Check the lines of curated notes.
+
+        Args:
+            lines: Lines of the notes.
+
+        Returns:
+            The findings, in the order of their lines.
+        """
+        for number, line in enumerate(lines, start=1):
+            self._line(number, line)
+        self._close_section()
+        if self.fence:
+            self.findings.append(Finding(len(lines), "Unclosed fenced code block"))
+        if not self.intro:
+            self.findings.append(Finding(max(len(lines), 1), "No intro paragraph"))
+        return sorted(self.findings, key=lambda finding: finding.line)
+
+    def _line(self, number: int, line: str) -> None:
+        """Check a line.
+
+        Args:
+            number: Number of the line.
+            line: Text of the line.
+        """
+        if line.lstrip().startswith(FULL_CHANGELOG):
+            self.findings.append(
+                Finding(
+                    number,
+                    f"'{FULL_CHANGELOG}' line: the release workflow adds GitHub's",
+                )
+            )
+        fence = FENCE.fullmatch(line)
+        if self.fence or fence:
+            self._code(number, line, fence)
+            return
+        heading = HEADING.fullmatch(line)
+        if heading:
+            self._heading(number, len(heading["level"]), heading["title"] or "")
+            return
+        blank = not line.strip() or COMMENT.fullmatch(line) is not None
+        if not blank and UNDERLINE.fullmatch(line):
+            self.findings.append(
+                Finding(
+                    number,
+                    "Setext heading or thematic break: use no headings but the"
+                    " sections, and no rules",
+                )
+            )
+        elif self.heading_line == 0:
+            self.intro = self.intro or not blank
+        elif blank:
+            if self.item:
+                self.item.append((number, line))
+        elif ITEM.match(line):
+            self._close_item()
+            self.item = [(number, line)]
+            self.bullets += 1
+        elif self.item and (line[0] in " \t" or not self.previous_blank):
+            # Indented content of the bullet, or a lazy continuation line of
+            # its paragraph
+            self.item.append((number, line))
+        elif self.valid:
+            self.findings.append(Finding(number, BULLETS_ONLY))
+        self.previous_blank = blank
+
+    def _code(self, number: int, line: str, fence: re.Match[str] | None) -> None:
+        """Check a line of a fenced code block, or a fence.
+
+        Code blocks belong to the intro or to a bullet.
+
+        Args:
+            number: Number of the line.
+            line: Text of the line.
+            fence: Match of `FENCE` on the line, if any.
+        """
+        if self.fence is None and fence:
+            self.fence = fence["marker"]
+            if self.heading_line == 0:
+                self.intro = True
+            elif not self.item and self.valid:
+                self.findings.append(Finding(number, BULLETS_ONLY))
+        elif (
+            self.fence
+            and fence
+            and fence["marker"][0] == self.fence[0]
+            and len(fence["marker"]) >= len(self.fence)
+            and not fence["rest"].strip()
+        ):
+            self.fence = None
+        if self.heading_line and self.item:
+            self.item.append((number, line))
+        self.previous_blank = False
+
+    def _heading(self, number: int, level: int, title: str) -> None:
+        """Check a heading, which starts a section.
+
+        Args:
+            number: Number of the heading's line.
+            level: Level of the heading (number of `#`).
+            title: Title of the heading.
+        """
+        self._close_section()
+        title = title.strip()
+        finding = _heading_finding(number, level, title, self.last)
+        if finding:
+            self.findings.append(finding)
+        else:
+            self.last = SECTIONS.index(title)
+        self.heading_line, self.valid, self.bullets = number, finding is None, 0
+        if not self.intro:
+            self.findings.append(
+                Finding(number, "No intro paragraph before the first section")
+            )
+            self.intro = True
+        self.previous_blank = False
+
+    def _close_item(self) -> None:
+        """Check that the current bullet ends with its numbers, and end it."""
+        content = [(number, line) for number, line in self.item if line.strip()]
+        # The numbers may be wrapped over lines
+        text = " ".join(line.strip() for _, line in content)
+        # Only in valid sections, as invalid headings have findings already
+        if self.valid and content and not REFERENCES.fullmatch(text):
+            self.findings.append(
+                Finding(
+                    content[-1][0],
+                    "Bullet doesn't end with its issue and pull request"
+                    " numbers, e.g., (#12, #34)",
+                )
+            )
+        self.item = []
+
+    def _close_section(self) -> None:
+        """End the current bullet and section; valid ones must have bullets."""
+        self._close_item()
+        if self.valid and self.bullets == 0:
+            self.findings.append(Finding(self.heading_line, "Empty section"))
+
+
 def check(markdown: str) -> list[Finding]:
     """Return the problems in the structure of curated release notes.
 
@@ -132,125 +305,12 @@ def check(markdown: str) -> list[Finding]:
         once, in their order, none empty), holding bullets only, each ending
         with its issue and pull request numbers, and none of the parts that
         the release workflow adds (`## Commits`, the `**Full Changelog**`
-        line).
+        line). HTML comments on lines of their own count as blank lines.
     """
-    findings: list[Finding] = []
-    lines = markdown.splitlines()
-    intro = False
-    # Line of the current heading (0 in the intro), whether it is a valid
-    # section, its number of bullets, and the index in `SECTIONS` of the last
-    # valid section
-    heading_line = 0
-    valid = False
-    bullets = 0
-    last: int | None = None
-    # Lines of the current bullet (number, text)
-    item: list[tuple[int, str]] = []
-    in_fence = False
-    previous_blank = True
-
-    def close_item() -> None:
-        nonlocal item
-        content = [(number, line) for number, line in item if line.strip()]
-        # The numbers may be wrapped over lines
-        text = " ".join(line.strip() for _, line in content)
-        # Only in valid sections, as invalid headings have findings already
-        if valid and content and not REFERENCES.fullmatch(text):
-            findings.append(
-                Finding(
-                    content[-1][0],
-                    "Bullet doesn't end with its issue and pull request"
-                    " numbers, e.g., (#12, #34)",
-                )
-            )
-        item = []
-
-    def close_section() -> None:
-        close_item()
-        if valid and bullets == 0:
-            findings.append(Finding(heading_line, "Empty section"))
-
-    for number, line in enumerate(lines, start=1):
-        blank = not line.strip()
-        fence = FENCE.match(line) is not None
-        if line.lstrip().startswith(FULL_CHANGELOG):
-            findings.append(
-                Finding(
-                    number,
-                    f"'{FULL_CHANGELOG}' line: the release workflow adds GitHub's",
-                )
-            )
-        if in_fence or fence:
-            # Code blocks belong to the intro or to a bullet
-            in_fence = in_fence != fence
-            if heading_line == 0:
-                intro = True
-            elif item:
-                item.append((number, line))
-            elif valid and fence and in_fence:
-                findings.append(
-                    Finding(
-                        number,
-                        "Sections hold bullets only, e.g., - <change> (#12, #34)",
-                    )
-                )
-            previous_blank = False
-            continue
-        heading = HEADING.fullmatch(line)
-        if heading:
-            close_section()
-            level = len(heading["level"])
-            title = (heading["title"] or "").strip()
-            finding = _heading_finding(number, level, title, last)
-            if finding:
-                findings.append(finding)
-            elif level == 2:
-                last = SECTIONS.index(title)
-            heading_line, valid, bullets = number, finding is None, 0
-            if not intro:
-                findings.append(
-                    Finding(number, "No intro paragraph before the first section")
-                )
-                intro = True
-            previous_blank = False
-            continue
-        if not blank and UNDERLINE.fullmatch(line):
-            findings.append(
-                Finding(
-                    number,
-                    "Setext heading or thematic break: use no headings but the"
-                    " sections, and no rules",
-                )
-            )
-        elif heading_line == 0:
-            intro = intro or not blank
-        elif blank:
-            if item:
-                item.append((number, line))
-        elif ITEM.match(line):
-            close_item()
-            item = [(number, line)]
-            bullets += 1
-        elif item and (line[0] in " \t" or not previous_blank):
-            # Indented content of the bullet, or a lazy continuation line of
-            # its paragraph
-            item.append((number, line))
-        elif valid:
-            findings.append(
-                Finding(
-                    number, "Sections hold bullets only, e.g., - <change> (#12, #34)"
-                )
-            )
-        previous_blank = blank
-    close_section()
-    if in_fence:
-        findings.append(Finding(len(lines), "Unclosed fenced code block"))
-    if not intro:
-        findings.append(Finding(max(len(lines), 1), "No intro paragraph"))
-    return sorted(findings, key=lambda finding: finding.line)
+    return _Checker().run(markdown.removeprefix("﻿").splitlines())
 
 
-def body(curated: str, generated: str) -> str:
+def body(curated: str, generated: str) -> tuple[str, list[str]]:
     """Return the body of a release: curated notes, then generated ones.
 
     Args:
@@ -260,25 +320,27 @@ def body(curated: str, generated: str) -> str:
             `generate-notes` response).
 
     Returns:
-        The curated notes; `## Commits` with the generated notes, without
-        their `## What's Changed` header (left out if they list no changes);
-        and last the generated `**Full Changelog**` line.
-
-    Raises:
-        ValueError: If the generated notes don't end with a
-            `**Full Changelog**` line.
+        The body: the curated notes, then `## Commits` with the generated
+        notes without their `## What's Changed` header (left out if they list
+        no changes), whose last line is the `**Full Changelog**` line; and
+        warnings about unexpected generated notes, which are then kept as
+        they are (so that an unexpected format doesn't fail the release
+        workflow after the image was published).
     """
     lines = [line.rstrip() for line in generated.strip().splitlines()]
+    warnings = []
+    # Also after a comment (e.g., with a configuration in `.github/release.yml`)
+    if WHATS_CHANGED in lines:
+        lines.remove(WHATS_CHANGED)
     if not lines or not lines[-1].startswith(f"{FULL_CHANGELOG}: "):
-        raise ValueError(f"Generated notes don't end with a '{FULL_CHANGELOG}: ' line")
-    if lines[0] == WHATS_CHANGED:
-        lines = lines[1:]
-    changes = "\n".join(lines[:-1]).strip()
+        warnings.append(f"Generated notes don't end with a '{FULL_CHANGELOG}: ' line")
+        changes, last = "\n".join(lines).strip(), []
+    else:
+        changes, last = "\n".join(lines[:-1]).strip(), [lines[-1]]
     parts = [curated.strip()]
     if changes:
         parts.append(f"## {COMMITS}\n\n{changes}")
-    parts.append(lines[-1])
-    return "\n\n".join(parts) + "\n"
+    return "\n\n".join(parts + last) + "\n", warnings
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -290,7 +352,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     Returns:
         The exit status: 0 on success, 1 if the curated notes have findings or
-        the generated notes are not as expected.
+        a file can't be read.
     """
     parser = argparse.ArgumentParser(
         description="Check curated release notes and build the release body."
@@ -305,7 +367,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     notes: Path = args.notes
-    curated = notes.read_text(encoding="utf-8")
+    try:
+        curated = notes.read_text(encoding="utf-8")
+        generated = (
+            args.generated.read_text(encoding="utf-8") if args.command == "body" else ""
+        )
+    except (OSError, UnicodeDecodeError) as error:
+        print(f"::error::Can't read the notes: {error}", file=sys.stderr)
+        return 1
     findings = check(curated)
     for finding in findings:
         print(
@@ -315,12 +384,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if findings:
         return 1
     if args.command == "body":
-        generated: Path = args.generated
-        try:
-            text = body(curated, generated.read_text(encoding="utf-8"))
-        except ValueError as error:
-            print(f"::error::{error}", file=sys.stderr)
-            return 1
+        text, warnings = body(curated, generated)
+        for warning in warnings:
+            print(f"::warning::{warning}; kept as they are", file=sys.stderr)
         sys.stdout.write(text)
     return 0
 

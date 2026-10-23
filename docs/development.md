@@ -121,7 +121,7 @@ python scripts/release_version.py outputs vX.Y.Z
 python scripts/citation.py check X.Y.Z
 python scripts/check_release_pins.py
 ! grep -n TODO docs/releases/X.Y.Z.md  # curated notes, if any
-python scripts/release_notes.py check docs/releases/X.Y.Z.md  # their format
+python scripts/release_notes.py check docs/releases/X.Y.Z.md  # their format, if any
 readme="$(mktemp -d)/README.md" && cp deployment/README.md "${readme}"
 python scripts/chart_readme.py "${readme}" vX.Y.Z  # links of the chart
 git push origin <sha>:main  # fails unless it is a fast-forward
@@ -225,14 +225,19 @@ The curated notes in `docs/releases/X.Y.Z.md` (for pre-releases, e.g.,
 its tag); the release workflow adds parts 3 and 4 from GitHub's
 [generate-notes](https://docs.github.com/en/rest/releases/releases#generate-release-notes-content-for-a-release)
 API, for the changes since the previous release in the history of the release
-commit (for stable releases the previous stable release, for alpha, beta and
-release candidate versions the previous release of any kind; all changes for
-the first release). Without curated notes, the release gets GitHub's
-generated notes alone. Curated notes are published as written, so the release
-workflow fails if they contain `TODO` or are not in this format
-(`scripts/release_notes.py check`, tested in `tests/test_release_notes.py`,
-which also checks the notes in `docs/releases/`); on re-runs, it replaces the
-notes of an existing release (also overwriting manual edits). Detailed
+commit (for stable releases the previous stable release, or the previous
+pre-release if there is no stable one, as the generated notes can't start
+before the first tag; for alpha, beta and release candidate versions the
+previous release of any kind; all changes for the first release). Generated
+notes in an unexpected format (without the `**Full Changelog**` line) are
+kept as they are, with a warning, as the image is published by then. Without
+curated notes, the release gets GitHub's generated notes alone. Curated notes
+are published as written, so the release workflow fails if they contain
+`TODO` or are not in this format (`scripts/release_notes.py check`, tested in
+`tests/test_release_notes.py`, which also checks the notes in
+`docs/releases/`), and so does the CI job "Check release readiness" on pushes
+(see above); on re-runs, it replaces the notes of an existing release (also
+overwriting manual edits). Detailed
 upgrade steps belong on the [Upgrading](upgrading.md) page, linked from the
 intro.
 

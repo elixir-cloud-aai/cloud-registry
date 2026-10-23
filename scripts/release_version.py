@@ -143,25 +143,31 @@ def previous_tag(tag: str, tags: Iterable[str]) -> str | None:
             release versions are ignored.
 
     Returns:
-        For a stable release, the highest stable release below it; for an
-        alpha, beta or release candidate version, the highest release of any
-        kind below it; `None` if there is none (e.g., for the first release).
+        For a stable release, the highest stable release below it, or, if
+        there is none, the highest pre-release below it (as GitHub's
+        generated notes can't start before the first tag); for an alpha,
+        beta or release candidate version, the highest release of any kind
+        below it; `None` if there is no release below it (the first
+        release).
 
     Raises:
         ValueError: If `tag` is not a canonical release version.
     """
     release = parse_tag(tag)
-    candidates = []
+    below = []
     for other in tags:
         try:
             other_release = parse_tag(other)
         except ValueError:
             continue
-        if other_release.order < release.order and (
-            other_release.stable or not release.stable
-        ):
-            candidates.append((other_release.order, other))
-    return max(candidates)[1] if candidates else None
+        if other_release.order < release.order:
+            below.append((other_release.stable, other_release.order, other))
+    if not below:
+        return None
+    if release.stable:
+        # Stable ones first, if any
+        return max(below)[2]
+    return max(below, key=lambda candidate: candidate[1])[2]
 
 
 def main(argv: Sequence[str] | None = None) -> int:

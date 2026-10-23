@@ -390,6 +390,18 @@ jobs:
           for chart in dist/*.tgz; do
               cosign sign-blob --yes --bundle "${chart}.sigstore.json" "${chart}"
           done
+      # GitHub's generated notes list the merged pull requests since the
+      # previous release in the history of the release commit (see
+      # `scripts/release_version.py`), or since the start for the first
+      # release
+      - name: Determine the previous release
+        id: previous
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -o pipefail
+          git tag -l 'v*' --merged HEAD \
+              | python scripts/release_version.py previous "${TAG}" >> "${GITHUB_OUTPUT}"
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -397,14 +409,8 @@ jobs:
           TAG: ${{ github.ref_name }}
           LATEST: ${{ steps.latest.outputs.latest }}
           PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+          PREVIOUS: ${{ steps.previous.outputs.previous_tag }}
         run: |
-          # GitHub's generated notes list the merged pull requests since the
-          # previous release in the history of the release commit (see
-          # `scripts/release_version.py`), or since the start for the first
-          # release
-          previous="$(git tag -l 'v*' --merged HEAD \
-              | python scripts/release_version.py previous "${TAG}")"
-          previous="${previous#previous_tag=}"
           # With curated notes of the release commit, the body is the curated
           # notes, then the generated ones (the agreed format, see
           # `scripts/release_notes.py`); otherwise the generated ones alone
@@ -412,8 +418,8 @@ jobs:
           notes_file=""
           if [[ -f "${curated}" ]]; then
               generate=(-f "tag_name=${TAG}")
-              if [[ -n "${previous}" ]]; then
-                  generate+=(-f "previous_tag_name=${previous}")
+              if [[ -n "${PREVIOUS}" ]]; then
+                  generate+=(-f "previous_tag_name=${PREVIOUS}")
               fi
               generated="$(mktemp)"
               notes_file="$(mktemp)"
@@ -438,8 +444,8 @@ jobs:
               exit 0
           fi
           notes=(--generate-notes)
-          if [[ -n "${previous}" ]]; then
-              notes+=(--notes-start-tag "${previous}")
+          if [[ -n "${PREVIOUS}" ]]; then
+              notes+=(--notes-start-tag "${PREVIOUS}")
           fi
           if [[ -n "${notes_file}" ]]; then
               notes=(--notes-file "${notes_file}")

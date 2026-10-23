@@ -140,7 +140,11 @@ def test_is_latest(tag: str, tags: list[str], latest: bool) -> None:
         ("v0.9.1", ["v0.9.0", "v0.9.1", "v0.10.0"], "v0.9.0"),
         # Stable releases start after the previous stable release
         ("v1.0.0", ["v0.3.0", "v1.0.0a1", "v1.0.0b1", "v1.0.0rc2"], "v0.3.0"),
-        ("v1.0.0", ["v1.0.0rc1"], None),
+        # Without a stable release before, the highest pre-release (the
+        # generated notes can't start before the first tag)
+        ("v1.0.0", ["v1.0.0rc1"], "v1.0.0rc1"),
+        ("v0.3.0", ["v0.3.0a1", "v0.3.0rc1", "v0.3.0b2"], "v0.3.0rc1"),
+        ("v1.0.0", ["v0.9.0", "v1.0.0rc1"], "v0.9.0"),
         # Pre-releases start after the previous release of any kind, ordered
         # alpha < beta < release candidate < stable, then by number
         ("v1.0.0rc2", ["v0.3.0", "v1.0.0rc1", "v1.0.0rc10"], "v1.0.0rc1"),
