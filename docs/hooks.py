@@ -130,6 +130,18 @@ def adapt_links(markdown: str, repo_url: str, ref: str = "dev") -> str:
     return "\n".join(lines)
 
 
+def uses_placeholders(markdown: str) -> bool:
+    """Return whether Markdown uses a placeholder of the versions.
+
+    Args:
+        markdown: Markdown of a page.
+
+    Returns:
+        Whether it contains one of `PLACEHOLDERS`.
+    """
+    return any(placeholder in markdown for placeholder in PLACEHOLDERS)
+
+
 def substitute_version(markdown: str, version: str | None) -> str:
     """Replace the placeholders of the release and chart versions.
 
@@ -145,7 +157,7 @@ def substitute_version(markdown: str, version: str | None) -> str:
         ValueError: If the Markdown uses a placeholder, but there is no
             version.
     """
-    if not any(placeholder in markdown for placeholder in PLACEHOLDERS):
+    if not uses_placeholders(markdown):
         return markdown
     if version is None:
         raise ValueError(
@@ -180,7 +192,7 @@ def on_page_markdown(markdown: str, page: object, config: Config, files: object)
             content if line == INCLUDE else line for line in markdown.splitlines()
         )
     # Pages without placeholders need no version (`CITATION.cff` isn't read)
-    if not any(placeholder in markdown for placeholder in PLACEHOLDERS):
+    if not uses_placeholders(markdown):
         return markdown
     version = citation.release_version((root / CITATION).read_text(encoding="utf-8"))
     return substitute_version(markdown, version)

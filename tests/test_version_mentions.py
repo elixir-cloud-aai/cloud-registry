@@ -25,6 +25,12 @@ _spec = importlib.util.spec_from_file_location("citation", ROOT / "scripts/citat
 assert _spec and _spec.loader
 citation = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(citation)
+_spec = importlib.util.spec_from_file_location(
+    "chart_readme", ROOT / "scripts/chart_readme.py"
+)
+assert _spec and _spec.loader
+chart_readme = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(chart_readme)
 
 # Files that may name the release version: its source, the release notes,
 # and the tests of the release tooling, whose versions are test data (if one
@@ -52,13 +58,16 @@ MENTIONS = (
     r"(?i:\b(?:release|version)s?)\s+v?{version}{end}",
     r"`v?{version}`",
     r"(?<![0-9.]){version}{end} (?:on|or later|and later)\b",
+    r"(?i:\bsince)\s+v?{version}{end}",
+    r"(?:\btag|appVersion|_VERSION)[\"']?\s*[:=]\s*[\"']?v?{version}{end}",
 )
-# Lines that may name it: links to the release notes (also in `mkdocs.yml`
+# Parts of lines that may name it (the rest of the line is still checked):
+# links to the release notes (also in `mkdocs.yml`
 # and the changelog) and to its assets, and migration headings, which are
 # about that release itself
 ALLOWED_LINES = (
     r"releases/{version}(?:\.md|/)",
-    r"releases/download/v{version}/",
+    r"releases/download/v{version}/\S*",
     r"^#{{1,6}} (?:From versions before|To (?:app )?version) {version}$",
 )
 
@@ -71,19 +80,24 @@ def mentions(text: str, version: str) -> list[tuple[int, str]]:
         version: Release version, e.g., `1.2.3`.
 
     Returns:
-        Number (from 1) and text of each line that mentions the version as a
-        release of the app (`MENTIONS`; not as part of another version, e.g.,
-        `11.2.3` or `1.2.30`), unless it matches one of `ALLOWED_LINES`.
+        Number (from 1) and text of each line that mentions the version, or
+        its chart version (e.g., `1.2.3-rc1`), as a release of the app
+        (`MENTIONS`; not as part of another version, e.g., `11.2.3`, `1.2.30`
+        or `1.2.3rc1`), outside the parts that `ALLOWED_LINES` allow.
     """
-    fields = {"version": re.escape(version), "end": r"(?!\.?[0-9])"}
-    found = [re.compile(pattern.format(**fields)) for pattern in MENTIONS]
-    allowed = [re.compile(pattern.format(**fields)) for pattern in ALLOWED_LINES]
-    return [
-        (number, line)
-        for number, line in enumerate(text.splitlines(), start=1)
-        if any(pattern.search(line) for pattern in found)
-        and not any(pattern.search(line) for pattern in allowed)
-    ]
+    found, allowed = [], []
+    for form in {version, chart_readme.chart_version(version)}:
+        fields = {"version": re.escape(form), "end": r"(?!\.?[0-9]|-?(?:a|b|rc)[0-9])"}
+        found += [re.compile(pattern.format(**fields)) for pattern in MENTIONS]
+        allowed += [re.compile(pattern.format(**fields)) for pattern in ALLOWED_LINES]
+    result = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        checked = line
+        for pattern in allowed:
+            checked = pattern.sub(" ", checked)
+        if any(pattern.search(checked) for pattern in found):
+            result.append((number, line))
+    return result
 
 
 @pytest.mark.parametrize(
@@ -100,6 +114,21 @@ def mentions(text: str, version: str) -> list[tuple[int, str]]:
         ("1.2.3 or later", [(1, "1.2.3 or later")]),
         ("/en/v1.2.3/", [(1, "/en/v1.2.3/")]),
         ("Tag v1.2.3", [(1, "Tag v1.2.3")]),
+        ("  tag: 1.2.3", [(1, "  tag: 1.2.3")]),
+        ('appVersion: "1.2.3"', [(1, 'appVersion: "1.2.3"')]),
+        ("X_VERSION=1.2.3", [(1, "X_VERSION=1.2.3")]),
+        ("Since 1.2.3, x", [(1, "Since 1.2.3, x")]),
+        (
+            "releases/download/v1.2.3/cloud-registry-1.2.3.tgz cloud-registry:1.2.3",
+            [
+                (
+                    1,
+                    "releases/download/v1.2.3/cloud-registry-1.2.3.tgz"
+                    " cloud-registry:1.2.3",
+                )
+            ],
+        ),
+        ("cloud-registry-1.2.3rc1.tgz", []),
         ("x/cloud-registry/blob/v1.2.3/a", [(1, "x/cloud-registry/blob/v1.2.3/a")]),
         # Other versions, and the number not as a release of the app
         ("v11.2.3 v1.2.30 v1.2.3.4 cloud-registry:11.2.3", []),
@@ -115,7 +144,12 @@ def mentions(text: str, version: str) -> list[tuple[int, str]]:
         ("## From versions before 1.2.3", []),
         ("### To app version 1.2.3", []),
         ("x/releases/download/v1.2.3/cloud-registry-1.2.3.tgz", []),
-        ("Release 1.2.3 (see [notes](releases/1.2.3.md))", []),
+        ("See the [notes of 1.2.3](releases/1.2.3.md)", []),
+        # Only the allowed part of a line is skipped
+        (
+            "Release 1.2.3 (see [notes](releases/1.2.3.md))",
+            [(1, "Release 1.2.3 (see [notes](releases/1.2.3.md))")],
+        ),
     ],
 )
 def test_mentions(text: str, expected: list[tuple[int, str]]) -> None:
@@ -126,6 +160,15 @@ def test_mentions(text: str, expected: list[tuple[int, str]]) -> None:
         expected: Expected lines.
     """
     assert mentions(text, "1.2.3") == expected
+
+
+def test_mentions_chart_version() -> None:
+    """Pre-releases are also found in their chart version (SemVer form)."""
+    text = "cloud-registry-1.2.3-rc1.tgz\nTag v1.2.3rc1\ncloud-registry:1.2.3rc10"
+    assert mentions(text, "1.2.3rc1") == [
+        (1, "cloud-registry-1.2.3-rc1.tgz"),
+        (2, "Tag v1.2.3rc1"),
+    ]
 
 
 def _tracked_files() -> list[str]:
