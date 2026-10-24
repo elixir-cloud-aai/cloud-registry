@@ -1,12 +1,12 @@
 # Upgrading
 
 The [release notes](changelog.md) list the breaking changes of each release,
-e.g., [of 0.3.0](releases/0.3.0.md#breaking-changes), and link the upgrade
+e.g., [of 0.4.0](releases/0.4.0.md#breaking-changes), and link the upgrade
 steps on this page. Upgrades of Helm releases are described in
 [Deployment](deployment.md#upgrades). This page describes how to upgrade, and
 how existing setups and data are affected.
 
-## From versions before 0.3.0
+## From versions before 0.4.0
 
 **Redeploy with a fresh install and an empty database; don't migrate the
 data.** The previously deployed version (FOCA 0.12) accepted tokens of any
@@ -43,7 +43,7 @@ them.
     - `config.service_info.service`: the service info of the deployment
       (e.g., `id`, `name`, `organization`, `contactUrl` and
       `environment: prod`; the defaults changed, see the configuration
-      changes in the [release notes](releases/0.3.0.md#breaking-changes), so
+      changes in the [release notes](releases/0.4.0.md#breaking-changes), so
       set the previous `id`, `ELIXIR_CLOUD_SERVICE_REGISTRY_1`, to keep it
       for clients), which is no longer set via the API;
     - remove `cloud_registry.appName` (use `fullnameOverride` to choose the
@@ -61,10 +61,10 @@ them.
       [Network policies](deployment.md#network-policies)). MongoDB's
       NetworkPolicy is enabled by default and only lets the app's pods
       connect (see [Network policies](deployment.md#network-policies)).
-5. Install the chart attached to the release (`cloud-registry-0.3.0.tgz`):
-   `helm install <release> cloud-registry-0.3.0.tgz -n <namespace> -f
+5. Install the chart attached to the release (`cloud-registry-0.4.0.tgz`):
+   `helm install <release> cloud-registry-0.4.0.tgz -n <namespace> -f
    values-prod.yaml`. The chart version goes from 4.0.0 (the last chart
-   version in the repository) back to 0.3.0, as it now follows the app
+   version in the repository) back to 0.4.0, as it now follows the app
    version; that's no problem for a fresh install.
 6. Ask the operators to register their services again (`POST /services`);
    they become their owners. Admins verify them (see [Verified

@@ -50,7 +50,7 @@ otherwise be ignored
 */ -}}
 {{- range $old, $new := dict "host_name" "hostName" "cloud_registry" "cloudRegistry" -}}
 {{- if hasKey $.Values $old -}}
-{{- fail (printf "%s was renamed to %s (camelCase, following Helm conventions): rename it in the values file, and upgrade without --reuse-values (see deployment/README.md, To app version 0.3.0)" $old $new) -}}
+{{- fail (printf "%s was renamed to %s (camelCase, following Helm conventions): rename it in the values file, and upgrade without --reuse-values (see deployment/README.md, To app version 0.4.0)" $old $new) -}}
 {{- end -}}
 {{- end -}}
 {{- $config := .Values.config | default dict -}}
