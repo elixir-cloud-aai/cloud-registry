@@ -68,11 +68,11 @@ later, which reads the signatures in the Sigstore bundle format):
 ```bash
 gh attestation verify oci://docker.io/elixircloud/cloud-registry:{{ version }} \
     --repo elixir-cloud-aai/cloud-registry \
-    --signer-workflow elixir-cloud-aai/cloud-registry/.github/workflows/release.yml \
+    --signer-workflow elixir-cloud-aai/cloud-registry/.github/workflows/release.yaml \
     --source-ref refs/tags/v{{ version }}
 cosign verify docker.io/elixircloud/cloud-registry:{{ version }} \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    --certificate-identity https://github.com/elixir-cloud-aai/cloud-registry/.github/workflows/release.yml@refs/tags/v{{ version }}
+    --certificate-identity https://github.com/elixir-cloud-aai/cloud-registry/.github/workflows/release.yaml@refs/tags/v{{ version }}
 ```
 
 These are the commands for the latest release, `{{ version }}`: replace
@@ -84,9 +84,9 @@ use `--signer-workflow
 elixir-cloud-aai/cloud-registry/.github/workflows/ci.yml`,
 `--source-ref refs/heads/dev` and `--certificate-identity
 https://github.com/elixir-cloud-aai/cloud-registry/.github/workflows/ci.yml@refs/heads/dev`.
-The workflow files were renamed after 0.4.0: for releases up to 0.4.0, use
-`release.yaml` instead of `release.yml`, and for images of commits on `dev`
-built before the rename, `checks.yaml` instead of `ci.yml`.
+The workflow files were renamed after 0.4.0: releases after 0.4.0 are
+signed by `release.yml` instead of `release.yaml`, and images of commits on
+`dev` built before the rename by `checks.yaml` instead of `ci.yml`.
 To show an image's SBOM or
 provenance, run:
 
@@ -106,12 +106,12 @@ gh release download v{{ version }} --repo elixir-cloud-aai/cloud-registry \
     --pattern 'cloud-registry-{{ chart_version }}.tgz*'
 gh attestation verify cloud-registry-{{ chart_version }}.tgz \
     --repo elixir-cloud-aai/cloud-registry \
-    --signer-workflow elixir-cloud-aai/cloud-registry/.github/workflows/release.yml \
+    --signer-workflow elixir-cloud-aai/cloud-registry/.github/workflows/release.yaml \
     --source-ref refs/tags/v{{ version }}
 cosign verify-blob cloud-registry-{{ chart_version }}.tgz \
     --bundle cloud-registry-{{ chart_version }}.tgz.sigstore.json \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    --certificate-identity https://github.com/elixir-cloud-aai/cloud-registry/.github/workflows/release.yml@refs/tags/v{{ version }}
+    --certificate-identity https://github.com/elixir-cloud-aai/cloud-registry/.github/workflows/release.yaml@refs/tags/v{{ version }}
 ```
 
 Images are scanned for known vulnerabilities with [Trivy](https://trivy.dev/)
