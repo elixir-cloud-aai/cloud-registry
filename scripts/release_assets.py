@@ -14,12 +14,12 @@ Command:
         drafts included): `none` (no release yet: create a draft), `draft`
         (a draft of an earlier attempt: upload the assets and publish it) or
         `published` (upload nothing). A published release must have all
-        `<asset>` files already, by name, or the command fails, explaining
-        what to do; assets with another digest (SHA-256) than the local file
-        (e.g., signatures, which every attempt makes anew) only get a
-        warning, as they can't be replaced. More than one draft for the tag
-        (and no published release) is an error, as it is unclear which one
-        to publish.
+        `<asset>` files already, with the same digest (SHA-256), or the
+        command fails, explaining what to do; only Sigstore bundles
+        (`*.sigstore.json`), which every attempt makes anew, may differ
+        (with a warning). Drafts are an error if there are several, as it is
+        unclear which one to publish, or if the tag has a published release
+        too, as `gh release edit <tag>` might pick a draft.
 
 Only the stdlib is used, so the workflow runs it without installing the app.
 """
@@ -31,6 +31,9 @@ import json
 from pathlib import Path
 import sys
 from typing import Any
+
+# Sigstore bundles of assets, which every attempt of a release makes anew
+SIGNATURE_SUFFIX = ".sigstore.json"
 
 
 def read_releases(data: str) -> list[dict[str, Any]]:
@@ -82,45 +85,54 @@ def check_published(
         assets: Local files that the release must have, by name.
 
     Returns:
-        Errors (assets that are missing, with what to do) and warnings
-        (assets with another digest than the local file); both empty if
-        the release has all assets, with the same digests.
+        Errors (assets that are missing or have another digest than the
+        local file, with what to do) and warnings (Sigstore bundles with
+        another digest); both empty if the release has all assets, with the
+        same digests. Assets without a digest (older uploads) count by name.
     """
     uploaded = {
         asset.get("name"): asset.get("digest")
         for asset in release.get("assets") or []
         if asset.get("state") == "uploaded"
     }
-    missing = []
-    changed = []
+    missing: list[str] = []
+    changed: list[str] = []
+    resigned: list[str] = []
     for path in assets:
         if path.name not in uploaded:
             missing.append(path.name)
         elif (digest := uploaded[path.name]) and digest != sha256(path):
-            changed.append(path.name)
+            signature = path.name.endswith(SIGNATURE_SUFFIX)
+            (resigned if signature else changed).append(path.name)
+    if release.get("immutable"):
+        remedy = (
+            "assets of a published immutable release can't be added or"
+            " replaced, so release a new patch version (tags can't be reused)"
+        )
+    else:
+        remedy = (
+            f"replace them by hand (gh release upload {tag} <files> --clobber,"
+            " from the artifacts of this run), then re-run this job; or"
+            " release a new patch version"
+        )
     errors = []
     if missing:
-        names = ", ".join(missing)
-        if release.get("immutable"):
-            remedy = (
-                "assets of a published immutable release can't be added, so"
-                " release a new patch version (tags can't be reused)"
-            )
-        else:
-            remedy = (
-                f"upload them by hand (gh release upload {tag} <files>, from"
-                " the artifacts of this run), then re-run this job; or"
-                " release a new patch version"
-            )
         errors.append(
-            f"Release {tag} is published without the assets {names}: {remedy}"
+            f"Release {tag} is published without the assets"
+            f" {', '.join(missing)}: {remedy}"
+        )
+    if changed:
+        errors.append(
+            f"Release {tag} is published with other versions of"
+            f" {', '.join(changed)} than this run built (of an earlier attempt"
+            f" or uploaded by hand): {remedy}"
         )
     warnings = []
-    if changed:
+    if resigned:
         warnings.append(
-            f"Release {tag} is published with other versions of"
-            f" {', '.join(changed)} (of an earlier attempt or uploaded by"
-            " hand); they are kept, as published assets can't be replaced"
+            f"Release {tag} is published with other signatures"
+            f" ({', '.join(resigned)}) than this run made (every attempt signs"
+            " anew); they are kept"
         )
     return errors, warnings
 
@@ -145,15 +157,20 @@ def release_state(
         if release.get("tag_name") != tag:
             continue
         (drafts if release.get("draft") else published).append(release)
+    if published and drafts:
+        # `gh release edit <tag>` might pick a draft
+        return (
+            None,
+            [
+                f"Release {tag} is published, but {len(drafts)} draft"
+                " release(s) for it are left: delete the drafts, then re-run"
+                " this job"
+            ],
+            [],
+        )
     if published:
-        warnings = []
-        if drafts:
-            warnings.append(
-                f"{len(drafts)} draft release(s) for {tag} are left next to"
-                " the published one; delete them by hand"
-            )
-        errors, asset_warnings = check_published(tag, published[0], assets)
-        return (None if errors else "published"), errors, warnings + asset_warnings
+        errors, warnings = check_published(tag, published[0], assets)
+        return (None if errors else "published"), errors, warnings
     if len(drafts) > 1:
         return (
             None,

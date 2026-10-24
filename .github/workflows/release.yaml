@@ -320,8 +320,9 @@ jobs:
           ref: ${{ needs.prepare.outputs.sha }}
           # All tags and `main`, to determine the highest release
           fetch-depth: 0
-      # For `scripts/release_version.py` and `scripts/release_notes.py`
-      # (standard library only); the Python version of `checks.yaml`
+      # For `scripts/release_version.py`, `scripts/release_notes.py` and
+      # `scripts/release_assets.py` (standard library only); the Python
+      # version of `checks.yaml`
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -430,9 +431,10 @@ jobs:
       # gets its assets, and is published (with its notes and flags) last.
       # Re-runs finish a draft of an earlier attempt; a release that is
       # already published (e.g., by hand) gets no uploads, but must have all
-      # assets by name, or the step fails, saying what to do (see
-      # `scripts/release_assets.py`); only its title, notes and flags are
-      # updated, which stay editable
+      # assets, or the step fails, saying what to do (see
+      # `scripts/release_assets.py`); only its title, flags and (curated)
+      # notes are updated, which stay editable. The final edit is the only
+      # one that sets `latest`
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}

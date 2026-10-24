@@ -171,9 +171,9 @@ settings below): once published, their assets can't be added, replaced or
 deleted. The workflow therefore creates the release as a draft, uploads
 the assets and publishes it last. A re-run finishes a draft left by an
 earlier attempt; if the release is already published (e.g., by hand), it
-uploads nothing and fails unless the release has all assets, by name
-(`scripts/release_assets.py`, tested in `tests/test_release_assets.py`):
-the remedy is a new patch version. Add curated notes to the
+uploads nothing and fails unless the release has all assets, the same
+files as the run built (only the Sigstore bundles may differ, as every
+attempt signs anew): the remedy is then a new patch version. Add curated notes to the
 [changelog](changelog.md) in `mkdocs.yml` (`nav`; the docs build fails
 otherwise), and refer to pages of the docs by name rather than by relative
 links, which don't work in GitHub releases. No packages are published to
@@ -188,7 +188,9 @@ release (stable, GitHub pre-release), whether the image is tagged `latest`
 and the previous release (for the generated notes) from the tag with
 `scripts/release_version.py`, which is tested over a table of tags
 (`tests/test_release_version.py`) and checked like the app (ruff, mypy,
-coverage); change these rules there, not in the workflow.
+coverage); change these rules there, not in the workflow. It finds the
+GitHub release of the tag, if any, and checks the assets of a published one
+with `scripts/release_assets.py` (tested in `tests/test_release_assets.py`).
 
 To test unreleased changes of FOCA, `pyproject.toml` may pin a FOCA commit
 (`foca @ git+https://github.com/elixir-cloud-aai/foca@<sha>`), with FOCA's
@@ -261,8 +263,8 @@ Maintainers: the workflows rely on these repository settings: environment
 `dev-images` limited to branch `dev`; environment `release` with a required
 reviewer and a deployment tag rule `v*` (so that no workflow of another
 branch can use its secrets); a tag ruleset for `v*` that restricts who may
-create them and prevents moving or deleting them; immutable releases; `main` protected against non-fast-forward
-pushes; and the Docker Hub secrets (`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`)
+create them and prevents moving or deleting them; immutable releases;
+`main` protected against non-fast-forward pushes; and the Docker Hub secrets (`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`)
 only in the two environments, not as repository secrets. The Docker Hub
 organization is the repository variable `DOCKERHUB_ORG` (by default
 `elixircloud`; forks set it to the organization they publish to), so that
