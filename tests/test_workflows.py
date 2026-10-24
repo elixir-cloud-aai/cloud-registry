@@ -1,5 +1,6 @@
 """Tests for the names and the gate of the GitHub Actions workflows."""
 
+import importlib.util
 from pathlib import Path
 import re
 from typing import Any
@@ -13,6 +14,14 @@ GATE = "passed"
 # The last release signed by the release workflow before its file was renamed
 # from `release.yaml` to `release.yml`
 LAST_RELEASE_YAML = Version("0.4.0")
+
+# `scripts/` is not a package, so the script is loaded from its file
+_spec = importlib.util.spec_from_file_location(
+    "citation", ROOT / "scripts" / "citation.py"
+)
+assert _spec and _spec.loader
+citation = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(citation)
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -57,16 +66,14 @@ def test_verification_signer_workflow() -> None:
     """The verification commands name the workflow that signed the release.
 
     They are for the version in `CITATION.cff` (`{{ version }}`): releases up
-    to 0.4.0 were signed by `release.yaml`, later ones by `release.yml`.
+    to 0.4.0 were signed by `release.yaml`, later ones by `release.yml`. When
+    the version is bumped, also reword the note below the commands.
     """
-    match = re.search(
-        r"^version:\s*[\"']?([^\"'\s]+)",
-        (ROOT / "CITATION.cff").read_text(),
-        flags=re.MULTILINE,
-    )
-    assert match
+    # As read by the docs (`docs/hooks.py`)
+    version = citation.release_version(citation.CITATION.read_text(encoding="utf-8"))
+    assert version
     expected = (
-        "release.yaml" if Version(match[1]) <= LAST_RELEASE_YAML else "release.yml"
+        "release.yaml" if Version(version) <= LAST_RELEASE_YAML else "release.yml"
     )
     signers = re.findall(
         r"cloud-registry/\.github/workflows/(release\.ya?ml)",
