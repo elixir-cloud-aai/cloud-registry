@@ -111,7 +111,9 @@ history easier to review.
 Cloud Registry is cited with the metadata in
 [`CITATION.cff`](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/CITATION.cff)
 ([Citation File Format](https://citation-file-format.github.io/)), which
-GitHub ("Cite this repository") and Zenodo use. Its authors are the people
+GitHub ("Cite this repository") and Zenodo use. Its `doi` is the Zenodo
+concept DOI, which stays the same for all versions (see
+[Citation](index.md#citation)). Its authors are the people
 who committed at least 100 lines (lines added) to `main`, the release
 branch (to `dev` before the first release), not counting bots, vendored or
 generated files and the reformatting commits in `.git-blame-ignore-revs`.

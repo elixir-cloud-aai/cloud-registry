@@ -8,6 +8,7 @@
 [![Coverage][badge-coverage]][badge-url-coverage]
 [![GitHub_tag][badge-github-tag]][badge-url-github-tag]
 [![Docker_image][badge-docker]][badge-url-docker]
+[![DOI][badge-doi]][badge-url-doi]
 
 <!-- --8<-- [start:synopsis] -->
 A registry of web services for your project, network or infrastructure,
@@ -66,6 +67,18 @@ curl -X GET "http://localhost:8080/ga4gh/registry/v1/services" -H  "accept: appl
 ```
 <!-- --8<-- [end:quick-start] -->
 
+## Citation
+
+<!-- --8<-- [start:citation] -->
+If you use Cloud Registry, please cite it with its DOI
+[10.5281/zenodo.23606856](https://doi.org/10.5281/zenodo.23606856), which
+always resolves to the latest version on [Zenodo](https://zenodo.org/); the
+Zenodo record lists the DOI of each version, too. The citation metadata is in
+[`CITATION.cff`](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/CITATION.cff):
+on GitHub, "Cite this repository" in the sidebar of the repository formats it
+as APA or BibTeX.
+<!-- --8<-- [end:citation] -->
+
 ## Contributing
 
 Contributions are welcome! See [`CONTRIBUTING.md`](CONTRIBUTING.md) and
@@ -75,12 +88,14 @@ conduct](CODE_OF_CONDUCT.md).
 [badge-build-status]: <https://github.com/elixir-cloud-aai/cloud-registry/actions/workflows/checks.yaml/badge.svg?branch=dev>
 [badge-coverage]: <https://codecov.io/gh/elixir-cloud-aai/cloud-registry/branch/dev/graph/badge.svg?branch=dev>
 [badge-docker]: <https://img.shields.io/docker/v/elixircloud/cloud-registry?sort=semver&label=image&color=C39BD3>
+[badge-doi]: <https://zenodo.org/badge/DOI/10.5281/zenodo.23606856.svg>
 [badge-docs]: <https://readthedocs.org/projects/cloud-registry/badge/>
 [badge-github-tag]: <https://img.shields.io/github/v/tag/elixir-cloud-aai/cloud-registry?color=C39BD3>
 [badge-license]: <https://img.shields.io/badge/license-Apache%202.0-blue.svg>
 [badge-url-build-status]: <https://github.com/elixir-cloud-aai/cloud-registry/actions/workflows/checks.yaml?query=branch%3Adev>
 [badge-url-coverage]: <https://codecov.io/gh/elixir-cloud-aai/cloud-registry?branch=dev>
 [badge-url-docker]: <https://hub.docker.com/r/elixircloud/cloud-registry/tags>
+[badge-url-doi]: <https://doi.org/10.5281/zenodo.23606856>
 [badge-url-docs]: <https://cloud-registry.readthedocs.io/en/latest/>
 [badge-url-github-tag]: <https://github.com/elixir-cloud-aai/cloud-registry/releases>
 [badge-url-license]: <https://www.apache.org/licenses/LICENSE-2.0>

@@ -35,6 +35,13 @@ authors:
     family-names: Arora
   - given-names: Tristan
     family-names: Perard
+doi: 10.5281/zenodo.23606856
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.23606856
+    description: >-
+      Concept DOI of all versions on Zenodo; it always resolves to the latest
+      version
 repository-code: "https://github.com/elixir-cloud-aai/cloud-registry"
 url: "https://cloud-registry.readthedocs.io/"
 keywords:
