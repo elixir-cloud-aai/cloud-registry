@@ -30,6 +30,10 @@
 - [API reference](reference.md): the code, generated from its docstrings.
 - [Changelog](changelog.md): release notes.
 
+## Citation
+
+--8<-- "README.md:citation"
+
 ## License
 
 This project is covered by the [Apache License
