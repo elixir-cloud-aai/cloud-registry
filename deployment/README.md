@@ -138,6 +138,13 @@ deploy the latest image; set `IfNotPresent` for fixed tags or digests, or
 image is pulled the same way (`mongodb.imagePullPolicy`), so that restarts get
 the latest patch version of the pinned minor version (see [Version](#version)).
 
+In production, deploy a release: the chart attached to it (see
+[Installation](#installation)), or a fixed tag (`X.Y.Z`) or digest. Don't
+deploy the moving tags `latest` (the highest stable release) or `dev`: as the
+image is pulled on every start, any restart of a pod (e.g., when a node is
+drained) starts the image that the tag points to at that time, possibly a new
+release whose changes to the config make it refuse to start.
+
 ## Installation
 
 Create the Secret with the MongoDB credentials (see
@@ -719,11 +726,21 @@ annotation only with a higher limit (see [Ingress](#ingress)).
 
 The chart pins MongoDB (`mongodb.image`, default `mongo:7.0`; MongoDB 8.0
 refuses to start on Linux kernels 6.19 to 7.0.13, cf.
-[SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)). MongoDB
-only starts on data whose feature compatibility version (FCV) it supports,
-so check the running version and the FCV before changing the image of an
-existing database. With authentication (the default), the command uses the
-root user's credentials from the container's environment:
+[SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)). Before
+moving to 8.0, check the kernels of the nodes that MongoDB may run on:
+
+```bash
+kubectl get nodes -o custom-columns=NODE:.metadata.name,KERNEL:.status.nodeInfo.kernelVersion
+```
+
+This covers only the current nodes: nodes added later (e.g., by an
+autoscaler) or node pools that become eligible must have compatible kernels
+too, as MongoDB may be scheduled onto any of them, and then fails to start.
+
+MongoDB only starts on data whose feature compatibility version (FCV) it
+supports, so check the running version and the FCV before changing the image
+of an existing database. With authentication (the default), the command
+uses the root user's credentials from the container's environment:
 
 ```bash
 kubectl exec deploy/cloud-registry-mongodb -n <namespace> -- sh -c 'mongosh --quiet \
