@@ -75,7 +75,7 @@ conduct](CODE_OF_CONDUCT.md).
 [badge-build-status]: <https://github.com/elixir-cloud-aai/cloud-registry/actions/workflows/checks.yaml/badge.svg?branch=dev>
 [badge-coverage]: <https://codecov.io/gh/elixir-cloud-aai/cloud-registry/branch/dev/graph/badge.svg?branch=dev>
 [badge-docker]: <https://img.shields.io/docker/v/elixircloud/cloud-registry?sort=semver&label=image&color=C39BD3>
-[badge-docs]: <https://readthedocs.org/projects/cloud-registry/badge/>
+[badge-docs]: <https://app.readthedocs.org/projects/cloud-registry/badge/>
 [badge-github-tag]: <https://img.shields.io/github/v/tag/elixir-cloud-aai/cloud-registry?color=C39BD3>
 [badge-license]: <https://img.shields.io/badge/license-Apache%202.0-blue.svg>
 [badge-url-build-status]: <https://github.com/elixir-cloud-aai/cloud-registry/actions/workflows/checks.yaml?query=branch%3Adev>
