@@ -64,7 +64,7 @@ config: {}
 
 cloudRegistry:
   # Image repository; may include a tag or digest instead of setting `tag`
-  # (e.g., `elixircloud/cloud-registry:0.4.0`)
+  # (e.g., `elixircloud/cloud-registry:1.2.3`)
   image: elixircloud/cloud-registry
   # Image tag; defaults to the chart's `appVersion`, i.e., the release
   # version for released charts and `dev` for the chart in the repository.

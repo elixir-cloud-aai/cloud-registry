@@ -61,11 +61,11 @@ them.
       [Network policies](deployment.md#network-policies)). MongoDB's
       NetworkPolicy is enabled by default and only lets the app's pods
       connect (see [Network policies](deployment.md#network-policies)).
-5. Install the chart attached to the release (`cloud-registry-0.4.0.tgz`):
-   `helm install <release> cloud-registry-0.4.0.tgz -n <namespace> -f
+5. Install the chart attached to the release (`cloud-registry-{{ chart_version }}.tgz`):
+   `helm install <release> cloud-registry-{{ chart_version }}.tgz -n <namespace> -f
    values-prod.yaml`. The chart version goes from 4.0.0 (the last chart
-   version in the repository) back to 0.4.0, as it now follows the app
-   version; that's no problem for a fresh install.
+   version in the repository) back to the app version, which it now
+   follows; that's no problem for a fresh install.
 6. Ask the operators to register their services again (`POST /services`);
    they become their owners. Admins verify them (see [Verified
    services](api.md#verified-services)).
