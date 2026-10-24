@@ -420,7 +420,10 @@ def test_moving_links_as_chart_readme() -> None:
 
 
 def _pull(
-    number: int, merged_at: str | None, author: str | None = "a", sha: str = ""
+    number: int,
+    merged_at: str | None,
+    author: str | None = "a",
+    sha: str | None = None,
 ) -> dict[str, object]:
     """Return a closed pull request as the API lists it.
 
@@ -439,7 +442,7 @@ def _pull(
         "user": None if author is None else {"login": author},
         "html_url": f"https://github.com/o/r/pull/{number}",
         "merged_at": merged_at,
-        "merge_commit_sha": sha or f"c{number}",
+        "merge_commit_sha": f"c{number}" if sha is None else sha,
     }
 
 
@@ -459,6 +462,8 @@ def test_first_release_notes() -> None:
             _pull(4, "2026-01-01T12:00:00Z", "c", sha="other"),
             _pull(6, "2026-01-04T00:00:00Z", "c"),
             _pull(7, "2026-01-04T00:00:00Z", None),
+            # Merged, but without a merge commit
+            {**_pull(8, "2026-01-05T00:00:00Z", "e"), "merge_commit_sha": None},
         ],
     ]
     pulls = release_notes.merged_pull_requests(pages)
@@ -512,7 +517,10 @@ def test_first_release_notes_no_new_contributors() -> None:
         ([[{**_pull(1, "2026-01-01T00:00:00Z"), "number": "1"}]], "'number'"),
         ([[{**_pull(1, "2026-01-01T00:00:00Z"), "number": True}]], "'number'"),
         ([[{**_pull(1, "2026-01-01T00:00:00Z"), "title": None}]], "'title'"),
-        ([[{**_pull(1, "2026-01-01T00:00:00Z"), "merge_commit_sha": ""}]], "'merge"),
+        (
+            [[{**_pull(1, "2026-01-01T00:00:00Z"), "merge_commit_sha": ""}]],
+            "'merge_commit_sha'",
+        ),
         ([[{**_pull(1, "2026-01-01T00:00:00Z"), "merged_at": 1}]], "'merged_at'"),
     ],
 )
@@ -532,33 +540,39 @@ def test_main_first(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     pulls = tmp_path / "pulls.json"
     pulls.write_text(json.dumps([[_pull(1, "2026-01-01T00:00:00Z")]]), encoding="utf-8")
     commits = tmp_path / "commits"
-    commits.write_text("c1\nc0\n", encoding="utf-8")
+    commits.write_text("c1\nc0\n\n", encoding="utf-8")
     argv = ["first", "v1.0.0", "--repository", "o/r"]
     assert (
         release_notes.main([*argv, "--pulls", str(pulls), "--commits", str(commits)])
         == 0
     )
-    assert capsys.readouterr().out == release_notes.first_release_notes(
-        "v1.0.0",
-        "o/r",
-        release_notes.merged_pull_requests([[_pull(1, "2026-01-01T00:00:00Z")]]),
-        ["c1"],
+    assert capsys.readouterr().out == (
+        "## What's Changed\n"
+        "* PR 1 by @a in https://github.com/o/r/pull/1\n"
+        "\n"
+        "## New Contributors\n"
+        "* @a made their first contribution in https://github.com/o/r/pull/1\n"
+        "\n"
+        "**Full Changelog**: https://github.com/o/r/commits/v1.0.0\n"
     )
 
 
-@pytest.mark.parametrize("content", ["not json", "[{}]", None])
+@pytest.mark.parametrize("content", ["not json", "[{}]", b"\xff", None])
 def test_main_first_errors(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], content: str | None
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], content: str | bytes | None
 ) -> None:
     """Unreadable or invalid pull requests fail the command.
 
     Args:
         tmp_path: Temporary directory.
         capsys: Captured output.
-        content: Content of the file of pull requests; `None` if missing.
+        content: Content of the file of pull requests (bytes: not UTF-8);
+            `None` if missing.
     """
     pulls = tmp_path / "pulls.json"
-    if content is not None:
+    if isinstance(content, bytes):
+        pulls.write_bytes(content)
+    elif content is not None:
         pulls.write_text(content, encoding="utf-8")
     commits = tmp_path / "commits"
     commits.write_text("c1\n", encoding="utf-8")
@@ -567,3 +581,19 @@ def test_main_first_errors(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err.startswith("::error::Can't list the pull requests: ")
+
+
+def test_first_release_notes_title_on_one_line() -> None:
+    """Titles stay on their line, also with line breaks or separators."""
+    pull = {**_pull(1, "2026-01-01T00:00:00Z"), "title": "x\u2028## Security\n* y"}
+    pulls = release_notes.merged_pull_requests([[pull]])
+    notes = release_notes.first_release_notes("v1.0.0", "o/r", pulls, ["c1"])
+    assert "* x ## Security * y by @a in https://github.com/o/r/pull/1\n" in notes
+
+
+def test_body_splits_at_line_breaks_only() -> None:
+    """Other line separators (e.g., U+2028) in generated notes start no line."""
+    generated = "* x\u2028## Security by @a in u\n\n**Full Changelog**: c\n"
+    text, warnings = release_notes.body("Intro.\n", generated)
+    assert "\n## Security" not in text
+    assert warnings == []

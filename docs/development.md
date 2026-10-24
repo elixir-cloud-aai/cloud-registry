@@ -247,8 +247,11 @@ before the first tag; for alpha, beta and release candidate versions the
 previous release of any kind). For the first release (no published release
 before it, even if older tags exist), the API would start at an older tag of
 its choice, so the workflow lists all merged pull requests in the history of
-the release commit itself, in the API's format
-(`scripts/release_notes.py first`). Generated
+the release commit itself, in the API's format: `scripts/release_notes.py
+first` reads the closed pull requests (`gh api --paginate --slurp
+"repos/<owner>/<repo>/pulls?state=closed&per_page=100"`, for which the job
+has `pull-requests: read`) and the commits (`git rev-list HEAD` at the
+release commit); run these commands locally to preview the notes. Generated
 notes in an unexpected format (without the `**Full Changelog**` line) are
 kept as they are, with a warning, as the image is published by then. Without
 curated notes, the release gets GitHub's generated notes alone. Curated notes

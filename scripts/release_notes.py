@@ -387,7 +387,11 @@ def body(curated: str, generated: str) -> tuple[str, list[str]]:
         they are (so that an unexpected format doesn't fail the release
         workflow after the image was published).
     """
-    lines = [line.rstrip() for line in generated.strip().splitlines()]
+    # Split at line breaks only (`splitlines` also splits at, e.g., U+2028,
+    # which could make a title of a pull request a heading)
+    lines = [
+        line.rstrip() for line in generated.strip().replace("\r\n", "\n").split("\n")
+    ]
     warnings = []
     # Also after a comment (e.g., with a configuration in `.github/release.yml`)
     if WHATS_CHANGED in lines:
@@ -452,8 +456,8 @@ def merged_pull_requests(pages: object) -> list[PullRequest]:
             list of lists.
 
     Returns:
-        The pull requests that were merged (`merged_at` set), with a merge
-        commit, in the order of the pages.
+        The pull requests that were merged (`merged_at` set) and have a
+        merge commit (`merge_commit_sha` set), in the order of the pages.
 
     Raises:
         ValueError: If the pages are not lists of pull requests with the
@@ -465,7 +469,9 @@ def merged_pull_requests(pages: object) -> list[PullRequest]:
     for pull in (pull for page in pages for pull in page):
         if not isinstance(pull, dict):
             raise ValueError(f"Pull request is not an object: {pull!r:.200}")
-        if pull.get("merged_at") is None:
+        # Pull requests without a merge commit (not merged, or with no
+        # commit left, e.g., after a force-push) can't be in the history
+        if pull.get("merged_at") is None or pull.get("merge_commit_sha") is None:
             continue
         user = pull.get("user")
         login = user.get("login") if isinstance(user, dict) else None
@@ -476,7 +482,8 @@ def merged_pull_requests(pages: object) -> list[PullRequest]:
         merged.append(
             PullRequest(
                 number=number,
-                title=_string(pull, "title").strip(),
+                # On one line, also with line breaks or other whitespace
+                title=" ".join(_string(pull, "title").split()),
                 # Deleted accounts are shown as `ghost`
                 author=login if isinstance(login, str) and login else "ghost",
                 url=_string(pull, "html_url"),
@@ -506,7 +513,7 @@ def first_release_notes(
         pulls: Merged pull requests of the repository (all of them, so that
             first contributions are found).
         commits: SHAs of the commits in the history of the release commit
-            (e.g., `git rev-list <tag>`).
+            (e.g., `git rev-list HEAD` at the release commit).
 
     Returns:
         The notes, as the `body` of a `generate-notes` response.
@@ -519,7 +526,7 @@ def first_release_notes(
     released = [pull for pull in ordered if pull.merge_commit in history]
     lines = []
     if released:
-        lines += [WHATS_CHANGED]
+        lines.append(WHATS_CHANGED)
         lines += [
             f"* {pull.title} by @{pull.author} in {pull.url}" for pull in released
         ]
@@ -549,8 +556,8 @@ def _first(args: argparse.Namespace) -> int:
         pages = json.loads(args.pulls.read_text(encoding="utf-8"))
         commits = args.commits.read_text(encoding="utf-8").split()
         pulls = merged_pull_requests(pages)
-    except (OSError, UnicodeDecodeError, ValueError) as error:
-        # `json.JSONDecodeError` is a `ValueError`
+    except (OSError, ValueError) as error:
+        # `json.JSONDecodeError` and `UnicodeDecodeError` are `ValueError`s
         print(f"::error::Can't list the pull requests: {error}", file=sys.stderr)
         return 1
     sys.stdout.write(first_release_notes(args.tag, args.repository, pulls, commits))
@@ -569,7 +576,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         file can't be read or the pull requests are invalid.
     """
     parser = argparse.ArgumentParser(
-        description="Check curated release notes and build the release body."
+        description="Check curated release notes and build the release body"
+        " (or the generated notes of a first release)."
     )
     commands = parser.add_subparsers(dest="command", required=True)
     check_parser = commands.add_parser("check", help="check curated notes")
