@@ -166,7 +166,14 @@ it attests the build provenance of the scanned digest and signs it (see
 tags exactly that image `X.Y.Z` (and `latest`, if it is the highest stable
 release on `main`), attests and signs the chart, and creates a GitHub
 release with the chart (`.tgz`), its Sigstore bundle (`.tgz.sigstore.json`)
-and the release notes (see below). Add curated notes to the
+and the release notes (see below). Releases are immutable (see the repository
+settings below): once published, their assets can't be added, replaced or
+deleted. The workflow therefore creates the release as a draft, uploads
+the assets and publishes it last. A re-run finishes a draft left by an
+earlier attempt; if the release is already published (e.g., by hand), it
+uploads nothing and fails unless the release has all assets, by name
+(`scripts/release_assets.py`, tested in `tests/test_release_assets.py`):
+the remedy is a new patch version. Add curated notes to the
 [changelog](changelog.md) in `mkdocs.yml` (`nav`; the docs build fails
 otherwise), and refer to pages of the docs by name rather than by relative
 links, which don't work in GitHub releases. No packages are published to
@@ -254,7 +261,7 @@ Maintainers: the workflows rely on these repository settings: environment
 `dev-images` limited to branch `dev`; environment `release` with a required
 reviewer and a deployment tag rule `v*` (so that no workflow of another
 branch can use its secrets); a tag ruleset for `v*` that restricts who may
-create them and prevents moving or deleting them; `main` protected against non-fast-forward
+create them and prevents moving or deleting them; immutable releases; `main` protected against non-fast-forward
 pushes; and the Docker Hub secrets (`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`)
 only in the two environments, not as repository secrets. The Docker Hub
 organization is the repository variable `DOCKERHUB_ORG` (by default
