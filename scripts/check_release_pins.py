@@ -1,6 +1,6 @@
 """Check that a release only pins released versions of its dependencies.
 
-Used by the release workflow (`.github/workflows/release.yaml`), so that
+Used by the release workflow (`.github/workflows/release.yml`), so that
 temporary pins to development versions (e.g., of FOCA, to test unreleased
 changes) can't be released by accident. Fails, with errors as GitHub
 annotations on standard error, if:
