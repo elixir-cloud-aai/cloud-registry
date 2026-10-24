@@ -158,7 +158,7 @@ def test_state_published_resigned(files: list[Path]) -> None:
 
 @pytest.mark.parametrize(
     ("immutable", "remedy"),
-    [(True, "release a new patch version"), (False, "--clobber")],
+    [(True, "release a new patch version"), (False, "gh release delete v1.2.3")],
 )
 def test_state_published_changed(
     files: list[Path], immutable: bool, remedy: str
@@ -179,7 +179,7 @@ def test_state_published_changed(
     ("immutable", "remedy"),
     [
         (True, "release a new patch version"),
-        (False, "gh release upload v1.2.3 <files> --clobber"),
+        (False, "gh release delete v1.2.3"),
     ],
 )
 def test_state_published_missing(
@@ -198,6 +198,21 @@ def test_state_published_missing(
     assert warnings == []
 
 
+def test_state_published_missing_and_changed(files: list[Path]) -> None:
+    """Missing and changed assets are separate errors, in this order."""
+    chart = files[0].with_name("chart-1.2.3.tgz.prov")
+    chart.write_bytes(b"provenance")
+    assets = [_asset(files[0], digest=ZERO), _asset(files[1])]
+    state, errors, warnings = release_assets.release_state(
+        TAG, [_release(assets=assets)], [*files, chart]
+    )
+    assert state is None
+    assert len(errors) == 2
+    assert "without the assets chart-1.2.3.tgz.prov:" in errors[0]
+    assert f"other versions of {files[0].name} than" in errors[1]
+    assert warnings == []
+
+
 def test_state_published_and_drafts(files: list[Path]) -> None:
     """Drafts next to a published release are an error (which one to edit?)."""
     releases = [
@@ -207,7 +222,7 @@ def test_state_published_and_drafts(files: list[Path]) -> None:
     ]
     state, errors, warnings = release_assets.release_state(TAG, releases, files)
     assert state is None
-    assert len(errors) == 1 and "2 draft release(s) for it" in errors[0]
+    assert len(errors) == 1 and "drafts of it are left (2)" in errors[0]
     assert warnings == []
 
 

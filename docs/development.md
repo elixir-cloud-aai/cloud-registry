@@ -173,8 +173,9 @@ the assets and publishes it last. A re-run finishes a draft left by an
 earlier attempt; if the release is already published (e.g., by hand), it
 uploads nothing and fails unless the release has all assets, the same
 files as the run built (only the Sigstore bundles may differ, as every
-attempt signs anew): the remedy is then a new patch version. Add curated notes to the
-[changelog](changelog.md) in `mkdocs.yml` (`nav`; the docs build fails
+attempt signs anew). The error says what to do: a new patch version, or,
+if releases are not immutable, deleting the release and re-running. Add
+curated notes to the [changelog](changelog.md) in `mkdocs.yml` (`nav`; the docs build fails
 otherwise), and refer to pages of the docs by name rather than by relative
 links, which don't work in GitHub releases. No packages are published to
 PyPI. Tags of alpha, beta and release candidate versions (e.g., `vX.Y.Zrc1`,
@@ -264,8 +265,9 @@ Maintainers: the workflows rely on these repository settings: environment
 reviewer and a deployment tag rule `v*` (so that no workflow of another
 branch can use its secrets); a tag ruleset for `v*` that restricts who may
 create them and prevents moving or deleting them; immutable releases;
-`main` protected against non-fast-forward pushes; and the Docker Hub secrets (`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`)
-only in the two environments, not as repository secrets. The Docker Hub
+`main` protected against non-fast-forward pushes; and the Docker Hub
+secrets (`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`) only in the two
+environments, not as repository secrets. The Docker Hub
 organization is the repository variable `DOCKERHUB_ORG` (by default
 `elixircloud`; forks set it to the organization they publish to), so that
 the scan jobs, which have no secrets, know the image name too, and the

@@ -111,9 +111,8 @@ def check_published(
         )
     else:
         remedy = (
-            f"replace them by hand (gh release upload {tag} <files> --clobber,"
-            " from the artifacts of this run), then re-run this job; or"
-            " release a new patch version"
+            f"delete the release (gh release delete {tag}; not the tag),"
+            " then re-run this job, which creates it anew"
         )
     errors = []
     if missing:
@@ -162,9 +161,8 @@ def release_state(
         return (
             None,
             [
-                f"Release {tag} is published, but {len(drafts)} draft"
-                " release(s) for it are left: delete the drafts, then re-run"
-                " this job"
+                f"Release {tag} is published, but drafts of it are left"
+                f" ({len(drafts)}): delete them, then re-run this job"
             ],
             [],
         )
