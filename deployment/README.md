@@ -733,6 +733,10 @@ moving to 8.0, check the kernels of the nodes that MongoDB may run on:
 kubectl get nodes -o custom-columns=NODE:.metadata.name,KERNEL:.status.nodeInfo.kernelVersion
 ```
 
+This covers only the current nodes: nodes added later (e.g., by an
+autoscaler) or node pools that become eligible must have compatible kernels
+too, as MongoDB may be scheduled onto any of them, and then fails to start.
+
 MongoDB only starts on data whose feature compatibility version (FCV) it
 supports, so check the running version and the FCV before changing the image
 of an existing database. With authentication (the default), the command
