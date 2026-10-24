@@ -389,9 +389,8 @@ def body(curated: str, generated: str) -> tuple[str, list[str]]:
     """
     # Split at line breaks only (`splitlines` also splits at, e.g., U+2028,
     # which could make a title of a pull request a heading)
-    lines = [
-        line.rstrip() for line in generated.strip().replace("\r\n", "\n").split("\n")
-    ]
+    text = generated.strip().replace("\r\n", "\n").replace("\r", "\n")
+    lines = [line.rstrip() for line in text.split("\n")]
     warnings = []
     # Also after a comment (e.g., with a configuration in `.github/release.yml`)
     if WHATS_CHANGED in lines:

@@ -255,9 +255,14 @@ def test_body_no_changes() -> None:
     )
 
 
-def test_body_crlf() -> None:
-    """Generated notes with CRLF line endings are normalized."""
-    generated = GENERATED.replace("\n", "\r\n") + "\r\n"
+@pytest.mark.parametrize("newline", ["\r\n", "\r"])
+def test_body_crlf(newline: str) -> None:
+    """Generated notes with CRLF or CR line endings are normalized.
+
+    Args:
+        newline: Line ending of the generated notes.
+    """
+    generated = GENERATED.replace("\n", newline) + newline
     assert release_notes.body(CURATED, generated) == release_notes.body(
         CURATED, GENERATED
     )
