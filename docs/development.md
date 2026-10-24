@@ -171,8 +171,8 @@ settings below): once published, their assets can't be added, replaced or
 deleted. The workflow therefore creates the release as a draft, uploads
 the assets and publishes it last. A re-run finishes a draft left by an
 earlier attempt; if the release is already published (e.g., by hand), it
-uploads nothing and fails unless the release has all assets, the same
-files as the run built (only the Sigstore bundles may differ, as every
+uploads nothing and fails unless the release has exactly the assets
+that the run built (only the Sigstore bundles may differ, as every
 attempt signs anew). The error says what to do: a new patch version, or,
 if releases are not immutable, deleting the release and re-running. Add
 curated notes to the [changelog](changelog.md) in `mkdocs.yml` (`nav`; the docs build fails
