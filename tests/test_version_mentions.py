@@ -26,48 +26,87 @@ assert _spec and _spec.loader
 citation = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(citation)
 
-# Files that may name the release version: its source, and the release notes
-ALLOWED_FILES = ("CITATION.cff",)
+# Files that may name the release version: its source, the release notes,
+# and the tests of the release tooling, whose versions are test data (if one
+# is the release version, it means no other)
+ALLOWED_FILES = (
+    "CITATION.cff",
+    "tests/test_chart_readme.py",
+    "tests/test_check_release_pins.py",
+    "tests/test_citation.py",
+    "tests/test_docs_hooks.py",
+    "tests/test_release_notes.py",
+    "tests/test_release_version.py",
+    "tests/test_version_mentions.py",
+)
 ALLOWED_DIRS = ("docs/releases/",)
-# Lines that may name it (`{version}` is the escaped version): links to the
-# release notes (also `mkdocs.yml` and the changelog), and migration headings
+# Mentions of the version that refer to a release of the app (`{version}` is
+# the escaped version, `{end}` the end of a version): the tag, the image and
+# chart, the version in prose or in inline code. Other mentions of the same
+# number, e.g., the version of the GA4GH specification or of a dependency,
+# are not about the app's release
+MENTIONS = (
+    r"(?:^|[\s`(\"']|refs/tags/|/en/|releases/(?:tag|download)/"
+    r"|cloud-registry/(?:blob|tree|compare|commits)/)v{version}{end}",
+    r"(?i:cloud[-_ ]registry)[:\- ]v?{version}{end}",
+    r"(?i:\b(?:release|version)s?)\s+v?{version}{end}",
+    r"`v?{version}`",
+    r"(?<![0-9.]){version}{end} (?:on|or later|and later)\b",
+)
+# Lines that may name it: links to the release notes (also in `mkdocs.yml`
+# and the changelog) and to its assets, and migration headings, which are
+# about that release itself
 ALLOWED_LINES = (
     r"releases/{version}(?:\.md|/)",
+    r"releases/download/v{version}/",
     r"^#{{1,6}} (?:From versions before|To (?:app )?version) {version}$",
 )
 
 
 def mentions(text: str, version: str) -> list[tuple[int, str]]:
-    """Return the lines that name a version, outside the allowed lines.
+    """Return the lines that mention a release version, unless allowed.
 
     Args:
         text: Content of a file.
         version: Release version, e.g., `1.2.3`.
 
     Returns:
-        Number (from 1) and text of each line that names the version (also as
-        `v1.2.3`, but not as part of another version, e.g., `11.2.3` or
-        `1.2.30`), unless it matches one of `ALLOWED_LINES`.
+        Number (from 1) and text of each line that mentions the version as a
+        release of the app (`MENTIONS`; not as part of another version, e.g.,
+        `11.2.3` or `1.2.30`), unless it matches one of `ALLOWED_LINES`.
     """
-    escaped = re.escape(version)
-    found = re.compile(rf"(?<![0-9.]){escaped}(?!\.?[0-9])")
-    allowed = [re.compile(line.format(version=escaped)) for line in ALLOWED_LINES]
+    fields = {"version": re.escape(version), "end": r"(?!\.?[0-9])"}
+    found = [re.compile(pattern.format(**fields)) for pattern in MENTIONS]
+    allowed = [re.compile(pattern.format(**fields)) for pattern in ALLOWED_LINES]
     return [
         (number, line)
         for number, line in enumerate(text.splitlines(), start=1)
-        if found.search(line) and not any(pattern.search(line) for pattern in allowed)
+        if any(pattern.search(line) for pattern in found)
+        and not any(pattern.search(line) for pattern in allowed)
     ]
 
 
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("docker pull x:1.2.3", [(1, "docker pull x:1.2.3")]),
+        ("docker pull cloud-registry:1.2.3", [(1, "docker pull cloud-registry:1.2.3")]),
         ("a\n--source-ref refs/tags/v1.2.3", [(2, "--source-ref refs/tags/v1.2.3")]),
         ("Release 1.2.3.", [(1, "Release 1.2.3.")]),
-        ("x-1.2.3rc1.tgz", [(1, "x-1.2.3rc1.tgz")]),
-        # Other versions
-        ("11.2.3 1.2.30 1.2.3.4 0.1.2.3", []),
+        ("since app version 1.2.3,", [(1, "since app version 1.2.3,")]),
+        ("Cloud Registry 1.2.3", [(1, "Cloud Registry 1.2.3")]),
+        ("cloud-registry-1.2.3.tgz", [(1, "cloud-registry-1.2.3.tgz")]),
+        ("(e.g., `1.2.3`)", [(1, "(e.g., `1.2.3`)")]),
+        ("from 1.2.3 on", [(1, "from 1.2.3 on")]),
+        ("1.2.3 or later", [(1, "1.2.3 or later")]),
+        ("/en/v1.2.3/", [(1, "/en/v1.2.3/")]),
+        ("Tag v1.2.3", [(1, "Tag v1.2.3")]),
+        ("x/cloud-registry/blob/v1.2.3/a", [(1, "x/cloud-registry/blob/v1.2.3/a")]),
+        # Other versions, and the number not as a release of the app
+        ("v11.2.3 v1.2.30 v1.2.3.4 cloud-registry:11.2.3", []),
+        ("foca/blob/chart-v1.2.3/docs x.org/spec/v1.2.3/schema", []),
+        ("version: 1.2.3", []),
+        ("openapi: 1.2.3", []),
+        ("Until 1.2.3, all releases are pre-releases", []),
         ("{{ version }}", []),
         # Allowed lines
         ("- [1.2.3](releases/1.2.3.md)", []),
@@ -75,7 +114,8 @@ def mentions(text: str, version: str) -> list[tuple[int, str]]:
         ("See [notes](https://x.example.org/en/latest/releases/1.2.3/).", []),
         ("## From versions before 1.2.3", []),
         ("### To app version 1.2.3", []),
-        ("Text about versions before 1.2.3", [(1, "Text about versions before 1.2.3")]),
+        ("x/releases/download/v1.2.3/cloud-registry-1.2.3.tgz", []),
+        ("Release 1.2.3 (see [notes](releases/1.2.3.md))", []),
     ],
 )
 def test_mentions(text: str, expected: list[tuple[int, str]]) -> None:

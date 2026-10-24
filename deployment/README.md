@@ -668,7 +668,7 @@ ones:
 ```bash
 kubectl scale deploy/cloud-registry -n <namespace> --replicas=0
 helm upgrade cloud-registry \
-  https://github.com/elixir-cloud-aai/cloud-registry/releases/download/v{{ version }}/cloud-registry-{{ version }}.tgz \
+  https://github.com/elixir-cloud-aai/cloud-registry/releases/download/v0.4.0/cloud-registry-0.4.0.tgz \
   -n <namespace> -f values-prod.yaml
 ```
 

@@ -61,8 +61,8 @@ them.
       [Network policies](deployment.md#network-policies)). MongoDB's
       NetworkPolicy is enabled by default and only lets the app's pods
       connect (see [Network policies](deployment.md#network-policies)).
-5. Install the chart attached to the release (`cloud-registry-{{ version }}.tgz`):
-   `helm install <release> cloud-registry-{{ version }}.tgz -n <namespace> -f
+5. Install the chart attached to the release (`cloud-registry-{{ chart_version }}.tgz`):
+   `helm install <release> cloud-registry-{{ chart_version }}.tgz -n <namespace> -f
    values-prod.yaml`. The chart version goes from 4.0.0 (the last chart
    version in the repository) back to the app version, which it now
    follows; that's no problem for a fresh install.

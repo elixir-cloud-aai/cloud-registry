@@ -75,7 +75,8 @@ cosign verify docker.io/elixircloud/cloud-registry:{{ version }} \
     --certificate-identity https://github.com/elixir-cloud-aai/cloud-registry/.github/workflows/release.yaml@refs/tags/v{{ version }}
 ```
 
-Replace `{{ version }}` (the latest release) with the version to verify. `--source-ref` and the ref in
+These are the commands for the latest release, `{{ version }}`: replace
+it with the version to verify. `--source-ref` and the ref in
 `--certificate-identity` check that the workflow ran for the release tag,
 not for another branch. Images of commits on `dev`
 (`dev`, `sha-<commit>`) are signed and attested by the CI workflow instead:
@@ -93,19 +94,19 @@ docker buildx imagetools inspect docker.io/elixircloud/cloud-registry:{{ version
     --format '{{ json .Provenance }}'
 ```
 
-The Helm chart attached to a release (`cloud-registry-{{ version }}.tgz`) has a
+The Helm chart attached to a release (`cloud-registry-{{ chart_version }}.tgz`) has a
 GitHub artifact attestation of its provenance and a Sigstore bundle with its
-signature (`cloud-registry-{{ version }}.tgz.sigstore.json`, attached too):
+signature (`cloud-registry-{{ chart_version }}.tgz.sigstore.json`, attached too):
 
 ```bash
 gh release download v{{ version }} --repo elixir-cloud-aai/cloud-registry \
-    --pattern 'cloud-registry-{{ version }}.tgz*'
-gh attestation verify cloud-registry-{{ version }}.tgz \
+    --pattern 'cloud-registry-{{ chart_version }}.tgz*'
+gh attestation verify cloud-registry-{{ chart_version }}.tgz \
     --repo elixir-cloud-aai/cloud-registry \
     --signer-workflow elixir-cloud-aai/cloud-registry/.github/workflows/release.yaml \
     --source-ref refs/tags/v{{ version }}
-cosign verify-blob cloud-registry-{{ version }}.tgz \
-    --bundle cloud-registry-{{ version }}.tgz.sigstore.json \
+cosign verify-blob cloud-registry-{{ chart_version }}.tgz \
+    --bundle cloud-registry-{{ chart_version }}.tgz.sigstore.json \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
     --certificate-identity https://github.com/elixir-cloud-aai/cloud-registry/.github/workflows/release.yaml@refs/tags/v{{ version }}
 ```

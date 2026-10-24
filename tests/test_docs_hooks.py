@@ -192,16 +192,18 @@ def test_on_page_markdown_version() -> None:
 def test_on_page_markdown_readme_version() -> None:
     """The placeholder is also replaced in the included chart README."""
     readme = (ROOT / "deployment/README.md").read_text(encoding="utf-8")
-    assert hooks.VARIABLE in readme
+    assert "{{ version }}" in readme
     markdown = _render(f"{hooks.INCLUDE}\n")
-    assert hooks.VARIABLE not in markdown
-    assert f"cloud-registry-{_version()}.tgz" in markdown
+    assert "{{ version }}" not in markdown
+    assert f"cloud-registry:{_version()}`" in markdown
 
 
 @pytest.mark.parametrize(
     ("markdown", "version", "expected"),
     [
         ("a {{ version }} b {{ version }}", "1.2.3", "a 1.2.3 b 1.2.3"),
+        ("{{ version }} {{ chart_version }}", "1.2.3rc1", "1.2.3rc1 1.2.3-rc1"),
+        ("only {{ chart_version }}", "1.2.3b1", "only 1.2.3-b1"),
         ("no placeholder", None, "no placeholder"),
     ],
 )
@@ -218,5 +220,6 @@ def test_substitute_version(markdown: str, version: str | None, expected: str) -
 
 def test_substitute_version_without_version() -> None:
     """Pages using the placeholder fail the build without a version."""
-    with pytest.raises(ValueError, match="has no version"):
-        hooks.substitute_version("{{ version }}", None)
+    for markdown in ["{{ version }}", "{{ chart_version }}"]:
+        with pytest.raises(ValueError, match="has no version"):
+            hooks.substitute_version(markdown, None)
