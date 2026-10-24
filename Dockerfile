@@ -34,7 +34,7 @@ RUN python /tmp/src/image_requirements.py /tmp/src/pyproject.toml > /tmp/src/req
 ## installed with the package metadata, e.g.,
 ## `site-packages/cloud_registry-<version>.dist-info/licenses/LICENSE`)
 ## The build context has no Git metadata, so the version is passed as a build
-## argument (e.g., `--build-arg SETUPTOOLS_SCM_PRETEND_VERSION=0.3.0`, as the
+## argument (e.g., `--build-arg SETUPTOOLS_SCM_PRETEND_VERSION=0.4.0`, as the
 ## workflows do); without it, the app reports version `0.0.0.dev0`
 COPY pyproject.toml README.md LICENSE /tmp/src/
 COPY cloud_registry /tmp/src/cloud_registry

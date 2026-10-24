@@ -25,14 +25,14 @@ _spec.loader.exec_module(hooks)
         ("https://helm.sh/docs/", "https://helm.sh/docs/"),
         ("mailto:admin@example.org", "mailto:admin@example.org"),
         (f"{DOCS_URL}configuration/#server", "configuration.md#server"),
-        (f"{DOCS_URL}releases/0.3.0/", "releases/0.3.0.md"),
+        (f"{DOCS_URL}releases/0.4.0/", "releases/0.4.0.md"),
         (f"{DOCS_URL}operations", "operations.md"),
         (DOCS_URL, "index.md"),
         (f"{DOCS_URL}#contact", "index.md#contact"),
         # Only links to branch `dev` are pointed to the given reference
         (
-            f"{REPO_URL}/blob/v0.3.0/cloud_registry/config.yaml",
-            f"{REPO_URL}/blob/v0.3.0/cloud_registry/config.yaml",
+            f"{REPO_URL}/blob/v0.4.0/cloud_registry/config.yaml",
+            f"{REPO_URL}/blob/v0.4.0/cloud_registry/config.yaml",
         ),
         (f"{REPO_URL}/releases", f"{REPO_URL}/releases"),
         # Relative links are left as they are, so that the strict build fails
@@ -108,7 +108,7 @@ def test_readme_links_are_absolute() -> None:
     """The chart's README has no relative links (they break in the package)."""
     readme = (ROOT / "deployment/README.md").read_text(encoding="utf-8")
     targets = hooks.LINK.findall(readme)
-    assert f"{DOCS_URL}releases/0.3.0/" in targets
+    assert f"{DOCS_URL}releases/0.4.0/" in targets
     assert [
         target for target in targets if not target.startswith(("#", "https://"))
     ] == []
@@ -146,7 +146,7 @@ def test_on_page_markdown_includes_readme(monkeypatch: pytest.MonkeyPatch) -> No
     assert markdown.startswith("<!-- comment -->\n# Helm chart\n")
     assert hooks.INCLUDE not in markdown
     assert f"]({DOCS_URL}" not in markdown
-    assert "](releases/0.3.0.md)" in markdown
+    assert "](releases/0.4.0.md)" in markdown
     assert f"]({REPO_URL}/blob/dev/cloud_registry/config.yaml)" in markdown
 
 
