@@ -25,14 +25,14 @@ _spec.loader.exec_module(hooks)
         ("https://helm.sh/docs/", "https://helm.sh/docs/"),
         ("mailto:admin@example.org", "mailto:admin@example.org"),
         (f"{DOCS_URL}configuration/#server", "configuration.md#server"),
-        (f"{DOCS_URL}releases/0.4.0/", "releases/0.4.0.md"),
+        (f"{DOCS_URL}releases/1.2.3/", "releases/1.2.3.md"),
         (f"{DOCS_URL}operations", "operations.md"),
         (DOCS_URL, "index.md"),
         (f"{DOCS_URL}#contact", "index.md#contact"),
         # Only links to branch `dev` are pointed to the given reference
         (
-            f"{REPO_URL}/blob/v0.4.0/cloud_registry/config.yaml",
-            f"{REPO_URL}/blob/v0.4.0/cloud_registry/config.yaml",
+            f"{REPO_URL}/blob/v1.2.3/cloud_registry/config.yaml",
+            f"{REPO_URL}/blob/v1.2.3/cloud_registry/config.yaml",
         ),
         (f"{REPO_URL}/releases", f"{REPO_URL}/releases"),
         # Relative links are left as they are, so that the strict build fails
@@ -108,7 +108,7 @@ def test_readme_links_are_absolute() -> None:
     """The chart's README has no relative links (they break in the package)."""
     readme = (ROOT / "deployment/README.md").read_text(encoding="utf-8")
     targets = hooks.LINK.findall(readme)
-    assert f"{DOCS_URL}releases/0.4.0/" in targets
+    assert f"{DOCS_URL}changelog/" in targets
     assert [
         target for target in targets if not target.startswith(("#", "https://"))
     ] == []
@@ -146,7 +146,7 @@ def test_on_page_markdown_includes_readme(monkeypatch: pytest.MonkeyPatch) -> No
     assert markdown.startswith("<!-- comment -->\n# Helm chart\n")
     assert hooks.INCLUDE not in markdown
     assert f"]({DOCS_URL}" not in markdown
-    assert "](releases/0.4.0.md)" in markdown
+    assert "](changelog.md)" in markdown
     assert f"]({REPO_URL}/blob/dev/cloud_registry/config.yaml)" in markdown
 
 
@@ -161,3 +161,62 @@ def test_on_page_markdown_without_include() -> None:
     """Other pages are left as they are."""
     markdown = f"# Page\n\nSee `{hooks.INCLUDE}`.\n"
     assert _render(markdown) == markdown
+
+
+def _version() -> str:
+    """Return the release version of the repository's citation metadata.
+
+    Returns:
+        The `version` of `CITATION.cff`.
+    """
+    version = hooks.citation.release_version(
+        (ROOT / "CITATION.cff").read_text(encoding="utf-8")
+    )
+    assert isinstance(version, str)
+    return version
+
+
+def test_on_page_markdown_version() -> None:
+    """The placeholder is the release version, also in code blocks."""
+    version = _version()
+    markdown = _render(
+        "Version {{ version }}.\n\n```bash\ndocker pull x:{{ version }}\n```\n"
+        "{{ json .SBOM }} {{version}}\n"
+    )
+    assert markdown == (
+        f"Version {version}.\n\n```bash\ndocker pull x:{version}\n```\n"
+        "{{ json .SBOM }} {{version}}\n"
+    )
+
+
+def test_on_page_markdown_readme_version() -> None:
+    """The placeholder is also replaced in the included chart README."""
+    readme = (ROOT / "deployment/README.md").read_text(encoding="utf-8")
+    assert hooks.VARIABLE in readme
+    markdown = _render(f"{hooks.INCLUDE}\n")
+    assert hooks.VARIABLE not in markdown
+    assert f"cloud-registry-{_version()}.tgz" in markdown
+
+
+@pytest.mark.parametrize(
+    ("markdown", "version", "expected"),
+    [
+        ("a {{ version }} b {{ version }}", "1.2.3", "a 1.2.3 b 1.2.3"),
+        ("no placeholder", None, "no placeholder"),
+    ],
+)
+def test_substitute_version(markdown: str, version: str | None, expected: str) -> None:
+    """The placeholder is replaced; without it, no version is needed.
+
+    Args:
+        markdown: Markdown of a page.
+        version: Release version.
+        expected: Expected Markdown.
+    """
+    assert hooks.substitute_version(markdown, version) == expected
+
+
+def test_substitute_version_without_version() -> None:
+    """Pages using the placeholder fail the build without a version."""
+    with pytest.raises(ValueError, match="has no version"):
+        hooks.substitute_version("{{ version }}", None)

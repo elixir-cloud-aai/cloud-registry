@@ -101,6 +101,22 @@ version to the image build. Images on Docker Hub
 - `dev`: the latest commit on `dev`; `sha-<commit>`: commit `<commit>` on
   `dev` (full SHA), to deploy a fixed commit.
 
+The current release version is taken from one source, so that a release
+doesn't need to bump it in many places: the release tag and, on `dev`, the
+`version` in `CITATION.cff` (set before tagging, see below). The docs and the
+chart's README (`deployment/README.md`) write it as a placeholder, `version`
+in double curly braces with a space inside each pair (`VARIABLE` in
+`docs/hooks.py`; this page can't show it, as it would be replaced), also in
+commands and links (e.g., to `/en/v<placeholder>/`). The docs hooks replace
+it with the version of `CITATION.cff`, and `scripts/chart_readme.py` with the
+release version when the chart is packaged (sections of `README.md` included
+as snippets can't use it).
+Comments, templates and tests use placeholders (e.g., `1.2.3`) and refer to
+sections by anchor (e.g., `deployment/README.md#to-app-version-040`).
+`tests/test_version_mentions.py` fails if the current release version appears
+anywhere else than in `CITATION.cff`, `docs/releases/`, links to release
+notes and migration headings (e.g., "From versions before X").
+
 Features and fixes are merged into `dev`. Branch `main` only ever moves
 forward to commits on `dev` that are released. First, shortly before the
 release, set its version and date in the citation metadata, which Zenodo

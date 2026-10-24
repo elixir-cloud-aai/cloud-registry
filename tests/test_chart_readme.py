@@ -41,6 +41,14 @@ _spec.loader.exec_module(chart_readme)
             f"[a]({DOCS}/v1.2.3rc1/a/) [b]({REPO}/blob/v1.2.3rc1/b)\n"
             f"```\n{DOCS}/v1.2.3rc1/\n```",
         ),
+        # The placeholder of the release version gets the version, without
+        # `v`; other placeholders (e.g., of Helm templates) are left
+        (
+            f"{REPO}/releases/download/v{{{{ version }}}}/"
+            "cloud-registry-{{ version }}.tgz {{ .Values.x }} {{version}}",
+            f"{REPO}/releases/download/v1.2.3rc1/"
+            "cloud-registry-1.2.3rc1.tgz {{ .Values.x }} {{version}}",
+        ),
         # Other links are left as they are
         (f"[Releases]({REPO}/releases)", f"[Releases]({REPO}/releases)"),
         (

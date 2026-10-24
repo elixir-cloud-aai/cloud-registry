@@ -55,7 +55,7 @@ the internet, route only `/ga4gh/registry/v1/` through a reverse proxy (see
 
 ## Verifying images and charts
 
-From version 0.4.0 on, images on Docker Hub (`elixircloud/cloud-registry`)
+Since the first release, images on Docker Hub (`elixircloud/cloud-registry`)
 are built by this repository's workflows on GitHub Actions, with an SBOM and
 the build provenance attached as attestations, a [GitHub artifact
 attestation](https://docs.github.com/en/actions/concepts/security/artifact-attestations)
@@ -66,16 +66,16 @@ signature. To check that an image was built by the release workflow, run
 later, which reads the signatures in the Sigstore bundle format):
 
 ```bash
-gh attestation verify oci://docker.io/elixircloud/cloud-registry:0.4.0 \
+gh attestation verify oci://docker.io/elixircloud/cloud-registry:{{ version }} \
     --repo elixir-cloud-aai/cloud-registry \
     --signer-workflow elixir-cloud-aai/cloud-registry/.github/workflows/release.yaml \
-    --source-ref refs/tags/v0.4.0
-cosign verify docker.io/elixircloud/cloud-registry:0.4.0 \
+    --source-ref refs/tags/v{{ version }}
+cosign verify docker.io/elixircloud/cloud-registry:{{ version }} \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    --certificate-identity https://github.com/elixir-cloud-aai/cloud-registry/.github/workflows/release.yaml@refs/tags/v0.4.0
+    --certificate-identity https://github.com/elixir-cloud-aai/cloud-registry/.github/workflows/release.yaml@refs/tags/v{{ version }}
 ```
 
-Replace `0.4.0` with the version to verify. `--source-ref` and the ref in
+Replace `{{ version }}` (the latest release) with the version to verify. `--source-ref` and the ref in
 `--certificate-identity` check that the workflow ran for the release tag,
 not for another branch. Images of commits on `dev`
 (`dev`, `sha-<commit>`) are signed and attested by the CI workflow instead:
@@ -87,27 +87,27 @@ To show an image's SBOM or
 provenance, run:
 
 ```bash
-docker buildx imagetools inspect docker.io/elixircloud/cloud-registry:0.4.0 \
+docker buildx imagetools inspect docker.io/elixircloud/cloud-registry:{{ version }} \
     --format '{{ json .SBOM }}'
-docker buildx imagetools inspect docker.io/elixircloud/cloud-registry:0.4.0 \
+docker buildx imagetools inspect docker.io/elixircloud/cloud-registry:{{ version }} \
     --format '{{ json .Provenance }}'
 ```
 
-The Helm chart attached to a release (`cloud-registry-0.4.0.tgz`) has a
+The Helm chart attached to a release (`cloud-registry-{{ version }}.tgz`) has a
 GitHub artifact attestation of its provenance and a Sigstore bundle with its
-signature (`cloud-registry-0.4.0.tgz.sigstore.json`, attached too):
+signature (`cloud-registry-{{ version }}.tgz.sigstore.json`, attached too):
 
 ```bash
-gh release download v0.4.0 --repo elixir-cloud-aai/cloud-registry \
-    --pattern 'cloud-registry-0.4.0.tgz*'
-gh attestation verify cloud-registry-0.4.0.tgz \
+gh release download v{{ version }} --repo elixir-cloud-aai/cloud-registry \
+    --pattern 'cloud-registry-{{ version }}.tgz*'
+gh attestation verify cloud-registry-{{ version }}.tgz \
     --repo elixir-cloud-aai/cloud-registry \
     --signer-workflow elixir-cloud-aai/cloud-registry/.github/workflows/release.yaml \
-    --source-ref refs/tags/v0.4.0
-cosign verify-blob cloud-registry-0.4.0.tgz \
-    --bundle cloud-registry-0.4.0.tgz.sigstore.json \
+    --source-ref refs/tags/v{{ version }}
+cosign verify-blob cloud-registry-{{ version }}.tgz \
+    --bundle cloud-registry-{{ version }}.tgz.sigstore.json \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    --certificate-identity https://github.com/elixir-cloud-aai/cloud-registry/.github/workflows/release.yaml@refs/tags/v0.4.0
+    --certificate-identity https://github.com/elixir-cloud-aai/cloud-registry/.github/workflows/release.yaml@refs/tags/v{{ version }}
 ```
 
 Images are scanned for known vulnerabilities with [Trivy](https://trivy.dev/)
@@ -116,8 +116,8 @@ and high vulnerabilities), and the `latest` image weekly. The repository's
 code scanning alerts show the findings that have a fix, which the maintainers
 can act on; findings without a fix (often OS packages of the base image)
 appear there once a fix is released. The weekly scan also keeps a full report,
-those findings included, as a workflow artifact of each run. From version
-0.4.0 on, the published images (releases and `dev`) are the scanned ones: the
+those findings included, as a workflow artifact of each run. Since the first
+release, the published images (releases and `dev`) are the scanned ones: the
 workflows push each image by digest, untagged, scan exactly that digest, and
 only if the scan passes (no fixable critical or high vulnerabilities, except
 accepted ones) sign and tag it.

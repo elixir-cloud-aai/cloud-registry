@@ -28,16 +28,15 @@ config on startup (via `FOCA_CONFIG_OVERLAY`):
   `server.port` have no effect, as they apply to the development server only
   (see [Server](#server)).
 
-The chart supports only images built with FOCA 0.15 or later: any release
-from 0.4.0 on (the first release; see its [release
-notes](https://cloud-registry.readthedocs.io/en/latest/releases/0.4.0/)), or `dev` and `sha-<commit>` images of
+The chart supports only images built with FOCA 0.15 or later: any release (see
+the [changelog](https://cloud-registry.readthedocs.io/en/latest/changelog/)), or `dev` and `sha-<commit>` images of
 commits since the upgrade to FOCA 0.15. Older images ignore the overlay or
 the service info (`config.service_info`), and the chart rejects their way of
 setting it (`config.custom.endpoints.service_info`). Named entries and spec
 patches in `config` (e.g., `config.api.specs.registry.patches`, to [require
 login for
 reads](https://cloud-registry.readthedocs.io/en/latest/access-control/#requiring-login-for-reads), or
-policies by name) need images built with FOCA 0.17: release 0.4.0 or later,
+policies by name) need images built with FOCA 0.17: any release,
 or `dev` and `sha-<commit>` images of commits since the upgrade to FOCA 0.17.
 
 The identity provider is deployment configuration, without defaults (see
@@ -118,7 +117,7 @@ the release version as `version` and `appVersion`, so they deploy the image of
 their release (`X.Y.Z`). In the repository, both are placeholders, and
 `appVersion` is `dev`: the chart deploys the latest image of branch `dev`,
 which changes with every commit. Deployments from the repository must set the
-tag of a release (e.g., `0.4.0`) or of a commit on `dev` (`sha-<commit>`, the
+tag of a release (e.g., `{{ version }}`) or of a commit on `dev` (`sha-<commit>`, the
 full commit SHA) in the values file:
 
 ```yaml
@@ -127,7 +126,7 @@ cloudRegistry:
 ```
 
 `cloudRegistry.image` may also include a tag or digest (e.g.,
-`elixircloud/cloud-registry:0.4.0`, as in earlier chart versions); then
+`elixircloud/cloud-registry:{{ version }}`, as in earlier chart versions); then
 `cloudRegistry.tag` must be empty. See [Versioning and
 releases](https://cloud-registry.readthedocs.io/en/latest/development/#versioning-and-releases) for the image tags.
 
@@ -551,8 +550,8 @@ lists the releases.
 
 The legacy charts (versions 2.x and 3.0.0, installed from the repository
 before charts were released from Git tags) used other resource names and
-selectors. The current chart (released from Git tags, 0.4.0 and later, or
-installed from the repository) renames the resources (see
+selectors. The current chart (released from Git tags since the first release,
+or installed from the repository) renames the resources (see
 [Names and labels](#names-and-labels); e.g., `mongodb` becomes
 `cloud-registry-mongodb`) and changes the selectors of the Deployments,
 which cannot be changed in place, so **releases of the legacy charts cannot
@@ -660,7 +659,7 @@ Once the new release works, delete a retained volume
 
 ### To app version 0.4.0
 
-Since app version 0.4.0, services are unique by URL and API type. For
+Since this version, services are unique by URL and API type. For
 releases installed with the current chart (from the repository) that run an
 older image, upgrade with the app scaled to 0 replicas, so that no pod of the
 old version registers services while the new one adds keys to the stored
@@ -669,7 +668,7 @@ ones:
 ```bash
 kubectl scale deploy/cloud-registry -n <namespace> --replicas=0
 helm upgrade cloud-registry \
-  https://github.com/elixir-cloud-aai/cloud-registry/releases/download/v0.4.0/cloud-registry-0.4.0.tgz \
+  https://github.com/elixir-cloud-aai/cloud-registry/releases/download/v{{ version }}/cloud-registry-{{ version }}.tgz \
   -n <namespace> -f values-prod.yaml
 ```
 

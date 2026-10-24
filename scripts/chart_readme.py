@@ -9,8 +9,11 @@ before packaging it: it rewrites these links to the release's docs and files
 (`/en/v<version>/`, `blob/v<version>/`; Read the Docs builds version tags),
 and fails with GitHub annotations on standard error if any link to a version
 that moves (`UNVERSIONED`, e.g., the latest docs or branch `dev`) is left.
-Other files of the chart have no such links and are packaged unchanged. See
-"Versioning and releases" in `docs/development.md`.
+It also replaces the placeholder of the release version, `{{ version }}`
+(`VARIABLE`, which the docs hooks replace with the version of `CITATION.cff`),
+with the release version (the tag without `v`). Other files of the chart have
+no such links and are packaged unchanged. See "Versioning and releases" in
+`docs/development.md`.
 
 Usage: `python scripts/chart_readme.py <readme> <tag>`, with the release tag,
 e.g., `v1.2.3`. Only the stdlib is used, so the workflow runs it without
@@ -30,6 +33,9 @@ REPOSITORY = "elixir-cloud-aai/cloud-registry"
 # Links that are rewritten, without the version
 DOCS = f"https://{DOCS_HOST}/en/"
 FILES = f"https://github.com/{REPOSITORY}/blob/"
+
+# Placeholder of the release version (as in `docs/hooks.py`)
+VARIABLE = "{{ version }}"
 
 # Links to versions that move (also forms that aren't rewritten, `stable`,
 # branch `main` and the latest release), which must not be left in the
@@ -59,11 +65,14 @@ def version_links(markdown: str, tag: str) -> str:
 
     Returns:
         The Markdown with links to the latest docs (`DOCS` + `latest/`) and to
-        files on branch `dev` (`FILES` + `dev/`) pointed to `tag`, also in
+        files on branch `dev` (`FILES` + `dev/`) pointed to `tag`, and the
+        release version (`tag` without `v`) in place of `VARIABLE`, also in
         code blocks; other links unchanged.
     """
-    return markdown.replace(f"{DOCS}latest/", f"{DOCS}{tag}/").replace(
-        f"{FILES}dev/", f"{FILES}{tag}/"
+    return (
+        markdown.replace(f"{DOCS}latest/", f"{DOCS}{tag}/")
+        .replace(f"{FILES}dev/", f"{FILES}{tag}/")
+        .replace(VARIABLE, tag.removeprefix("v"))
     )
 
 

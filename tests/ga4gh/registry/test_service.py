@@ -346,7 +346,7 @@ def test_normalize_url(url: str, normalized: str) -> None:
         "https://[fe80::1%25]/v1",
         "https://[fe80::1%eth0]/v1",
         "https://[fe80::1%]/v1",
-        # rejected since FOCA's URL helpers are used (cloud-registry 0.4.0)
+        # rejected since FOCA's URL helpers are used
         "https://127.1",
         "https://a..example.org",
         "https://ex%61mple.org",
