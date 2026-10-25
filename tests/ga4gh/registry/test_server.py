@@ -18,6 +18,7 @@ from cloud_registry.ga4gh.registry.server import (
     postService,
     putService,
 )
+from cloud_registry.ga4gh.registry.service_types import add_service_types
 from tests.mock_data import (
     MOCK_ID,
     MOCK_PUBLIC_URL,
@@ -99,6 +100,7 @@ def test_getServiceTypes_duplicates(
     _insert_services(services, ["serv1", "serv2", "serv3"])
 
     with unit_app.app_context():
+        add_service_types()
         res = inspect.unwrap(getServiceTypes)()
         # All written services have same type, we expect list of length 1
         assert res == [MOCK_TYPE]
@@ -117,6 +119,7 @@ def test_getServiceTypes_distinct(
         services.insert_one(mock_resp)
 
     with unit_app.app_context():
+        add_service_types()
         res = inspect.unwrap(getServiceTypes)()
         # All written services have distinct types, sorted by artifact
         assert res == [{**MOCK_TYPE, "artifact": i} for i in sorted(ids)]
@@ -137,6 +140,7 @@ def test_getServiceTypes_sort_order(
         services.insert_one({**MOCK_SERVICE, "id": f"serv{i}", "type": service_type})
 
     with unit_app.app_context():
+        add_service_types()
         assert inspect.unwrap(getServiceTypes)() == expected
 
 

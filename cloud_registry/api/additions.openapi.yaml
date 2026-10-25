@@ -39,8 +39,9 @@ paths:
       description: |
         Create a service resource. Services are unique by URL and API type:
         registering a service again returns `409`. Invalid URLs return `400`
-        (cf. `ExternalServiceRegister`). A service deleted during the request
-        returns `404`.
+        (cf. `ExternalServiceRegister`), as do types that aren't registered
+        if the user may not add types (see `POST /services/types`). A
+        service deleted during the request returns `404`.
       operationId: postService
       tags:
         - cloud-registry
@@ -72,6 +73,104 @@ paths:
   /services/types:
     get:
       security: []
+      description: |
+        List the registered service types, sorted by `group`, `artifact` and
+        `version`. Unlike in the GA4GH specification (the types of the
+        registered services), types are registered on their own: explicitly
+        (`POST /services/types`), or with a service of a new type, and all
+        types of registered services are listed.
+    post:
+      summary: Register service type.
+      description: |
+        Register a service type, e.g., for clients to choose from. Any
+        authenticated user can, unless the deployment lets only admins add
+        types (`custom.access_control.service_types: controlled`; `403`
+        otherwise; see `may_add_service_types` of `GET /me`). Types are
+        unique as written: registering a type again returns `409`.
+      operationId: postServiceType
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.service_types
+      tags:
+        - cloud-registry
+      requestBody:
+        description: Service type.
+        required: true
+        content:
+          application/json:
+            schema:
+              x-body-name: service_type
+              $ref: '#/components/schemas/ServiceTypeRegister'
+      responses:
+        '201':
+          description: The service type was registered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceType'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      summary: Remove service type.
+      description: |
+        Remove a registered service type, named by the query parameters
+        (as written). Only for admins. Types that registered services have
+        can't be removed (`409`); change or delete these services first.
+      operationId: deleteServiceType
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.service_types
+      tags:
+        - cloud-registry
+      parameters:
+        - name: group
+          in: query
+          description: Group of the service type.
+          required: true
+          schema:
+            type: string
+            maxLength: 256
+        - name: artifact
+          in: query
+          description: Artifact of the service type.
+          required: true
+          schema:
+            type: string
+            maxLength: 256
+        - name: version
+          in: query
+          description: Version of the service type.
+          required: true
+          schema:
+            type: string
+            maxLength: 256
+      responses:
+        '200':
+          description: The service type was removed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceType'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
   "/services/{serviceId}":
     get:
       security: []
@@ -122,7 +221,9 @@ paths:
         (`403` otherwise). Services deleted during the request return `404`,
         unless an admin's request creates them again. Services are unique by
         URL and API type: changing them to those of another service returns
-        `409`. Invalid URLs return `400` (cf. `ExternalServiceRegister`).
+        `409`. Invalid URLs return `400` (cf. `ExternalServiceRegister`), as
+        do types that aren't registered if the user may not add types (see
+        `POST /services/types`).
       operationId: putService
       tags:
         - cloud-registry
@@ -671,6 +772,7 @@ components:
       required:
         - user_id
         - admin
+        - may_add_service_types
         - services
       additionalProperties: false
       properties:
@@ -684,6 +786,13 @@ components:
           description: |
             Whether the user is an admin: a member of a group mapped to the
             role `admin`, or granted the role via FOCA's permissions API.
+        may_add_service_types:
+          type: boolean
+          description: |
+            Whether the user may add service types, explicitly (`POST
+            /services/types`) or by registering a service with a new type:
+            admins always, other users unless the deployment lets only admins
+            add types (`custom.access_control.service_types: controlled`).
         services:
           type: array
           description: |

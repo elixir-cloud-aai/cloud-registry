@@ -187,22 +187,32 @@ class AccessControlConfig(FOCABaseConfig):
         require_admin: Whether the app refuses to start unless a group is
             mapped to the role `admin` (in
             `security.access_control.group_mapping`).
+        service_types: Who may add service types: `open` (the default), any
+            authenticated user, explicitly (`POST /services/types`) or by
+            registering a service with a new type; `controlled`, admins
+            only, and services of other users must have a registered type.
 
     Attributes:
         require_admin: Whether the app refuses to start unless a group is
             mapped to the role `admin` (in
             `security.access_control.group_mapping`).
+        service_types: Who may add service types: `open` (the default), any
+            authenticated user, explicitly (`POST /services/types`) or by
+            registering a service with a new type; `controlled`, admins
+            only, and services of other users must have a registered type.
 
     Raises:
         pydantic.ValidationError: The class was instantianted with an illegal
-            data type.
+            data type, or `service_types` is neither `open` nor
+            `controlled`.
 
     Example:
-        >>> AccessControlConfig(require_admin=False)
-        AccessControlConfig(require_admin=False)
+        >>> AccessControlConfig(require_admin=False, service_types='controlled')
+        AccessControlConfig(require_admin=False, service_types='controlled')
     """
 
     require_admin: bool = True
+    service_types: Literal["open", "controlled"] = "open"
 
 
 class CustomConfig(FOCABaseConfig):
@@ -241,7 +251,7 @@ class CustomConfig(FOCABaseConfig):
 x='https', external_host='0.0.0.0', external_port=8080, api_path=''), services\
 =ServicesConfig(id=IdConfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', le\
 ngth=6), url_schemes=['https'])), access_control=AccessControlConfig(require_a\
-dmin=True))
+dmin=True, service_types='open'))
     """
 
     endpoints: EndpointsConfig

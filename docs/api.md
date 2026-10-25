@@ -12,6 +12,8 @@ under the API base path `/ga4gh/registry/v1`:
 | `/services` | `GET` (GA4GH) | anyone |
 | `/services` | `POST` | any authenticated user |
 | `/services/types` | `GET` (GA4GH) | anyone |
+| `/services/types` | `POST` | any authenticated user (mode `controlled`: admins) |
+| `/services/types` | `DELETE` | admins |
 | `/services/{serviceId}` | `GET` (GA4GH) | anyone |
 | `/services/{serviceId}` | `PUT` | owners, maintainers, admins (new identifiers: admins) |
 | `/services/{serviceId}` | `DELETE` | owners, admins |
@@ -111,6 +113,50 @@ before the registry set the timestamps keep those they were registered
 with, and services registered without a valid `createdAt` (an RFC 3339
 date-time) don't get one (see
 [Upgrading](upgrading.md#stored-services)).
+
+## Service types
+
+Service types (`type` of services: `group`, `artifact` and `version`, e.g.,
+`org.ga4gh`, `tes`, `1.1.0`) are registered on their own, so that clients
+can offer them to choose from. `GET /services/types` lists them, sorted by
+`group`, `artifact` and `version`; this differs from the GA4GH
+specification, where it lists the types of the registered services: types
+can be registered before any service has them. Every type of a registered
+service is registered, too.
+
+```bash
+curl -X POST "http://localhost:8080/ga4gh/registry/v1/services/types" \
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"group": "org.ga4gh", "artifact": "tes", "version": "1.1.0"}'
+```
+
+`POST /services/types` registers a type and returns it (`201 Created`);
+types are unique as written (`409 Conflict` if it is registered).
+Registering or updating a service with a new type registers the type, too.
+The deployment configures who may add types (see [Service
+types](configuration.md#service-types)):
+
+- `open` (the default): any authenticated user;
+- `controlled`: admins only. Other users get `403 Forbidden` for `POST
+  /services/types`, and registering or updating a service with a type that
+  isn't registered returns `400 Bad Request`, naming the type. Admins'
+  services may have new types, which are registered.
+
+`GET /me` tells clients whether the current user may add types
+(`may_add_service_types`), e.g., to offer "Add new service type" only then.
+
+In every mode, only admins can remove types: `DELETE
+/services/types?group=<group>&artifact=<artifact>&version=<version>`
+returns the removed type, and `404 Not Found` for types that aren't
+registered. Users who add types don't own them, as other users' services
+may have them. Types that registered services have can't be removed (`409
+Conflict`: "Service type is in use. If you really want to revoke it, edit or
+delete all services that depend on it."). The registry stores who added each
+type (not served).
+
+On startup, the app registers the types of the registered services that
+aren't registered (e.g., when upgrading from a version that didn't store
+types; see [Upgrading](upgrading.md#service-types)).
 
 ## Errors
 
