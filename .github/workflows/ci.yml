@@ -347,6 +347,7 @@ jobs:
           check GET /service-info 200 '.type.artifact == "service-registry"'
           check POST /services 401 '.status == 401'
           check POST /services/types 401 '.status == 401'
+          check GET /approvals 401 '.status == 401'
           check GET /me 401 '.status == 401'
       - name: Check app version
         run: |

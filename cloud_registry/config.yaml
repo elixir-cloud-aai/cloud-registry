@@ -113,6 +113,11 @@ security:
             # as users also add types by registering services; no policy for
             # `DELETE`: only admins may remove service types
             add-service-types: [p, "*", /ga4gh/registry/v1/services/types, POST]
+            # any authenticated user may list the pending service types and
+            # services they may see (`custom.access_control.service_types:
+            # moderated`); no policy for `PUT /services/types/approval`: only
+            # admins may approve service types
+            list-approvals: [p, "*", /ga4gh/registry/v1/approvals, GET]
             # any authenticated user may get their identifier and roles
             get-me: [p, "*", /ga4gh/registry/v1/me, GET]
             # no policy for `/services/:id/verification` (PUT, DELETE):
@@ -262,8 +267,10 @@ custom:
         # Who may add service types (`GET /services/types`): `open`, any
         # authenticated user, explicitly (`POST /services/types`) or by
         # registering a service with a new type; `controlled`, admins only,
-        # and services of other users must have a registered type (see
-        # "Service types" in `docs/api.md`)
+        # and services of other users must have a registered type;
+        # `moderated`, any authenticated user, but types of other users than
+        # admins are pending until an admin approves them, and so are the
+        # services that have them (see "Service types" in `docs/api.md`)
         service_types: open
     endpoints:
         # Public URL of the app, e.g., for the `Location` header; `api_path` is

@@ -20,19 +20,27 @@ from cloud_registry.ga4gh.registry.permissions import (
     may_read_service,
     remove_owner,
     remove_permissions,
+    service_types_pending,
 )
 from cloud_registry.ga4gh.registry.service import (
     PROJECTION,
     DuplicateService,
     InvalidService,
     RegisterService,
+    check_strings,
     service_exists,
 )
 from cloud_registry.ga4gh.registry.service_types import (
+    PendingService,
     check_service_type,
+    is_approved,
+    is_pending,
     list_service_types,
+    store_pending_type,
     store_service_type,
     type_document,
+    visible_services,
+    visible_types,
 )
 from cloud_registry.utils import get_collection, get_public_url
 
@@ -55,11 +63,12 @@ def getServices(**kwargs: Any) -> list[dict[str, Any]]:
             `token_info`); unused.
 
     Returns:
-        List of services.
+        List of services, without the pending services that the user may
+        not see (cf. `visible_services()`).
     """
     db_collection_service = get_collection("services")
     records = db_collection_service.find(
-        filter={},
+        filter=visible_services(),
         projection=PROJECTION,
     )
     return list(records)
@@ -77,9 +86,15 @@ def getServiceById(serviceId: str, **kwargs: Any) -> dict[str, Any]:
 
     Returns:
         Service object.
+
+    Raises:
+        cloud_registry.exceptions.NotFound: The service doesn't exist, or is
+            pending and the user may not see it (cf. `visible_services()`).
     """
     db_collection_service = get_collection("services")
-    obj = db_collection_service.find_one({"id": serviceId}, PROJECTION)
+    obj = db_collection_service.find_one(
+        {"id": serviceId, **visible_services()}, PROJECTION
+    )
     if not obj:
         raise NotFound
     return obj
@@ -97,9 +112,10 @@ def getServiceTypes(**kwargs: Any) -> list[dict[str, Any]]:
     Returns:
         List of the stored service types (cf.
         `cloud_registry.ga4gh.registry.service_types`), sorted by group,
-        artifact and version.
+        artifact and version; without the pending types that the user may
+        not see (cf. `visible_types()`).
     """
-    return list_service_types()
+    return list_service_types(visible_types())
 
 
 # POST /services
@@ -199,9 +215,15 @@ def _register_service(
     """Register the service in the request body.
 
     The type of the service is stored after the service, unless it is
-    stored (cf. `cloud_registry.ga4gh.registry.service_types`). Users who
+    stored (cf. `cloud_registry.ga4gh.registry.service_types`), or before
+    it if it is pending (cf. `store_pending_type()`). Users who
     may not add types (cf. `may_add_service_types()`) can only register
-    services with a stored type.
+    services with a stored type; the types that users add are pending if
+    the deployment moderates them (cf. `service_types_pending()`). Only
+    admins may update pending services, other users only to an approved
+    type; checked before the update, so an update may still pass if its
+    type becomes pending meanwhile (e.g., the type of the stored service is
+    removed and added again).
 
     Args:
         collection_path: Path of the service collection (`/services`, with the
@@ -215,7 +237,8 @@ def _register_service(
         as `Location`. Or an error response: `400` for invalid URLs or types
         the user may not add, `409` for a registered service with the same
         URL and API type, naming it only if the user may read it (cf.
-        `may_read_service()`).
+        `may_read_service()` and `visible_services()`), or for updates of
+        pending services by users other than admins.
 
     Raises:
         cloud_registry.exceptions.BadRequest: The owner role can't be stored
@@ -231,8 +254,13 @@ def _register_service(
         allow_create=allow_create,
         keep_timestamps=is_admin(),
     )
+    if service_id is not None and not is_admin():
+        refused = _check_pending_update(service_id, service.data.get("type"))
+        if refused is not None:
+            return refused
     try:
         check_service_type(service.data.get("type"))
+        store_pending_type(service.data.get("type"))
         service.register_metadata()
     except InvalidService as exc:
         logger.info(
@@ -247,7 +275,7 @@ def _register_service(
         )
         # only users who may read the registered service learn which one it
         # is, by the same decision as for `GET /services/{serviceId}`
-        if may_read_service(exc.existing_id):
+        if may_read_service(exc.existing_id) and _may_see(exc.existing_id):
             return problem(exc, serviceId=exc.existing_id)
         # FOCA logs the denied check like a request
         logger.info(
@@ -261,7 +289,9 @@ def _register_service(
     service_type = type_document(service.data["type"])
     if service_type is not None:
         created_by = get_current_subject() if may_add_service_types() else None
-        store_service_type(service_type, created_by=created_by)
+        store_service_type(
+            service_type, created_by=created_by, pending=service_types_pending()
+        )
     if service.verification_removed:
         logger.info(
             "Verification of service '%s' removed by an update by '%s' (URL or "
@@ -294,6 +324,65 @@ def _register_service(
         path = f"{collection_path.rstrip('/')}/{service.data['id']}"
         return service.data["id"], 201, {"Location": get_public_url(path)}
     return service.data["id"]
+
+
+def _check_pending_update(serviceId: str, value: object) -> Response | None:
+    """Check an update of a service by a user other than an admin.
+
+    Args:
+        serviceId: Service identifier.
+        value: Type of the service in the update (`type`).
+
+    Returns:
+        `None` if the service isn't pending, or the update has an approved
+        type, which ends the review (e.g., to undo a change of the type).
+        Otherwise, an error response: `400` for strings of the type that
+        can't be stored (nor queried), `409` for pending services.
+    """
+    if not _is_pending(serviceId):
+        return None
+    new_type = type_document(value)
+    try:
+        check_strings(new_type or {})
+    except InvalidService as exc:
+        return problem(exc)
+    if is_approved(new_type):
+        return None
+    pending = PendingService()
+    logger.info(
+        "Service '%s' not updated: %s",
+        escape_log_value(serviceId),
+        escape_log_value(pending.description),
+    )
+    return problem(pending)
+
+
+def _is_pending(serviceId: str) -> bool:
+    """Check whether a stored service is pending.
+
+    Args:
+        serviceId: Service identifier.
+
+    Returns:
+        Whether the service exists and has a pending type (cf.
+        `cloud_registry.ga4gh.registry.service_types`).
+    """
+    stored = get_collection("services").find_one({"id": serviceId}, {"type": True})
+    return stored is not None and is_pending(type_document(stored.get("type")))
+
+
+def _may_see(serviceId: str) -> bool:
+    """Check whether a service exists and is not hidden from the current user.
+
+    Args:
+        serviceId: Service identifier.
+
+    Returns:
+        Whether the service is not pending, or the user may see it (cf.
+        `visible_services()`); `False` if it doesn't exist.
+    """
+    query = {"id": serviceId, **visible_services()}
+    return get_collection("services").count_documents(query, limit=1) > 0
 
 
 def _unregister_service(service: RegisterService) -> None:

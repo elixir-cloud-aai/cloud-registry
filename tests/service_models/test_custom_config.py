@@ -10,9 +10,9 @@ from cloud_registry.service_models.custom_config import (
 )
 
 
-@pytest.mark.parametrize("mode", ["open", "controlled"])
+@pytest.mark.parametrize("mode", ["open", "controlled", "moderated"])
 def test_access_control_service_types(mode: str) -> None:
-    """Service types are open by default, or controlled."""
+    """Service types are open by default, controlled or moderated."""
     assert AccessControlConfig().service_types == "open"
     config = AccessControlConfig.model_validate({"service_types": mode})
     assert config.service_types == mode

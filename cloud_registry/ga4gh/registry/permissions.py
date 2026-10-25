@@ -253,10 +253,26 @@ def may_add_service_types() -> bool:
     Returns:
         Whether the user is an admin, or the deployment lets any
         authenticated user add types (`custom.access_control.service_types`
-        is `open`; cf. `cloud_registry.ga4gh.registry.service_types`).
+        is `open` or `moderated`; cf.
+        `cloud_registry.ga4gh.registry.service_types`).
     """
     mode = get_custom_config().access_control.service_types
-    return mode == "open" or is_admin()
+    return mode in ("open", "moderated") or is_admin()
+
+
+def service_types_pending() -> bool:
+    """Check whether service types that the current user adds are pending.
+
+    Must be called in a request context.
+
+    Returns:
+        Whether the deployment moderates service types
+        (`custom.access_control.service_types` is `moderated`) and the user
+        is not an admin, so that their new types are pending until an admin
+        approves them.
+    """
+    mode = get_custom_config().access_control.service_types
+    return mode == "moderated" and not is_admin()
 
 
 def _get_current_claims() -> dict[str, Any]:
@@ -659,12 +675,13 @@ def getMe(**kwargs: Any) -> dict[str, Any]:
     Returns:
         User identifier, whether the user is an admin (cf. FOCA's
         `is_admin()`), whether they may add service types (cf.
-        `may_add_service_types()`), and the user's roles on services (cf.
+        `may_add_service_types()`) and whether these are pending (cf.
+        `service_types_pending()`), and the user's roles on services (cf.
         FOCA's `list_subject_roles()`): granted to the user, and granted to
         groups the user is a member of (with `group`), sorted by service
-        identifier (roles of the user first). Names are only stored for services with
-        roles granted to the user, as only these are listed with names (cf.
-        `getServicePermissions()`).
+        identifier (roles of the user first). Names are only stored for
+        services with roles granted to the user, as only these are listed
+        with names (cf. `getServicePermissions()`).
 
     Raises:
         Unauthorized: The request has no subject (the endpoint requires
@@ -683,5 +700,6 @@ def getMe(**kwargs: Any) -> dict[str, Any]:
         "user_id": user_id,
         "admin": is_admin(),
         "may_add_service_types": may_add_service_types(),
+        "service_types_pending": service_types_pending(),
         "services": services,
     }
