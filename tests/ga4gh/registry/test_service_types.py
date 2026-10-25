@@ -13,6 +13,7 @@ from cloud_registry.ga4gh.registry.service_types import (
     PENDING,
     check_service_type,
     deleteServiceType,
+    is_approved,
     is_pending,
     postServiceType,
     store_service_type,
@@ -104,9 +105,39 @@ def test_delete_type_in_use_not_stored(
 
 
 def test_is_pending_invalid(unit_app: Flask) -> None:
-    """Invalid types are not pending."""
+    """Invalid types are neither pending nor approved."""
     with unit_app.app_context():
         assert not is_pending(None)
+        assert not is_approved(None)
+
+
+def test_delete_type_stored_pending_concurrently(
+    monkeypatch: pytest.MonkeyPatch,
+    unit_app: Flask,
+    services: Collection[dict[str, Any]],
+    service_types: Collection[dict[str, Any]],
+) -> None:
+    """Approved types stored as pending while they are removed stay approved.
+
+    E.g., by a registration with the type in mode `moderated`.
+    """
+    service_types.insert_one({**MOCK_TYPE, CREATED_BY: "alice"})
+    find_one_and_delete = service_types.find_one_and_delete
+
+    def register_meanwhile(*args: Any, **kwargs: Any) -> Any:
+        """Remove the type, while a user registers a service with it."""
+        result = find_one_and_delete(*args, **kwargs)
+        service_types.insert_one({**MOCK_TYPE, CREATED_BY: "bob", PENDING: True})
+        services.insert_one({**MOCK_SERVICE, "id": "A"})
+        return result
+
+    with unit_app.app_context():
+        monkeypatch.setattr(service_types, "find_one_and_delete", register_meanwhile)
+        response = deleteServiceType(**MOCK_TYPE)
+    assert isinstance(response, Response)
+    assert response.status_code == 409
+    stored = service_types.find_one({}, {"_id": False})
+    assert stored == {**MOCK_TYPE, CREATED_BY: "alice"}
 
 
 @pytest.mark.parametrize("extra", [{}, {PENDING: True}])

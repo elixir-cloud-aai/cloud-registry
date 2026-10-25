@@ -12,7 +12,8 @@ the services they list.
 
 Only admins may verify services and remove verifications: no policy in
 `config.yaml` allows these operations to other users. Verifications can be
-read by anyone.
+read by anyone, except those of pending services that the user may not see
+(cf. `cloud_registry.ga4gh.registry.service_types.visible_services()`).
 """
 
 import logging
@@ -38,6 +39,7 @@ from cloud_registry.ga4gh.registry.service import (
     service_exists,
     service_key,
 )
+from cloud_registry.ga4gh.registry.service_types import visible_services
 from cloud_registry.utils import format_time, get_collection, now
 
 logger = logging.getLogger(__name__)
@@ -139,11 +141,12 @@ def getServiceVerification(serviceId: str, **kwargs: Any) -> dict[str, Any]:
         Verification of the service.
 
     Raises:
-        cloud_registry.exceptions.NotFound: The service doesn't exist or is
-            not verified.
+        cloud_registry.exceptions.NotFound: The service doesn't exist, is
+            not verified, or is pending and the user may not see it.
     """
     service = get_collection("services").find_one(
-        {"id": serviceId, VERIFIED: {"$exists": True}}, VERIFICATION_PROJECTION
+        {"id": serviceId, VERIFIED: {"$exists": True}, **visible_services()},
+        VERIFICATION_PROJECTION,
     )
     if service is None:
         raise NotFound
@@ -246,10 +249,10 @@ def getVerifications(**kwargs: Any) -> list[dict[str, Any]]:
 
     Returns:
         Identifier and verification of each verified service, sorted by
-        identifier.
+        identifier; without the pending services that the user may not see.
     """
     services = get_collection("services").find(
-        {VERIFIED: {"$exists": True}},
+        {VERIFIED: {"$exists": True}, **visible_services()},
         {**VERIFICATION_PROJECTION, "id": True},
         sort=[("id", 1)],
     )

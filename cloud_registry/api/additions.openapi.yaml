@@ -273,8 +273,9 @@ paths:
         URL and API type: changing them to those of another service returns
         `409`. Invalid URLs return `400` (cf. `ExternalServiceRegister`), as
         do types that aren't registered if the user may not add types (see
-        `POST /services/types`). Only admins can update pending services
-        (`409` otherwise; see `GET /approvals`).
+        `POST /services/types`). Only admins can update pending services,
+        other users only to an approved type (`409` otherwise; see `GET
+        /approvals`).
       operationId: putService
       tags:
         - cloud-registry
@@ -637,7 +638,9 @@ paths:
         List the verified services, sorted by identifier, with their URL and
         API type and the time of their verification. Clients that only use
         verified services list the services (`GET /services`) and keep those
-        listed here with the same identifier, URL and API type.
+        listed here with the same identifier, URL and API type. Pending
+        services (see `GET /approvals`) are only listed to users who see
+        them in `GET /services`.
       operationId: getVerifications
       x-openapi-router-controller: cloud_registry.ga4gh.registry.verification
       security: []
@@ -667,7 +670,8 @@ paths:
         and a user other than an admin added them, until an admin approves
         them (`PUT /services/types/approval`); services are pending while
         their type is. Users other than admins can't update pending
-        services (`409`), but their owners can delete them.
+        services (`409`), except to an approved type, but their owners can
+        delete them.
       operationId: getApprovals
       x-openapi-router-controller: cloud_registry.ga4gh.registry.service_types
       tags:

@@ -32,8 +32,10 @@ from cloud_registry.ga4gh.registry.service import (
 from cloud_registry.ga4gh.registry.service_types import (
     PendingService,
     check_service_type,
+    is_approved,
     is_pending,
     list_service_types,
+    store_pending_type,
     store_service_type,
     type_document,
     visible_services,
@@ -216,7 +218,10 @@ def _register_service(
     may not add types (cf. `may_add_service_types()`) can only register
     services with a stored type; the types that users add are pending if
     the deployment moderates them (cf. `service_types_pending()`). Only
-    admins may update pending services.
+    admins may update pending services, other users only to an approved
+    type; checked before the update, so an update may still pass if its
+    type becomes pending meanwhile (e.g., the type of the stored service is
+    removed and added again).
 
     Args:
         collection_path: Path of the service collection (`/services`, with the
@@ -247,7 +252,14 @@ def _register_service(
         allow_create=allow_create,
         keep_timestamps=is_admin(),
     )
-    if service_id is not None and not is_admin() and _is_pending(service_id):
+    if (
+        service_id is not None
+        and not is_admin()
+        and _is_pending(service_id)
+        # updates to an approved type end the review, e.g., to undo a change
+        # of the type
+        and not is_approved(type_document(service.data.get("type")))
+    ):
         exc = PendingService()
         logger.info(
             "Service '%s' not updated: %s",
@@ -257,6 +269,7 @@ def _register_service(
         return problem(exc)
     try:
         check_service_type(service.data.get("type"))
+        store_pending_type(service.data.get("type"))
         service.register_metadata()
     except InvalidService as exc:
         logger.info(
@@ -271,7 +284,7 @@ def _register_service(
         )
         # only users who may read the registered service learn which one it
         # is, by the same decision as for `GET /services/{serviceId}`
-        if may_read_service(exc.existing_id) and _is_visible(exc.existing_id):
+        if may_read_service(exc.existing_id) and _may_see(exc.existing_id):
             return problem(exc, serviceId=exc.existing_id)
         # FOCA logs the denied check like a request
         logger.info(
@@ -336,8 +349,8 @@ def _is_pending(serviceId: str) -> bool:
     return stored is not None and is_pending(type_document(stored.get("type")))
 
 
-def _is_visible(serviceId: str) -> bool:
-    """Check whether the current user may see a service, if it is pending.
+def _may_see(serviceId: str) -> bool:
+    """Check whether a service exists and is not hidden from the current user.
 
     Args:
         serviceId: Service identifier.

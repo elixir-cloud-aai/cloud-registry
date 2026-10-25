@@ -4,6 +4,7 @@ The app and its fixtures are set up in `tests/conftest.py`.
 """
 
 from copy import deepcopy
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -559,3 +560,82 @@ def test_moderated_login_for_reads(
         assert response.status_code == (200 if visible else 404), user
         types = client.get(TYPES, headers=headers(user)).get_json()
         assert types == ([TES] if visible else []), user
+
+
+def test_moderated_verifications(client: FlaskClient, moderated: None) -> None:
+    """Verifications of pending services are hidden like the services."""
+    service_id = register(client, _service()).get_json()
+    path = f"{BASE}/services/{service_id}/verification"
+    assert client.put(path, headers=headers(ADMIN)).status_code == 200
+    assert client.get(path).status_code == 404
+    assert client.get(f"{BASE}/verifications").get_json() == []
+    assert approve(client, TES).status_code == 200
+    assert client.get(path).status_code == 200
+    verifications = client.get(f"{BASE}/verifications").get_json()
+    assert [item["service_id"] for item in verifications] == [service_id]
+
+
+def test_moderated_type_changed(client: FlaskClient, moderated: None) -> None:
+    """Services updated to a pending type are pending, then can't be updated."""
+    assert add_type(client, TES, user=ADMIN).status_code == 201
+    service_id = register(client, _service()).get_json()
+    assert approvals(client, USER)["services"] == []
+    path = f"{BASE}/services/{service_id}"
+    response = client.put(path, json=_service(WES), headers=headers())
+    assert response.status_code == 200, response.get_json()
+    assert approvals(client, USER) == {
+        "service_types": ["wes"],
+        "services": [service_id],
+    }
+    response = client.put(path, json=_service(WES, name="X"), headers=headers())
+    assert response.status_code == 409
+    # back to an approved type
+    response = client.put(path, json=_service(TES), headers=headers())
+    assert response.status_code == 200, response.get_json()
+    assert approvals(client, USER)["services"] == []
+
+
+def test_moderated_duplicate_named(client: FlaskClient, moderated: None) -> None:
+    """Duplicates of pending services are named to users who see them."""
+    service_id = register(client, _service()).get_json()
+    response = register(client, _service(), ADMIN)
+    assert response.status_code == 409
+    assert response.get_json()["serviceId"] == service_id
+
+
+def test_moderated_then_open(app: App, client: FlaskClient, moderated: None) -> None:
+    """Pending types stay pending if the mode changes; new types aren't."""
+    service_id = register(client, _service()).get_json()
+    with app.app.app_context():
+        get_custom_config().access_control.service_types = "open"
+    assert not pending(client, USER)
+    assert add_type(client, WES).status_code == 201
+    assert listed(client) == [WES]
+    assert approvals(client, USER) == {
+        "service_types": ["tes"],
+        "services": [service_id],
+    }
+
+
+def test_moderated_type_stored_first(
+    client: FlaskClient,
+    moderated: None,
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """New types are stored as pending before the service.
+
+    They stay pending if the registration fails; strings that can't be
+    stored are rejected.
+    """
+    response = register(client, _service(url="https://[::1"))
+    assert response.status_code == 400
+    assert approvals(client, USER)["service_types"] == ["tes"]
+    service = _service()
+    service["type"]["artifact"] = "\ud800"
+    response = client.post(
+        f"{BASE}/services",
+        data=json.dumps(service),
+        headers={**headers(), "Content-Type": "application/json"},
+    )
+    assert response.status_code == 400
+    assert mongo_client[DB]["service_types"].count_documents({}) == 1

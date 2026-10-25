@@ -178,7 +178,8 @@ users. Pending types and services are only visible to admins and to the
 users who added them (for services: users with a role on them):
 
 - `GET /services`, `GET /services/{serviceId}` (`404 Not Found`) and `GET
-  /services/types` don't list them to others. These reads are public by
+  /services/types` don't list them to others, nor do the reads of
+  [verifications](#verified-services). These reads are public by
   default, so their requests have no user: they list pending types and
   services to nobody, unless the deployment [requires
   login](access-control.md#requiring-login-for-reads).
@@ -186,13 +187,18 @@ users who added them (for services: users with a role on them):
   (`service_types`) and services (`services`) the user may see: all for
   admins.
 - Only admins can update pending services (`409 Conflict` for others, so
-  that a service doesn't change while an admin reviews it); their owners can
+  that a service doesn't change while an admin reviews it), other users only
+  to an approved type (e.g., to undo a change of the type); their owners can
   delete them.
 
 Admins approve a type with `PUT /services/types/approval` and the type in
 the body; it and the services that have it are then listed like all others.
 There is no way back: admins remove types instead (only types that no
-service has, see above). Pending types stay pending if the mode changes.
+service has, see above). Pending types stay pending if the mode changes,
+and when admins use them (approve them instead). A pending type is stored
+before the service that adds it, so it stays pending if the registration
+fails. Types are unique also while pending: `POST /services/types` returns
+`409 Conflict` for a type that another user added.
 
 ```bash
 curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/types/approval" \

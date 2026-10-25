@@ -189,6 +189,66 @@ def _services_of_type(service_type: dict[str, str]) -> dict[str, str]:
     return {f"type.{field}": service_type[field] for field in TYPE_FIELDS}
 
 
+def is_approved(service_type: dict[str, str] | None) -> bool:
+    """Check whether a service type is stored and approved.
+
+    Args:
+        service_type: Service type, in its stored form (cf.
+            `type_document()`); `None` for invalid types.
+
+    Returns:
+        Whether the type is stored and not pending (cf. `PENDING`).
+    """
+    if service_type is None:
+        return False
+    collection = get_collection("service_types")
+    return collection.count_documents({**service_type, **APPROVED}, limit=1) > 0
+
+
+def store_pending_type(value: object) -> None:
+    """Store the type of a service as pending, if the user's types are.
+
+    Called before the service is stored, so that a service with a new type
+    is never served as approved, not even briefly (or if storing its type
+    fails). A type stays pending if the registration fails; admins remove it.
+    Must be called in a request context.
+
+    Args:
+        value: Type of the service (`type`); not stored if it is invalid
+            (cf. `type_document()`), as the registration rejects it.
+
+    Raises:
+        cloud_registry.ga4gh.registry.service.InvalidService: A string of the
+            type can't be stored (cf. `check_strings()`).
+    """
+    service_type = type_document(value)
+    if service_type is None or not service_types_pending():
+        return
+    check_strings(service_type)
+    store_service_type(service_type, created_by=get_current_subject(), pending=True)
+
+
+def _restore_type(service_type: dict[str, str], removed: dict[str, Any]) -> None:
+    """Store a removed service type again, as it was.
+
+    Also if it was stored meanwhile (e.g., as pending, by a registration).
+
+    Args:
+        service_type: Service type, in its stored form.
+        removed: The removed document.
+    """
+    fields = {CREATED_BY: removed.get(CREATED_BY)}
+    pending = removed.get(PENDING) is True
+    update: dict[str, Any] = (
+        {"$set": {**fields, PENDING: True}}
+        if pending
+        else {"$set": fields, "$unset": {PENDING: ""}}
+    )
+    result = get_collection("service_types").update_one(dict(service_type), update)
+    if not result.matched_count:
+        store_service_type(service_type, created_by=fields[CREATED_BY], pending=pending)
+
+
 def is_pending(service_type: dict[str, str] | None) -> bool:
     """Check whether a service type is pending.
 
@@ -448,11 +508,7 @@ def deleteServiceType(
         raise NotFound
     if _type_in_use(document):
         # a service with the type was registered meanwhile
-        store_service_type(
-            document,
-            created_by=removed.get(CREATED_BY),
-            pending=removed.get(PENDING) is True,
-        )
+        _restore_type(document, removed)
         return problem(Conflict(IN_USE))
     logger.info(
         "Service type %s removed by '%s'.",
