@@ -174,6 +174,29 @@ only checked when they are next written; the app logs a warning on startup
 that names them (see
 [Upgrading](upgrading.md#stored-services)).
 
+## Service types
+
+`custom.access_control.service_types` sets who may add [service
+types](api.md#service-types):
+
+- `open` (the default): any authenticated user, explicitly (`POST
+  /services/types`) or by registering a service with a new type;
+- `controlled`: admins only; other users can only register services with
+  registered types, so that the registry offers a curated list of types.
+
+Only admins can remove types, in every mode. Set this option rather than
+removing the policy `add-service-types` (in `security.access_control.policies`),
+which only applies to `POST /services/types`: users also add types by
+registering services, and `GET /me` (`may_add_service_types`) only reflects
+this option. Overlays that give the policies as a list must include that
+rule. For example, in a config overlay (with the Helm chart, in `config`):
+
+```yaml
+custom:
+    access_control:
+        service_types: controlled
+```
+
 ## Request size limit
 
 Request bodies are limited to `server.max_content_length` bytes (default:

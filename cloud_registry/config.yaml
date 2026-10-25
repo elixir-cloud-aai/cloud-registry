@@ -107,6 +107,12 @@ security:
             # groups may contain slashes
             owners-change-group-permissions: [p, owner, "/ga4gh/registry/v1/services/:id/permissions/groups/*", "(PUT)|(DELETE)"]
             maintainers-update-services: [p, maintainer, "/ga4gh/registry/v1/services/:id", PUT]
+            # any authenticated user may add service types, unless only
+            # admins may (`custom.access_control.service_types: controlled`,
+            # checked by the app); keep this rule and set that option instead,
+            # as users also add types by registering services; no policy for
+            # `DELETE`: only admins may remove service types
+            add-service-types: [p, "*", /ga4gh/registry/v1/services/types, POST]
             # any authenticated user may get their identifier and roles
             get-me: [p, "*", /ga4gh/registry/v1/me, GET]
             # no policy for `/services/:id/verification` (PUT, DELETE):
@@ -147,6 +153,21 @@ db:
                           options:
                             'unique': True
                             'sparse': True
+                        # Services by type, for removals of types (cf.
+                        # `DELETE /services/types`)
+                        - keys:
+                              type.group: 1
+                              type.artifact: 1
+                              type.version: 1
+                # Service types (`GET /services/types`), unique as written
+                service_types:
+                    indexes:
+                        - keys:
+                              group: 1
+                              artifact: 1
+                              version: 1
+                          options:
+                            'unique': True
                 # Display names of users with roles on services, per service
                 user_names:
                     indexes:
@@ -234,10 +255,16 @@ exceptions:
     media_type: application/json
 
 custom:
-    # Refuse to start unless a group is mapped to the role `admin` (see
-    # `security.access_control.group_mapping`)
     access_control:
+        # Refuse to start unless a group is mapped to the role `admin` (see
+        # `security.access_control.group_mapping`)
         require_admin: True
+        # Who may add service types (`GET /services/types`): `open`, any
+        # authenticated user, explicitly (`POST /services/types`) or by
+        # registering a service with a new type; `controlled`, admins only,
+        # and services of other users must have a registered type (see
+        # "Service types" in `docs/api.md`)
+        service_types: open
     endpoints:
         # Public URL of the app, e.g., for the `Location` header; `api_path` is
         # a path prefix in front of the API base path (e.g., of a reverse

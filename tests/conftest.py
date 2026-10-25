@@ -394,8 +394,8 @@ def unit_app(db_client: MongoClient[dict[str, Any]]) -> Flask:
     """Flask app with the test configuration, for unit tests.
 
     Its collections are those of database `DB` of `db_client`, with the unique
-    indexes from `config.yaml`; error responses have the media type of
-    `config.yaml`.
+    indexes from `config.yaml` (cf. `tests/mock_data.py`); error responses
+    have the media type of `config.yaml`.
     """
     app = Flask(__name__)
     set_app_config(
@@ -411,7 +411,9 @@ def unit_app(db_client: MongoClient[dict[str, Any]]) -> Flask:
     db = db_client[DB]
     for name, coll_conf in _collections(app).items():
         coll_conf.client = db[name]
-        coll_conf.client.create_index("id", unique=True)
+        for index in coll_conf.indexes or []:
+            assert index.keys is not None
+            coll_conf.client.create_index(index.keys, **(index.options or {}))
     db["services"].create_index(SERVICE_KEY, unique=True, sparse=True)
     return app
 
@@ -420,5 +422,13 @@ def unit_app(db_client: MongoClient[dict[str, Any]]) -> Flask:
 def services(unit_app: Flask) -> Collection[dict[str, Any]]:
     """`services` collection of `unit_app`."""
     collection = _collections(unit_app)["services"].client
+    assert collection is not None
+    return collection
+
+
+@pytest.fixture
+def service_types(unit_app: Flask) -> Collection[dict[str, Any]]:
+    """`service_types` collection of `unit_app`."""
+    collection = _collections(unit_app)["service_types"].client
     assert collection is not None
     return collection

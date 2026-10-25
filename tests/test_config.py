@@ -368,6 +368,19 @@ def test_service_key_index(monkeypatch: pytest.MonkeyPatch) -> None:
     assert key_index.options == {"unique": True, "sparse": True}
 
 
+def test_service_type_index(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Services are indexed by type, to find those of a type."""
+    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(CONFIG_OVERLAY))
+    db = _parse_config().db
+    assert db is not None and db.dbs is not None
+    collections = db.dbs["serviceStore"].collections
+    assert collections is not None
+    indexes = collections["services"].indexes
+    assert indexes is not None
+    fields = {"type.group": 1, "type.artifact": 1, "type.version": 1}
+    assert any(_keys(index) == fields for index in indexes)
+
+
 def test_config_overlay_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
