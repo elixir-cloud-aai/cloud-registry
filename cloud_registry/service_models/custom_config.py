@@ -1,6 +1,6 @@
 """Cloud Registry custom config models."""
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from foca.models.config import FOCABaseConfig
 from foca.utils.misc import generate_id
@@ -116,7 +116,8 @@ class ServicesConfig(FOCABaseConfig):
         environments: Values allowed for the environment of services
             (`environment`), e.g., to keep filters consistent; by default,
             the values that the GA4GH specification suggests (`prod`, `test`,
-            `dev`, `staging`). Empty to allow any value.
+            `dev`, `staging`). Empty to allow any value. At most 256
+            characters each, as in the API.
 
     Attributes:
         id: Unique identifier for a service in cloud registry.
@@ -126,7 +127,8 @@ class ServicesConfig(FOCABaseConfig):
         environments: Values allowed for the environment of services
             (`environment`), e.g., to keep filters consistent; by default,
             the values that the GA4GH specification suggests (`prod`, `test`,
-            `dev`, `staging`). Empty to allow any value.
+            `dev`, `staging`). Empty to allow any value. At most 256
+            characters each, as in the API.
 
     Raises:
         pydantic.ValidationError: The class was instantianted with an illegal
@@ -148,7 +150,10 @@ taging'])
     id: IdConfig
     # pydantic copies mutable defaults for each instance
     url_schemes: list[Literal["http", "https"]] = Field(default=["https"], min_length=1)
-    environments: list[str] = Field(default=["prod", "test", "dev", "staging"])
+    # at most as long as the API allows (`maxLength` of `environment`)
+    environments: list[Annotated[str, Field(max_length=256)]] = Field(
+        default=["prod", "test", "dev", "staging"]
+    )
 
 
 class EndpointsConfig(FOCABaseConfig):

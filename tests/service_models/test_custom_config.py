@@ -57,6 +57,16 @@ def test_services_config_environments() -> None:
     assert ServicesConfig(id=id_config, environments=[]).environments == []
 
 
+def test_services_config_environment_too_long() -> None:
+    """Environments are at most as long as the API allows."""
+    id_config = {"charset": "ABC123", "length": 6}
+    assert ServicesConfig.model_validate(
+        {"id": id_config, "environments": ["x" * 256]}
+    ).environments == ["x" * 256]
+    with pytest.raises(ValidationError):
+        ServicesConfig.model_validate({"id": id_config, "environments": ["x" * 257]})
+
+
 @pytest.mark.parametrize("schemes", [[], ["ftp"], ["HTTPS"], "https"])
 def test_services_config_invalid_url_schemes(schemes: object) -> None:
     """Empty lists and schemes other than `http` and `https` are rejected."""
