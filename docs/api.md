@@ -96,10 +96,12 @@ ignored (not an error, so clients can send services back as they got them;
 like all fields, they must be strings), except for admins: they can set
 them, e.g., to keep the timestamps of services imported from another
 registry. Those are stored as sent, so they may have other time zones or
-precisions. Timestamps that admins don't send are set as for other users,
-and so is `updatedAt` if they send it unchanged (e.g., when they edit a
-service as read). Timestamps of admins must be RFC 3339 date-times (e.g.,
-`2019-06-04T12:58:19Z`); others are rejected (`400 Bad Request`).
+precisions. `updatedAt` is only kept for services that admins register
+(e.g., import); updates always set it. Timestamps that admins don't send
+are set as for other users. Timestamps of admins must be RFC 3339
+date-times (e.g., `2019-06-04T12:58:19Z`); others are rejected (`400 Bad
+Request`), so admins who update a service with another stored `createdAt`
+send a valid one, or none.
 Verifying a service doesn't change its timestamps.
 
 This differs from the GA4GH specification, where the timestamps describe

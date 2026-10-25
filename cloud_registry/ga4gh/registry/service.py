@@ -413,9 +413,9 @@ class RegisterService:
         it is compared like the URL, so that it isn't reverted if it is
         changed concurrently. Stored services without it (e.g., registered
         before the registry set it) are kept without it. `updatedAt` is set
-        to `timestamp`, unless `data` has another one than the stored
-        service (e.g., an admin's import), so that services sent back as
-        read (e.g., by admins editing them) get it, too.
+        to `timestamp`, unless the service is inserted with one in `data`
+        (e.g., by an admin importing it): replaced services always get a new
+        one, also if sent back as read (e.g., by admins editing them).
 
         Args:
             key: Key of the service (cf. `service_key()`).
@@ -441,13 +441,12 @@ class RegisterService:
                     KEY: True,
                     VERIFIED: True,
                     CREATED: True,
-                    UPDATED: True,
                 },
             )
             if stored is None and not self.allow_create:
                 raise NotFound
             replacement = {**self.data, KEY: key}
-            if replacement.get(UPDATED) in (None, (stored or {}).get(UPDATED)):
+            if stored is not None or UPDATED not in replacement:
                 replacement[UPDATED] = timestamp
             query: dict[str, Any] = {"id": self.data["id"]}
             if stored is None:

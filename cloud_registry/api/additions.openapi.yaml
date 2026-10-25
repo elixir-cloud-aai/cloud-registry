@@ -781,8 +781,8 @@ components:
         also allows `http`. Others return `400`. The registry sets the
         timestamps (`createdAt`, `updatedAt`), so those sent are ignored,
         except for admins (e.g., to keep the timestamps of imported
-        services; `updatedAt` sent unchanged is set, too), whose timestamps
-        must be RFC 3339 date-times (`400` otherwise).
+        services; `updatedAt` is only kept for new services), whose
+        timestamps must be RFC 3339 date-times (`400` otherwise).
       type: object
       required:
         - name

@@ -1871,25 +1871,27 @@ def test_service_timestamps_admin(
 ) -> None:
     """Admins may set timestamps; those they don't send are set by the registry.
 
-    Services that admins register with `PUT` get both; updates keep
-    `createdAt`, unless admins send it.
+    `updatedAt` is only kept for new services (e.g., imports), so updates
+    always set it; `createdAt` is kept on updates, unless admins send it.
     """
     _set_service_clock(monkeypatch, TIME, LATER, LATER)
     path = f"{BASE}/services/abc"
-    response = client.put(path, json=_service(), headers=admin_headers)
-    assert response.status_code == 201, response.get_json()
-    assert _timestamps(client, "abc") == {
-        "createdAt": FORMATTED_TIME,
-        "updatedAt": FORMATTED_TIME,
-    }
     imported = "2019-06-04T12:58:19Z"
     response = client.put(
         path, json=_service(updatedAt=imported), headers=admin_headers
     )
-    assert response.status_code == 200, response.get_json()
+    assert response.status_code == 201, response.get_json()
     assert _timestamps(client, "abc") == {
         "createdAt": FORMATTED_TIME,
         "updatedAt": imported,
+    }
+    response = client.put(
+        path, json=_service(updatedAt="2020-01-01T00:00:00Z"), headers=admin_headers
+    )
+    assert response.status_code == 200, response.get_json()
+    assert _timestamps(client, "abc") == {
+        "createdAt": FORMATTED_TIME,
+        "updatedAt": FORMATTED_LATER,
     }
     response = client.put(
         path, json=_service(createdAt=imported), headers=admin_headers

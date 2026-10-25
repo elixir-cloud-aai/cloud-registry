@@ -1201,11 +1201,8 @@ class TestTimestamps:
             ),
             # sent back as read, e.g., by an admin editing the service
             ({**SENT}, True, (IMPORTED, FORMATTED_NOW)),
-            (
-                {UPDATED: "2020-01-01T00:00:00Z"},
-                True,
-                (IMPORTED, "2020-01-01T00:00:00Z"),
-            ),
+            # only kept for new services
+            ({UPDATED: "2020-01-01T00:00:00Z"}, True, (IMPORTED, FORMATTED_NOW)),
         ],
     )
     def test_update(
