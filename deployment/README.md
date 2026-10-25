@@ -102,6 +102,10 @@ to the registered services; `config.custom.endpoints.services.url_schemes`
 (e.g., `[http, https]`) allows `http` too, which is not recommended (see
 [Service URL
 schemes](https://cloud-registry.readthedocs.io/en/latest/configuration/#service-url-schemes)).
+The environments of services must be `prod`, `test`, `dev` or `staging` by
+default; `config.custom.endpoints.services.environments` sets others (`[]`
+allows any; see [Service
+environments](https://cloud-registry.readthedocs.io/en/latest/configuration/#service-environments)).
 
 Do not edit the ConfigMap with `kubectl edit`: Helm overwrites it on the next
 upgrade. As `config` is stored in a ConfigMap, it must not contain secrets

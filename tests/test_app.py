@@ -621,9 +621,18 @@ URL_PREFIX = "https://example.org/"
     ],
 )
 def test_service_length_limits(
-    client: FlaskClient, headers: dict[str, str], field: str, prefix: str, limit: int
+    app: App,
+    client: FlaskClient,
+    headers: dict[str, str],
+    field: str,
+    prefix: str,
+    limit: int,
 ) -> None:
-    """String fields of services are limited in length."""
+    """String fields of services are limited in length.
+
+    Any environment is allowed, so that its length limit applies.
+    """
+    _custom_config(app).endpoints.services.environments = []
 
     def value(length: int) -> str:
         """Get a value of a length, starting with the prefix."""
@@ -633,6 +642,83 @@ def test_service_length_limits(
     response = client.post(f"{BASE}/services", json=service, headers=headers)
     _assert_error(response, 400)
     _post(client, headers, _set_field(_service(), field, value(limit)))
+
+
+@pytest.mark.parametrize("environment", ["prod", "test", "dev", "staging"])
+def test_service_environments(
+    client: FlaskClient, headers: dict[str, str], environment: str
+) -> None:
+    """By default, the environments that the GA4GH specification suggests."""
+    _post(client, headers, _service(environment=environment))
+
+
+@pytest.mark.parametrize("method, path", [("post", ""), ("put", "/abc")])
+@pytest.mark.parametrize("environment", ["production", "Prod", ""])
+def test_service_environment_invalid(
+    client: FlaskClient,
+    admin_headers: dict[str, str],
+    method: str,
+    path: str,
+    environment: str,
+) -> None:
+    """Other environments are rejected, naming the allowed ones."""
+    response = getattr(client, method)(
+        f"{BASE}/services{path}",
+        json=_service(environment=environment),
+        headers=admin_headers,
+    )
+    _assert_error(response, 400)
+    assert response.get_json()["detail"] == (
+        "'environment' must be one of: 'prod', 'test', 'dev', 'staging'."
+    )
+    assert client.get(f"{BASE}/services").get_json() == []
+
+
+def test_service_environments_configured(
+    app: App, client: FlaskClient, headers: dict[str, str]
+) -> None:
+    """Deployments configure the environments; an empty list allows any."""
+    services_config = _custom_config(app).endpoints.services
+    services_config.environments = ["production"]
+    _post(client, headers, _service(environment="production"))
+    response = client.post(
+        f"{BASE}/services",
+        json=_service(environment="prod", url="https://other.example.org"),
+        headers=headers,
+    )
+    _assert_error(response, 400)
+    assert "'production'" in response.get_json()["detail"]
+    services_config.environments = []
+    _post(client, headers, _service(environment="x", url="https://other.example.org"))
+
+
+def test_service_environment_stored(
+    client: FlaskClient,
+    headers: dict[str, str],
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Stored services with other environments are served as they are.
+
+    They are checked when they are written next.
+    """
+    service_id = _post(client, headers)
+    mongo_client["serviceStore"]["services"].update_one(
+        {"id": service_id}, {"$set": {"environment": "production"}}
+    )
+    service = client.get(f"{BASE}/services/{service_id}").get_json()
+    assert service["environment"] == "production"
+    response = client.put(
+        f"{BASE}/services/{service_id}",
+        json=_service(environment="production"),
+        headers=headers,
+    )
+    _assert_error(response, 400)
+    response = client.put(
+        f"{BASE}/services/{service_id}",
+        json=_service(environment="prod"),
+        headers=headers,
+    )
+    assert response.status_code == 200, response.get_json()
 
 
 def test_get_service_not_found(client: FlaskClient, headers: dict[str, str]) -> None:
@@ -1339,6 +1425,25 @@ def test_create_app_url_schemes(
     assert "url_schemes" in err
     assert "'PLAIN'" in err
     response = app.app.test_client().get(f"{BASE}/services/PLAIN")
+    assert response.status_code == 200
+
+
+def test_create_app_environments(
+    mongo_client: MongoClient[dict[str, Any]],
+    app_env: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`create_app()` warns of stored services with environments not allowed.
+
+    They are still served.
+    """
+    services = mongo_client["serviceStore"]["services"]
+    services.insert_one({**_service(environment="production"), "id": "PROD"})
+    app = cloud_registry.app.create_app()
+    err = capsys.readouterr().err
+    assert "custom.endpoints.services.environments" in err
+    assert "'PROD'" in err
+    response = app.app.test_client().get(f"{BASE}/services/PROD")
     assert response.status_code == 200
 
 

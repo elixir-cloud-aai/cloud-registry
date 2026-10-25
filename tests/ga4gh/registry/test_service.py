@@ -23,10 +23,12 @@ from cloud_registry.ga4gh.registry.service import (
     InvalidService,
     RegisterService,
     add_service_keys,
+    check_environment,
     check_links,
     check_strings,
     normalize_url,
     service_key,
+    warn_environments,
     warn_invalid_urls,
     warn_url_schemes,
 )
@@ -905,6 +907,70 @@ class TestWarnUrlSchemes:
             )
             get_custom_config().endpoints.services.url_schemes = ["http", "https"]
             warn_url_schemes()
+        assert not caplog.records
+
+
+@pytest.mark.parametrize(
+    "data, environments",
+    [
+        ({"environment": "prod"}, ["prod", "test"]),
+        ({}, ["prod"]),
+        ({"environment": "anything"}, []),
+    ],
+)
+def test_check_environment(data: dict[str, Any], environments: list[str]) -> None:
+    """Allowed environments, services without one, and any if none are set."""
+    check_environment(data, environments=environments)
+
+
+@pytest.mark.parametrize("environment", ["Prod", "production", ""])
+def test_check_environment_invalid(environment: str) -> None:
+    """Other environments are rejected (case-sensitive), naming the allowed."""
+    with pytest.raises(InvalidService) as exc_info:
+        check_environment({"environment": environment}, environments=["prod", "dev"])
+    assert exc_info.value.description == "'environment' must be one of: 'prod', 'dev'."
+
+
+class TestWarnEnvironments:
+    """Tests for warning of stored services with environments not allowed."""
+
+    def test_warned(
+        self,
+        unit_app: Flask,
+        services: Collection[dict[str, Any]],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Stored services with environments not allowed are named, others not."""
+        for id, environment in [
+            ("PROD", "prod"),
+            ("UPPER", "Prod"),
+            ("NUM", 1),
+            ("LIST", ["prod", "x"]),
+        ]:
+            services.insert_one({**MOCK_SERVICE, "id": id, "environment": environment})
+        services.insert_one({**MOCK_SERVICE, "id": "NONE"})
+        with unit_app.app_context(), caplog.at_level(logging.WARNING):
+            warn_environments()
+        assert len(caplog.records) == 1
+        message = caplog.records[0].getMessage()
+        assert "'UPPER', 'NUM', 'LIST'" in message
+        assert "environments" in message
+        assert "PROD" not in message
+        assert "NONE" not in message
+
+    def test_none(
+        self,
+        unit_app: Flask,
+        services: Collection[dict[str, Any]],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Without such services, nothing is logged; nor if any is allowed."""
+        services.insert_one({**MOCK_SERVICE, "id": MOCK_ID, "environment": "prod"})
+        with unit_app.app_context(), caplog.at_level(logging.WARNING):
+            warn_environments()
+            services.insert_one({**MOCK_SERVICE, "id": "X", "environment": "x"})
+            get_custom_config().endpoints.services.environments = []
+            warn_environments()
         assert not caplog.records
 
 

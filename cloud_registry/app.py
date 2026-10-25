@@ -19,6 +19,7 @@ from cloud_registry.ga4gh.registry.permissions import (
 )
 from cloud_registry.ga4gh.registry.service import (
     add_service_keys,
+    warn_environments,
     warn_invalid_urls,
     warn_url_schemes,
 )
@@ -128,6 +129,7 @@ def create_app() -> App:
         add_service_types()
         warn_invalid_urls()
         warn_url_schemes()
+        warn_environments()
         warn_placeholder_service_info()
     return app
 

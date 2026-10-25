@@ -132,6 +132,12 @@ to values that aren't RFC 3339 date-times), until they are updated: then
 (`PUT /services/{serviceId}`); as their timestamps are checked, they send a
 valid `createdAt`, or none, when they update services with invalid ones.
 
+Services stored before the [environments were
+checked](configuration.md#service-environments) may have other values (e.g.,
+`production`); they are served as they are, but can only be updated with an
+allowed value (or without `environment`). Allow their values in
+`custom.endpoints.services.environments` to keep them.
+
 Services stored before the [length limits](api.md#registrations) were
 introduced may have longer values; they can't be updated unchanged, only
 with the values shortened.
