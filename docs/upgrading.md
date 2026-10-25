@@ -106,11 +106,18 @@ when upgrading (see [Service info](configuration.md#service-info)).
 
 ## Stored services
 
-Services stored before timestamps were checked may have other values than
-RFC 3339 date-times; they can't be updated unchanged, only with valid
-timestamps (or without them). Services stored before the [length
-limits](api.md#registrations) were introduced may have longer values; they
-can't be updated unchanged, only with the values shortened.
+Services stored before the registry set the [timestamps](api.md#timestamps)
+(`createdAt`, `updatedAt`) keep those they were registered with, which
+their owners could set to any value (before timestamps were checked, also
+to values that aren't RFC 3339 date-times), until they are updated: then
+`updatedAt` is set, and `createdAt` is kept if it is an RFC 3339 date-time
+(services without one don't get one). Admins can correct them via the API
+(`PUT /services/{serviceId}`); as their timestamps are checked, they send a
+valid `createdAt`, or none, when they update services with invalid ones.
+
+Services stored before the [length limits](api.md#registrations) were
+introduced may have longer values; they can't be updated unchanged, only
+with the values shortened.
 
 Services stored before the check of [duplicate
 services](api.md#duplicate-services) get their key on startup; only services

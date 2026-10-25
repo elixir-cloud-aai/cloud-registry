@@ -1,7 +1,7 @@
 """Test cases for service registration."""
 
 from copy import deepcopy
-from datetime import datetime
+from datetime import UTC, datetime
 import logging
 from typing import Any, NoReturn
 
@@ -13,8 +13,11 @@ from pymongo.results import UpdateResult
 import pytest
 
 from cloud_registry.exceptions import InternalServerError
+import cloud_registry.ga4gh.registry.service
 from cloud_registry.ga4gh.registry.service import (
+    CREATED,
     KEY,
+    UPDATED,
     VERIFIED,
     DuplicateService,
     InvalidService,
@@ -34,6 +37,20 @@ from tests.mock_data import (
     MOCK_SERVICE,
     MOCK_TYPE,
 )
+
+# Time of registrations and updates in the tests (cf. `_fixed_clock()`)
+NOW = datetime(2026, 10, 22, 9, 30, 15, 250000, tzinfo=UTC)
+FORMATTED_NOW = "2026-10-22T09:30:15.250Z"
+# Timestamp of a service, e.g., one an admin imports
+IMPORTED = "2019-06-04T12:58:19Z"
+# Timestamps sent with a service
+SENT = {CREATED: IMPORTED, UPDATED: IMPORTED}
+
+
+@pytest.fixture(autouse=True)
+def _fixed_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Let all registrations and updates of services happen at `NOW`."""
+    monkeypatch.setattr(cloud_registry.ga4gh.registry.service, "now", lambda: NOW)
 
 
 def _without_db_id(doc: dict[str, Any] | None) -> dict[str, Any]:
@@ -82,17 +99,26 @@ def _find(services: Collection[dict[str, Any]], id: str) -> dict[str, Any]:
     return doc
 
 
-def _stored(data: dict[str, Any], id: str) -> dict[str, Any]:
+def _stored(data: dict[str, Any], id: str, created: bool = True) -> dict[str, Any]:
     """Get the expected document of a stored service.
 
     Args:
         data: Service as registered.
         id: Identifier of the service.
+        created: Whether the service was registered by the test (with
+            `createdAt`), not stored before without it.
 
     Returns:
-        The service with its identifier and key.
+        The service with its identifier, key and timestamps (at `NOW`).
     """
-    return {**data, "id": id, KEY: service_key(data)}
+    timestamps = {CREATED: FORMATTED_NOW} if created else {}
+    return {
+        **data,
+        **timestamps,
+        UPDATED: FORMATTED_NOW,
+        "id": id,
+        KEY: service_key(data),
+    }
 
 
 class TestRegisterService:
@@ -170,7 +196,7 @@ class TestRegisterService:
             obj = RegisterService(data=data, id=MOCK_ID)
             obj.register_metadata()
         stored = _without_db_id(services.find_one({"id": MOCK_ID}))
-        assert stored == _stored(data, MOCK_ID)
+        assert stored == _stored(data, MOCK_ID, created=False)
         assert services.count_documents({}) == 1
 
     def test_register_metadata_duplicate_key_new_id(
@@ -974,7 +1000,7 @@ class TestVerificationReset:
         data = {**MOCK_SERVICE, **change}
         self._replace(unit_app, data)
         stored = _without_db_id(services.find_one({"id": MOCK_ID}))
-        assert stored == {**_stored(data, MOCK_ID), VERIFIED: self.TIME}
+        assert stored == {**_stored(data, MOCK_ID, created=False), VERIFIED: self.TIME}
 
     @pytest.mark.parametrize(
         "change",
@@ -999,7 +1025,7 @@ class TestVerificationReset:
         data = {**MOCK_SERVICE, **change}
         self._replace(unit_app, data)
         stored = _without_db_id(services.find_one({"id": MOCK_ID}))
-        assert stored == _stored(data, MOCK_ID)
+        assert stored == _stored(data, MOCK_ID, created=False)
 
     def test_without_key(
         self, unit_app: Flask, services: Collection[dict[str, Any]]
@@ -1011,7 +1037,7 @@ class TestVerificationReset:
         services.insert_one({**MOCK_SERVICE, "id": MOCK_ID, VERIFIED: self.TIME})
         self._replace(unit_app, MOCK_SERVICE)
         stored = _without_db_id(services.find_one({"id": MOCK_ID}))
-        assert stored == _stored(MOCK_SERVICE, MOCK_ID)
+        assert stored == _stored(MOCK_SERVICE, MOCK_ID, created=False)
 
     @pytest.mark.parametrize(
         "concurrent, kept",
@@ -1098,3 +1124,152 @@ class TestVerificationReset:
             monkeypatch.setattr(obj.db_coll, "find_one", change_after_read)
             with pytest.raises(InternalServerError):
                 obj.register_metadata(retries=2)
+
+
+class TestTimestamps:
+    """Tests for the timestamps that the registry sets."""
+
+    def _register(
+        self,
+        unit_app: Flask,
+        data: dict[str, Any],
+        id: str | None = None,
+        keep_timestamps: bool = False,
+    ) -> RegisterService:
+        """Register a service.
+
+        Args:
+            unit_app: App of the unit tests.
+            data: Service.
+            id: Identifier of the service; generated if `None`.
+            keep_timestamps: Whether timestamps in `data` are kept.
+
+        Returns:
+            The registration.
+        """
+        with unit_app.app_context():
+            obj = RegisterService(
+                data=deepcopy(data), id=id, keep_timestamps=keep_timestamps
+            )
+            obj.register_metadata()
+        return obj
+
+    @pytest.mark.parametrize("id", [None, MOCK_ID])
+    def test_set_on_registration(
+        self, unit_app: Flask, services: Collection[dict[str, Any]], id: str | None
+    ) -> None:
+        """Both timestamps are set on registration; sent ones are ignored."""
+        obj = self._register(unit_app, {**MOCK_SERVICE, **SENT}, id=id)
+        stored = _find(services, obj.data["id"])
+        assert (stored[CREATED], stored[UPDATED]) == (FORMATTED_NOW, FORMATTED_NOW)
+
+    def test_ignored_unchecked(
+        self, unit_app: Flask, services: Collection[dict[str, Any]]
+    ) -> None:
+        """Ignored timestamps aren't checked."""
+        obj = self._register(unit_app, {**MOCK_SERVICE, CREATED: "yesterday"})
+        assert _find(services, obj.data["id"])[CREATED] == FORMATTED_NOW
+
+    @pytest.mark.parametrize("id", [None, MOCK_ID])
+    def test_kept_on_registration(
+        self, unit_app: Flask, services: Collection[dict[str, Any]], id: str | None
+    ) -> None:
+        """Sent timestamps are kept with `keep_timestamps`."""
+        obj = self._register(
+            unit_app, {**MOCK_SERVICE, **SENT}, id=id, keep_timestamps=True
+        )
+        stored = _find(services, obj.data["id"])
+        assert (stored[CREATED], stored[UPDATED]) == (IMPORTED, IMPORTED)
+
+    def test_kept_invalid(self, unit_app: Flask) -> None:
+        """Kept timestamps must be RFC 3339 date-times."""
+        with pytest.raises(InvalidService, match=CREATED):
+            self._register(
+                unit_app, {**MOCK_SERVICE, CREATED: "yesterday"}, keep_timestamps=True
+            )
+
+    @pytest.mark.parametrize(
+        "sent, keep_timestamps, expected",
+        [
+            ({}, False, (IMPORTED, FORMATTED_NOW)),
+            ({CREATED: "2020-01-01T00:00:00Z"}, False, (IMPORTED, FORMATTED_NOW)),
+            ({}, True, (IMPORTED, FORMATTED_NOW)),
+            (
+                {CREATED: "2020-01-01T00:00:00Z"},
+                True,
+                ("2020-01-01T00:00:00Z", FORMATTED_NOW),
+            ),
+            # sent back as read, e.g., by an admin editing the service
+            ({**SENT}, True, (IMPORTED, FORMATTED_NOW)),
+            # only kept for new services
+            ({UPDATED: "2020-01-01T00:00:00Z"}, True, (IMPORTED, FORMATTED_NOW)),
+        ],
+    )
+    def test_update(
+        self,
+        unit_app: Flask,
+        services: Collection[dict[str, Any]],
+        sent: dict[str, str],
+        keep_timestamps: bool,
+        expected: tuple[str, str],
+    ) -> None:
+        """Updates keep `createdAt` and set `updatedAt`, unless they are kept."""
+        services.insert_one({**MOCK_SERVICE, **SENT, "id": MOCK_ID})
+        self._register(
+            unit_app,
+            {**MOCK_SERVICE, **sent},
+            id=MOCK_ID,
+            keep_timestamps=keep_timestamps,
+        )
+        stored = _find(services, MOCK_ID)
+        assert (stored[CREATED], stored[UPDATED]) == expected
+
+    def test_update_invalid_created(
+        self, unit_app: Flask, services: Collection[dict[str, Any]]
+    ) -> None:
+        """Stored `createdAt` values that aren't RFC 3339 date-times are removed."""
+        services.insert_one({**MOCK_SERVICE, CREATED: "yesterday", "id": MOCK_ID})
+        self._register(unit_app, MOCK_SERVICE, id=MOCK_ID)
+        stored = _find(services, MOCK_ID)
+        assert CREATED not in stored
+        assert stored[UPDATED] == FORMATTED_NOW
+
+    def test_update_without_created(
+        self, unit_app: Flask, services: Collection[dict[str, Any]]
+    ) -> None:
+        """Services stored without `createdAt` are kept without it."""
+        services.insert_one({**MOCK_SERVICE, "id": MOCK_ID})
+        self._register(unit_app, MOCK_SERVICE, id=MOCK_ID)
+        stored = _find(services, MOCK_ID)
+        assert CREATED not in stored
+        assert stored[UPDATED] == FORMATTED_NOW
+
+    def test_concurrent_change(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        unit_app: Flask,
+        services: Collection[dict[str, Any]],
+    ) -> None:
+        """A `createdAt` changed after the service was read is kept."""
+        services.insert_one({**MOCK_SERVICE, **SENT, "id": MOCK_ID})
+        find_one = services.find_one
+        reads: list[dict[str, Any] | None] = []
+        changed = "2020-01-01T00:00:00Z"
+
+        def change_after_first_read(
+            filter: Any, projection: Any = None, *args: Any, **kwargs: Any
+        ) -> dict[str, Any] | None:
+            """Find a service, changing `createdAt` after its first read."""
+            result = find_one(filter, projection, *args, **kwargs)
+            if projection is not None and CREATED in projection:
+                reads.append(result)
+                if len(reads) == 1:
+                    services.update_one({"id": MOCK_ID}, {"$set": {CREATED: changed}})
+            return result
+
+        with unit_app.app_context():
+            obj = RegisterService(data=deepcopy(MOCK_SERVICE), id=MOCK_ID)
+            monkeypatch.setattr(obj.db_coll, "find_one", change_after_first_read)
+            obj.register_metadata()
+        assert len(reads) == 2
+        assert _find(services, MOCK_ID)[CREATED] == changed

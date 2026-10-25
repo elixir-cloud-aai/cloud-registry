@@ -1,6 +1,6 @@
 """Unit tests for the controllers of verifications."""
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from flask import Flask, Response
@@ -15,13 +15,12 @@ from cloud_registry.ga4gh.registry.service import (
     service_key,
 )
 from cloud_registry.ga4gh.registry.verification import (
-    _format_time,
-    _now,
     deleteServiceVerification,
     getServiceVerification,
     getVerifications,
     putServiceVerification,
 )
+from cloud_registry.utils import format_time
 from tests.mock_data import ERROR_MEDIA_TYPE, MOCK_ID, MOCK_SERVICE, MOCK_TYPE
 
 # Time as read from the database (naive, UTC, in milliseconds)
@@ -105,27 +104,6 @@ def _verification(res: dict[str, Any] | Response) -> dict[str, Any]:
     return res
 
 
-def test_now() -> None:
-    """The current time is in UTC, in milliseconds."""
-    now = _now()
-    assert now.tzinfo == UTC
-    assert now.microsecond % 1000 == 0
-    assert abs(datetime.now(UTC) - now).total_seconds() < 5
-
-
-@pytest.mark.parametrize(
-    "time, formatted",
-    [
-        (TIME, FORMATTED),
-        (TIME.replace(tzinfo=UTC), FORMATTED),
-        (datetime(2026, 1, 2, 3, 4, 5), "2026-01-02T03:04:05.000Z"),
-    ],
-)
-def test_format_time(time: datetime, formatted: str) -> None:
-    """Times are formatted as RFC 3339 date-times in UTC."""
-    assert _format_time(time) == formatted
-
-
 def test_verification_not_projected() -> None:
     """The verification is not served with services."""
     assert PROJECTION[VERIFIED] is False
@@ -162,7 +140,7 @@ def test_putServiceVerification(
         res = _verification(putServiceVerification(MOCK_ID))
     stored = _stored(services)[VERIFIED]
     assert stored > TIME
-    assert res == _expected(_format_time(stored))
+    assert res == _expected(format_time(stored))
     assert stored == datetime.fromisoformat(res["verified_at"][:-1])
 
 
@@ -183,7 +161,7 @@ def test_putServiceVerification_checked(
     with unit_app.test_request_context():
         res = _verification(putServiceVerification(MOCK_ID, verification=checked))
     stored = _stored(services)[VERIFIED]
-    assert res == _expected(_format_time(stored))
+    assert res == _expected(format_time(stored))
 
 
 @pytest.mark.parametrize(
