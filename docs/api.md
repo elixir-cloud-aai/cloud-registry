@@ -14,6 +14,7 @@ under the API base path `/ga4gh/registry/v1`:
 | `/services/types` | `GET` (GA4GH) | anyone |
 | `/services/types` | `POST` | any authenticated user (mode `controlled`: admins) |
 | `/services/types` | `DELETE` | admins |
+| `/services/types/approval` | `PUT` | admins |
 | `/services/{serviceId}` | `GET` (GA4GH) | anyone |
 | `/services/{serviceId}` | `PUT` | owners, maintainers, admins (new identifiers: admins) |
 | `/services/{serviceId}` | `DELETE` | owners, admins |
@@ -23,6 +24,7 @@ under the API base path `/ga4gh/registry/v1`:
 | `/services/{serviceId}/verification` | `GET` | anyone |
 | `/services/{serviceId}/verification` | `PUT`, `DELETE` | admins |
 | `/verifications` | `GET` | anyone |
+| `/approvals` | `GET` | any authenticated user |
 | `/me` | `GET` | any authenticated user |
 
 Deployments can [require login](access-control.md#requiring-login-for-reads)
@@ -146,9 +148,13 @@ types](configuration.md#service-types)):
   /services/types`, and registering or updating a service with a type that
   isn't registered returns `400 Bad Request`, naming the type. Admins'
   services may have new types, which are registered.
+- `moderated`: any authenticated user, but the types of users other than
+  admins are pending until an admin approves them (see [Pending
+  approvals](#pending-approvals)); admins' types are approved at once.
 
 `GET /me` tells clients whether the current user may add types
-(`may_add_service_types`), e.g., to offer "Add new service type" only then.
+(`may_add_service_types`), e.g., to offer "Add new service type" only then,
+and whether their new types are pending (`service_types_pending`).
 
 In every mode, only admins can remove types: `DELETE
 /services/types?group=<group>&artifact=<artifact>&version=<version>`
@@ -162,6 +168,37 @@ type (not served).
 On startup, the app registers the types of the registered services that
 aren't registered (e.g., when upgrading from a version that didn't store
 types; see [Upgrading](upgrading.md#service-types)).
+
+### Pending approvals
+
+In mode `moderated`, the types that users other than admins add (explicitly
+or with a service of a new type) are pending until an admin approves them,
+and so are the services that have a pending type, also those of other
+users. Pending types and services are only visible to admins and to the
+users who added them (for services: users with a role on them):
+
+- `GET /services`, `GET /services/{serviceId}` (`404 Not Found`) and `GET
+  /services/types` don't list them to others. These reads are public by
+  default, so their requests have no user: they list pending types and
+  services to nobody, unless the deployment [requires
+  login](access-control.md#requiring-login-for-reads).
+- `GET /approvals` (login required) lists the pending types
+  (`service_types`) and services (`services`) the user may see: all for
+  admins.
+- Only admins can update pending services (`409 Conflict` for others, so
+  that a service doesn't change while an admin reviews it); their owners can
+  delete them.
+
+Admins approve a type with `PUT /services/types/approval` and the type in
+the body; it and the services that have it are then listed like all others.
+There is no way back: admins remove types instead (only types that no
+service has, see above). Pending types stay pending if the mode changes.
+
+```bash
+curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/types/approval" \
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"group": "org.ga4gh", "artifact": "tes", "version": "1.1.0"}'
+```
 
 ## Errors
 

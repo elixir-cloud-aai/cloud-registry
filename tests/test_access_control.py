@@ -388,6 +388,7 @@ def test_me(client: FlaskClient) -> None:
         "user_id": ALICE,
         "admin": False,
         "may_add_service_types": True,
+        "service_types_pending": False,
         "services": sorted(
             [
                 {"service_id": first, "role": "owner"},

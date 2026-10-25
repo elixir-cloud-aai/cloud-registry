@@ -118,8 +118,9 @@ stored until the app restarts: restart it once after the rollout (e.g.,
 `kubectl rollout restart deployment/<name> -n <namespace>`).
 
 Overlays that give the policies (`security.access_control.policies`) as a
-list must add the new rule `add-service-types` (see `config.yaml`), or users
-can't add types with `POST /services/types`.
+list must add the new rules `add-service-types` and `list-approvals` (see
+`config.yaml`), or users can't add types with `POST /services/types` or list
+[pending approvals](api.md#pending-approvals) with `GET /approvals`.
 
 ## Stored services
 

@@ -206,7 +206,10 @@ class AccessControlConfig(FOCABaseConfig):
         service_types: Who may add service types: `open` (the default), any
             authenticated user, explicitly (`POST /services/types`) or by
             registering a service with a new type; `controlled`, admins
-            only, and services of other users must have a registered type.
+            only, and services of other users must have a registered type;
+            `moderated`, any authenticated user, but types of users other
+            than admins are pending until an admin approves them, and so are
+            the services that have them.
 
     Attributes:
         require_admin: Whether the app refuses to start unless a group is
@@ -215,12 +218,15 @@ class AccessControlConfig(FOCABaseConfig):
         service_types: Who may add service types: `open` (the default), any
             authenticated user, explicitly (`POST /services/types`) or by
             registering a service with a new type; `controlled`, admins
-            only, and services of other users must have a registered type.
+            only, and services of other users must have a registered type;
+            `moderated`, any authenticated user, but types of users other
+            than admins are pending until an admin approves them, and so are
+            the services that have them.
 
     Raises:
         pydantic.ValidationError: The class was instantianted with an illegal
-            data type, or `service_types` is neither `open` nor
-            `controlled`.
+            data type, or `service_types` is not `open`, `controlled`
+            or `moderated`.
 
     Example:
         >>> AccessControlConfig(require_admin=False, service_types='controlled')
@@ -228,7 +234,7 @@ class AccessControlConfig(FOCABaseConfig):
     """
 
     require_admin: bool = True
-    service_types: Literal["open", "controlled"] = "open"
+    service_types: Literal["open", "controlled", "moderated"] = "open"
 
 
 class CustomConfig(FOCABaseConfig):

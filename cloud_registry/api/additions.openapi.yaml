@@ -29,7 +29,10 @@ paths:
     get:
       security: []
       description: |
-        List all services. Their timestamps (`createdAt`, `updatedAt`) are
+        List all services, except pending services (see `GET /approvals`)
+        that the user may not see: only admins and users with a role on them
+        see them, and only if reads require login (otherwise, requests have
+        no user). Their timestamps (`createdAt`, `updatedAt`) are
         set by the registry: when the service was registered, and when it
         was registered or last updated in the registry; unlike in the GA4GH
         specification, not when the service was deployed or updated (see
@@ -40,8 +43,9 @@ paths:
         Create a service resource. Services are unique by URL and API type:
         registering a service again returns `409`. Invalid URLs return `400`
         (cf. `ExternalServiceRegister`), as do types that aren't registered
-        if the user may not add types (see `POST /services/types`). A
-        service deleted during the request returns `404`.
+        if the user may not add types (see `POST /services/types`). Services
+        with a pending type are pending (see `GET /approvals`). A service
+        deleted during the request returns `404`.
       operationId: postService
       tags:
         - cloud-registry
@@ -78,15 +82,20 @@ paths:
         `version`. Unlike in the GA4GH specification (the types of the
         registered services), types are registered on their own: explicitly
         (`POST /services/types`), or with a service of a new type, and all
-        types of registered services are listed.
+        types of registered services are listed, except pending types (see
+        `GET /approvals`) that the user may not see: only admins and the
+        user who added them see them, and only if reads require login.
     post:
       summary: Register service type.
       description: |
         Register a service type, e.g., for clients to choose from. Any
         authenticated user can, unless the deployment lets only admins add
         types (`custom.access_control.service_types: controlled`; `403`
-        otherwise; see `may_add_service_types` of `GET /me`). Types are
-        unique as written: registering a type again returns `409`.
+        otherwise; see `may_add_service_types` of `GET /me`). If the
+        deployment moderates types (`moderated`), the types of users other
+        than admins are pending until an admin approves them (see
+        `service_types_pending` of `GET /me` and `GET /approvals`). Types
+        are unique as written: registering a type again returns `409`.
       operationId: postServiceType
       x-openapi-router-controller: cloud_registry.ga4gh.registry.service_types
       tags:
@@ -171,11 +180,52 @@ paths:
           $ref: '#/components/responses/InternalServerError'
         default:
           $ref: '#/components/responses/Error'
+  /services/types/approval:
+    put:
+      summary: Approve service type.
+      description: |
+        Approve a pending service type (see `GET /approvals`), and so the
+        services that have it: they are then listed like all others. Only
+        for admins. Approving an approved type changes nothing; there is no
+        way back (remove types instead, see `DELETE /services/types`).
+      operationId: putServiceTypeApproval
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.service_types
+      tags:
+        - cloud-registry
+      requestBody:
+        description: Service type.
+        required: true
+        content:
+          application/json:
+            schema:
+              x-body-name: service_type
+              $ref: '#/components/schemas/ServiceTypeRegister'
+      responses:
+        '200':
+          description: The service type is approved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceType'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
   "/services/{serviceId}":
     get:
       security: []
       description: |
-        Get a service by its identifier. Its timestamps (`createdAt`,
+        Get a service by its identifier; pending services (see `GET
+        /approvals`) only for admins and users with a role on them, if
+        reads require login (`404` otherwise). Its timestamps (`createdAt`,
         `updatedAt`) are set by the registry: when the service was
         registered, and when it was registered or last updated in the
         registry; unlike in the GA4GH specification, not when the service
@@ -223,7 +273,8 @@ paths:
         URL and API type: changing them to those of another service returns
         `409`. Invalid URLs return `400` (cf. `ExternalServiceRegister`), as
         do types that aren't registered if the user may not add types (see
-        `POST /services/types`).
+        `POST /services/types`). Only admins can update pending services
+        (`409` otherwise; see `GET /approvals`).
       operationId: putService
       tags:
         - cloud-registry
@@ -605,6 +656,37 @@ paths:
           $ref: '#/components/responses/InternalServerError'
         default:
           $ref: '#/components/responses/Error'
+  /approvals:
+    get:
+      summary: List pending service types and services.
+      description: |
+        List the pending service types and services that the user may see:
+        all for admins; for other users, the types they added and the
+        services they have a role on. Types are pending if the deployment
+        moderates them (`custom.access_control.service_types: moderated`)
+        and a user other than an admin added them, until an admin approves
+        them (`PUT /services/types/approval`); services are pending while
+        their type is. Users other than admins can't update pending
+        services (`409`), but their owners can delete them.
+      operationId: getApprovals
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.service_types
+      tags:
+        - cloud-registry
+      responses:
+        '200':
+          description: Pending service types and services.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Approvals'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
   /me:
     get:
       summary: Get the current user.
@@ -708,6 +790,9 @@ components:
         contact its owner or an admin. For other users (e.g., if a deployment
         requires login for reads), the problem details neither have
         `serviceId` nor name the service in `detail`.
+        Also returned, without `serviceId`, for updates of pending services
+        by users other than admins (`PUT /services/{serviceId}`; see `GET
+        /approvals`).
       content:
         application/json:
           schema:
@@ -773,6 +858,7 @@ components:
         - user_id
         - admin
         - may_add_service_types
+        - service_types_pending
         - services
       additionalProperties: false
       properties:
@@ -793,6 +879,14 @@ components:
             /services/types`) or by registering a service with a new type:
             admins always, other users unless the deployment lets only admins
             add types (`custom.access_control.service_types: controlled`).
+        service_types_pending:
+          type: boolean
+          description: |
+            Whether the types that the user adds are pending until an admin
+            approves them, and so the services that have them (see `GET
+            /approvals`): for users other than admins, if the deployment
+            moderates types (`custom.access_control.service_types:
+            moderated`).
         services:
           type: array
           description: |
@@ -801,6 +895,24 @@ components:
             service identifier; a service is listed once per role.
           items:
             $ref: '#/components/schemas/ServiceRole'
+    Approvals:
+      description: Pending service types and services.
+      type: object
+      required:
+        - service_types
+        - services
+      additionalProperties: false
+      properties:
+        service_types:
+          type: array
+          description: Pending service types, sorted by group, artifact and version.
+          items:
+            $ref: '#/components/schemas/ServiceType'
+        services:
+          type: array
+          description: Pending services, sorted by identifier.
+          items:
+            $ref: '#/components/schemas/ExternalService'
     ServiceRole:
       description: Role of the current user on a service.
       type: object
