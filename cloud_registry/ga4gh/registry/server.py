@@ -214,7 +214,8 @@ def _register_service(
     """Register the service in the request body.
 
     The type of the service is stored after the service, unless it is
-    stored (cf. `cloud_registry.ga4gh.registry.service_types`). Users who
+    stored (cf. `cloud_registry.ga4gh.registry.service_types`), or before
+    it if it is pending (cf. `store_pending_type()`). Users who
     may not add types (cf. `may_add_service_types()`) can only register
     services with a stored type; the types that users add are pending if
     the deployment moderates them (cf. `service_types_pending()`). Only

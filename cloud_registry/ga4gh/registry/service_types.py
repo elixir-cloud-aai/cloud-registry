@@ -13,7 +13,8 @@ has: users who add types don't own them, as other users' services may have
 them. The user who added a type is stored with it (`CREATED_BY`).
 
 Every type of a registered service is stored: registrations store the type
-after the service (cf. `store_service_type()`), types are only removed if no
+after the service (cf. `store_service_type()`; pending types before it, cf.
+`store_pending_type()`), types are only removed if no
 service has them, also when a service is registered concurrently, and the
 types of services registered before types were stored are added on startup
 (cf. `add_service_types()`). A registration that is in progress while an
@@ -30,8 +31,9 @@ admins and the user who added them, pending services (`GET /services`,
 `GET /services/{serviceId}`) to admins and the users with a role on them;
 reads that don't require login have no user, so they don't list them (cf.
 `GET /approvals`, which requires login). Only admins may update pending
-services (cf. `PendingService`); their owners may delete them. Pending
-types stay pending if the mode changes.
+services, other users only to an approved type (cf. `PendingService`);
+their owners may delete them. Pending types stay pending if the mode
+changes.
 """
 
 import json
@@ -96,8 +98,8 @@ class PendingService(Conflict):
         """Create the exception, with a description of what to do."""
         super().__init__(
             "The service has a service type that is pending until an admin "
-            "approves it; it can't be updated until then, but it can be "
-            "deleted."
+            "approves it; until then, it can only be updated to an approved "
+            "type, or deleted."
         )
 
 

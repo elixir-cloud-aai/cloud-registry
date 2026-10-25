@@ -194,11 +194,13 @@ users who added them (for services: users with a role on them):
 Admins approve a type with `PUT /services/types/approval` and the type in
 the body; it and the services that have it are then listed like all others.
 There is no way back: admins remove types instead (only types that no
-service has, see above). Pending types stay pending if the mode changes,
-and when admins use them (approve them instead). A pending type is stored
-before the service that adds it, so it stays pending if the registration
-fails. Types are unique also while pending: `POST /services/types` returns
-`409 Conflict` for a type that another user added.
+service has, see above). Pending types stay pending if the mode changes.
+An admin who registers a service with a pending type doesn't approve it:
+admins approve types with `PUT /services/types/approval`. A pending type is
+stored before the service that adds it, so it stays pending if the
+registration fails (e.g., for a duplicate); admins remove such types, as
+other unwanted ones. Types are unique also while pending: `POST
+/services/types` returns `409 Conflict` for a type that another user added.
 
 ```bash
 curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/types/approval" \

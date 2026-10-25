@@ -522,7 +522,8 @@ paths:
       description: |
         Get the verification of a service, i.e., when an admin verified it
         (e.g., checked that it accepts tokens of the deployment's identity
-        provider). Unverified and unknown services return `404`. The
+        provider). Unverified and unknown services return `404`, as do
+        pending services (see `GET /approvals`) that the user may not see. The
         verification names the URL and API type of the service; it is
         removed when the URL (in any way, as written) or API type
         (`type.group`, `type.artifact`) of the service changes.
