@@ -57,6 +57,8 @@ TIME = datetime(2026, 10, 20, 12, 34, 56, 789000, tzinfo=UTC)
 FORMATTED_TIME = "2026-10-20T12:34:56.789Z"
 LATER = datetime(2026, 10, 21, 8, 0, tzinfo=UTC)
 FORMATTED_LATER = "2026-10-21T08:00:00.000Z"
+LATEST = datetime(2026, 10, 22, 8, 0, tzinfo=UTC)
+FORMATTED_LATEST = "2026-10-22T08:00:00.000Z"
 # Unlike `tests.mock_data.MOCK_SERVICE` (for unit tests, which bypass request
 # validation), this service is valid according to the API specification
 SERVICE: dict[str, Any] = {
@@ -1874,7 +1876,7 @@ def test_service_timestamps_admin(
     `updatedAt` is only kept for new services (e.g., imports), so updates
     always set it; `createdAt` is kept on updates, unless admins send it.
     """
-    _set_service_clock(monkeypatch, TIME, LATER, LATER)
+    _set_service_clock(monkeypatch, TIME, LATER, LATEST)
     path = f"{BASE}/services/abc"
     imported = "2019-06-04T12:58:19Z"
     response = client.put(
@@ -1899,7 +1901,7 @@ def test_service_timestamps_admin(
     assert response.status_code == 200, response.get_json()
     assert _timestamps(client, "abc") == {
         "createdAt": imported,
-        "updatedAt": FORMATTED_LATER,
+        "updatedAt": FORMATTED_LATEST,
     }
 
 

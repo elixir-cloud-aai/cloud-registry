@@ -411,8 +411,9 @@ class RegisterService:
         `createdAt` is kept, unless it is in `data` (cf. `keep_timestamps`
         of `__init__()`), and set to `timestamp` if the service is inserted;
         it is compared like the URL, so that it isn't reverted if it is
-        changed concurrently. Stored services without it (e.g., registered
-        before the registry set it) are kept without it. `updatedAt` is set
+        changed concurrently. Stored services without a valid one (an RFC
+        3339 date-time; e.g., registered before the registry set it) are kept
+        without it. `updatedAt` is set
         to `timestamp`, unless the service is inserted with one in `data`
         (e.g., by an admin importing it): replaced services always get a new
         one, also if sent back as read (e.g., by admins editing them).
@@ -456,8 +457,11 @@ class RegisterService:
                 # without key, cf. `add_service_keys()`)
                 for field in ("url", KEY, VERIFIED, CREATED):
                     query[field] = stored.get(field, {"$exists": False})
-                if CREATED in stored:
-                    replacement.setdefault(CREATED, stored[CREATED])
+                # invalid ones (e.g., set by owners before timestamps were
+                # checked) are removed
+                created = stored.get(CREATED)
+                if isinstance(created, str) and is_date_time(created):
+                    replacement.setdefault(CREATED, created)
                 unchanged = (
                     stored.get("url") == self.data["url"] and stored.get(KEY) == key
                 )

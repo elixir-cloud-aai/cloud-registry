@@ -108,7 +108,8 @@ This differs from the GA4GH specification, where the timestamps describe
 the deployment of the service (when it was first deployed, and last
 updated): in the registry, they describe its entry. Services registered
 before the registry set the timestamps keep those they were registered
-with, and services registered without `createdAt` don't get one (see
+with, and services registered without a valid `createdAt` (an RFC 3339
+date-time) don't get one (see
 [Upgrading](upgrading.md#stored-services)).
 
 ## Errors

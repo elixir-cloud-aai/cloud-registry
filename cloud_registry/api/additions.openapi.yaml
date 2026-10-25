@@ -28,6 +28,12 @@ paths:
   /services:
     get:
       security: []
+      description: |
+        List all services. Their timestamps (`createdAt`, `updatedAt`) are
+        set by the registry: when the service was registered, and when it
+        was registered or last updated in the registry; unlike in the GA4GH
+        specification, not when the service was deployed or updated (see
+        `ExternalServiceRegister`).
     post:
       summary: Register service.
       description: |
@@ -69,6 +75,12 @@ paths:
   "/services/{serviceId}":
     get:
       security: []
+      description: |
+        Get a service by its identifier. Its timestamps (`createdAt`,
+        `updatedAt`) are set by the registry: when the service was
+        registered, and when it was registered or last updated in the
+        registry; unlike in the GA4GH specification, not when the service
+        was deployed or updated (see `ExternalServiceRegister`).
     delete:
       summary: Delete service.
       description: Delete a service resource.

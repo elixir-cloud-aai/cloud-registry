@@ -1224,6 +1224,16 @@ class TestTimestamps:
         stored = _find(services, MOCK_ID)
         assert (stored[CREATED], stored[UPDATED]) == expected
 
+    def test_update_invalid_created(
+        self, unit_app: Flask, services: Collection[dict[str, Any]]
+    ) -> None:
+        """Stored `createdAt` values that aren't RFC 3339 date-times are removed."""
+        services.insert_one({**MOCK_SERVICE, CREATED: "yesterday", "id": MOCK_ID})
+        self._register(unit_app, MOCK_SERVICE, id=MOCK_ID)
+        stored = _find(services, MOCK_ID)
+        assert CREATED not in stored
+        assert stored[UPDATED] == FORMATTED_NOW
+
     def test_update_without_created(
         self, unit_app: Flask, services: Collection[dict[str, Any]]
     ) -> None:
