@@ -198,17 +198,17 @@ def _register_service(
 ) -> RegisterResponse:
     """Register the service in the request body.
 
+    The type of the service is stored after the service, unless it is
+    stored (cf. `cloud_registry.ga4gh.registry.service_types`). Users who
+    may not add types (cf. `may_add_service_types()`) can only register
+    services with a stored type.
+
     Args:
         collection_path: Path of the service collection (`/services`, with the
             API base path), for the URL of new services.
         service_id: Identifier of the service; generated if not provided.
         allow_create: With `service_id`, whether the service may be
             registered if it doesn't exist.
-
-    The type of the service is stored after the service, unless it is
-    stored (cf. `cloud_registry.ga4gh.registry.service_types`). Users who
-    may not add types (cf. `may_add_service_types()`) can only register
-    services with a stored type.
 
     Returns:
         Identifier of the service; if it is new, with status `201` and its URL

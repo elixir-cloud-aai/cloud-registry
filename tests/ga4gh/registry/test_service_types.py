@@ -8,7 +8,6 @@ from pymongo.errors import DuplicateKeyError
 import pytest
 
 from cloud_registry.exceptions import NotFound
-from cloud_registry.ga4gh.registry import service_types as service_types_module
 from cloud_registry.ga4gh.registry.service_types import (
     CREATED_BY,
     check_service_type,
@@ -81,13 +80,25 @@ def test_post_type_invalid(unit_app: Flask) -> None:
     assert response.status_code == 400
 
 
-def test_delete_type_removed_concurrently(
-    monkeypatch: pytest.MonkeyPatch, unit_app: Flask
-) -> None:
-    """Types removed after they were found are not found."""
-    monkeypatch.setattr(service_types_module, "service_type_exists", lambda _: True)
+def test_delete_type_not_stored(unit_app: Flask) -> None:
+    """Types that are not stored (e.g., removed concurrently) are not found."""
     with unit_app.app_context(), pytest.raises(NotFound):
         deleteServiceType(**MOCK_TYPE)
+
+
+def test_delete_type_in_use_not_stored(
+    unit_app: Flask, services: Collection[dict[str, Any]]
+) -> None:
+    """Types that services have can't be removed, also if they aren't stored.
+
+    E.g., of services registered by an older version of the app during an
+    upgrade.
+    """
+    services.insert_one({**MOCK_SERVICE, "id": "A", "type": MOCK_TYPE})
+    with unit_app.app_context():
+        response = deleteServiceType(**MOCK_TYPE)
+    assert isinstance(response, Response)
+    assert response.status_code == 409
 
 
 def test_delete_type_used_concurrently(
