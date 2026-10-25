@@ -256,3 +256,12 @@ custom:
             # only; links (e.g., `documentationUrl`) may be HTTP(S) URLs
             url_schemes:
                 - https
+            # Values allowed for the environment of services (`environment`):
+            # the values that the GA4GH specification suggests; an empty list
+            # allows any value. Clients (e.g., UIs) should offer the same
+            # values
+            environments:
+                - prod
+                - test
+                - dev
+                - staging

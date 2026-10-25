@@ -49,6 +49,14 @@ def test_services_config_url_schemes() -> None:
     assert schemes == ["http", "https"]
 
 
+def test_services_config_environments() -> None:
+    """By default, the environments that the GA4GH specification suggests."""
+    id_config = IdConfig(charset="ABC123", length=6)
+    environments = ServicesConfig(id=id_config).environments
+    assert environments == ["prod", "test", "dev", "staging"]
+    assert ServicesConfig(id=id_config, environments=[]).environments == []
+
+
 @pytest.mark.parametrize("schemes", [[], ["ftp"], ["HTTPS"], "https"])
 def test_services_config_invalid_url_schemes(schemes: object) -> None:
     """Empty lists and schemes other than `http` and `https` are rejected."""

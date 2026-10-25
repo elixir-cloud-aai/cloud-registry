@@ -62,6 +62,11 @@ clients should treat registry content as untrusted: escape it rather than
 render it as HTML, and don't follow or fetch its URLs blindly (e.g., to
 internal addresses).
 
+The environment of a service (`environment`) must be one of the values
+that the deployment allows: by default, those that the GA4GH specification
+suggests (`prod`, `test`, `dev`, `staging`); others are rejected (`400 Bad
+Request`; see [Service environments](configuration.md#service-environments)).
+
 Request bodies are limited to 1 MiB by default (`413 Content Too Large`; see
 [Request size limit](configuration.md#request-size-limit)). Strings in the
 bodies of registrations (`POST /services`, `PUT /services/{serviceId}`) and

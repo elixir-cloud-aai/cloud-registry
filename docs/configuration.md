@@ -146,6 +146,33 @@ On startup, the app warns of stored services whose URLs use other schemes
 check): they are still served, but can only be updated with an allowed
 scheme (see [Upgrading](upgrading.md#stored-services)).
 
+## Service environments
+
+The GA4GH specification describes the environment of a service
+(`environment`) as a free string, and suggests `prod`, `test`, `dev` and
+`staging`. So that filters by environment work (e.g., without `Prod` or
+`production` besides `prod`), registrations may only use the values listed
+in `custom.endpoints.services.environments`: these four by default.
+Registrations (`POST /services`, `PUT /services/{serviceId}`) with other
+values are rejected with `400 Bad Request`, naming the allowed values
+(case-sensitive); services without `environment` are accepted. An empty
+list allows any value. For example, in a config overlay (with the Helm
+chart, in `config`):
+
+```yaml
+custom:
+    endpoints:
+        services:
+            environments:
+                - production
+                - testing
+```
+
+Clients that let users choose an environment (e.g., UIs) must offer the
+same values. Stored services with other values are served as they are, and
+only checked when they are next written (see
+[Upgrading](upgrading.md#stored-services)).
+
 ## Request size limit
 
 Request bodies are limited to `server.max_content_length` bytes (default:

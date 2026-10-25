@@ -196,6 +196,25 @@ def check_date_times(data: dict[str, Any]) -> None:
             )
 
 
+def check_environment(data: dict[str, Any], environments: list[str]) -> None:
+    """Check that the environment of a service is allowed.
+
+    Args:
+        data: Service metadata.
+        environments: Allowed values (cf.
+            `custom.endpoints.services.environments`); any if empty.
+
+    Raises:
+        InvalidService: The service has an environment (`environment`) that
+            is not one of `environments` (case-sensitive).
+    """
+    if not environments or "environment" not in data:
+        return
+    if data["environment"] not in environments:
+        allowed = ", ".join(f"'{value}'" for value in environments)
+        raise InvalidService(f"'environment' must be one of: {allowed}.")
+
+
 def check_links(data: dict[str, Any]) -> None:
     """Check the URLs of the links of a service (cf. `LINK_FIELDS`).
 
@@ -304,6 +323,7 @@ class RegisterService:
                 identifiers.
             id_length: Length of generated service identifiers.
             url_schemes: Schemes allowed in service URLs.
+            environments: Values allowed for `environment`; any if empty.
             db_coll: Database collection for storing service objects.
         """
         endpoint_conf = get_custom_config().endpoints
@@ -319,6 +339,7 @@ class RegisterService:
         self.id_charset: str = endpoint_conf.services.id.charset
         self.id_length = int(endpoint_conf.services.id.length)
         self.url_schemes = frozenset(endpoint_conf.services.url_schemes)
+        self.environments: list[str] = list(endpoint_conf.services.environments)
         self.db_coll = get_collection("services")
 
     def register_metadata(self, retries: int = 9) -> None:
@@ -335,7 +356,8 @@ class RegisterService:
             InvalidService: The URL or API type of the service, the URL of a
                 link, a timestamp (cf. `check_date_times()`) or a string (cf.
                 `check_strings()`) is invalid, or the scheme of the service
-                URL is not allowed (cf. `check_url_scheme()`).
+                URL (cf. `check_url_scheme()`) or the environment (cf.
+                `check_environment()`) is not allowed.
             DuplicateService: Another service with the same URL and API type
                 is registered.
             InternalServerError: The service could not be registered within
@@ -349,6 +371,7 @@ class RegisterService:
         check_url_scheme(self.data["url"], schemes=self.url_schemes)
         check_links(self.data)
         check_date_times(self.data)
+        check_environment(self.data, environments=self.environments)
         self._check_duplicate(key=key)
         timestamp = format_time(now())
 

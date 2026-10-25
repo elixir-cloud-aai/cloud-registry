@@ -105,19 +105,28 @@ class ServicesConfig(FOCABaseConfig):
     """Model for defining the service database store for cloud registry.
 
     Defines the configurations for service identifiers stored on cloud
-    registry, and the schemes allowed in service URLs.
+    registry, the schemes allowed in service URLs and the environments
+    allowed for services.
 
     Args:
         id: Unique identifier for a service in cloud registry.
         url_schemes: Schemes allowed in service URLs (`url`), at least one of
             `http` and `https`; `https` only by default, as clients send
             access tokens to the registered services.
+        environments: Values allowed for the environment of services
+            (`environment`), e.g., to keep filters consistent; by default,
+            the values that the GA4GH specification suggests (`prod`, `test`,
+            `dev`, `staging`). Empty to allow any value.
 
     Attributes:
         id: Unique identifier for a service in cloud registry.
         url_schemes: Schemes allowed in service URLs (`url`), at least one of
             `http` and `https`; `https` only by default, as clients send
             access tokens to the registered services.
+        environments: Values allowed for the environment of services
+            (`environment`), e.g., to keep filters consistent; by default,
+            the values that the GA4GH specification suggests (`prod`, `test`,
+            `dev`, `staging`). Empty to allow any value.
 
     Raises:
         pydantic.ValidationError: The class was instantianted with an illegal
@@ -132,12 +141,14 @@ class ServicesConfig(FOCABaseConfig):
         ...     )
         ... )
         ServicesConfig(id=IdConfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ01234567\
-89', length=6), url_schemes=['https'])
+89', length=6), url_schemes=['https'], environments=['prod', 'test', 'dev', 's\
+taging'])
     """
 
     id: IdConfig
     # pydantic copies mutable defaults for each instance
     url_schemes: list[Literal["http", "https"]] = Field(default=["https"], min_length=1)
+    environments: list[str] = Field(default=["prod", "test", "dev", "staging"])
 
 
 class EndpointsConfig(FOCABaseConfig):
@@ -173,7 +184,7 @@ class EndpointsConfig(FOCABaseConfig):
         EndpointsConfig(service=ServiceConfig(url_prefix='https', external_hos\
 t='0.0.0.0', external_port=8080, api_path=''), services=ServicesConfig(id=IdCo\
 nfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', length=6), url_schemes=['\
-https']))
+https'], environments=['prod', 'test', 'dev', 'staging']))
     """
 
     service: ServiceConfig
@@ -240,8 +251,8 @@ class CustomConfig(FOCABaseConfig):
         CustomConfig(endpoints=EndpointsConfig(service=ServiceConfig(url_prefi\
 x='https', external_host='0.0.0.0', external_port=8080, api_path=''), services\
 =ServicesConfig(id=IdConfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', le\
-ngth=6), url_schemes=['https'])), access_control=AccessControlConfig(require_a\
-dmin=True))
+ngth=6), url_schemes=['https'], environments=['prod', 'test', 'dev', 'staging'\
+])), access_control=AccessControlConfig(require_admin=True))
     """
 
     endpoints: EndpointsConfig

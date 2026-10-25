@@ -794,7 +794,10 @@ components:
         timestamps (`createdAt`, `updatedAt`), so those sent are ignored,
         except for admins (e.g., to keep the timestamps of imported
         services; `updatedAt` is only kept for new services), whose
-        timestamps must be RFC 3339 date-times (`400` otherwise).
+        timestamps must be RFC 3339 date-times (`400` otherwise). The
+        environment (`environment`) must be one of the values that the
+        deployment allows, by default `prod`, `test`, `dev` and `staging`
+        (`400` otherwise).
       type: object
       required:
         - name
