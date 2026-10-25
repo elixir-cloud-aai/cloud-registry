@@ -16,6 +16,7 @@ from cloud_registry.exceptions import (
 from cloud_registry.ga4gh.registry.permissions import (
     add_owner,
     current_user,
+    may_add_service_types,
     may_read_service,
     remove_owner,
     remove_permissions,
@@ -255,10 +256,12 @@ def _register_service(
             current_user(),
         )
         return problem(exc.hidden())
-    # also if the type was removed concurrently, as a service has it now
+    # also if the type was removed concurrently, as a service has it now;
+    # without the user if they may not add types (only then)
     service_type = type_document(service.data["type"])
     if service_type is not None:
-        store_service_type(service_type, created_by=get_current_subject())
+        created_by = get_current_subject() if may_add_service_types() else None
+        store_service_type(service_type, created_by=created_by)
     if service.verification_removed:
         logger.info(
             "Verification of service '%s' removed by an update by '%s' (URL or "

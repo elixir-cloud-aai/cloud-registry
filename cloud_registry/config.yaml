@@ -109,8 +109,9 @@ security:
             maintainers-update-services: [p, maintainer, "/ga4gh/registry/v1/services/:id", PUT]
             # any authenticated user may add service types, unless only
             # admins may (`custom.access_control.service_types: controlled`,
-            # checked by the app); no policy for `DELETE`: only admins may
-            # remove service types
+            # checked by the app); keep this rule and set that option instead,
+            # as users also add types by registering services; no policy for
+            # `DELETE`: only admins may remove service types
             add-service-types: [p, "*", /ga4gh/registry/v1/services/types, POST]
             # any authenticated user may get their identifier and roles
             get-me: [p, "*", /ga4gh/registry/v1/me, GET]

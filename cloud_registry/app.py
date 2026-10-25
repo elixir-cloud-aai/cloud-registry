@@ -71,9 +71,8 @@ def create_app() -> App:
     and that no service clients are configured, requires a size limit of
     request bodies, adds missing keys of services and the types of
     registered services that aren't stored (e.g., on upgrades), and warns of
-    stored
-    services with invalid URLs or URL schemes that are not allowed and of
-    placeholders in the service info. FOCA validates the config, e.g., that
+    stored services with invalid URLs or URL schemes that are not allowed and
+    of placeholders in the service info. FOCA validates the config, e.g., that
     token issuers are trusted (needed for access control) with an audience,
     and the service info (`service_info`), and limits the size of request
     bodies (`server.max_content_length`).

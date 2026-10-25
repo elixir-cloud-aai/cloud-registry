@@ -659,8 +659,8 @@ def getMe(**kwargs: Any) -> dict[str, Any]:
     Returns:
         User identifier, whether the user is an admin (cf. FOCA's
         `is_admin()`), whether they may add service types (cf.
-        `may_add_service_types()`), and the user's roles on services (cf. FOCA's
-        `list_subject_roles()`): granted to the user, and granted to groups
+        `may_add_service_types()`), and the user's roles on services (cf.
+        FOCA's `list_subject_roles()`): granted to the user, and granted to groups
         the user is a member of (with `group`), sorted by service identifier
         (roles of the user first). Names are only stored for services with
         roles granted to the user, as only these are listed with names (cf.

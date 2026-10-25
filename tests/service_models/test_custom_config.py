@@ -3,7 +3,26 @@
 from pydantic import ValidationError
 import pytest
 
-from cloud_registry.service_models.custom_config import IdConfig, ServicesConfig
+from cloud_registry.service_models.custom_config import (
+    AccessControlConfig,
+    IdConfig,
+    ServicesConfig,
+)
+
+
+@pytest.mark.parametrize("mode", ["open", "controlled"])
+def test_access_control_service_types(mode: str) -> None:
+    """Service types are open by default, or controlled."""
+    assert AccessControlConfig().service_types == "open"
+    config = AccessControlConfig.model_validate({"service_types": mode})
+    assert config.service_types == mode
+
+
+@pytest.mark.parametrize("mode", ["closed", "Open", "", None])
+def test_access_control_invalid_service_types(mode: object) -> None:
+    """Other modes of service types are rejected."""
+    with pytest.raises(ValidationError):
+        AccessControlConfig.model_validate({"service_types": mode})
 
 
 def test_id_config() -> None:

@@ -16,7 +16,9 @@ Every type of a registered service is stored: registrations store the type
 after the service (cf. `store_service_type()`), types are only removed if no
 service has them, also when a service is registered concurrently, and the
 types of services registered before types were stored are added on startup
-(cf. `add_service_types()`).
+(cf. `add_service_types()`). A registration that is in progress while an
+admin removes its type stores the type again; then it is stored without the
+user if they may not add types.
 """
 
 import json
@@ -301,24 +303,23 @@ def deleteServiceType(
 
     Returns:
         The removed type. Or an error response: `409` if a registered
-        service has the type.
+        service has the type (also if the type isn't stored, e.g., of a
+        service registered by an older version of the app during an
+        upgrade).
 
     Raises:
         cloud_registry.exceptions.NotFound: The type is not stored.
     """
     document = {"group": group, "artifact": artifact, "version": version}
-    in_use = Conflict(IN_USE)
-    if not service_type_exists(document):
-        raise NotFound
     if _type_in_use(document):
-        return problem(in_use)
+        return problem(Conflict(IN_USE))
     removed = get_collection("service_types").find_one_and_delete(dict(document))
     if removed is None:
         raise NotFound
     if _type_in_use(document):
         # a service with the type was registered meanwhile
         store_service_type(document, created_by=removed.get(CREATED_BY))
-        return problem(in_use)
+        return problem(Conflict(IN_USE))
     logger.info(
         "Service type %s removed by '%s'.",
         escape_log_value(describe_type(document)),

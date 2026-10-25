@@ -13,6 +13,7 @@ import pytest
 from werkzeug.test import TestResponse
 
 from cloud_registry.app import create_app
+from cloud_registry.ga4gh.registry import server
 from cloud_registry.utils import get_custom_config
 from tests.conftest import ADMIN, USER, make_headers
 from tests.mock_data import DB
@@ -304,6 +305,34 @@ def test_controlled_services(client: FlaskClient, controlled: None) -> None:
     )
     assert response.status_code == 400
     assert listed(client) == [TES]
+
+
+def test_controlled_type_removed_meanwhile(
+    client: FlaskClient,
+    controlled: None,
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A registration in progress stores a type removed meanwhile.
+
+    In mode `controlled`, the type is then stored without the user.
+    """
+    assert add_type(client, TES, user=ADMIN).status_code == 201
+    check = server.check_service_type
+
+    def check_and_remove(value: object) -> None:
+        """Check the type, then let an admin remove it.
+
+        Args:
+            value: Type of the service.
+        """
+        check(value)
+        mongo_client[DB]["service_types"].delete_many({})
+
+    monkeypatch.setattr(server, "check_service_type", check_and_remove)
+    assert register(client, _service()).status_code == 201
+    assert listed(client) == [TES]
+    assert _created_by(mongo_client) == {"tes": None}
 
 
 def test_types_added_on_startup(
