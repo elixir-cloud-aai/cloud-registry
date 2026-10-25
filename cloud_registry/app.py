@@ -22,6 +22,7 @@ from cloud_registry.ga4gh.registry.service import (
     warn_invalid_urls,
     warn_url_schemes,
 )
+from cloud_registry.ga4gh.registry.service_types import add_service_types
 
 logger = logging.getLogger(__name__)
 # Logger of Connexion's request validation
@@ -68,7 +69,9 @@ def create_app() -> App:
     Adds the error handler for validation errors (silencing Connexion's
     validation log messages), checks the admin groups and the group claim,
     and that no service clients are configured, requires a size limit of
-    request bodies, adds missing keys of services, and warns of stored
+    request bodies, adds missing keys of services and the types of
+    registered services that aren't stored (e.g., on upgrades), and warns of
+    stored
     services with invalid URLs or URL schemes that are not allowed and of
     placeholders in the service info. FOCA validates the config, e.g., that
     token issuers are trusted (needed for access control) with an audience,
@@ -123,6 +126,7 @@ def create_app() -> App:
                 "`server.max_content_length` (bytes), not null"
             )
         add_service_keys()
+        add_service_types()
         warn_invalid_urls()
         warn_url_schemes()
         warn_placeholder_service_info()

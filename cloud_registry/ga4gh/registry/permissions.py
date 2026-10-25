@@ -245,6 +245,20 @@ def may_read_service(serviceId: str) -> bool:
         return is_permitted()
 
 
+def may_add_service_types() -> bool:
+    """Check whether the current user may add service types.
+
+    Must be called in a request context.
+
+    Returns:
+        Whether the user is an admin, or the deployment lets any
+        authenticated user add types (`custom.access_control.service_types`
+        is `open`; cf. `cloud_registry.ga4gh.registry.service_types`).
+    """
+    mode = get_custom_config().access_control.service_types
+    return mode == "open" or is_admin()
+
+
 def _get_current_claims() -> dict[str, Any]:
     """Get the claims of the validated token of the current request.
 
@@ -644,7 +658,8 @@ def getMe(**kwargs: Any) -> dict[str, Any]:
 
     Returns:
         User identifier, whether the user is an admin (cf. FOCA's
-        `is_admin()`), and the user's roles on services (cf. FOCA's
+        `is_admin()`), whether they may add service types (cf.
+        `may_add_service_types()`), and the user's roles on services (cf. FOCA's
         `list_subject_roles()`): granted to the user, and granted to groups
         the user is a member of (with `group`), sorted by service identifier
         (roles of the user first). Names are only stored for services with
@@ -664,4 +679,9 @@ def getMe(**kwargs: Any) -> dict[str, Any]:
     remember_current_user(
         [service["service_id"] for service in services if "group" not in service]
     )
-    return {"user_id": user_id, "admin": is_admin(), "services": services}
+    return {
+        "user_id": user_id,
+        "admin": is_admin(),
+        "may_add_service_types": may_add_service_types(),
+        "services": services,
+    }

@@ -11,13 +11,19 @@ MAX_CONTENT_LENGTH = 1024 * 1024
 MOCK_ID = "mock_id"
 MOCK_ID_ONE_CHAR = "A"
 CHARSET = "0123456789"
-INDEX_CONFIG: dict[str, Any] = {"keys": [("id", 1)]}
+INDEX_CONFIG: dict[str, Any] = {"keys": [("id", 1)], "options": {"unique": True}}
 COLLECTION_CONFIG: dict[str, Any] = {
     "indexes": [INDEX_CONFIG],
+}
+# Service types are unique as written (cf. `config.yaml`)
+TYPE_INDEX_CONFIG: dict[str, Any] = {
+    "keys": [("group", 1), ("artifact", 1), ("version", 1)],
+    "options": {"unique": True},
 }
 DB_CONFIG: dict[str, Any] = {
     "collections": {
         "services": COLLECTION_CONFIG,
+        "service_types": {"indexes": [TYPE_INDEX_CONFIG]},
     },
 }
 MONGO_CONFIG: dict[str, Any] = {

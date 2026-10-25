@@ -301,7 +301,8 @@ jobs:
       # covers them with the tests, against MongoDB too). Writes need tokens
       # of a trusted issuer
       # (the development config trusts a fictitious one), so a verified
-      # service is inserted into the database directly
+      # service is inserted into the database directly, with its type (as
+      # registrations store it)
       - name: Check API with MongoDB
         run: |
           docker compose exec -T mongodb mongosh --quiet serviceStore --eval '
@@ -313,6 +314,9 @@ jobs:
               version: "1.0.0",
               url: "https://tes.example.org/ga4gh/tes/v1",
               _verifiedAt: ISODate("2026-10-20T12:34:56.789Z")
+            });
+            db.service_types.insertOne({
+              group: "org.ga4gh", artifact: "tes", version: "1.1.0", created_by: null
             })'
           api="${PROBE_ENDPOINT%/ui/}"
           body="${RUNNER_TEMP}/body.json"
@@ -342,6 +346,7 @@ jobs:
           check GET /services/UNKNWN 404 '.status == 404'
           check GET /service-info 200 '.type.artifact == "service-registry"'
           check POST /services 401 '.status == 401'
+          check POST /services/types 401 '.status == 401'
           check GET /me 401 '.status == 401'
       - name: Check app version
         run: |

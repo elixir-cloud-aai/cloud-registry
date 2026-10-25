@@ -266,7 +266,9 @@ other users admins (see [Operations](operations.md#more-admins)).
 ## Current user
 
 `GET /me` returns the current user's identifier (to give to owners), whether
-they are an admin, and their roles on services, also those through groups
+they are an admin, whether they may add [service
+types](api.md#service-types) (`may_add_service_types`), and their roles on
+services, also those through groups
 (with `group`; a service is listed once per role); it also stores their name
 for the services with roles granted to them. Owners are not shown in the
 public service responses.

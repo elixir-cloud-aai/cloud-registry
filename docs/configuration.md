@@ -146,6 +146,25 @@ On startup, the app warns of stored services whose URLs use other schemes
 check): they are still served, but can only be updated with an allowed
 scheme (see [Upgrading](upgrading.md#stored-services)).
 
+## Service types
+
+`custom.access_control.service_types` sets who may add [service
+types](api.md#service-types):
+
+- `open` (the default): any authenticated user, explicitly (`POST
+  /services/types`) or by registering a service with a new type;
+- `controlled`: admins only; other users can only register services with
+  registered types, so that the registry offers a curated list of types.
+
+Only admins can remove types, in every mode. For example, in a config
+overlay (with the Helm chart, in `config`):
+
+```yaml
+custom:
+    access_control:
+        service_types: controlled
+```
+
 ## Request size limit
 
 Request bodies are limited to `server.max_content_length` bytes (default:

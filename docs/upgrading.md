@@ -104,6 +104,16 @@ in the database. That endpoint is gone, and stored service info is no longer
 served (the `service_info` collection can be dropped): put it in the config
 when upgrading (see [Service info](configuration.md#service-info)).
 
+## Service types
+
+Service types are stored since 0.5.0 (see [Service
+types](api.md#service-types)). On startup, the app stores the types of the
+registered services, so `GET /services/types` lists the same types as
+before; afterwards, it also lists types that no service has (yet), and types
+stay registered when the services that had them change or are deleted
+(admins remove them). Types of stored services that aren't objects with the
+strings `group`, `artifact` and `version` are skipped.
+
 ## Stored services
 
 Services stored before the registry set the [timestamps](api.md#timestamps)

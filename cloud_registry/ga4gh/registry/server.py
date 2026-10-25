@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from flask import Response, request
-from foca.security.access_control import is_admin
+from foca.security.access_control import get_current_subject, is_admin
 from foca.utils.logging import escape_log_value, log_traffic
 
 from cloud_registry.exceptions import (
@@ -26,6 +26,12 @@ from cloud_registry.ga4gh.registry.service import (
     InvalidService,
     RegisterService,
     service_exists,
+)
+from cloud_registry.ga4gh.registry.service_types import (
+    check_service_type,
+    list_service_types,
+    store_service_type,
+    type_document,
 )
 from cloud_registry.utils import get_collection, get_public_url
 
@@ -88,16 +94,11 @@ def getServiceTypes(**kwargs: Any) -> list[dict[str, Any]]:
             `token_info`); unused.
 
     Returns:
-        List of distinct service types, sorted by group, artifact and version.
+        List of the stored service types (cf.
+        `cloud_registry.ga4gh.registry.service_types`), sorted by group,
+        artifact and version.
     """
-    fields = ("group", "artifact", "version")
-    records = get_collection("services").aggregate(
-        [
-            {"$group": {"_id": {field: f"$type.{field}" for field in fields}}},
-            {"$sort": {f"_id.{field}": 1 for field in fields}},
-        ]
-    )
-    return [record["_id"] for record in records]
+    return list_service_types()
 
 
 # POST /services
@@ -203,11 +204,17 @@ def _register_service(
         allow_create: With `service_id`, whether the service may be
             registered if it doesn't exist.
 
+    The type of the service is stored after the service, unless it is
+    stored (cf. `cloud_registry.ga4gh.registry.service_types`). Users who
+    may not add types (cf. `may_add_service_types()`) can only register
+    services with a stored type.
+
     Returns:
         Identifier of the service; if it is new, with status `201` and its URL
-        as `Location`. Or an error response: `400` for invalid URLs, `409`
-        for a registered service with the same URL and API type, naming it
-        only if the user may read it (cf. `may_read_service()`).
+        as `Location`. Or an error response: `400` for invalid URLs or types
+        the user may not add, `409` for a registered service with the same
+        URL and API type, naming it only if the user may read it (cf.
+        `may_read_service()`).
 
     Raises:
         cloud_registry.exceptions.BadRequest: The owner role can't be stored
@@ -224,6 +231,7 @@ def _register_service(
         keep_timestamps=is_admin(),
     )
     try:
+        check_service_type(service.data.get("type"))
         service.register_metadata()
     except InvalidService as exc:
         logger.info(
@@ -247,6 +255,10 @@ def _register_service(
             current_user(),
         )
         return problem(exc.hidden())
+    # also if the type was removed concurrently, as a service has it now
+    service_type = type_document(service.data["type"])
+    if service_type is not None:
+        store_service_type(service_type, created_by=get_current_subject())
     if service.verification_removed:
         logger.info(
             "Verification of service '%s' removed by an update by '%s' (URL or "

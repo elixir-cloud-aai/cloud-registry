@@ -387,6 +387,7 @@ def test_me(client: FlaskClient) -> None:
     assert me(client, ALICE) == {
         "user_id": ALICE,
         "admin": False,
+        "may_add_service_types": True,
         "services": sorted(
             [
                 {"service_id": first, "role": "owner"},
