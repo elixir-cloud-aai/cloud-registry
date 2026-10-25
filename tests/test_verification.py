@@ -13,7 +13,7 @@ import pytest
 from werkzeug.test import TestResponse
 
 from cloud_registry.ga4gh.registry import verification as verification_module
-from tests.conftest import ADMIN, USER, make_headers
+from tests.conftest import ADMIN, USER, make_headers, without_timestamps
 from tests.mock_data import ERROR_MEDIA_TYPE
 
 BASE = "/ga4gh/registry/v1"
@@ -365,7 +365,7 @@ def _set_clock(monkeypatch: pytest.MonkeyPatch, *times: datetime) -> None:
         times: Times of the verifications.
     """
     clock = iter(times)
-    monkeypatch.setattr(verification_module, "_now", lambda: next(clock))
+    monkeypatch.setattr(verification_module, "now", lambda: next(clock))
 
 
 def test_verify_again(
@@ -407,8 +407,10 @@ def test_verify_again_earlier(
 def test_verification_not_served(client: FlaskClient, service: str) -> None:
     """Services are served without verification, as by the GA4GH specification."""
     assert verify(client).status_code == 200
-    assert client.get(f"{BASE}/services/{service}").get_json() == _service(id=service)
-    assert client.get(f"{BASE}/services").get_json() == [_service(id=service)]
+    stored = client.get(f"{BASE}/services/{service}").get_json()
+    assert without_timestamps(stored) == _service(id=service)
+    listed = client.get(f"{BASE}/services").get_json()
+    assert [without_timestamps(item) for item in listed] == [_service(id=service)]
 
 
 @pytest.mark.parametrize("user", [None, USER, OTHER])
@@ -514,9 +516,8 @@ def test_kept_on_update(
     verified_at = verify(client).get_json()["verified_at"]
     assert put_service(client, _service(**change), user=USER) == 200
     assert verification(client).get_json() == expected(verified_at, _service(**change))
-    assert client.get(f"{BASE}/services/{service}").get_json() == _service(
-        id=service, **change
-    )
+    stored = client.get(f"{BASE}/services/{service}").get_json()
+    assert without_timestamps(stored) == _service(id=service, **change)
 
 
 def test_removed_with_service(client: FlaskClient, service: str) -> None:

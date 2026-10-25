@@ -90,6 +90,22 @@ COLLECTION_CLASS: type[Collection[Any]] | type[MockCollection] = (
 _CONNECT = socket.socket.connect
 
 
+def without_timestamps(service: dict[str, Any]) -> dict[str, Any]:
+    """Get a service without the timestamps that the registry sets.
+
+    Args:
+        service: Service, as served.
+
+    Returns:
+        The service without `createdAt` and `updatedAt`.
+    """
+    return {
+        key: value
+        for key, value in service.items()
+        if key not in ("createdAt", "updatedAt")
+    }
+
+
 def _db_addresses(uri: str) -> frozenset[tuple[str, int]]:
     """Return the socket addresses of the hosts of a MongoDB URI.
 

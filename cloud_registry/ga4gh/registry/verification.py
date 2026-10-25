@@ -15,7 +15,6 @@ Only admins may verify services and remove verifications: no policy in
 read by anyone.
 """
 
-from datetime import UTC, datetime
 import logging
 from typing import Any
 
@@ -39,7 +38,7 @@ from cloud_registry.ga4gh.registry.service import (
     service_exists,
     service_key,
 )
-from cloud_registry.utils import get_collection
+from cloud_registry.utils import format_time, get_collection, now
 
 logger = logging.getLogger(__name__)
 # Projection of the fields served with verifications
@@ -57,29 +56,6 @@ class VerificationConflict(Conflict):
         )
 
 
-def _now() -> datetime:
-    """Get the current time, in the precision of the database.
-
-    Returns:
-        Current time (UTC), in milliseconds, like MongoDB dates.
-    """
-    now = datetime.now(UTC)
-    return now.replace(microsecond=now.microsecond // 1000 * 1000)
-
-
-def _format_time(time: datetime) -> str:
-    """Format a time of a verification.
-
-    Args:
-        time: Time in UTC; naive, as read from the database, or aware.
-
-    Returns:
-        RFC 3339 date-time in UTC, in milliseconds, e.g.,
-        `2026-10-20T12:34:56.789Z`.
-    """
-    return f"{time:%Y-%m-%dT%H:%M:%S}.{time.microsecond // 1000:03d}Z"
-
-
 def _verification(service: dict[str, Any]) -> dict[str, Any]:
     """Get the verification of a stored service.
 
@@ -93,7 +69,7 @@ def _verification(service: dict[str, Any]) -> dict[str, Any]:
     return {
         "url": service["url"],
         "type": service["type"],
-        "verified_at": _format_time(service[VERIFIED]),
+        "verified_at": format_time(service[VERIFIED]),
     }
 
 
@@ -215,7 +191,7 @@ def putServiceVerification(
         query,
         # renewals never move the time back (e.g., if clocks of instances
         # differ); the time stored is served
-        {"$max": {VERIFIED: _now()}},
+        {"$max": {VERIFIED: now()}},
         projection=VERIFICATION_PROJECTION,
         return_document=ReturnDocument.AFTER,
     )

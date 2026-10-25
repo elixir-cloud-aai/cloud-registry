@@ -215,8 +215,13 @@ def _register_service(
         cloud_registry.exceptions.NotFound: A new service was deleted
             meanwhile.
     """
+    # admins may set the timestamps (e.g., to keep those of imported
+    # services); the registry sets them for everybody else
     service = RegisterService(
-        data=_get_request_object(), id=service_id, allow_create=allow_create
+        data=_get_request_object(),
+        id=service_id,
+        allow_create=allow_create,
+        keep_timestamps=is_admin(),
     )
     try:
         service.register_metadata()

@@ -778,8 +778,11 @@ components:
         allow percent-encoded (e.g., `<`, `|`) or malformed percent-encodings;
         `contactUrl` can also be a `mailto:` URL with email addresses. The
         service URL (`url`) must be an `https` URL, unless the deployment
-        also allows `http`. Others return `400`, as do timestamps (`createdAt`, `updatedAt`) that aren't
-        RFC 3339 date-times.
+        also allows `http`. Others return `400`. The registry sets the
+        timestamps (`createdAt`, `updatedAt`), so those sent are ignored,
+        except for admins (e.g., to keep the timestamps of imported
+        services), whose timestamps must be RFC 3339 date-times (`400`
+        otherwise).
       type: object
       required:
         - name
@@ -834,12 +837,14 @@ components:
         createdAt:
           type: string
           format: date-time
-          description: 'Timestamp describing when the service was first deployed and available (RFC 3339 format)'
+          description: |
+            When the service was registered (RFC 3339 format, UTC), set by the registry and kept on updates. Unlike in the GA4GH specification (when the service was first deployed), it is the time of the registration. Ignored unless sent by an admin, e.g., to keep the timestamp of an imported service.
           example: '2019-06-04T12:58:19Z'
         updatedAt:
           type: string
           format: date-time
-          description: 'Timestamp describing when the service was last updated (RFC 3339 format)'
+          description: |
+            When the service was last registered or updated in the registry (RFC 3339 format, UTC), set by the registry. Unlike in the GA4GH specification (when the service was last updated), it is the time of the last change of its entry. Ignored unless sent by an admin, e.g., to keep the timestamp of an imported service.
           example: '2019-06-04T12:58:19Z'
         environment:
           type: string

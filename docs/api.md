@@ -62,9 +62,6 @@ clients should treat registry content as untrusted: escape it rather than
 render it as HTML, and don't follow or fetch its URLs blindly (e.g., to
 internal addresses).
 
-Timestamps in registrations (`createdAt`, `updatedAt`) must be RFC 3339
-date-times (e.g., `2019-06-04T12:58:19Z`); others are rejected (`400 Bad
-Request`).
 
 Request bodies are limited to 1 MiB by default (`413 Content Too Large`; see
 [Request size limit](configuration.md#request-size-limit)). Strings in the
@@ -79,12 +76,36 @@ verifications (`PUT /services/{serviceId}/verification`) are limited in length
 | `description` | 4096 |
 | `version`, `environment`, `type.group`, `type.artifact`, `type.version` | 256 |
 
-Services stored before the checks of timestamps and lengths were introduced
-may not pass them; see [Upgrading](upgrading.md#stored-services).
+Services stored before the checks of lengths were introduced may not pass
+them; see [Upgrading](upgrading.md#stored-services).
 
 The number of registrations per user is not limited, so deployments should
 limit request rates at the ingress (see [Rate
 limits](deployment.md#rate-limits)).
+
+## Timestamps
+
+The registry sets the timestamps of services, so that clients can rely on
+them (e.g., to sort services or show when they were last changed):
+
+- `createdAt`: when the service was registered; kept on updates;
+- `updatedAt`: when the service was registered or last updated (each `PUT`).
+
+Both are RFC 3339 date-times in UTC, in milliseconds (e.g.,
+`2026-10-20T12:34:56.789Z`). Timestamps sent in registrations are ignored
+(not an error, so clients can send services back as they got them), except
+for admins: they can set them, e.g., to keep the timestamps of services
+imported from another registry; those they don't send are set as for other
+users. Timestamps of admins must be RFC 3339 date-times (e.g.,
+`2019-06-04T12:58:19Z`); others are rejected (`400 Bad Request`).
+Verifying a service doesn't change its timestamps.
+
+This differs from the GA4GH specification, where the timestamps describe
+the deployment of the service (when it was first deployed, and last
+updated): in the registry, they describe its entry. Services registered
+before the registry set the timestamps keep those they were registered
+with, and services registered without `createdAt` don't get one (see
+[Upgrading](upgrading.md#stored-services)).
 
 ## Errors
 

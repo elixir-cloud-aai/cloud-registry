@@ -1,6 +1,6 @@
 """Typed access to the configuration and collections of the app."""
 
-from datetime import date
+from datetime import UTC, date, datetime
 import ipaddress
 import re
 from typing import Any
@@ -128,3 +128,28 @@ def is_date_time(value: object) -> bool:
         and parts["offset_hour"] < 24
         and parts["offset_minute"] < 60
     )
+
+
+def now() -> datetime:
+    """Get the current time, in the precision of the database.
+
+    Returns:
+        Current time (UTC), in milliseconds, like MongoDB dates.
+    """
+    time = datetime.now(UTC)
+    return time.replace(microsecond=time.microsecond // 1000 * 1000)
+
+
+def format_time(time: datetime) -> str:
+    """Format a time as an RFC 3339 date-time in UTC.
+
+    Used for the times of verifications and the timestamps of services.
+
+    Args:
+        time: Time in UTC; naive, as read from the database, or aware.
+
+    Returns:
+        RFC 3339 date-time in UTC, in milliseconds, e.g.,
+        `2026-10-20T12:34:56.789Z`.
+    """
+    return f"{time:%Y-%m-%dT%H:%M:%S}.{time.microsecond // 1000:03d}Z"

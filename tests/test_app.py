@@ -2,6 +2,7 @@
 
 from collections.abc import Iterator
 from copy import deepcopy
+from datetime import UTC, datetime
 from importlib.metadata import version
 import inspect
 import io
@@ -41,6 +42,7 @@ from tests.conftest import (
     MockResponse,
     make_headers,
     mock_get,
+    without_timestamps,
 )
 from tests.mock_data import ERROR_MEDIA_TYPE, MAX_CONTENT_LENGTH
 
@@ -50,6 +52,11 @@ HTTP_METHODS = {"get", "put", "post", "delete", "options", "head", "patch", "tra
 # Public URL of the app, as configured in `config.yaml`
 PUBLIC_URL = "https://0.0.0.0:8080"
 TIMESTAMPS = {"createdAt", "updatedAt"}
+# Times of registrations and updates of services (cf. `_set_service_clock()`)
+TIME = datetime(2026, 10, 20, 12, 34, 56, 789000, tzinfo=UTC)
+FORMATTED_TIME = "2026-10-20T12:34:56.789Z"
+LATER = datetime(2026, 10, 21, 8, 0, tzinfo=UTC)
+FORMATTED_LATER = "2026-10-21T08:00:00.000Z"
 # Unlike `tests.mock_data.MOCK_SERVICE` (for unit tests, which bypass request
 # validation), this service is valid according to the API specification
 SERVICE: dict[str, Any] = {
@@ -239,11 +246,13 @@ def test_post_service(client: FlaskClient, headers: dict[str, str]) -> None:
 
     response = client.get(f"{BASE}/services/{service_id}", headers=headers)
     assert response.status_code == 200
-    assert response.get_json() == _service(id=service_id)
+    assert without_timestamps(response.get_json()) == _service(id=service_id)
 
     response = client.get(f"{BASE}/services", headers=headers)
     assert response.status_code == 200
-    assert response.get_json() == [_service(id=service_id)]
+    assert [without_timestamps(service) for service in response.get_json()] == [
+        _service(id=service_id)
+    ]
 
 
 def test_post_service_ids_unique(client: FlaskClient, headers: dict[str, str]) -> None:
@@ -855,7 +864,10 @@ def test_service_url_http(
     )
     assert response.status_code == 201, response.get_json()
     (stored,) = client.get(f"{BASE}/services").get_json()
-    assert stored == {**_service_with(field, value), "id": response.get_json()}
+    assert without_timestamps(stored) == {
+        **_service_with(field, value),
+        "id": response.get_json(),
+    }
 
 
 @pytest.mark.parametrize("method, path", [("post", ""), ("put", "/abc")])
@@ -893,15 +905,15 @@ def test_put_service(client: FlaskClient, admin_headers: dict[str, str]) -> None
     assert response.status_code == 201
     assert response.get_json() == "my-tes"
     assert response.location == f"{PUBLIC_URL}{url}"
-    assert client.get(url, headers=admin_headers).get_json() == _service(id="my-tes")
+    stored = client.get(url, headers=admin_headers).get_json()
+    assert without_timestamps(stored) == _service(id="my-tes")
 
     response = client.put(url, json=_service(name="Your TES"), headers=admin_headers)
     assert response.status_code == 200
     assert response.get_json() == "my-tes"
     assert "Location" not in response.headers
-    assert client.get(url, headers=admin_headers).get_json() == _service(
-        id="my-tes", name="Your TES"
-    )
+    stored = client.get(url, headers=admin_headers).get_json()
+    assert without_timestamps(stored) == _service(id="my-tes", name="Your TES")
     assert len(client.get(f"{BASE}/services", headers=admin_headers).get_json()) == 1
 
 
@@ -1752,7 +1764,7 @@ def test_service_date_time_invalid(
 
 
 def test_service_date_time(client: FlaskClient, admin_headers: dict[str, str]) -> None:
-    """Timestamps are stored as sent."""
+    """Timestamps of admins are stored as sent (e.g., for imports)."""
     timestamps = {
         "createdAt": "2019-06-04T12:58:19Z",
         "updatedAt": "2026-10-20t00:00:00.5+02:00",
@@ -1760,6 +1772,109 @@ def test_service_date_time(client: FlaskClient, admin_headers: dict[str, str]) -
     service_id = _post(client, admin_headers, _service(**timestamps))
     service = client.get(f"{BASE}/services/{service_id}").get_json()
     assert {field: service[field] for field in timestamps} == timestamps
+
+
+def _set_service_clock(monkeypatch: pytest.MonkeyPatch, *times: datetime) -> None:
+    """Let registrations and updates of services happen at the given times.
+
+    Args:
+        monkeypatch: Monkeypatch to patch the clock with.
+        times: Times of the registrations and updates, in this order.
+    """
+    clock = iter(times)
+    monkeypatch.setattr(
+        cloud_registry.ga4gh.registry.service, "now", lambda: next(clock)
+    )
+
+
+def _timestamps(client: FlaskClient, service_id: str) -> dict[str, str]:
+    """Get the timestamps of a service, as served.
+
+    Args:
+        client: Test client of the app.
+        service_id: Identifier of the service.
+
+    Returns:
+        Timestamps (`createdAt`, `updatedAt`) of the service, if set.
+    """
+    service = client.get(f"{BASE}/services/{service_id}").get_json()
+    return {field: service[field] for field in TIMESTAMPS if field in service}
+
+
+@pytest.mark.parametrize(
+    "sent",
+    [
+        {},
+        {"createdAt": "2019-06-04T12:58:19Z", "updatedAt": "2019-06-04T12:58:19Z"},
+        # not even checked
+        {"createdAt": "yesterday"},
+    ],
+)
+def test_service_timestamps(
+    client: FlaskClient,
+    headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    sent: dict[str, str],
+) -> None:
+    """The registry sets the timestamps of users' services.
+
+    `createdAt` is set on registration and kept on updates; `updatedAt` is
+    set on registration and each update. Timestamps sent by users other than
+    admins are ignored.
+    """
+    _set_service_clock(monkeypatch, TIME, LATER)
+    service_id = _post(client, headers, _service(**sent))
+    assert _timestamps(client, service_id) == {
+        "createdAt": FORMATTED_TIME,
+        "updatedAt": FORMATTED_TIME,
+    }
+    response = client.put(
+        f"{BASE}/services/{service_id}",
+        json=_service(name="Renamed", **sent),
+        headers=headers,
+    )
+    assert response.status_code == 200, response.get_json()
+    assert _timestamps(client, service_id) == {
+        "createdAt": FORMATTED_TIME,
+        "updatedAt": FORMATTED_LATER,
+    }
+
+
+def test_service_timestamps_admin(
+    client: FlaskClient,
+    admin_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Admins may set timestamps; those they don't send are set by the registry.
+
+    Services that admins register with `PUT` get both; updates keep
+    `createdAt`, unless admins send it.
+    """
+    _set_service_clock(monkeypatch, TIME, LATER, LATER)
+    path = f"{BASE}/services/abc"
+    response = client.put(path, json=_service(), headers=admin_headers)
+    assert response.status_code == 201, response.get_json()
+    assert _timestamps(client, "abc") == {
+        "createdAt": FORMATTED_TIME,
+        "updatedAt": FORMATTED_TIME,
+    }
+    imported = "2019-06-04T12:58:19Z"
+    response = client.put(
+        path, json=_service(updatedAt=imported), headers=admin_headers
+    )
+    assert response.status_code == 200, response.get_json()
+    assert _timestamps(client, "abc") == {
+        "createdAt": FORMATTED_TIME,
+        "updatedAt": imported,
+    }
+    response = client.put(
+        path, json=_service(createdAt=imported), headers=admin_headers
+    )
+    assert response.status_code == 200, response.get_json()
+    assert _timestamps(client, "abc") == {
+        "createdAt": imported,
+        "updatedAt": FORMATTED_LATER,
+    }
 
 
 @pytest.mark.parametrize(

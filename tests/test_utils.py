@@ -1,5 +1,6 @@
 """Unit tests for `cloud_registry.utils`."""
 
+from datetime import UTC, datetime
 from typing import Any
 
 from flask import Flask
@@ -9,10 +10,12 @@ import pytest
 
 from cloud_registry.service_models.custom_config import CustomConfig
 from cloud_registry.utils import (
+    format_time,
     get_collection,
     get_custom_config,
     get_public_url,
     is_date_time,
+    now,
 )
 
 
@@ -174,3 +177,29 @@ def test_is_date_time(value: object) -> None:
 def test_is_date_time_invalid(value: object) -> None:
     """Other strings are invalid."""
     assert not is_date_time(value)
+
+
+# Time as read from the database (naive, UTC, in milliseconds)
+TIME = datetime(2026, 10, 20, 12, 34, 56, 789000)
+FORMATTED = "2026-10-20T12:34:56.789Z"
+
+
+def test_now() -> None:
+    """The current time is in UTC, in milliseconds."""
+    time = now()
+    assert time.tzinfo == UTC
+    assert time.microsecond % 1000 == 0
+    assert abs(datetime.now(UTC) - time).total_seconds() < 5
+
+
+@pytest.mark.parametrize(
+    "time, formatted",
+    [
+        (TIME, FORMATTED),
+        (TIME.replace(tzinfo=UTC), FORMATTED),
+        (datetime(2026, 1, 2, 3, 4, 5), "2026-01-02T03:04:05.000Z"),
+    ],
+)
+def testformat_time(time: datetime, formatted: str) -> None:
+    """Times are formatted as RFC 3339 date-times in UTC."""
+    assert format_time(time) == formatted
