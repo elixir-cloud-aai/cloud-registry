@@ -941,14 +941,19 @@ class TestWarnEnvironments:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Stored services with environments not allowed are named, others not."""
-        for id, environment in [("PROD", "prod"), ("UPPER", "Prod"), ("NUM", 1)]:
+        for id, environment in [
+            ("PROD", "prod"),
+            ("UPPER", "Prod"),
+            ("NUM", 1),
+            ("LIST", ["prod", "x"]),
+        ]:
             services.insert_one({**MOCK_SERVICE, "id": id, "environment": environment})
         services.insert_one({**MOCK_SERVICE, "id": "NONE"})
         with unit_app.app_context(), caplog.at_level(logging.WARNING):
             warn_environments()
         assert len(caplog.records) == 1
         message = caplog.records[0].getMessage()
-        assert "'UPPER', 'NUM'" in message
+        assert "'UPPER', 'NUM', 'LIST'" in message
         assert "environments" in message
         assert "PROD" not in message
         assert "NONE" not in message

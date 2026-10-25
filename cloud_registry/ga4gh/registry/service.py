@@ -640,17 +640,21 @@ def warn_environments() -> None:
     environments = get_custom_config().endpoints.services.environments
     if not environments:
         return
-    services = get_collection("services").find(
-        {"environment": {"$exists": True, "$nin": list(environments)}},
-        {"_id": False, "id": True},
-    )
-    ids = [f"'{service.get('id')}'" for service in services]
+    ids = []
+    for service in get_collection("services").find(
+        {"environment": {"$exists": True}},
+        {"_id": False, "id": True, "environment": True},
+    ):
+        try:
+            check_environment(service, environments=environments)
+        except InvalidService:
+            ids.append(f"'{service['id']}'")
     if ids:
         logger.warning(
             "Services with environments not allowed "
             "(`custom.endpoints.services.environments`) are still served, but "
-            "can only be updated with an allowed environment; update or delete "
-            "them: %s",
+            "can only be updated with an allowed environment (or none); update "
+            "or delete them: %s",
             escape_log_value(", ".join(ids)),
         )
 
