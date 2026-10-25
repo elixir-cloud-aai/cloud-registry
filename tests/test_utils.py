@@ -180,8 +180,8 @@ def test_is_date_time_invalid(value: object) -> None:
 
 
 # Time as read from the database (naive, UTC, in milliseconds)
-TIME = datetime(2026, 10, 20, 12, 34, 56, 789000)
-FORMATTED = "2026-10-20T12:34:56.789Z"
+DB_TIME = datetime(2026, 10, 20, 12, 34, 56, 789000)
+FORMATTED_DB_TIME = "2026-10-20T12:34:56.789Z"
 
 
 def test_now() -> None:
@@ -195,11 +195,11 @@ def test_now() -> None:
 @pytest.mark.parametrize(
     "time, formatted",
     [
-        (TIME, FORMATTED),
-        (TIME.replace(tzinfo=UTC), FORMATTED),
+        (DB_TIME, FORMATTED_DB_TIME),
+        (DB_TIME.replace(tzinfo=UTC), FORMATTED_DB_TIME),
         (datetime(2026, 1, 2, 3, 4, 5), "2026-01-02T03:04:05.000Z"),
     ],
 )
-def testformat_time(time: datetime, formatted: str) -> None:
+def test_format_time(time: datetime, formatted: str) -> None:
     """Times are formatted as RFC 3339 date-times in UTC."""
     assert format_time(time) == formatted

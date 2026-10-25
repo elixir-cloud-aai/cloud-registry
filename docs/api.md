@@ -62,7 +62,6 @@ clients should treat registry content as untrusted: escape it rather than
 render it as HTML, and don't follow or fetch its URLs blindly (e.g., to
 internal addresses).
 
-
 Request bodies are limited to 1 MiB by default (`413 Content Too Large`; see
 [Request size limit](configuration.md#request-size-limit)). Strings in the
 bodies of registrations (`POST /services`, `PUT /services/{serviceId}`) and
@@ -91,12 +90,15 @@ them (e.g., to sort services or show when they were last changed):
 - `createdAt`: when the service was registered; kept on updates;
 - `updatedAt`: when the service was registered or last updated (each `PUT`).
 
-Both are RFC 3339 date-times in UTC, in milliseconds (e.g.,
-`2026-10-20T12:34:56.789Z`). Timestamps sent in registrations are ignored
-(not an error, so clients can send services back as they got them), except
-for admins: they can set them, e.g., to keep the timestamps of services
-imported from another registry; those they don't send are set as for other
-users. Timestamps of admins must be RFC 3339 date-times (e.g.,
+The registry sets them as RFC 3339 date-times in UTC, in milliseconds
+(e.g., `2026-10-20T12:34:56.789Z`). Timestamps sent in registrations are
+ignored (not an error, so clients can send services back as they got them;
+like all fields, they must be strings), except for admins: they can set
+them, e.g., to keep the timestamps of services imported from another
+registry. Those are stored as sent, so they may have other time zones or
+precisions. Timestamps that admins don't send are set as for other users,
+and so is `updatedAt` if they send it unchanged (e.g., when they edit a
+service as read). Timestamps of admins must be RFC 3339 date-times (e.g.,
 `2019-06-04T12:58:19Z`); others are rejected (`400 Bad Request`).
 Verifying a service doesn't change its timestamps.
 

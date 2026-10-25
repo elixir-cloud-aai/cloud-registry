@@ -1777,6 +1777,8 @@ def test_service_date_time(client: FlaskClient, admin_headers: dict[str, str]) -
 def _set_service_clock(monkeypatch: pytest.MonkeyPatch, *times: datetime) -> None:
     """Let registrations and updates of services happen at the given times.
 
+    Each registration or update (also a rejected one) takes the next time.
+
     Args:
         monkeypatch: Monkeypatch to patch the clock with.
         times: Times of the registrations and updates, in this order.
@@ -1832,6 +1834,28 @@ def test_service_timestamps(
         f"{BASE}/services/{service_id}",
         json=_service(name="Renamed", **sent),
         headers=headers,
+    )
+    assert response.status_code == 200, response.get_json()
+    assert _timestamps(client, service_id) == {
+        "createdAt": FORMATTED_TIME,
+        "updatedAt": FORMATTED_LATER,
+    }
+
+
+def test_service_timestamps_admin_edit(
+    client: FlaskClient,
+    admin_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Services that admins edit as read get a new `updatedAt`."""
+    _set_service_clock(monkeypatch, TIME, LATER)
+    service_id = _post(client, admin_headers)
+    service = client.get(f"{BASE}/services/{service_id}").get_json()
+    del service["id"]
+    response = client.put(
+        f"{BASE}/services/{service_id}",
+        json={**service, "name": "Renamed"},
+        headers=admin_headers,
     )
     assert response.status_code == 200, response.get_json()
     assert _timestamps(client, service_id) == {

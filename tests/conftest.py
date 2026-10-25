@@ -41,6 +41,7 @@ from pymongo.collection import Collection
 import pytest
 
 from cloud_registry.app import create_app
+from cloud_registry.ga4gh.registry.service import DATE_TIME_FIELDS
 from cloud_registry.ga4gh.registry.service import KEY as SERVICE_KEY
 from cloud_registry.service_models.custom_config import CustomConfig
 from tests.mock_data import CUSTOM_CONFIG, DB, ERROR_MEDIA_TYPE, MONGO_CONFIG
@@ -99,11 +100,7 @@ def without_timestamps(service: dict[str, Any]) -> dict[str, Any]:
     Returns:
         The service without `createdAt` and `updatedAt`.
     """
-    return {
-        key: value
-        for key, value in service.items()
-        if key not in ("createdAt", "updatedAt")
-    }
+    return {key: value for key, value in service.items() if key not in DATE_TIME_FIELDS}
 
 
 def _db_addresses(uri: str) -> frozenset[tuple[str, int]]:

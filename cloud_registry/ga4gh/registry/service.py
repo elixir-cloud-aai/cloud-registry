@@ -49,12 +49,12 @@ LINK_FIELDS: dict[str, frozenset[str]] = {
     "documentationUrl": HTTP_SCHEMES,
     "organization.url": HTTP_SCHEMES,
 }
-# Fields with timestamps (`format: date-time`), which Connexion's request
-# validation doesn't check without an optional package (`rfc3339-validator`).
-# The registry sets them (cf. `RegisterService`): when the service was
-# registered, and when it was last changed in the registry
+# Timestamps of services, which the registry sets (cf. `RegisterService`):
+# when the service was registered, and when it was last changed
 CREATED = "createdAt"
 UPDATED = "updatedAt"
+# Fields with timestamps (`format: date-time`), which Connexion's request
+# validation doesn't check without an optional package (`rfc3339-validator`)
 DATE_TIME_FIELDS = (CREATED, UPDATED)
 # Identifiers that can't be used for services: dot segments, which clients
 # resolve in URLs, and `types`, as `/services/types` lists the service types
@@ -351,7 +351,6 @@ class RegisterService:
         check_date_times(self.data)
         self._check_duplicate(key=key)
         timestamp = format_time(now())
-        self.data.setdefault(UPDATED, timestamp)
 
         # replace or insert service with provided ID (PUT)
         if self.replace:
@@ -360,6 +359,7 @@ class RegisterService:
         # insert service with random ID (POST); new ID if key exists
         else:
             self.data.setdefault(CREATED, timestamp)
+            self.data.setdefault(UPDATED, timestamp)
             for _ in range(retries + 1):
                 self.data["id"] = generate_id(
                     charset=self.id_charset, length=self.id_length
@@ -412,14 +412,17 @@ class RegisterService:
         of `__init__()`), and set to `timestamp` if the service is inserted;
         it is compared like the URL, so that it isn't reverted if it is
         changed concurrently. Stored services without it (e.g., registered
-        before the registry set it) are kept without it.
+        before the registry set it) are kept without it. `updatedAt` is set
+        to `timestamp`, unless `data` has another one than the stored
+        service (e.g., an admin's import), so that services sent back as
+        read (e.g., by admins editing them) get it, too.
 
         Args:
             key: Key of the service (cf. `service_key()`).
             retries: How many times the service is read again if it changed
                 concurrently.
-            timestamp: Time of the request (RFC 3339), for `createdAt` of
-                inserted services.
+            timestamp: Time of the request (RFC 3339), for `updatedAt`, and
+                `createdAt` of inserted services.
 
         Raises:
             DuplicateService: Another service with the same URL and API type
@@ -432,11 +435,20 @@ class RegisterService:
         for _ in range(retries + 1):
             stored = self.db_coll.find_one(
                 {"id": self.data["id"]},
-                {"_id": False, "url": True, KEY: True, VERIFIED: True, CREATED: True},
+                {
+                    "_id": False,
+                    "url": True,
+                    KEY: True,
+                    VERIFIED: True,
+                    CREATED: True,
+                    UPDATED: True,
+                },
             )
             if stored is None and not self.allow_create:
                 raise NotFound
             replacement = {**self.data, KEY: key}
+            if replacement.get(UPDATED) in (None, (stored or {}).get(UPDATED)):
+                replacement[UPDATED] = timestamp
             query: dict[str, Any] = {"id": self.data["id"]}
             if stored is None:
                 replacement.setdefault(CREATED, timestamp)

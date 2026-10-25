@@ -781,8 +781,8 @@ components:
         also allows `http`. Others return `400`. The registry sets the
         timestamps (`createdAt`, `updatedAt`), so those sent are ignored,
         except for admins (e.g., to keep the timestamps of imported
-        services), whose timestamps must be RFC 3339 date-times (`400`
-        otherwise).
+        services; `updatedAt` sent unchanged is set, too), whose timestamps
+        must be RFC 3339 date-times (`400` otherwise).
       type: object
       required:
         - name
@@ -838,13 +838,13 @@ components:
           type: string
           format: date-time
           description: |
-            When the service was registered (RFC 3339 format, UTC), set by the registry and kept on updates. Unlike in the GA4GH specification (when the service was first deployed), it is the time of the registration. Ignored unless sent by an admin, e.g., to keep the timestamp of an imported service.
+            When the service was registered (RFC 3339 format), set by the registry and kept on updates; unlike in the GA4GH specification, not when it was first deployed.
           example: '2019-06-04T12:58:19Z'
         updatedAt:
           type: string
           format: date-time
           description: |
-            When the service was last registered or updated in the registry (RFC 3339 format, UTC), set by the registry. Unlike in the GA4GH specification (when the service was last updated), it is the time of the last change of its entry. Ignored unless sent by an admin, e.g., to keep the timestamp of an imported service.
+            When the service was registered or last updated in the registry (RFC 3339 format), set by the registry; unlike in the GA4GH specification, not when the service itself was last updated.
           example: '2019-06-04T12:58:19Z'
         environment:
           type: string
