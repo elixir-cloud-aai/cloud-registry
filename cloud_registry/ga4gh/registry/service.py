@@ -630,6 +630,31 @@ def warn_invalid_urls() -> None:
         )
 
 
+def warn_environments() -> None:
+    """Warn of stored services whose environments are not allowed.
+
+    For example, of services registered before the environments were checked
+    (`custom.endpoints.services.environments`). Such services are still
+    served, but can only be updated with an allowed environment (or none).
+    """
+    environments = get_custom_config().endpoints.services.environments
+    if not environments:
+        return
+    services = get_collection("services").find(
+        {"environment": {"$exists": True, "$nin": list(environments)}},
+        {"_id": False, "id": True},
+    )
+    ids = [f"'{service.get('id')}'" for service in services]
+    if ids:
+        logger.warning(
+            "Services with environments not allowed "
+            "(`custom.endpoints.services.environments`) are still served, but "
+            "can only be updated with an allowed environment; update or delete "
+            "them: %s",
+            escape_log_value(", ".join(ids)),
+        )
+
+
 def warn_url_schemes() -> None:
     """Warn of stored services whose URLs use schemes that are not allowed.
 

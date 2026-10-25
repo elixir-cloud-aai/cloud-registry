@@ -326,6 +326,13 @@ def test_config_url_schemes(monkeypatch: pytest.MonkeyPatch) -> None:
     assert _custom(_parse_config()).endpoints.services.url_schemes == ["https"]
 
 
+def test_config_environments(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The base config allows the environments that GA4GH suggests."""
+    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(CONFIG_OVERLAY))
+    environments = _custom(_parse_config()).endpoints.services.environments
+    assert environments == ["prod", "test", "dev", "staging"]
+
+
 def test_config_resource_roles(monkeypatch: pytest.MonkeyPatch) -> None:
     """The roles on services are those of the API, and set in the config.
 

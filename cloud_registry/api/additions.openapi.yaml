@@ -864,7 +864,7 @@ components:
         environment:
           type: string
           maxLength: 256
-          description: 'Environment the service is running in. Use this to distinguish between production, development and testing/staging deployments. Suggested values are prod, test, dev, staging. However this is advised and not enforced.'
+          description: 'Environment the service is running in. Use this to distinguish between production, development and testing/staging deployments. Must be one of the values that the deployment allows (`custom.endpoints.services.environments`), by default prod, test, dev and staging (`400` otherwise).'
           example: 'test'
         version:
           type: string

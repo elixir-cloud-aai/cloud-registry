@@ -1428,6 +1428,25 @@ def test_create_app_url_schemes(
     assert response.status_code == 200
 
 
+def test_create_app_environments(
+    mongo_client: MongoClient[dict[str, Any]],
+    app_env: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`create_app()` warns of stored services with environments not allowed.
+
+    They are still served.
+    """
+    services = mongo_client["serviceStore"]["services"]
+    services.insert_one({**_service(environment="production"), "id": "PROD"})
+    app = cloud_registry.app.create_app()
+    err = capsys.readouterr().err
+    assert "custom.endpoints.services.environments" in err
+    assert "'PROD'" in err
+    response = app.app.test_client().get(f"{BASE}/services/PROD")
+    assert response.status_code == 200
+
+
 def test_create_app_invalid_urls(
     mongo_client: MongoClient[dict[str, Any]],
     app_env: None,
