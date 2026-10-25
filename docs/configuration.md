@@ -187,6 +187,8 @@ types](api.md#service-types):
   admins, and the services that have them, are pending until an admin
   approves them (see [Pending approvals](api.md#pending-approvals)), so that
   admins curate the list without being asked for each type.
+  Switch to this mode only once all instances of the app support it (e.g.,
+  after a rolling update), as older versions store new types as approved.
 
 Only admins can remove types, in every mode. Set this option rather than
 removing the policy `add-service-types` (in `security.access_control.policies`),

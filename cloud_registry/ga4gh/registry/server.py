@@ -27,6 +27,7 @@ from cloud_registry.ga4gh.registry.service import (
     DuplicateService,
     InvalidService,
     RegisterService,
+    check_strings,
     service_exists,
 )
 from cloud_registry.ga4gh.registry.service_types import (
@@ -253,21 +254,10 @@ def _register_service(
         allow_create=allow_create,
         keep_timestamps=is_admin(),
     )
-    if (
-        service_id is not None
-        and not is_admin()
-        and _is_pending(service_id)
-        # updates to an approved type end the review, e.g., to undo a change
-        # of the type
-        and not is_approved(type_document(service.data.get("type")))
-    ):
-        exc = PendingService()
-        logger.info(
-            "Service '%s' not updated: %s",
-            escape_log_value(service_id),
-            escape_log_value(exc.description),
-        )
-        return problem(exc)
+    if service_id is not None and not is_admin():
+        refused = _check_pending_update(service_id, service.data.get("type"))
+        if refused is not None:
+            return refused
     try:
         check_service_type(service.data.get("type"))
         store_pending_type(service.data.get("type"))
@@ -334,6 +324,37 @@ def _register_service(
         path = f"{collection_path.rstrip('/')}/{service.data['id']}"
         return service.data["id"], 201, {"Location": get_public_url(path)}
     return service.data["id"]
+
+
+def _check_pending_update(serviceId: str, value: object) -> Response | None:
+    """Check an update of a service by a user other than an admin.
+
+    Args:
+        serviceId: Service identifier.
+        value: Type of the service in the update (`type`).
+
+    Returns:
+        `None` if the service isn't pending, or the update has an approved
+        type, which ends the review (e.g., to undo a change of the type).
+        Otherwise, an error response: `400` for strings of the type that
+        can't be stored (nor queried), `409` for pending services.
+    """
+    if not _is_pending(serviceId):
+        return None
+    new_type = type_document(value)
+    try:
+        check_strings(new_type or {})
+    except InvalidService as exc:
+        return problem(exc)
+    if is_approved(new_type):
+        return None
+    pending = PendingService()
+    logger.info(
+        "Service '%s' not updated: %s",
+        escape_log_value(serviceId),
+        escape_log_value(pending.description),
+    )
+    return problem(pending)
 
 
 def _is_pending(serviceId: str) -> bool:

@@ -639,3 +639,17 @@ def test_moderated_type_stored_first(
     )
     assert response.status_code == 400
     assert mongo_client[DB]["service_types"].count_documents({}) == 1
+
+
+def test_moderated_update_surrogates(client: FlaskClient, moderated: None) -> None:
+    """Updates of pending services with strings that can't be stored fail."""
+    service_id = register(client, _service()).get_json()
+    service = _service()
+    service["type"]["artifact"] = "\ud800"
+    response = client.put(
+        f"{BASE}/services/{service_id}",
+        data=json.dumps(service),
+        headers={**headers(), "Content-Type": "application/json"},
+    )
+    assert response.status_code == 400
+    assert "'artifact'" in response.get_json()["detail"]
