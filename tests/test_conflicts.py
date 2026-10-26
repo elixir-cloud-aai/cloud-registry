@@ -1,7 +1,7 @@
 """Tests for the codes of conflicts (`409`), with the app created from its config.
 
 Each conflict that the registry returns has a code (`code`), documented in
-the API specification (schema `Conflict`).
+the API specification (schema `ConflictError`).
 """
 
 from pathlib import Path

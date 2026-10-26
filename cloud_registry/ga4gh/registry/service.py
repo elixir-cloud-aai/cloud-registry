@@ -83,7 +83,7 @@ class DuplicateService(CodedConflict):
         existing_id: Identifier of the registered service.
     """
 
-    problem_code = "duplicate-service"
+    problem_code = HiddenDuplicateService.problem_code
     HIDDEN_DESCRIPTION = "A service with the same URL and API type is registered."
 
     def hidden(self) -> HiddenDuplicateService:
