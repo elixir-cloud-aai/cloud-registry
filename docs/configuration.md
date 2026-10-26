@@ -172,9 +172,9 @@ custom:
 
 Clients that let users choose an environment (e.g., UIs) must offer the
 same values: they read them from the service info rather than configuring
-them (see [Registration rules](api.md#registration-rules)). Stored services with other values are served as they are, and
-only checked when they are next written; the app logs a warning on startup
-that names them (see
+them (see [Registration rules](api.md#registration-rules)). Stored services
+with other values are served as they are, and only checked when they are
+next written; the app logs a warning on startup that names them (see
 [Upgrading](upgrading.md#stored-services)).
 
 ## Service types
