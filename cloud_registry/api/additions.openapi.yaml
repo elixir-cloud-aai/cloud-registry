@@ -620,8 +620,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           description: |
-            The service has another URL or API type than the one checked;
-            nothing was changed.
+            The service has another URL or API type than the one checked, or
+            is pending (see `GET /approvals`); nothing was changed.
           content:
             application/json:
               schema:

@@ -322,8 +322,14 @@ def _sync_flags(service_type: dict[str, str], query: dict[str, Any]) -> None:
     while True:
         if pending:
             services.update_many(
-                {**query, PENDING_SERVICE: {"$ne": True}},
-                # pending services aren't verified
+                # pending services aren't verified (also those flagged before)
+                {
+                    **query,
+                    "$or": [
+                        {PENDING_SERVICE: {"$ne": True}},
+                        {VERIFIED: {"$exists": True}},
+                    ],
+                },
                 {"$set": {PENDING_SERVICE: True}, "$unset": {VERIFIED: ""}},
             )
         else:

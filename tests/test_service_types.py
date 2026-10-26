@@ -18,8 +18,12 @@ from werkzeug.test import TestResponse
 import yaml
 
 from cloud_registry.app import create_app
-from cloud_registry.ga4gh.registry import server, service_types
-from cloud_registry.ga4gh.registry.service import PENDING_SERVICE, RegisterService
+from cloud_registry.ga4gh.registry import server, service_types, verification
+from cloud_registry.ga4gh.registry.service import (
+    PENDING_SERVICE,
+    VERIFIED,
+    RegisterService,
+)
 from cloud_registry.utils import get_custom_config
 from tests.conftest import ADMIN, CONFIG_OVERLAY, TEAM_GROUP, USER, make_headers
 from tests.mock_data import DB
@@ -1115,6 +1119,9 @@ def test_pending_after_verification(client: FlaskClient, moderated: None) -> Non
     assert client.get(path, headers=headers(ADMIN)).status_code == 404
     assert client.get(f"{BASE}/verifications", headers=headers(ADMIN)).get_json() == []
     assert client.put(path, headers=headers(ADMIN)).status_code == 409
+    # not restored when the type is approved
+    assert approve(client, {**TES, "version": "2.0.0"}).status_code == 200
+    assert client.get(path).status_code == 404
 
 
 def test_flagged_loses_verification(
@@ -1132,3 +1139,46 @@ def test_flagged_loses_verification(
         service_types.sync_pending_flag(service_id, dict(TES))
     assert _flags(mongo_client) == {service_id: True}
     assert client.get(path, headers=headers(ADMIN)).status_code == 404
+    stored = mongo_client[DB]["services"].find_one({"id": service_id})
+    assert stored is not None
+    assert VERIFIED not in stored
+    # also for services flagged before (e.g., verified by older versions)
+    mongo_client[DB]["services"].update_one(
+        {"id": service_id}, {"$set": {VERIFIED: "2026-01-01T00:00:00Z"}}
+    )
+    with client.application.test_request_context():
+        service_types.sync_pending_services()
+    stored = mongo_client[DB]["services"].find_one({"id": service_id})
+    assert stored is not None
+    assert VERIFIED not in stored
+
+
+def test_verify_approved_meanwhile(
+    client: FlaskClient,
+    moderated: None,
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verifying a service whose type is approved meanwhile succeeds."""
+    service_id = register(client, _service()).get_json()
+    collection = verification.get_collection
+
+    def approve_on_read(name: str) -> Any:
+        """Get a collection; approve the type when the service is read again.
+
+        Args:
+            name: Name of the collection.
+
+        Returns:
+            The collection.
+        """
+        if calls:
+            assert approve(client, TES).status_code == 200
+        calls.append(name)
+        return collection(name)
+
+    calls: list[str] = []
+    monkeypatch.setattr(verification, "get_collection", approve_on_read)
+    path = f"{BASE}/services/{service_id}/verification"
+    response = client.put(path, headers=headers(ADMIN))
+    assert response.status_code == 200, response.get_json()

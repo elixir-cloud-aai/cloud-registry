@@ -207,15 +207,19 @@ def putServiceVerification(
         return _not_verified(
             serviceId, BadRequest("The request body must be a JSON object or empty.")
         )
-    service = get_collection("services").find_one_and_update(
-        query,
-        # renewals never move the time back (e.g., if clocks of instances
-        # differ); the time stored is served
-        {"$max": {VERIFIED: now()}},
-        projection=VERIFICATION_PROJECTION,
-        return_document=ReturnDocument.AFTER,
-    )
-    if service is None:
+    # tried again once if the service isn't pending (anymore), in case its
+    # type was approved between the two reads
+    for attempt in range(2):
+        service = get_collection("services").find_one_and_update(
+            query,
+            # renewals never move the time back (e.g., if clocks of instances
+            # differ); the time stored is served
+            {"$max": {VERIFIED: now()}},
+            projection=VERIFICATION_PROJECTION,
+            return_document=ReturnDocument.AFTER,
+        )
+        if service is not None:
+            break
         stored = get_collection("services").find_one(
             {"id": serviceId}, {"_id": False, PENDING_SERVICE: True}
         )
@@ -223,7 +227,10 @@ def putServiceVerification(
             raise NotFound
         if stored.get(PENDING_SERVICE) is True:
             return _not_verified(serviceId, PendingVerification())
-        return _not_verified(serviceId, VerificationConflict())
+        if attempt:
+            return _not_verified(serviceId, VerificationConflict())
+    # verified in one of the attempts (otherwise, returned above)
+    assert service is not None  # noqa: S101 (for type checkers)
     logger.info(
         "Service '%s' verified by '%s'.",
         escape_log_value(serviceId),
