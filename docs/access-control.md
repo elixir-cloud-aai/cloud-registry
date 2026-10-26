@@ -180,9 +180,10 @@ in the same overlay, too.
   service instead. The role `maintainer` is only granted on services with an
   owner (`400 Bad Request` otherwise, e.g., on services stored before owners
   were introduced: admins grant `owner` first).
-  User identifiers `.` and `..`, and [groups](#roles-of-groups) with such
-  segments (e.g., `a/../b`), are rejected (`400 Bad Request`), as clients
-  resolve them in URLs (`encodeURIComponent` leaves dots unencoded).
+  User identifiers and [groups](#roles-of-groups) with the segments `.` or
+  `..` (e.g., `..` or `a/../b`; backslashes count as slashes, as in browsers)
+  are rejected (`400 Bad Request`), as clients resolve them in URLs
+  (`encodeURIComponent` leaves dots unencoded).
 - **Maintainers** can update, but not delete a service.
 - [Admins](#admins) can do everything.
 

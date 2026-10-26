@@ -768,13 +768,14 @@ components:
         Identifier of the user, i.e., the `sub` claim of the user's tokens
         (e.g., `abc123@login.example.org`). Not `groups`: the
         path is then that of the roles of groups without a group, which is
-        not found (`404`). `.` and `..` are not allowed (`400`), as they are
-        path segments of their own in URLs.
+        not found (`404`). Segments `.` and `..` (the whole identifier, or
+        between backslashes, which browsers take as slashes) are not allowed
+        (`400`), as clients resolve them in URLs.
       required: true
       schema:
         type: string
-        # anything but `.` and `..` (dot segments in URLs)
-        pattern: '^(?!\.\.?$)'
+        # no dot segments (`.`, `..`), also between backslashes (cf. `Group`)
+        pattern: '^(?!(.*[/\\])?\.\.?([/\\]|$))'
     Group:
       name: group
       in: path
@@ -784,15 +785,17 @@ components:
         `urn:example:group:registry-team#login.example.org`), URL-encoded
         (e.g., `#` as `%23`; may contain `/`, but not start with it: the
         path then has a double slash, which is redirected to the path
-        without it, i.e., to another group). Segments `.` and `..` (between
-        slashes, or the whole group) are not allowed (`400`), as clients
-        resolve them in URLs if slashes aren't encoded.
+        without it, i.e., to another group). Segments `.` and `..` (the
+        whole group, or between slashes or backslashes, which browsers take
+        as slashes) are not allowed (`400`), as clients resolve them in URLs
+        if slashes aren't encoded.
       required: true
       schema:
         type: string
-        # may contain slashes (e.g., URLs), but no dot segments (`.`, `..`)
+        # may contain slashes (e.g., URLs), but no dot segments (`.`, `..`),
+        # also between backslashes (WHATWG URLs)
         format: path
-        pattern: '^(?!(.*/)?\.\.?(/|$))'
+        pattern: '^(?!(.*[/\\])?\.\.?([/\\]|$))'
   responses:
     ServiceCreated:
       description: The service was successfully registered.

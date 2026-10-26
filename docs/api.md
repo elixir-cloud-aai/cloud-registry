@@ -70,8 +70,8 @@ services with `PUT`: others can only update services they have a role on
 (`403 Forbidden` otherwise). Services deleted while they are registered or
 updated return `404 Not Found`, unless an admin's `PUT` registers them again.
 Identifiers `.` and `..` (which clients resolve in URLs) and `types` (the path
-of `GET /services/types`) are rejected (`400 Bad Request`), as are users `.`
-and `..` and groups with such segments in the paths of the [permissions
+of `GET /services/types`) are rejected (`400 Bad Request`), as are users and
+groups with such segments in the paths of the [permissions
 endpoints](access-control.md#roles-on-services).
 
 URLs in registrations must be HTTP(S) URLs with a host: the service `url`,

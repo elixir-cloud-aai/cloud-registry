@@ -1227,7 +1227,8 @@ def test_dot_segment_principals(client: FlaskClient, kind: str, principal: str) 
 
 
 @pytest.mark.parametrize(
-    "group", ["../a", "a/..", "a/./b", "a/../b", "./a", "a/.", "a%2F..%2Fb"]
+    "group",
+    ["../a", "a/..", "a/./b", "a/../b", "./a", "a/.", "a%2F..%2Fb", "..%5Cb", "a%5C."],
 )
 def test_dot_segments_in_groups(client: FlaskClient, group: str) -> None:
     """Groups with dot segments between slashes are rejected.
@@ -1249,6 +1250,19 @@ def test_dotted_groups(client: FlaskClient, group: str) -> None:
     service_id = register(client)
     assert grant_group(client, service_id, group, "maintainer", ADMIN) == 200
     assert group_permissions(client, service_id) == [(group, "maintainer")]
+
+
+@pytest.mark.parametrize("user", ["..%5Cb", "a%5C.."])
+def test_dot_segments_in_users(client: FlaskClient, user: str) -> None:
+    """Users with dot segments between backslashes are rejected.
+
+    Browsers take backslashes in URLs as slashes.
+    """
+    service_id = register(client)
+    url = f"{BASE}/services/{service_id}/permissions/{user}"
+    response = client.put(url, json={"role": "owner"}, headers=headers(ADMIN))
+    assert response.status_code == 400
+    assert client.delete(url, headers=headers(ADMIN)).status_code == 400
 
 
 @pytest.mark.parametrize("principal", ["...", ".a", "a."])
