@@ -282,13 +282,44 @@ security:
             registry-admins: admin
 ```
 
-On startup, the app logs the groups mapped to `admin`. Admins can also make
-other users admins (see [Operations](operations.md#more-admins)).
+On startup, the app logs the groups mapped to `admin`. Only groups can make
+users admins: the role `admin` is opt-in (see [Admin mode](#admin-mode)), so
+rules can't grant it (see [Operations](operations.md#more-admins)).
+
+### Admin mode
+
+Admins act as admins only in **admin mode**: requests that ask for the role
+`admin` in the header `X-Request-Roles`. Other requests of admins have the
+permissions of other users (plus their roles on services and those of their
+other groups), so that being admin is a deliberate action, e.g., a switch
+in a UI. This is FOCA's opt-in for roles
+(`security.access_control.opt_in_roles: [admin]` in the base config; see
+[FOCA's docs](https://foca.readthedocs.io/en/latest/access-control/#opt-in-roles)).
+Scripts and other API clients send the header with each request that needs
+admin rights:
+
+```bash
+curl -X DELETE "http://localhost:8080/ga4gh/registry/v1/services/<id>" \
+  -H "Authorization: Bearer <admin token>" -H "X-Request-Roles: admin"
+```
+
+The header grants nothing to users who aren't admins. [`GET /me`](#current-user)
+tells clients whether the user may switch to admin mode
+(`admin_available`) and whether the request is in admin mode (`admin`).
+Responses vary by the header (`Vary: X-Request-Roles`), so that caches keep
+them apart. Browser apps on other origins can send the header if CORS allows
+it (`security.cors.allow_headers`; FOCA's default allows all headers); the
+app warns on startup otherwise.
+
+To let admins act as admins on every request, as before 0.6.0, remove the
+opt-in in the deployment's config (`security.access_control.opt_in_roles:
+[]`).
 
 ## Current user
 
 `GET /me` returns the current user's identifier (to give to owners), whether
-they are an admin, whether they may add [service
+the request is in [admin mode](#admin-mode) (`admin`) and whether they may
+switch to it (`admin_available`), whether they may add [service
 types](api.md#service-types) (`may_add_service_types`) and whether these
 are pending (`service_types_pending`), and their roles on
 services, also those through groups

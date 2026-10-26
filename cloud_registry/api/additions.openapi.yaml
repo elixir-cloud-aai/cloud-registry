@@ -805,9 +805,9 @@ paths:
     get:
       summary: Get the current user.
       description: |
-        Get the identifier of the current user, whether they are an admin,
-        and their roles on services. Also stores or refreshes the user's
-        display name (from the identity provider) for these services, where
+        Get the identifier of the current user, whether they act as an admin
+        (admin mode) and may do so, and their roles on services. Also stores
+        or refreshes the user's display name (from the identity provider) for these services, where
         their owners and admins can see it with the roles.
       operationId: getMe
       x-openapi-router-controller: cloud_registry.ga4gh.registry.permissions
@@ -1142,6 +1142,7 @@ components:
       required:
         - user_id
         - admin
+        - admin_available
         - may_add_service_types
         - service_types_pending
         - services
@@ -1155,8 +1156,16 @@ components:
         admin:
           type: boolean
           description: |
-            Whether the user is an admin: a member of a group mapped to the
-            role `admin`, or granted the role via FOCA's permissions API.
+            Whether the user acts as an admin on this request: in admin mode,
+            i.e., if the request asks for the role in the header
+            `X-Request-Roles` (e.g., `X-Request-Roles: admin`) and the user
+            may switch to it (`admin_available`). Without admin mode, admins
+            have the permissions of other users.
+        admin_available:
+          type: boolean
+          description: |
+            Whether the user may switch to admin mode: a member of a group
+            mapped to the role `admin` (with or without the header).
         may_add_service_types:
           type: boolean
           description: |

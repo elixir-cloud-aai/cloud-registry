@@ -28,6 +28,17 @@ its settings and checks; change the config before upgrading:
 3. **Gunicorn:** the image loads FOCA's settings (`foca.gunicorn_config`);
    `cloud_registry.gunicorn_config` no longer exists. The settings are the
    same; custom commands that load the old module must load FOCA's.
+4. **Admin mode:** admins act as admins only in requests that ask for it
+   (header `X-Request-Roles: admin`; see [Admin
+   mode](access-control.md#admin-mode)). Tell the maintainers of clients
+   and scripts that need admin rights to send the header, or remove the
+   opt-in (`security.access_control.opt_in_roles: []`). FOCA refuses
+   configured rules that grant the role `admin`
+   (`security.access_control.policies`) on startup. Stored ones (e.g.,
+   granted via the permissions API) still apply, without admin mode, and
+   FOCA warns of them when policies are first loaded. Revoke them (`DELETE
+   /admin/access-control/permissions/<rule-id>`), and add the users to an
+   admin group instead.
 
 Noticeable, but no action needed:
 

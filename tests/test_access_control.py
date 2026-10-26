@@ -41,10 +41,12 @@ from cloud_registry.ga4gh.registry.service import DuplicateService
 from cloud_registry.utils import get_collection
 from tests.conftest import (
     ADMIN,
+    ADMIN_ROLE,
     COLLECTION_CLASS,
     CONFIG_OVERLAY,
     GROUPS,
     NAMES,
+    ROLES_HEADER,
     TEAM_GROUP,
     USER,
     make_headers,
@@ -67,16 +69,20 @@ DAVE, ERIN = "dave@example.org", "erin@example.org"
 OTHER_GROUP = GROUPS[BOB][0]
 
 
-def headers(user: str | None = None) -> dict[str, str]:
+def headers(user: str | None = None, admin_mode: bool = True) -> dict[str, str]:
     """Get request headers with an access token for a user.
 
     Args:
         user: User identifier; no token if `None`.
+        admin_mode: Whether the request asks for admin mode (header
+            `X-Request-Roles`), which applies to admins only.
 
     Returns:
         Request headers.
     """
-    return {} if user is None else make_headers(user)
+    if user is None:
+        return {}
+    return make_headers(user, roles=ADMIN_ROLE if admin_mode else None)
 
 
 # Numbers for the URLs of registered services, which must be unique
@@ -364,17 +370,18 @@ def revoke(
     ).status_code
 
 
-def me(client: FlaskClient, user: str) -> dict[str, Any]:
+def me(client: FlaskClient, user: str, admin_mode: bool = True) -> dict[str, Any]:
     """Get the current user (`GET /me`), as a user.
 
     Args:
         client: Test client of the app.
         user: User who sends the request.
+        admin_mode: Whether the request asks for admin mode.
 
     Returns:
         The user's identifier, admin status and roles on services.
     """
-    response = client.get(f"{BASE}/me", headers=headers(user))
+    response = client.get(f"{BASE}/me", headers=headers(user, admin_mode))
     assert response.status_code == 200, response.get_json()
     current: dict[str, Any] = response.get_json()
     return current
@@ -387,6 +394,7 @@ def test_me(client: FlaskClient) -> None:
     assert me(client, ALICE) == {
         "user_id": ALICE,
         "admin": False,
+        "admin_available": False,
         "may_add_service_types": True,
         "service_types_pending": False,
         "services": sorted(
@@ -400,7 +408,14 @@ def test_me(client: FlaskClient) -> None:
     assert me(client, BOB)["services"] == [{"service_id": first, "role": "maintainer"}]
     assert me(client, CAROL)["services"] == []
     admin = me(client, ADMIN)
-    assert (admin["admin"], admin["services"]) == (True, [])
+    assert (admin["admin"], admin["admin_available"], admin["services"]) == (
+        True,
+        True,
+        [],
+    )
+    # without admin mode, admins are reported as such, but not active
+    admin = me(client, ADMIN, admin_mode=False)
+    assert (admin["admin"], admin["admin_available"]) == (False, True)
     assert delete(client, first, ALICE) == 200
     assert me(client, BOB)["services"] == []
 
@@ -966,21 +981,44 @@ def test_permissions_api_admin_only(client: FlaskClient) -> None:
 
 
 def test_admin_via_permissions_api(client: FlaskClient) -> None:
-    """Users granted the role `admin` via the permissions API are admins.
+    """The role `admin` can't be granted via the permissions API.
 
-    `GET /me` says so, until the role is revoked.
+    It is opt-in (admin mode), so only groups can be mapped to it; a rule
+    granting it would apply without opting in.
     """
     service_id = register(client)
-    assert me(client, CAROL)["admin"] is False
     rule = {"policy_type": "g", "rule": {"v0": f"user:{CAROL}", "v1": "admin"}}
     response = client.post(PERMISSIONS_API, json=rule, headers=headers(ADMIN))
+    assert response.status_code == 400
+    me_carol = me(client, CAROL)
+    assert (me_carol["admin"], me_carol["admin_available"]) == (False, False)
+    assert update(client, service_id, CAROL) == 403
+
+
+def test_admin_mode(client: FlaskClient) -> None:
+    """Admins have the permissions of other users unless they opt in.
+
+    Responses vary by the header of opt-in roles, e.g., for caches.
+    """
+    service_id = register(client)
+    assert update(client, service_id, ADMIN) == 200
+    response = client.put(
+        f"{BASE}/services/{service_id}",
+        json=_service(),
+        headers=headers(ADMIN, admin_mode=False),
+    )
+    assert response.status_code == 403
+    assert ROLES_HEADER in response.headers["Vary"]
+    response = client.get(
+        f"{BASE}/services/{service_id}/permissions",
+        headers=headers(ADMIN, admin_mode=False),
+    )
+    assert response.status_code == 403
+    response = client.get(
+        f"{BASE}/services/{service_id}/permissions", headers=headers(ADMIN)
+    )
     assert response.status_code == 200
-    rule_id = response.get_json()
-    assert me(client, CAROL)["admin"] is True
-    assert update(client, service_id, CAROL) == 200
-    response = client.delete(f"{PERMISSIONS_API}/{rule_id}", headers=headers(ADMIN))
-    assert response.status_code == 200
-    assert me(client, CAROL)["admin"] is False
+    # asking for admin mode grants other users nothing
     assert update(client, service_id, CAROL) == 403
 
 
