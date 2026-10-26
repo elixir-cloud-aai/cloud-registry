@@ -42,7 +42,8 @@ or `dev` and `sha-<commit>` images of commits since the upgrade to FOCA 0.17.
 This chart version sets the public URL (`config.server.public_url`) and
 requires images built with FOCA 0.18 (app 0.6.0 or later, or `dev` and
 `sha-<commit>` images of commits since the upgrade to FOCA 0.18): older
-images ignore it and refuse `config.security.access_control.require_admin`.
+images refuse to start, as they reject `config.server.public_url`, which the
+chart always sets (and `config.security.access_control.require_admin`).
 
 The identity provider is deployment configuration, without defaults (see
 [Deployment
