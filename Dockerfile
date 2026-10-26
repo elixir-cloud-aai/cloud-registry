@@ -6,8 +6,8 @@
 ## `pyproject.toml` pins, replaced by the release image (0.18.0) before the
 ## next release (`scripts/check_release_pins.py`); dated tags move with
 ## later commits of the day, so only the digest identifies the image
-## FOCA commit: 4990e19367b52a3175f450011be65cd8122e0a49
-FROM elixircloud/foca:20261026-py3.13@sha256:3b9b058d83e91d43a5c94dcf2fa30930e35f1a98e105c4e6c688a23def9dc79a
+## FOCA commit: 6214325c6a577f0c029a496b58192bc84bbea53d
+FROM elixircloud/foca:20261026-py3.13@sha256:15cb3c3b981382769cc375a1e6367f17ceba5c10dd29bb0180657610ac0be610
 
 ##### METADATA #####
 ## OCI annotations; images built from the FOCA image inherit its own, so all

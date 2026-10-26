@@ -110,7 +110,7 @@ dependencies = [
     # TEMPORARY: FOCA's dev commit with the features of 0.18 (#226),
     # replaced by FOCA 0.18.0 before the next release
     # (`scripts/check_release_pins.py`)
-    "foca @ git+https://github.com/elixir-cloud-aai/foca@4990e19367b52a3175f450011be65cd8122e0a49",
+    "foca @ git+https://github.com/elixir-cloud-aai/foca@6214325c6a577f0c029a496b58192bc84bbea53d",
     "gunicorn>=26.2.0,<27",
 ]
 
