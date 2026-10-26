@@ -261,8 +261,10 @@ def test_public_read_identity_provider_down(
     """Public reads stay anonymous if tokens can't be validated otherwise.
 
     E.g., if the identity provider is unavailable: the reads keep working
-    (as without a token), and a warning is logged; other operations fail.
+    (as without a token), the token is validated once, and this is logged;
+    other operations fail.
     """
+    calls: list[str] = []
 
     def unavailable(token: str, conf: Any) -> NoReturn:
         """Fail as FOCA does if the identity provider is unavailable.
@@ -275,13 +277,17 @@ def test_public_read_identity_provider_down(
             connexion.exceptions.Unauthorized: Always, without the error
                 `invalid_token`.
         """
+        calls.append(token)
+        # private API of FOCA, as it fails if the identity provider is down
         raise auth._unauthorized("identity provider down", invalid_token=False)
 
     monkeypatch.setattr(auth, "_validate", unavailable)
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.INFO):
         response = client.get(f"{BASE}/services", headers=make_headers())
     assert response.status_code == 200
     assert "identity provider down" in caplog.text
+    # validated once
+    assert len(calls) == 1
     response = client.post(f"{BASE}/services", json=_service(), headers=make_headers())
     _assert_error(response, 401)
     assert response.headers["WWW-Authenticate"] == "Bearer"

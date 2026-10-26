@@ -39,10 +39,9 @@ paths:
         see them, if they send a token (optional; invalid tokens return
         `401`, as on other operations). Their timestamps (`createdAt`,
         `updatedAt`) are set by the registry: when the service was
-        registered, and when it
-        was registered or last updated in the registry; unlike in the GA4GH
-        specification, not when the service was deployed or updated (see
-        `ExternalServiceRegister`).
+        registered, and when it was registered or last updated in the
+        registry; unlike in the GA4GH specification, not when the service
+        was deployed or updated (see `ExternalServiceRegister`).
     post:
       summary: Register service.
       description: |
@@ -544,9 +543,10 @@ paths:
         provider). Unverified and unknown services return `404`, as do
         pending services (see `GET /approvals`) that the user may not see
         (admins and users with a role on them see them if they send a token;
-        optional, invalid tokens return `401`). The verification names the URL and API type of the service; it is
-        removed when the URL (in any way, as written) or API type
-        (`type.group`, `type.artifact`) of the service changes.
+        optional, invalid tokens return `401`). The verification names the
+        URL and API type of the service; it is removed when the URL (in any
+        way, as written) or API type (`type.group`, `type.artifact`) of the
+        service changes.
       operationId: getServiceVerification
       x-openapi-router-controller: cloud_registry.ga4gh.registry.verification
       security:
