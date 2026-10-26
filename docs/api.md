@@ -257,6 +257,24 @@ malformed requests itself, before they reach the app (e.g., with an invalid
 `Content-Length`, or a request line or headers over its limits), with HTML
 error pages.
 
+Conflicts (`409 Conflict`) also have a `code`, which tells them apart:
+unlike `detail`, codes are stable, so clients branch on them (e.g., `{"title":
+"Conflict", "status": 409, "detail": "...", "code": "pending-service"}`).
+
+| Code | Conflict |
+|---|---|
+| `duplicate-service` | a service with the same URL and API type is registered (see [Duplicate services](#duplicate-services)) |
+| `pending-service` | the service is [pending](#pending-approvals): only admins update it, and it can't be verified |
+| `unused-types-limit` | the user has added as many service types that no service has as allowed (see [Service types](configuration.md#service-types)) |
+| `service-type-registered` | the service type is registered, also if it is pending |
+| `service-type-in-use` | services have the service type, so it can't be removed |
+| `verification-mismatch` | the service has another URL or API type than the one checked (see [Verified services](#verified-services)) |
+| `last-owner` | the subject is the last owner of the service |
+| `conflict` | other conflicts (e.g., changes of policy rules set in the configuration via FOCA's permissions API) |
+
+Further codes may be added; treat unknown ones like `conflict`. The API
+specification documents the codes in the schema `ConflictError`.
+
 See [Access control](access-control.md) for the roles and [Verified
 services](#verified-services) for verifications. Extensions of the GA4GH
 endpoints, such as pagination, search or filters, will be reconsidered with

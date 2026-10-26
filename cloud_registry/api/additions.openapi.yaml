@@ -621,11 +621,12 @@ paths:
         '409':
           description: |
             The service has another URL or API type than the one checked, or
-            is pending (see `GET /approvals`); nothing was changed.
+            is pending (see `GET /approvals`); nothing was changed (`code`:
+            `verification-mismatch` or `pending-service`).
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/ConflictError'
         '500':
           $ref: '#/components/responses/InternalServerError'
         default:
@@ -807,11 +808,13 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     Conflict:
-      description: The request conflicts with the current state of the resource.
+      description: |
+        The request conflicts with the current state of the resource; `code`
+        tells why (see the schema `ConflictError`).
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Error'
+            $ref: '#/components/schemas/ConflictError'
     DuplicateService:
       description: |
         A service with the same URL and API type (`type.group` and
@@ -826,12 +829,15 @@ components:
         `serviceId` nor name the service in `detail`.
         Also returned, without `serviceId`, for updates of pending services
         by users other than admins (`PUT /services/{serviceId}`; see `GET
-        /approvals`).
+        /approvals`), and for new types of users who have added as many
+        unused types as allowed (see `POST /services/types`); `code` tells
+        these conflicts apart (`duplicate-service`, `pending-service`,
+        `unused-types-limit`).
       content:
         application/json:
           schema:
             allOf:
-              - $ref: '#/components/schemas/Error'
+              - $ref: '#/components/schemas/ConflictError'
               - type: object
                 properties:
                   serviceId:
@@ -840,6 +846,57 @@ components:
                       Identifier of the registered service; only for users
                       who may read it.
   schemas:
+    ConflictError:
+      description: |
+        Problem details of a `409 Conflict`, with a code that tells
+        conflicts apart: unlike `detail`, codes are stable, so clients
+        branch on them.
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          required:
+            - code
+          properties:
+            code:
+              type: string
+              description: |
+                Why the request conflicts with the current state:
+
+                - `duplicate-service`: a service with the same URL and API
+                  type is registered (`POST /services`, `PUT
+                  /services/{serviceId}`).
+                - `pending-service`: the service is pending (see `GET
+                  /approvals`), so users other than admins can't update it
+                  (`PUT /services/{serviceId}`), and it can't be verified
+                  (`PUT /services/{serviceId}/verification`).
+                - `unused-types-limit`: the user has added as many service
+                  types that no service has as allowed (`POST
+                  /services/types`, `POST /services`, `PUT
+                  /services/{serviceId}`).
+                - `service-type-registered`: the service type is registered,
+                  also if it is pending (`POST /services/types`).
+                - `service-type-in-use`: services have the service type
+                  (`DELETE /services/types`).
+                - `verification-mismatch`: the service has another URL or
+                  API type than the one checked (`PUT
+                  /services/{serviceId}/verification`).
+                - `last-owner`: the subject is the last owner of the service
+                  (`PUT` and `DELETE` of
+                  `/services/{serviceId}/permissions/...`).
+                - `conflict`: other conflicts (e.g., changes of policy rules
+                  set in the configuration via FOCA's permissions API).
+
+                Further codes may be added (so the codes are an extensible
+                enum, not a closed one); treat unknown ones like `conflict`.
+              x-extensible-enum:
+                - duplicate-service
+                - pending-service
+                - unused-types-limit
+                - service-type-registered
+                - service-type-in-use
+                - verification-mismatch
+                - last-owner
+                - conflict
     ServiceId:
       description: Service identifier.
       type: string

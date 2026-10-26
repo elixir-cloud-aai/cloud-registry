@@ -1528,6 +1528,7 @@ def _assert_hidden(problem: dict[str, Any], existing_id: str) -> None:
         "title": "Conflict",
         "status": 409,
         "detail": DuplicateService.HIDDEN_DESCRIPTION,
+        "code": "duplicate-service",
     }
     assert existing_id not in str(problem)
 
