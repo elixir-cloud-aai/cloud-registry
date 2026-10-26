@@ -17,6 +17,7 @@ from cloud_registry.ga4gh.registry.permissions import (
     check_admin_groups,
     check_no_service_clients,
 )
+from cloud_registry.ga4gh.registry.rename import resume_renames
 from cloud_registry.ga4gh.registry.service import (
     add_service_keys,
     warn_environments,
@@ -75,7 +76,8 @@ def create_app() -> App:
     validation log messages), checks the admin groups and the group claim,
     and that no service clients are configured, requires a size limit of
     request bodies and that the service info serves the registration rules,
-    adds missing keys of services and the types of registered services that
+    adds missing keys of services, resumes interrupted renames of services
+    (cf. `resume_renames()`) and adds the types of registered services that
     aren't stored (e.g., on upgrades), and warns of stored services with
     invalid URLs or URL schemes that are not allowed and of placeholders in
     the service info. FOCA validates the config, e.g., that
@@ -133,6 +135,7 @@ def create_app() -> App:
                 "`server.max_content_length` (bytes), not null"
             )
         add_service_keys()
+        resume_renames()
         add_service_types()
         sync_pending_services()
         warn_invalid_urls()

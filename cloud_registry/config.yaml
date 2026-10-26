@@ -196,6 +196,13 @@ db:
                               user_id: 1
                           options:
                             'unique': True
+                # Locks of renames of services, by identifier (`_id`), with
+                # the time they started, after which interrupted ones are
+                # resumed (cf. `cloud_registry.ga4gh.registry.rename`)
+                service_renames:
+                    indexes:
+                        - keys:
+                              started_at: 1
 
 # API configuration
 # Cf. https://foca.readthedocs.io/en/latest/configuration/api/
