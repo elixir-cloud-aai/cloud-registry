@@ -107,7 +107,9 @@ them; see [Upgrading](upgrading.md#stored-services).
 
 The number of registrations per user is not limited, so deployments should
 limit request rates at the ingress (see [Rate
-limits](deployment.md#rate-limits)).
+limits](deployment.md#rate-limits)). Users other than admins may only have
+added a limited number of service types that no service has (`409 Conflict`
+for further ones; see [Service types](configuration.md#service-types)).
 
 ## Timestamps
 
@@ -215,12 +217,12 @@ There is no way back: admins remove types instead (only types that no
 service has, see above). Pending types stay pending if the mode changes.
 An admin who registers a service with a pending type doesn't approve it:
 admins approve types with `PUT /services/types/approval`. A pending type is
-stored before the service that adds it, so it stays pending if the
-registration fails (e.g., for a duplicate), and also if the service is then
-changed back to its previous type: pending types stay when no service has
-them. Admins remove such types, as other unwanted ones. Types are unique
-also while pending: `POST /services/types` returns `409 Conflict` for a
-type that another user added.
+stored only for a valid service, before the service is stored, so it stays
+pending if the registration then fails (e.g., for a duplicate registered
+meanwhile), and also if the service is then changed back to its previous
+type: pending types stay when no service has them. Admins remove such types,
+as other unwanted ones. Types are unique also while pending: `POST
+/services/types` returns `409 Conflict` for a type that another user added.
 
 ```bash
 curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/types/approval" \

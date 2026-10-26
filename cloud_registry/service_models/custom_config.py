@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 
 from foca.models.config import FOCABaseConfig
 from foca.utils.misc import generate_id
-from pydantic import Field, PositiveInt, field_validator
+from pydantic import Field, NonNegativeInt, PositiveInt, field_validator
 
 
 class ServiceConfig(FOCABaseConfig):
@@ -210,6 +210,10 @@ class AccessControlConfig(FOCABaseConfig):
             `moderated`, any authenticated user, but types of users other
             than admins are pending until an admin approves them, and so are
             the services that have them.
+        max_unused_service_types: How many service types that no service
+            has a user other than an admin may have added, in every mode
+            (`409` above); unlimited if `None`. Bounds the lists of types,
+            and of pending types, that users can grow.
 
     Attributes:
         require_admin: Whether the app refuses to start unless a group is
@@ -222,19 +226,25 @@ class AccessControlConfig(FOCABaseConfig):
             `moderated`, any authenticated user, but types of users other
             than admins are pending until an admin approves them, and so are
             the services that have them.
+        max_unused_service_types: How many service types that no service
+            has a user other than an admin may have added, in every mode
+            (`409` above); unlimited if `None`. Bounds the lists of types,
+            and of pending types, that users can grow.
 
     Raises:
         pydantic.ValidationError: The class was instantianted with an illegal
-            data type, or `service_types` is not `open`, `controlled`
-            or `moderated`.
+            data type, `service_types` is not `open`, `controlled` or
+            `moderated`, or `max_unused_service_types` is negative.
 
     Example:
         >>> AccessControlConfig(require_admin=False, service_types='controlled')
-        AccessControlConfig(require_admin=False, service_types='controlled')
+        AccessControlConfig(require_admin=False, service_types='controlled', max_\
+unused_service_types=10)
     """
 
     require_admin: bool = True
     service_types: Literal["open", "controlled", "moderated"] = "open"
+    max_unused_service_types: NonNegativeInt | None = 10
 
 
 class CustomConfig(FOCABaseConfig):
@@ -274,7 +284,7 @@ x='https', external_host='0.0.0.0', external_port=8080, api_path=''), services\
 =ServicesConfig(id=IdConfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', le\
 ngth=6), url_schemes=['https'], environments=['prod', 'test', 'dev', 'staging'\
 ])), access_control=AccessControlConfig(require_admin=True, service_types='ope\
-n'))
+n', max_unused_service_types=10))
     """
 
     endpoints: EndpointsConfig

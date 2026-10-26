@@ -39,8 +39,12 @@ KEY = "_serviceKey"
 # `verification.py`); removed when its URL (as written) or key changes; not
 # served
 VERIFIED = "_verifiedAt"
+# Internal field of pending services: `True` while the type of the service
+# is pending (cf. `cloud_registry.ga4gh.registry.service_types`), with an
+# index, so that reads filter by it; derived from the type, not served
+PENDING_SERVICE = "_pending"
 # Projection excluding internal fields
-PROJECTION = {"_id": False, KEY: False, VERIFIED: False}
+PROJECTION = {"_id": False, KEY: False, VERIFIED: False, PENDING_SERVICE: False}
 # Fields with URLs of links, as paths of keys, with the schemes they allow
 # (cf. `foca.utils.urls.check_url_fields()`): contact URLs can be email
 # addresses (RFC 6068), as in the GA4GH service info specification
@@ -317,6 +321,8 @@ class RegisterService:
             was_created: Whether a new service was registered.
             verification_removed: Whether the verification of a replaced
                 service was removed (cf. `_replace()`).
+            pending: Whether the service is stored as pending (cf.
+                `PENDING_SERVICE`); set before `register_metadata()`.
             allow_create: Whether a service with the identifier may be
                 registered.
             id_charset: A string of allowed characters for generating service
@@ -336,11 +342,47 @@ class RegisterService:
         self.allow_create = allow_create
         self.was_created = False
         self.verification_removed = False
+        self.pending = False
         self.id_charset: str = endpoint_conf.services.id.charset
         self.id_length = int(endpoint_conf.services.id.length)
         self.url_schemes = frozenset(endpoint_conf.services.url_schemes)
         self.environments: list[str] = list(endpoint_conf.services.environments)
         self.db_coll = get_collection("services")
+
+    def validate(self) -> str:
+        """Check the service, before it is registered.
+
+        Also called by `register_metadata()`; callers may call it first, so
+        that they only act (e.g., store its type) for valid services.
+
+        Returns:
+            Key of the service (cf. `service_key()`).
+
+        Raises:
+            InvalidService: Cf. `register_metadata()`.
+            DuplicateService: Another service with the same URL and API type
+                is registered.
+        """
+        check_strings(self.data)
+        key = service_key(self.data)
+        check_url_scheme(self.data["url"], schemes=self.url_schemes)
+        check_links(self.data)
+        check_date_times(self.data)
+        check_environment(self.data, environments=self.environments)
+        self._check_duplicate(key=key)
+        return key
+
+    def _internal_fields(self, key: str) -> dict[str, Any]:
+        """Get the internal fields to store with the service.
+
+        Args:
+            key: Key of the service (cf. `service_key()`).
+
+        Returns:
+            The key, and the pending flag if the service is pending (cf.
+            `PENDING_SERVICE`).
+        """
+        return {KEY: key} | ({PENDING_SERVICE: True} if self.pending else {})
 
     def register_metadata(self, retries: int = 9) -> None:
         """Register service.
@@ -366,13 +408,7 @@ class RegisterService:
                 service doesn't exist (also if it was deleted concurrently),
                 and `allow_create` is false.
         """
-        check_strings(self.data)
-        key = service_key(self.data)
-        check_url_scheme(self.data["url"], schemes=self.url_schemes)
-        check_links(self.data)
-        check_date_times(self.data)
-        check_environment(self.data, environments=self.environments)
-        self._check_duplicate(key=key)
+        key = self.validate()
         timestamp = format_time(now())
 
         # replace or insert service with provided ID (PUT)
@@ -391,7 +427,9 @@ class RegisterService:
                     continue
                 try:
                     # insert a new dict, as `insert_one()` adds an `_id` field
-                    self.db_coll.insert_one(document={**self.data, KEY: key})
+                    self.db_coll.insert_one(
+                        document={**self.data, **self._internal_fields(key)}
+                    )
                 except DuplicateKeyError:
                     # the key may have been registered concurrently
                     self._check_duplicate(key=key)
@@ -469,7 +507,7 @@ class RegisterService:
             )
             if stored is None and not self.allow_create:
                 raise NotFound
-            replacement = {**self.data, KEY: key}
+            replacement = {**self.data, **self._internal_fields(key)}
             if stored is not None or UPDATED not in replacement:
                 replacement[UPDATED] = timestamp
             query: dict[str, Any] = {"id": self.data["id"]}
