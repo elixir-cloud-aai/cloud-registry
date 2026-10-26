@@ -361,6 +361,56 @@ def test_main_body_unexpected_generated(
     )
 
 
+@pytest.mark.parametrize(
+    "files, missing",
+    [
+        # the first release with notes needs none
+        ([], False),
+        # notes of another release, earlier or later: required
+        (["0.4.0.md"], True),
+        (["0.6.0.md"], True),
+        (["0.4.0.md", "0.5.0.md"], False),
+        (["0.5.0.md"], False),
+        # other files don't count
+        (["README.txt"], False),
+    ],
+)
+def test_missing_notes(tmp_path: Path, files: list[str], missing: bool) -> None:
+    """Notes are required once notes of another release exist."""
+    for name in files:
+        (tmp_path / name).write_text(CURATED, encoding="utf-8")
+    expected = tmp_path / "0.5.0.md" if missing else None
+    assert release_notes.missing_notes("0.5.0", tmp_path) == expected
+
+
+def test_missing_notes_without_directory(tmp_path: Path) -> None:
+    """Without a directory of notes, none are required."""
+    assert release_notes.missing_notes("0.5.0", tmp_path / "releases") is None
+
+
+def test_main_require(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """`require` fails with an error annotation if required notes are missing."""
+    (tmp_path / "0.4.0.md").write_text(CURATED, encoding="utf-8")
+    args = ["require", "0.5.0", "--releases", str(tmp_path)]
+    assert release_notes.main(args) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.startswith(f"::error::{tmp_path / '0.5.0.md'} is missing")
+    (tmp_path / "0.5.0.md").write_text(CURATED, encoding="utf-8")
+    assert release_notes.main(args) == 0
+    assert capsys.readouterr() == ("", "")
+
+
+def test_main_require_default(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """`require` reads the notes in `docs/releases/` by default."""
+    releases = tmp_path / "docs" / "releases"
+    releases.mkdir(parents=True)
+    (releases / "0.4.0.md").write_text(CURATED, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    assert release_notes.main(["require", "0.5.0"]) == 1
+    assert release_notes.main(["require", "0.4.0"]) == 0
+
+
 def test_script(tmp_path: Path) -> None:
     """The script runs as the release workflow calls it."""
     notes = tmp_path / "0.3.0.md"

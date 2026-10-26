@@ -127,8 +127,10 @@ tooling, links to the notes and assets of a release, and migration headings
 Features and fixes are merged into `dev`. Branch `main` only ever moves
 forward to commits on `dev` that are released. First, shortly before the
 release, set its version and date in the citation metadata, which Zenodo
-archives with each release, and merge the change into `dev`; each version,
-also each pre-release (e.g., `X.Y.Zrc1`), needs its own such change:
+archives with each release, and merge the change into `dev` together with
+the release's curated notes (`docs/releases/X.Y.Z.md`, see below; the CI job
+"Release readiness" fails on `dev` without them); each version, also each
+pre-release (e.g., `X.Y.Zrc1`), needs its own such change:
 
 ```bash
 python scripts/citation.py set X.Y.Z  # date: today (UTC), or --date YYYY-MM-DD
@@ -143,8 +145,10 @@ git switch --detach <sha>
 python scripts/release_version.py outputs vX.Y.Z
 python scripts/citation.py check X.Y.Z
 python scripts/check_release_pins.py
-! grep -n TODO docs/releases/X.Y.Z.md  # curated notes, if any
-[ ! -f docs/releases/X.Y.Z.md ] || python scripts/release_notes.py check docs/releases/X.Y.Z.md
+python scripts/release_notes.py require X.Y.Z  # curated notes are required
+# (unless no release has notes: then skip the next two lines)
+! grep -n TODO docs/releases/X.Y.Z.md
+python scripts/release_notes.py check docs/releases/X.Y.Z.md
 readme="$(mktemp -d)/README.md" && cp deployment/README.md "${readme}"
 python scripts/chart_readme.py "${readme}" vX.Y.Z  # links of the chart
 git push origin <sha>:main  # fails unless it is a fast-forward
@@ -276,9 +280,13 @@ first` reads the closed pull requests (`gh api --paginate --slurp
 has `pull-requests: read`) and the commits (`git rev-list HEAD` at the
 release commit); run these commands locally to preview the notes. Generated
 notes in an unexpected format (without the `**Full Changelog**` line) are
-kept as they are, with a warning, as the image is published by then. Without
-curated notes, the release gets GitHub's generated notes alone. Curated notes
-are published as written, so the release workflow fails if they contain
+kept as they are, with a warning, as the image is published by then.
+Curated notes are required once any other release has notes (in this
+repository, for every release now, pre-releases included): the release
+workflow and the CI job "Release readiness" fail without them
+(`scripts/release_notes.py require`; only a repository without any notes in
+`docs/releases/` gets GitHub's generated notes alone). Curated notes are
+published as written, so the release workflow fails if they contain
 `TODO`, are not in this format or link to versions that move (the latest
 docs, `/en/latest/`, or files on branch `dev`, `blob/dev/`; link the
 release's, e.g., `/en/vX.Y.Z/`, `blob/vX.Y.Z/`, as the published notes

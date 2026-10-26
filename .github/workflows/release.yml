@@ -111,11 +111,13 @@ jobs:
         run: python scripts/citation.py check "${VERSION}"
       # Curated release notes are published as written, so unfinished ones
       # (with a `TODO`) must not be published, nor ones that are not in the
-      # agreed format (`scripts/release_notes.py`)
+      # agreed format (`scripts/release_notes.py`); they are required for
+      # every release after the first one that had them (`docs/releases/`)
       - name: Check release notes
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
+          python scripts/release_notes.py require "${VERSION}"
           notes="docs/releases/${VERSION}.md"
           if [[ -f "${notes}" ]]; then
               if grep -n "TODO" "${notes}"; then
