@@ -207,6 +207,37 @@ def test_invalid_token(client: FlaskClient) -> None:
     _assert_invalid_token(response)
 
 
+PUBLIC_READS = [
+    "/services",
+    "/services/abc",
+    "/services/types",
+    "/verifications",
+    "/services/abc/verification",
+]
+
+
+@pytest.mark.parametrize("path", PUBLIC_READS)
+def test_public_read_tokens(client: FlaskClient, path: str) -> None:
+    """Public reads accept requests without and with a valid token.
+
+    Requests with a token that isn't valid are rejected as on other
+    operations (`401`, `invalid_token`), not treated as anonymous; other
+    schemes than `Bearer` are ignored.
+    """
+    other_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    expected = client.get(f"{BASE}{path}").status_code
+    assert expected in (200, 404)
+    assert client.get(f"{BASE}{path}", headers=make_headers()).status_code == expected
+    response = client.get(f"{BASE}{path}", headers={"Authorization": "Basic eA=="})
+    assert response.status_code == expected
+    _assert_invalid_token(
+        client.get(f"{BASE}{path}", headers=make_headers(key=other_key))
+    )
+    _assert_invalid_token(
+        client.get(f"{BASE}{path}", headers={"Authorization": "bearer invalid"})
+    )
+
+
 @pytest.mark.parametrize("typ", ["at+jwt", "application/at+jwt", "AT+JWT"])
 def test_access_token_types(client: FlaskClient, typ: str) -> None:
     """Access tokens (RFC 9068) are accepted, whatever the case of their type."""

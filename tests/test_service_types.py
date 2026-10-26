@@ -570,13 +570,15 @@ def test_moderated_login_for_reads(
 
 
 def test_moderated_verifications(client: FlaskClient, moderated: None) -> None:
-    """Verifications of pending services are hidden like the services."""
+    """Pending services can't be verified (`409`), until their type is approved."""
     service_id = register(client, _service()).get_json()
     path = f"{BASE}/services/{service_id}/verification"
-    assert client.put(path, headers=headers(ADMIN)).status_code == 200
-    assert client.get(path).status_code == 404
-    assert client.get(f"{BASE}/verifications").get_json() == []
+    response = client.put(path, headers=headers(ADMIN))
+    assert response.status_code == 409
+    assert "pending" in response.get_json()["detail"]
+    assert client.get(path, headers=headers(ADMIN)).status_code == 404
     assert approve(client, TES).status_code == 200
+    assert client.put(path, headers=headers(ADMIN)).status_code == 200
     assert client.get(path).status_code == 200
     verifications = client.get(f"{BASE}/verifications").get_json()
     assert [item["service_id"] for item in verifications] == [service_id]
@@ -1070,3 +1072,63 @@ def test_restored_type_syncs_flags(
         service_types._restore_type(dict(TES), {"created_by": USER})
     assert _flags(mongo_client) == {service_id: False}
     assert len(client.get(f"{BASE}/services").get_json()) == 1
+
+
+def test_reads_with_token(client: FlaskClient, moderated: None) -> None:
+    """Public reads with a token show the pending items the user may see.
+
+    Admins and the owners of pending services see them, other users and
+    requests without a token don't; pending types are listed to admins and
+    the user who added them.
+    """
+    service_id = register(client, _service()).get_json()
+    for user, visible in [(None, False), (OTHER, False), (USER, True), (ADMIN, True)]:
+        listed_ids = [
+            service["id"]
+            for service in client.get(
+                f"{BASE}/services", headers=headers(user)
+            ).get_json()
+        ]
+        assert listed_ids == ([service_id] if visible else [])
+        response = client.get(f"{BASE}/services/{service_id}", headers=headers(user))
+        assert response.status_code == (200 if visible else 404)
+        types = client.get(TYPES, headers=headers(user)).get_json()
+        assert types == ([TES] if visible else [])
+
+
+def test_pending_after_verification(client: FlaskClient, moderated: None) -> None:
+    """Services that become pending through a type change lose their verification.
+
+    Also if only the version of the type changes, which keeps verifications
+    of services that don't become pending.
+    """
+    assert add_type(client, TES, user=ADMIN).status_code == 201
+    service_id = register(client, _service()).get_json()
+    path = f"{BASE}/services/{service_id}/verification"
+    assert client.put(path, headers=headers(ADMIN)).status_code == 200
+    response = client.put(
+        f"{BASE}/services/{service_id}",
+        json=_service({**TES, "version": "2.0.0"}),
+        headers=headers(),
+    )
+    assert response.status_code == 200, response.get_json()
+    assert client.get(path, headers=headers(ADMIN)).status_code == 404
+    assert client.get(f"{BASE}/verifications", headers=headers(ADMIN)).get_json() == []
+    assert client.put(path, headers=headers(ADMIN)).status_code == 409
+
+
+def test_flagged_loses_verification(
+    client: FlaskClient,
+    moderated: None,
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Services flagged as pending by a sync lose their verification."""
+    assert add_type(client, TES, user=ADMIN).status_code == 201
+    service_id = register(client, _service()).get_json()
+    path = f"{BASE}/services/{service_id}/verification"
+    assert client.put(path, headers=headers(ADMIN)).status_code == 200
+    mongo_client[DB]["service_types"].update_one(dict(TES), {"$set": {"pending": True}})
+    with client.application.test_request_context():
+        service_types.sync_pending_flag(service_id, dict(TES))
+    assert _flags(mongo_client) == {service_id: True}
+    assert client.get(path, headers=headers(ADMIN)).status_code == 404

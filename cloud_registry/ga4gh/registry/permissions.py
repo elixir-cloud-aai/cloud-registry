@@ -17,11 +17,13 @@ model in `cloud_registry/access_control/model.conf`. Subjects with the role
 which deployments set) may do everything.
 """
 
+from collections.abc import Callable
+from functools import wraps
 import logging
 from typing import Any
 from urllib.parse import quote
 
-from flask import current_app, request
+from flask import current_app, has_request_context, request
 from flask.globals import request_ctx
 from foca import get_config
 from foca.security.access_control import (
@@ -39,6 +41,7 @@ from foca.security.access_control import (
 )
 from foca.security.access_control import add_owner as add_resource_owner
 from foca.security.access_control.enforcement import _enforces_access_control
+from foca.security.auth import validate_token
 from foca.utils.logging import escape_log_value
 
 from cloud_registry.exceptions import (
@@ -51,6 +54,59 @@ from cloud_registry.ga4gh.registry.service import service_exists
 from cloud_registry.utils import get_collection, get_custom_config
 
 logger = logging.getLogger(__name__)
+
+
+def _bearer_token() -> str | None:
+    """Get the bearer token sent with the current request.
+
+    Returns:
+        The token in the `Authorization` header if its scheme is `Bearer`
+        (in any case, cf. RFC 6750), or `None`.
+    """
+    scheme, _, token = request.headers.get("Authorization", "").partition(" ")
+    return token.strip() if scheme.lower() == "bearer" else None
+
+
+def check_read_token[T](func: Callable[..., T]) -> Callable[..., T]:
+    """Reject invalid tokens sent with reads that don't require login.
+
+    Public reads accept requests without a token (anonymous) and with one
+    (for the visibility rules of the user; cf. `security` in the API
+    specification). Connexion treats requests whose token it can't validate
+    as anonymous then; so that clients notice (e.g., an expired token) and
+    log in again, rather than see less without a hint, such requests are
+    rejected as on other operations (`401`, with an `invalid_token`
+    challenge).
+
+    Args:
+        func: Controller of a read.
+
+    Returns:
+        The controller, checking the token first.
+    """
+
+    @wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> T:
+        """Check the token sent with the request, then call the controller.
+
+        Args:
+            *args: Positional arguments of the controller.
+            **kwargs: Keyword arguments of the controller.
+
+        Returns:
+            Response of the controller.
+        """
+        # requests not handled by Connexion (e.g., in unit tests) have none
+        token = _bearer_token() if has_request_context() else None
+        if token is not None:
+            context = getattr(request_ctx, "connexion_context", None) or {}
+            if not context.get("token_info"):
+                # raises the error of other operations (the token was rejected)
+                validate_token(token)
+        return func(*args, **kwargs)
+
+    return wrapper
+
 
 # Collection with the display names of users with roles on services
 USER_NAMES = "user_names"

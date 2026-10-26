@@ -27,12 +27,16 @@ paths:
       security: []
   /services:
     get:
-      security: []
+      # with a token, for the visibility rules of the user (invalid
+      # tokens are rejected, cf. `check_read_token()`)
+      security:
+        - bearerAuth: []
+        - {}
       description: |
         List all services, except pending services (see `GET /approvals`)
         that the user may not see: only admins and users with a role on them
-        see them, and only if reads require login (otherwise, requests have
-        no user). Their timestamps (`createdAt`, `updatedAt`) are
+        see them, if they send a token (optional; invalid tokens return
+        `401`, as on other operations). Their timestamps (`createdAt`, `updatedAt`) are
         set by the registry: when the service was registered, and when it
         was registered or last updated in the registry; unlike in the GA4GH
         specification, not when the service was deployed or updated (see
@@ -78,7 +82,11 @@ paths:
           $ref: '#/components/responses/Error'
   /services/types:
     get:
-      security: []
+      # with a token, for the visibility rules of the user (invalid
+      # tokens are rejected, cf. `check_read_token()`)
+      security:
+        - bearerAuth: []
+        - {}
       description: |
         List the registered service types, sorted by `group`, `artifact` and
         `version`. Unlike in the GA4GH specification (the types of the
@@ -86,7 +94,8 @@ paths:
         (`POST /services/types`), or with a service of a new type, and all
         types of registered services are listed, except pending types (see
         `GET /approvals`) that the user may not see: only admins and the
-        user who added them see them, and only if reads require login.
+        user who added them see them, if they send a token (optional; invalid
+        tokens return `401`, as on other operations).
     post:
       summary: Register service type.
       description: |
@@ -227,7 +236,11 @@ paths:
           $ref: '#/components/responses/Error'
   "/services/{serviceId}":
     get:
-      security: []
+      # with a token, for the visibility rules of the user (invalid
+      # tokens are rejected, cf. `check_read_token()`)
+      security:
+        - bearerAuth: []
+        - {}
       description: |
         Get a service by its identifier; pending services (see `GET
         /approvals`) only for admins and users with a role on them, if
@@ -536,7 +549,11 @@ paths:
         (`type.group`, `type.artifact`) of the service changes.
       operationId: getServiceVerification
       x-openapi-router-controller: cloud_registry.ga4gh.registry.verification
-      security: []
+      # with a token, for the visibility rules of the user (invalid
+      # tokens are rejected, cf. `check_read_token()`)
+      security:
+        - bearerAuth: []
+        - {}
       tags:
         - cloud-registry
       parameters:
@@ -563,11 +580,14 @@ paths:
         only verified if it still has exactly that URL (as written) and the
         same API type (`type.group`, `type.artifact`, case-insensitive; not
         `type.version`), otherwise `409` is returned and nothing changes.
-        Invalid URLs in the body, and bodies that are neither JSON nor empty
+        Pending services (see `GET /approvals`) can't be verified (`409`):
+        their type is approved first. Invalid URLs in the body, and bodies that are neither JSON nor empty
         (or `null`), return `400`. Without a body, the service is verified as
         it is registered at the time of the request. The verification is kept when the service is
         updated with the same URL and API type (e.g., a new version), and
-        removed when they change, including other spellings of the URL.
+        removed when they change, including other spellings of the URL, and
+        when the service becomes pending (e.g., updated to a new version of
+        its type that is pending).
       operationId: putServiceVerification
       x-openapi-router-controller: cloud_registry.ga4gh.registry.verification
       tags:
@@ -651,7 +671,11 @@ paths:
         them in `GET /services`.
       operationId: getVerifications
       x-openapi-router-controller: cloud_registry.ga4gh.registry.verification
-      security: []
+      # with a token, for the visibility rules of the user (invalid
+      # tokens are rejected, cf. `check_read_token()`)
+      security:
+        - bearerAuth: []
+        - {}
       tags:
         - cloud-registry
       responses:

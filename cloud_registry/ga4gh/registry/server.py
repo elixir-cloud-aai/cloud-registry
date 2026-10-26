@@ -15,6 +15,7 @@ from cloud_registry.exceptions import (
 )
 from cloud_registry.ga4gh.registry.permissions import (
     add_owner,
+    check_read_token,
     current_user,
     may_add_service_types,
     may_read_service,
@@ -58,6 +59,7 @@ RegisterResponse = str | CreatedResponse | Response
 
 # GET /services
 @log_traffic
+@check_read_token
 def getServices(**kwargs: Any) -> list[dict[str, Any]]:
     """List all services.
 
@@ -79,6 +81,7 @@ def getServices(**kwargs: Any) -> list[dict[str, Any]]:
 
 # GET /services/{serviceId}
 @log_traffic
+@check_read_token
 def getServiceById(serviceId: str, **kwargs: Any) -> dict[str, Any]:
     """Retrieve service by its identifier.
 
@@ -105,6 +108,7 @@ def getServiceById(serviceId: str, **kwargs: Any) -> dict[str, Any]:
 
 # GET /services/types
 @log_traffic
+@check_read_token
 def getServiceTypes(**kwargs: Any) -> list[dict[str, Any]]:
     """List types of services.
 

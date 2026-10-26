@@ -31,9 +31,13 @@ from cloud_registry.exceptions import (
     problem,
     shorten_detail,
 )
-from cloud_registry.ga4gh.registry.permissions import current_user
+from cloud_registry.ga4gh.registry.permissions import (
+    check_read_token,
+    current_user,
+)
 from cloud_registry.ga4gh.registry.service import (
     KEY,
+    PENDING_SERVICE,
     VERIFIED,
     InvalidService,
     service_exists,
@@ -55,6 +59,17 @@ class VerificationConflict(Conflict):
         super().__init__(
             "The service has another URL or API type than the one checked; "
             "check the service as it is registered, then verify it again."
+        )
+
+
+class PendingVerification(Conflict):
+    """The service is pending, so it can't be verified."""
+
+    def __init__(self) -> None:
+        """Create the exception, with a description of what to do."""
+        super().__init__(
+            "The service is pending (its type awaits approval; see GET "
+            "/approvals); approve its type, then verify it."
         )
 
 
@@ -129,6 +144,7 @@ def _not_verified(serviceId: str, exc: HTTPException) -> Response:
 
 
 # GET /services/{serviceId}/verification
+@check_read_token
 def getServiceVerification(serviceId: str, **kwargs: Any) -> dict[str, Any]:
     """Get the verification of a service.
 
@@ -174,12 +190,14 @@ def putServiceVerification(
         of a previous verification); or a problem details response: `400`
         if the body is neither JSON nor empty, or the URL in it is invalid;
         `409` if the service has another URL or API type than the one
-        checked.
+        checked, or is pending (cf. `PENDING_SERVICE`): services leave the
+        pending state (their type is approved) before they are verified.
 
     Raises:
         cloud_registry.exceptions.NotFound: The service doesn't exist.
     """
-    query: dict[str, Any] = {"id": serviceId}
+    # checked in the same write, as services become pending when stored
+    query: dict[str, Any] = {"id": serviceId, PENDING_SERVICE: {"$ne": True}}
     if verification is not None:
         try:
             query.update(_checked_query(verification))
@@ -201,6 +219,10 @@ def putServiceVerification(
     if service is None:
         if not service_exists(serviceId):
             raise NotFound
+        if get_collection("services").count_documents(
+            {"id": serviceId, PENDING_SERVICE: True}, limit=1
+        ):
+            return _not_verified(serviceId, PendingVerification())
         return _not_verified(serviceId, VerificationConflict())
     logger.info(
         "Service '%s' verified by '%s'.",
@@ -240,6 +262,7 @@ def deleteServiceVerification(serviceId: str, **kwargs: Any) -> str:
 
 
 # GET /verifications
+@check_read_token
 def getVerifications(**kwargs: Any) -> list[dict[str, Any]]:
     """List verified services.
 
