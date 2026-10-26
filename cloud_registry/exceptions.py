@@ -1,7 +1,5 @@
 """App exceptions."""
 
-from json import dumps
-import logging
 from typing import Any, ClassVar
 
 from connexion.exceptions import (
@@ -12,9 +10,8 @@ from connexion.exceptions import (
     Unauthorized,
 )
 from flask import Response
-from foca import get_config
+from foca.errors.exceptions import problem_response
 from foca.security.access_control import LastOwner
-from foca.utils.logging import escape_log_value
 from werkzeug.exceptions import (
     BadRequest,
     Conflict,
@@ -23,14 +20,6 @@ from werkzeug.exceptions import (
     NotFound,
     RequestEntityTooLarge,
 )
-
-logger = logging.getLogger(__name__)
-
-# Maximum length of details in problem details responses (and of reasons in
-# their log messages); longer ones are shortened in the middle (keeping,
-# e.g., the field names at their end), as they may quote rejected values,
-# which can be as large as the request body
-MAX_DETAIL_LENGTH = 500
 
 # Default code of conflicts without a code of their own (`code` member of
 # their problem details; cf. `CodedConflict`), e.g., of FOCA's permissions API
@@ -127,126 +116,24 @@ exceptions = {
 }
 
 
-def shorten_detail(detail: str) -> str:
-    """Shorten a detail to `MAX_DETAIL_LENGTH` characters.
-
-    Keeps its start and end.
-
-    Args:
-        detail: Description of a problem.
-
-    Returns:
-        The detail if it is not longer than `MAX_DETAIL_LENGTH`, otherwise
-        its first and last characters, joined by "…", with
-        `MAX_DETAIL_LENGTH` characters in total.
-    """
-    if len(detail) <= MAX_DETAIL_LENGTH:
-        return detail
-    head = MAX_DETAIL_LENGTH // 2
-    return f"{detail[:head]}…{detail[head + 1 - MAX_DETAIL_LENGTH :]}"
-
-
-def problem(exc: HTTPException, **extensions: str) -> Response:
+def problem(exc: HTTPException, **extensions: Any) -> Response:
     """Build a problem details response with the description of an exception.
 
-    FOCA's problem details are fixed per exception class, so responses with
-    details specific to a request are built here.
+    See FOCA's `problem_response()`; conflicts (`409`) have their code
+    (`code`): the one of the class for coded conflicts (cf.
+    `CodedConflict`), otherwise the one of their entry in `exceptions`.
 
     Args:
-        exc: Exception with a request-specific description.
-        extensions: Extension members of the problem details.
+        exc: werkzeug exception with a request-specific description.
+        extensions: Extension members of the problem details; for
+            conflicts, not `code`, which is set from the exception.
 
     Returns:
-        Problem details response; for conflicts (`409`), with their code
-        (`code`; cf. `CodedConflict`).
-
-    Raises:
-        ValueError: The exception has no code or no description (e.g., a
-            plain `HTTPException`).
+        Problem details response.
     """
-    if exc.code is None or exc.description is None:
-        raise ValueError(
-            f"Problem details need an exception with a code and a description: {exc!r}"
-        )
     if isinstance(exc, Conflict):
-        code = (
-            exc.problem_code
-            if isinstance(exc, CodedConflict)
-            else _mapped(exc).get("code", CONFLICT_CODE)
-        )
         # the code of the conflict wins over extension members of the caller
-        extensions = {**extensions, "code": code}
-    return _response(
-        title=_mapped(exc)["title"],
-        status=exc.code,
-        detail=exc.description,
-        **extensions,
-    )
-
-
-def validation_problem(exc: BadRequestProblem | ExtraParameterProblem) -> Response:
-    """Build a problem details response for a request that failed validation.
-
-    The response has the reason (e.g., the validator's message) of
-    Connexion's validation. Registered as error handler for these exceptions (cf.
-    `cloud_registry.app.create_app()`), as FOCA's handler only serves the
-    fixed details of the exception class.
-
-    Args:
-        exc: Validation error, with the reason as `detail` (a string, or a
-            list of them for form data).
-
-    Returns:
-        Problem details response (`400`), with the reason as `detail`
-        (shortened, cf. `shorten_detail()`), or the mapped details if there
-        is none.
-    """
-    mapped = _mapped(exc)
-    detail = exc.detail
-    if isinstance(detail, list):
-        detail = "; ".join(str(item) for item in detail)
-    if not isinstance(detail, str) or not detail:
-        detail = mapped["detail"]
-    logger.info("Request rejected: %s", escape_log_value(shorten_detail(detail)))
-    return _response(title=mapped["title"], status=mapped["status"], detail=detail)
-
-
-def _mapped(exc: Exception) -> dict[str, Any]:
-    """Get the problem details mapped to the closest class of an exception.
-
-    Args:
-        exc: Exception.
-
-    Returns:
-        Problem details of the closest class in `exceptions`.
-    """
-    return next(exceptions[cls] for cls in type(exc).__mro__ if cls in exceptions)
-
-
-def _response(title: str, status: int, detail: str, **extensions: str) -> Response:
-    """Build a problem details response.
-
-    Must be called in an app context.
-
-    Args:
-        title: Title of the problem.
-        status: HTTP status code.
-        detail: Description of the problem; shortened, as it may quote
-            values of the request (cf. `shorten_detail()`).
-        extensions: Extension members of the problem details.
-
-    Returns:
-        Problem details response, with the media type of all error responses
-        (`exceptions.media_type`), as FOCA's.
-    """
-    details = {
-        "title": title,
-        "status": status,
-        "detail": shorten_detail(detail),
-        **extensions,
-    }
-    return Response(
-        dumps(details),
-        status=status,
-        content_type=get_config().exceptions.media_type,
-    )
+        extensions.pop("code", None)
+        if isinstance(exc, CodedConflict):
+            extensions["code"] = exc.problem_code
+    return problem_response(exc, **extensions)

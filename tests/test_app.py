@@ -28,7 +28,6 @@ from werkzeug.test import TestResponse
 import yaml
 
 import cloud_registry.app
-from cloud_registry.exceptions import MAX_DETAIL_LENGTH
 import cloud_registry.ga4gh.registry.server
 from cloud_registry.ga4gh.registry.service import KEY, service_key
 from cloud_registry.service_models.custom_config import CustomConfig
@@ -1289,7 +1288,7 @@ def test_service_info_read_only(
     [
         # app exceptions, handled by FOCA
         ("get", f"{BASE}/services/UNKNWN", USER, 404),
-        # request validation (`cloud_registry.exceptions.validation_problem()`)
+        # request validation (FOCA's `exceptions.validation_details`)
         ("post", f"{BASE}/services", USER, 400),
         # security errors of Connexion and of FOCA's access control
         ("post", f"{BASE}/services", None, 401),
@@ -2178,7 +2177,8 @@ def test_validation_error_detail_large_body(
         f"{BASE}/services", headers=admin_headers, json=_service(name="a" * 900_000)
     )
     _assert_error(response, 400)
-    assert len(response.get_json()["detail"]) == MAX_DETAIL_LENGTH
+    max_length = get_app_config(client.application).exceptions.max_detail_length
+    assert len(response.get_json()["detail"]) == max_length
     assert "…" in response.get_json()["detail"]
     assert response.get_json()["detail"].endswith("is too long - 'name'")
 

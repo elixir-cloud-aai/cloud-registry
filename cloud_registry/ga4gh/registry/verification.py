@@ -20,6 +20,7 @@ import logging
 from typing import Any
 
 from flask import Response, request
+from foca.errors.exceptions import shorten_detail
 from foca.utils.logging import escape_log_value
 from pymongo import ReturnDocument
 from werkzeug.exceptions import HTTPException
@@ -29,7 +30,6 @@ from cloud_registry.exceptions import (
     CodedConflict,
     NotFound,
     problem,
-    shorten_detail,
 )
 from cloud_registry.ga4gh.registry.permissions import (
     check_read_token,

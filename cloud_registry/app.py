@@ -9,10 +9,8 @@ import logging
 from pathlib import Path
 
 from connexion import App
-from connexion.exceptions import BadRequestProblem, ExtraParameterProblem
 from foca import Foca, get_config
 
-from cloud_registry.exceptions import validation_problem
 from cloud_registry.ga4gh.registry.permissions import (
     check_admin_groups,
     check_no_service_clients,
@@ -29,8 +27,6 @@ from cloud_registry.ga4gh.registry.service_types import (
 )
 
 logger = logging.getLogger(__name__)
-# Logger of Connexion's request validation
-VALIDATION_LOGGER = "connexion.decorators.validation"
 # Placeholders of the service info in `config.yaml`, with reserved example
 # domains (RFC 2606), which deployments replace
 PLACEHOLDER_ID = "org.example.cloud-registry"
@@ -70,8 +66,7 @@ def warn_placeholder_service_info() -> None:
 def create_app() -> App:
     """Create the app from the config, with the registry's checks.
 
-    Adds the error handler for validation errors (silencing Connexion's
-    validation log messages), checks the admin groups and the group claim,
+    Checks the admin groups and the group claim,
     and that no service clients are configured, requires a size limit of
     request bodies, adds missing keys of services and the types of
     registered services that aren't stored (e.g., on upgrades), and warns of
@@ -107,16 +102,6 @@ def create_app() -> App:
         custom_config_model="cloud_registry.service_models.custom_config.CustomConfig",
     )
     app = foca.create_app()
-    # Requests rejected by Connexion's validation (e.g., of the schema) get
-    # the reason as detail; FOCA's handler (for all other exceptions) serves
-    # the fixed details of the exception class
-    for exception in (BadRequestProblem, ExtraParameterProblem):
-        app.add_error_handler(exception, validation_problem)
-    # Connexion's validation logs the validator's message (`ERROR`) before
-    # the handler, unescaped and in full (validators quote rejected values,
-    # e.g., a whole request body); the handler logs it shortened and
-    # escaped. Set here, as FOCA's log config has no `loggers`
-    logging.getLogger(VALIDATION_LOGGER).setLevel(logging.CRITICAL)
 
     with app.app.app_context():
         check_admin_groups()
