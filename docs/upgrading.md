@@ -138,7 +138,8 @@ when upgrading (see [Service info](configuration.md#service-info)).
 
 ## Service types
 
-Service types are stored since 0.5.0 (see [Service
+Previously, service types were not stored: `GET /services/types` listed the
+types of the registered services. Now they are stored (see [Service
 types](api.md#service-types)). On startup, the app stores the types of the
 registered services, so `GET /services/types` lists the same types as
 before; afterwards, it also lists types that no service has (yet), and types
