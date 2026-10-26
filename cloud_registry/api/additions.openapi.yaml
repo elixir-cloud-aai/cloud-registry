@@ -16,7 +16,10 @@ info:
 servers:
   - url: /ga4gh/registry/v1
 # Read operations of the GA4GH specifications are public: the security
-# requirements set here are merged into them
+# requirements set here are merged into them. Most of them also accept a
+# token (`bearerAuth` or none), for the visibility rules of its user; invalid
+# tokens are rejected, as on other operations (cf. `check_read_token()` in
+# `cloud_registry.ga4gh.registry.permissions`)
 paths:
   # Served by FOCA from the config (`service_info`); the controller set here
   # takes precedence over the one added to all operations (`api.specs` in
@@ -27,16 +30,18 @@ paths:
       security: []
   /services:
     get:
-      security: []
+      security:
+        - bearerAuth: []
+        - {}
       description: |
         List all services, except pending services (see `GET /approvals`)
         that the user may not see: only admins and users with a role on them
-        see them, and only if reads require login (otherwise, requests have
-        no user). Their timestamps (`createdAt`, `updatedAt`) are
-        set by the registry: when the service was registered, and when it
-        was registered or last updated in the registry; unlike in the GA4GH
-        specification, not when the service was deployed or updated (see
-        `ExternalServiceRegister`).
+        see them, if they send a token (optional; invalid tokens return
+        `401`, as on other operations). Their timestamps (`createdAt`,
+        `updatedAt`) are set by the registry: when the service was
+        registered, and when it was registered or last updated in the
+        registry; unlike in the GA4GH specification, not when the service
+        was deployed or updated (see `ExternalServiceRegister`).
     post:
       summary: Register service.
       description: |
@@ -78,7 +83,9 @@ paths:
           $ref: '#/components/responses/Error'
   /services/types:
     get:
-      security: []
+      security:
+        - bearerAuth: []
+        - {}
       description: |
         List the registered service types, sorted by `group`, `artifact` and
         `version`. Unlike in the GA4GH specification (the types of the
@@ -86,7 +93,8 @@ paths:
         (`POST /services/types`), or with a service of a new type, and all
         types of registered services are listed, except pending types (see
         `GET /approvals`) that the user may not see: only admins and the
-        user who added them see them, and only if reads require login.
+        user who added them see them, if they send a token (optional; invalid
+        tokens return `401`, as on other operations).
     post:
       summary: Register service type.
       description: |
@@ -227,11 +235,14 @@ paths:
           $ref: '#/components/responses/Error'
   "/services/{serviceId}":
     get:
-      security: []
+      security:
+        - bearerAuth: []
+        - {}
       description: |
         Get a service by its identifier; pending services (see `GET
         /approvals`) only for admins and users with a role on them, if
-        reads require login (`404` otherwise). Its timestamps (`createdAt`,
+        they send a token (optional; invalid tokens return `401`), `404`
+        otherwise. Its timestamps (`createdAt`,
         `updatedAt`) are set by the registry: when the service was
         registered, and when it was registered or last updated in the
         registry; unlike in the GA4GH specification, not when the service
@@ -530,13 +541,17 @@ paths:
         Get the verification of a service, i.e., when an admin verified it
         (e.g., checked that it accepts tokens of the deployment's identity
         provider). Unverified and unknown services return `404`, as do
-        pending services (see `GET /approvals`) that the user may not see. The
-        verification names the URL and API type of the service; it is
-        removed when the URL (in any way, as written) or API type
-        (`type.group`, `type.artifact`) of the service changes.
+        pending services (see `GET /approvals`) that the user may not see
+        (admins and users with a role on them see them if they send a token;
+        optional, invalid tokens return `401`). The verification names the
+        URL and API type of the service; it is removed when the URL (in any
+        way, as written) or API type (`type.group`, `type.artifact`) of the
+        service changes.
       operationId: getServiceVerification
       x-openapi-router-controller: cloud_registry.ga4gh.registry.verification
-      security: []
+      security:
+        - bearerAuth: []
+        - {}
       tags:
         - cloud-registry
       parameters:
@@ -563,11 +578,15 @@ paths:
         only verified if it still has exactly that URL (as written) and the
         same API type (`type.group`, `type.artifact`, case-insensitive; not
         `type.version`), otherwise `409` is returned and nothing changes.
-        Invalid URLs in the body, and bodies that are neither JSON nor empty
-        (or `null`), return `400`. Without a body, the service is verified as
-        it is registered at the time of the request. The verification is kept when the service is
-        updated with the same URL and API type (e.g., a new version), and
-        removed when they change, including other spellings of the URL.
+        Pending services (see `GET /approvals`) can't be verified (`409`):
+        their type is approved first. Invalid URLs in the body, and bodies
+        that are neither JSON nor empty (or `null`), return `400`. Without a
+        body, the service is verified as it is registered at the time of the
+        request. The verification is kept when the service is updated with
+        the same URL and API type (e.g., a new version), and
+        removed when they change, including other spellings of the URL, and
+        when the service becomes pending (e.g., updated to a new version of
+        its type that is pending).
       operationId: putServiceVerification
       x-openapi-router-controller: cloud_registry.ga4gh.registry.verification
       tags:
@@ -601,8 +620,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           description: |
-            The service has another URL or API type than the one checked;
-            nothing was changed.
+            The service has another URL or API type than the one checked, or
+            is pending (see `GET /approvals`); nothing was changed.
           content:
             application/json:
               schema:
@@ -648,10 +667,13 @@ paths:
         verified services list the services (`GET /services`) and keep those
         listed here with the same identifier, URL and API type. Pending
         services (see `GET /approvals`) are only listed to users who see
-        them in `GET /services`.
+        them in `GET /services` (with a token; optional, invalid tokens
+        return `401`).
       operationId: getVerifications
       x-openapi-router-controller: cloud_registry.ga4gh.registry.verification
-      security: []
+      security:
+        - bearerAuth: []
+        - {}
       tags:
         - cloud-registry
       responses:

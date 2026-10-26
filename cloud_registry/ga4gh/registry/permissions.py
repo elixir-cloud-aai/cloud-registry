@@ -17,11 +17,13 @@ model in `cloud_registry/access_control/model.conf`. Subjects with the role
 which deployments set) may do everything.
 """
 
+from collections.abc import Callable
+from functools import wraps
 import logging
 from typing import Any
 from urllib.parse import quote
 
-from flask import current_app, request
+from flask import current_app, g, has_request_context, request
 from flask.globals import request_ctx
 from foca import get_config
 from foca.security.access_control import (
@@ -39,6 +41,7 @@ from foca.security.access_control import (
 )
 from foca.security.access_control import add_owner as add_resource_owner
 from foca.security.access_control.enforcement import _enforces_access_control
+from foca.security.auth import validate_token
 from foca.utils.logging import escape_log_value
 
 from cloud_registry.exceptions import (
@@ -51,6 +54,121 @@ from cloud_registry.ga4gh.registry.service import service_exists
 from cloud_registry.utils import get_collection, get_custom_config
 
 logger = logging.getLogger(__name__)
+
+
+def _bearer_token() -> str | None:
+    """Get the bearer token sent with the current request.
+
+    Returns:
+        The token in the `Authorization` header if its scheme is `Bearer`
+        (in any case, cf. RFC 6750; empty if it has none), or `None`. Split
+        at any whitespace, as Connexion does.
+    """
+    parts = request.headers.get("Authorization", "").split(None, 1)
+    if not parts or parts[0].lower() != "bearer":
+        return None
+    return parts[1].strip() if len(parts) > 1 else ""
+
+
+def _is_invalid_token(exc: Unauthorized) -> bool:
+    """Check whether a rejection of a token is because it is invalid.
+
+    Args:
+        exc: Exception of FOCA's `validate_token()`.
+
+    Returns:
+        Whether its challenge has the error `invalid_token` (RFC 6750); FOCA
+        leaves it out if the token couldn't be validated for other reasons
+        (e.g., the identity provider is unavailable).
+    """
+    challenge = getattr(exc, "www_authenticate", None) or []
+    return any(item.parameters.get("error") == "invalid_token" for item in challenge)
+
+
+# Attribute of `flask.g` with the rejection of the token of the request
+_TOKEN_ERROR = "cloud_registry_token_error"  # noqa: S105 (attribute name)
+
+
+def validate_bearer_token(token: str) -> dict[str, Any]:
+    """Validate a bearer token, keeping why it was rejected.
+
+    The function that Connexion validates tokens with (`x-bearerInfoFunc`
+    in `config.yaml`): FOCA's `validate_token()`, but its exception is also
+    kept for the request, so that `check_read_token()` can tell why a token
+    of a public read was rejected without validating it again.
+
+    Args:
+        token: Bearer token.
+
+    Returns:
+        Token info (cf. FOCA's `validate_token()`).
+
+    Raises:
+        connexion.exceptions.Unauthorized: The token was rejected.
+    """
+    try:
+        return validate_token(token)
+    except Unauthorized as exc:
+        setattr(g, _TOKEN_ERROR, exc)
+        raise
+
+
+def check_read_token[T](func: Callable[..., T]) -> Callable[..., T]:
+    """Reject invalid tokens sent with reads that don't require login.
+
+    Public reads accept requests without a token (anonymous) and with one
+    (for the visibility rules of the user; cf. `security` in the API
+    specification). Connexion treats requests whose token it can't validate
+    as anonymous then; so that clients notice (e.g., an expired token) and
+    log in again, rather than see less without a hint, requests with an
+    invalid token are rejected as on other operations (`401`, with an
+    `invalid_token` challenge), with the exception kept when Connexion
+    validated it (cf. `validate_bearer_token()`; validated again only if
+    Connexion didn't, e.g., for an empty token). If it can't be validated
+    for other reasons (e.g., the identity provider is unavailable), the
+    request stays anonymous, so that public reads keep working, and this is
+    logged.
+
+    Args:
+        func: Controller of a read.
+
+    Returns:
+        The controller, checking the token first.
+    """
+
+    @wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> T:
+        """Check the token sent with the request, then call the controller.
+
+        Args:
+            *args: Positional arguments of the controller.
+            **kwargs: Keyword arguments of the controller.
+
+        Returns:
+            Response of the controller.
+        """
+        # requests not handled by Connexion (e.g., in unit tests) have none
+        token = _bearer_token() if has_request_context() else None
+        if token is not None:
+            context = getattr(request_ctx, "connexion_context", None) or {}
+            if not context.get("token_info"):
+                try:
+                    error = getattr(g, _TOKEN_ERROR, None)
+                    if error is not None:
+                        raise error
+                    validate_token(token)
+                except Unauthorized as exc:
+                    if _is_invalid_token(exc):
+                        raise
+                    logger.info(
+                        "Token sent with a public read not validated, read as "
+                        "anonymous: %s",
+                        escape_log_value(str(exc.description)),
+                    )
+        return func(*args, **kwargs)
+
+    return wrapper
+
 
 # Collection with the display names of users with roles on services
 USER_NAMES = "user_names"

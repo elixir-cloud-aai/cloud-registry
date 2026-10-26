@@ -211,7 +211,9 @@ api:
             add_operation_fields:
                 x-openapi-router-controller: cloud_registry.ga4gh.registry.server
             add_security_fields:
-                x-bearerInfoFunc: foca.security.auth.validate_token
+                # FOCA's `validate_token()`, keeping why tokens are rejected
+                # for public reads (cf. `check_read_token()`)
+                x-bearerInfoFunc: cloud_registry.ga4gh.registry.permissions.validate_bearer_token
             disable_auth: False
             connexion:
                 strict_validation: True

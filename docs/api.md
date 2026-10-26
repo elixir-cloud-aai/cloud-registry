@@ -28,7 +28,15 @@ under the API base path `/ga4gh/registry/v1`:
 | `/me` | `GET` | any authenticated user |
 
 Deployments can [require login](access-control.md#requiring-login-for-reads)
-for the reads by anyone, except `GET /service-info`.
+for the reads by anyone, except `GET /service-info`. Otherwise, these reads
+accept requests without and with an access token: with one, they show what
+the user may see (e.g., [pending](#pending-approvals) services of the user).
+Invalid or expired tokens are rejected (`401 Unauthorized`, with
+`WWW-Authenticate: Bearer error="invalid_token"`, as on other operations),
+not treated as anonymous, so that clients notice and log in again. Tokens
+that can't be validated for other reasons (e.g., the identity provider is
+unavailable) are: the reads then keep working, without what only the user
+may see.
 
 The [Swagger UI](getting-started.md#quick-start) of a deployment documents
 all operations and serves the API specification
@@ -199,10 +207,9 @@ users who added them (for services: users with a role on them):
 
 - `GET /services`, `GET /services/{serviceId}` (`404 Not Found`) and `GET
   /services/types` don't list them to others, nor do the reads of
-  [verifications](#verified-services). These reads are public by
-  default, so their requests have no user: they list pending types and
-  services to nobody, unless the deployment [requires
-  login](access-control.md#requiring-login-for-reads).
+  [verifications](#verified-services). Requests without a token have no
+  user, so these reads list pending types and services to nobody then;
+  send a token to see them.
 - `GET /approvals` (login required) lists the pending types
   (`service_types`) and services (`services`) the user may see: all for
   admins.
@@ -349,6 +356,10 @@ A verification applies to the service as it was when it was verified:
   when [comparing services](#duplicate-services)).
 - **API type:** updating `type.group` or `type.artifact` (compared as for
   duplicates) removes it.
+- **Pending:** pending services (see [Pending
+  approvals](#pending-approvals)) can't be verified (`409 Conflict`; approve
+  their type first), and services that become pending (e.g., updated to a
+  new, pending `type.version`) lose their verification.
 - Changing them back doesn't restore it. Other updates (e.g., of `version`,
   `type.version` or `name`) keep it.
 - Deleting a service deletes its verification.

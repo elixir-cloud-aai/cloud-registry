@@ -31,9 +31,10 @@ pending types; registrations set it, approvals clear it, and the app
 reconciles it on startup (cf. `sync_pending_services()`). Pending types are
 only listed (`GET /services/types`) to admins and the user who added them,
 pending services (`GET /services`, `GET /services/{serviceId}`) to admins
-and the users with a role on them;
-reads that don't require login have no user, so they don't list them (cf.
-`GET /approvals`, which requires login). Only admins may update pending
+and the users with a role on them; reads without a token have no user,
+so they don't list them (cf. `GET /approvals`, which requires login, and
+`check_read_token()`). Pending services can't be verified, and lose their
+verification when they become pending. Only admins may update pending
 services, other users only to an approved type (cf. `PendingService`);
 their owners may delete them. Pending types stay pending if the mode
 changes.
@@ -69,6 +70,7 @@ from cloud_registry.ga4gh.registry.permissions import (
 from cloud_registry.ga4gh.registry.service import (
     PENDING_SERVICE,
     PROJECTION,
+    VERIFIED,
     InvalidService,
     check_strings,
 )
@@ -320,8 +322,15 @@ def _sync_flags(service_type: dict[str, str], query: dict[str, Any]) -> None:
     while True:
         if pending:
             services.update_many(
-                {**query, PENDING_SERVICE: {"$ne": True}},
-                {"$set": {PENDING_SERVICE: True}},
+                # pending services aren't verified (also those flagged before)
+                {
+                    **query,
+                    "$or": [
+                        {PENDING_SERVICE: {"$ne": True}},
+                        {VERIFIED: {"$exists": True}},
+                    ],
+                },
+                {"$set": {PENDING_SERVICE: True}, "$unset": {VERIFIED: ""}},
             )
         else:
             services.update_many(

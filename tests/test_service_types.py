@@ -18,8 +18,12 @@ from werkzeug.test import TestResponse
 import yaml
 
 from cloud_registry.app import create_app
-from cloud_registry.ga4gh.registry import server, service_types
-from cloud_registry.ga4gh.registry.service import PENDING_SERVICE, RegisterService
+from cloud_registry.ga4gh.registry import server, service_types, verification
+from cloud_registry.ga4gh.registry.service import (
+    PENDING_SERVICE,
+    VERIFIED,
+    RegisterService,
+)
 from cloud_registry.utils import get_custom_config
 from tests.conftest import ADMIN, CONFIG_OVERLAY, TEAM_GROUP, USER, make_headers
 from tests.mock_data import DB
@@ -570,13 +574,15 @@ def test_moderated_login_for_reads(
 
 
 def test_moderated_verifications(client: FlaskClient, moderated: None) -> None:
-    """Verifications of pending services are hidden like the services."""
+    """Pending services can't be verified (`409`), until their type is approved."""
     service_id = register(client, _service()).get_json()
     path = f"{BASE}/services/{service_id}/verification"
-    assert client.put(path, headers=headers(ADMIN)).status_code == 200
-    assert client.get(path).status_code == 404
-    assert client.get(f"{BASE}/verifications").get_json() == []
+    response = client.put(path, headers=headers(ADMIN))
+    assert response.status_code == 409
+    assert "pending" in response.get_json()["detail"]
+    assert client.get(path, headers=headers(ADMIN)).status_code == 404
     assert approve(client, TES).status_code == 200
+    assert client.put(path, headers=headers(ADMIN)).status_code == 200
     assert client.get(path).status_code == 200
     verifications = client.get(f"{BASE}/verifications").get_json()
     assert [item["service_id"] for item in verifications] == [service_id]
@@ -1070,3 +1076,109 @@ def test_restored_type_syncs_flags(
         service_types._restore_type(dict(TES), {"created_by": USER})
     assert _flags(mongo_client) == {service_id: False}
     assert len(client.get(f"{BASE}/services").get_json()) == 1
+
+
+def test_reads_with_token(client: FlaskClient, moderated: None) -> None:
+    """Public reads with a token show the pending items the user may see.
+
+    Admins and the owners of pending services see them, other users and
+    requests without a token don't; pending types are listed to admins and
+    the user who added them.
+    """
+    service_id = register(client, _service()).get_json()
+    for user, visible in [(None, False), (OTHER, False), (USER, True), (ADMIN, True)]:
+        listed_ids = [
+            service["id"]
+            for service in client.get(
+                f"{BASE}/services", headers=headers(user)
+            ).get_json()
+        ]
+        assert listed_ids == ([service_id] if visible else [])
+        response = client.get(f"{BASE}/services/{service_id}", headers=headers(user))
+        assert response.status_code == (200 if visible else 404)
+        types = client.get(TYPES, headers=headers(user)).get_json()
+        assert types == ([TES] if visible else [])
+
+
+def test_pending_after_verification(client: FlaskClient, moderated: None) -> None:
+    """Services that become pending through a type change lose their verification.
+
+    Also if only the version of the type changes, which keeps verifications
+    of services that don't become pending.
+    """
+    assert add_type(client, TES, user=ADMIN).status_code == 201
+    service_id = register(client, _service()).get_json()
+    path = f"{BASE}/services/{service_id}/verification"
+    assert client.put(path, headers=headers(ADMIN)).status_code == 200
+    response = client.put(
+        f"{BASE}/services/{service_id}",
+        json=_service({**TES, "version": "2.0.0"}),
+        headers=headers(),
+    )
+    assert response.status_code == 200, response.get_json()
+    assert client.get(path, headers=headers(ADMIN)).status_code == 404
+    assert client.get(f"{BASE}/verifications", headers=headers(ADMIN)).get_json() == []
+    assert client.put(path, headers=headers(ADMIN)).status_code == 409
+    # not restored when the type is approved
+    assert approve(client, {**TES, "version": "2.0.0"}).status_code == 200
+    assert client.get(path).status_code == 404
+
+
+def test_flagged_loses_verification(
+    client: FlaskClient,
+    moderated: None,
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Services flagged as pending by a sync lose their verification."""
+    assert add_type(client, TES, user=ADMIN).status_code == 201
+    service_id = register(client, _service()).get_json()
+    path = f"{BASE}/services/{service_id}/verification"
+    assert client.put(path, headers=headers(ADMIN)).status_code == 200
+    mongo_client[DB]["service_types"].update_one(dict(TES), {"$set": {"pending": True}})
+    with client.application.test_request_context():
+        service_types.sync_pending_flag(service_id, dict(TES))
+    assert _flags(mongo_client) == {service_id: True}
+    assert client.get(path, headers=headers(ADMIN)).status_code == 404
+    stored = mongo_client[DB]["services"].find_one({"id": service_id})
+    assert stored is not None
+    assert VERIFIED not in stored
+    # also for services flagged before (e.g., verified by older versions)
+    mongo_client[DB]["services"].update_one(
+        {"id": service_id}, {"$set": {VERIFIED: "2026-01-01T00:00:00Z"}}
+    )
+    with client.application.test_request_context():
+        service_types.sync_pending_services()
+    stored = mongo_client[DB]["services"].find_one({"id": service_id})
+    assert stored is not None
+    assert VERIFIED not in stored
+
+
+def test_verify_approved_meanwhile(
+    client: FlaskClient,
+    moderated: None,
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verifying a service whose type is approved meanwhile succeeds."""
+    service_id = register(client, _service()).get_json()
+    collection = verification.get_collection
+
+    def approve_on_read(name: str) -> Any:
+        """Get a collection; approve the type when the service is read again.
+
+        Args:
+            name: Name of the collection.
+
+        Returns:
+            The collection.
+        """
+        if calls:
+            assert approve(client, TES).status_code == 200
+        calls.append(name)
+        return collection(name)
+
+    calls: list[str] = []
+    monkeypatch.setattr(verification, "get_collection", approve_on_read)
+    path = f"{BASE}/services/{service_id}/verification"
+    response = client.put(path, headers=headers(ADMIN))
+    assert response.status_code == 200, response.get_json()
