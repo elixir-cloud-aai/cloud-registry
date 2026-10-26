@@ -686,8 +686,11 @@ def test_many_pending_types(
 ) -> None:
     """Reads don't grow with the number of pending types.
 
-    A filter by all pending types would exceed MongoDB's limit of 16 MB.
+    A filter by all pending types, as before, would exceed MongoDB's limit of
+    16 MB (60000 types of over 300 bytes each).
     """
+    if not os.environ.get("MONGODB_TEST_URI"):
+        pytest.skip("MongoDB's limit; slow with mongomock")
     long = "x" * 100
     mongo_client[DB]["service_types"].insert_many(
         {"group": long, "artifact": f"{long}{index}", "version": long, "pending": True}
@@ -867,3 +870,109 @@ def test_add_type_concurrently(
     response = add_type(client, TES, user=OTHER)
     assert response.status_code == 409
     assert response.get_json()["detail"] == "The service type is registered."
+
+
+def test_unused_types_limit_changes(client: FlaskClient, unused_limit: None) -> None:
+    """Changes of services to new types count, and leave old types unused.
+
+    Types become unused again when their services are deleted.
+    """
+    service_id = register(client, _service()).get_json()
+    assert add_type(client, WES).status_code == 201
+    assert add_type(client, {**TES, "artifact": "trs"}).status_code == 201
+    response = client.put(
+        f"{BASE}/services/{service_id}",
+        json=_service({**TES, "artifact": "drs"}),
+        headers=headers(),
+    )
+    assert response.status_code == 409
+    assert "2 service types" in response.get_json()["detail"]
+    # changing to an existing type leaves the old one unused
+    response = client.put(
+        f"{BASE}/services/{service_id}", json=_service(WES), headers=headers()
+    )
+    assert response.status_code == 200, response.get_json()
+    assert add_type(client, {**TES, "artifact": "drs"}).status_code == 409
+    response = client.delete(f"{BASE}/services/{service_id}", headers=headers())
+    assert response.status_code == 200
+    assert add_type(client, {**TES, "artifact": "drs"}).status_code == 409
+
+
+def test_indexes(app: App, mongo_client: MongoClient[dict[str, Any]]) -> None:
+    """Pending services and types, and types by user, are indexed."""
+    if not os.environ.get("MONGODB_TEST_URI"):
+        pytest.skip("indexes of MongoDB")
+    services = mongo_client[DB]["services"].index_information()
+    types = mongo_client[DB]["service_types"].index_information()
+    keys = [index["key"] for index in [*services.values(), *types.values()]]
+    assert [(PENDING_SERVICE, 1)] in keys
+    assert [("pending", 1)] in keys
+    assert [("created_by", 1)] in keys
+
+
+def test_concurrent_type_change(
+    client: FlaskClient,
+    moderated: None,
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A change to a pending type meanwhile isn't cleared by an earlier one."""
+    assert add_type(client, WES, user=ADMIN).status_code == 201
+    service_id = register(client, _service(WES)).get_json()
+    sync = server.sync_pending_flag
+    calls: list[str] = []
+
+    def change_then_sync(serviceId: str, service_type: Any) -> None:
+        """Let the owner change the type to a new one, then sync.
+
+        Args:
+            serviceId: Service identifier.
+            service_type: Type of the service.
+        """
+        if not calls:
+            calls.append(serviceId)
+            response = client.put(
+                f"{BASE}/services/{serviceId}", json=_service(), headers=headers()
+            )
+            assert response.status_code == 200, response.get_json()
+        sync(serviceId, service_type)
+
+    monkeypatch.setattr(server, "sync_pending_flag", change_then_sync)
+    response = client.put(
+        f"{BASE}/services/{service_id}", json=_service(WES), headers=headers()
+    )
+    assert response.status_code == 200, response.get_json()
+    assert _flags(mongo_client) == {service_id: True}
+    assert client.get(f"{BASE}/services").get_json() == []
+
+
+def test_approved_during_sync(
+    client: FlaskClient,
+    moderated: None,
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A type approved while flags are set doesn't leave services pending."""
+    check = service_types.is_pending
+    calls: list[object] = []
+
+    def approve_after_check(service_type: Any) -> bool:
+        """Check the type; on the first check of the sync, approve it.
+
+        Args:
+            service_type: Service type.
+
+        Returns:
+            Whether the type was pending when checked.
+        """
+        pending = check(service_type)
+        calls.append(service_type)
+        if len(calls) == 1:
+            assert approve(client, TES).status_code == 200
+        return pending
+
+    service_id = register(client, _service()).get_json()
+    monkeypatch.setattr(service_types, "is_pending", approve_after_check)
+    with client.application.test_request_context():
+        service_types.sync_pending_flag(service_id, TES)
+    assert _flags(mongo_client) == {service_id: False}

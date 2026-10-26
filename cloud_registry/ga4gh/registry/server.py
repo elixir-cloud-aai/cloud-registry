@@ -298,8 +298,8 @@ def _register_service(
         store_service_type(
             service_type, created_by=created_by, pending=service_types_pending()
         )
-    # if the type was approved (or removed and added) meanwhile
-    sync_pending_flag(service.data["id"], service_type)
+        # if the type was approved (or removed and added) meanwhile
+        sync_pending_flag(service.data["id"], service_type)
     if service.verification_removed:
         logger.info(
             "Verification of service '%s' removed by an update by '%s' (URL or "

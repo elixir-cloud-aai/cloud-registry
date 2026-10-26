@@ -208,9 +208,8 @@ bound. Reads don't slow down with the number of pending types, as services
 are marked as pending when stored, but `GET /services/types` and `GET
 /approvals` list them all. Rate-limit write requests, at least `POST
 /services/types` and `POST /services`, at the ingress or reverse proxy in
-front of the app (e.g., ingress-nginx's `nginx.ingress.kubernetes.io/limit-rpm`
-annotation; see [Ingress](deployment.md#ingress)), and remove unwanted types
-as an admin (`DELETE /services/types`).
+front of the app (see [Rate limits](deployment.md#rate-limits)), and remove
+unwanted types as an admin (`DELETE /services/types`).
 
 Only admins can remove types, in every mode. Set this option rather than
 removing the policy `add-service-types` (in `security.access_control.policies`),

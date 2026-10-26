@@ -29,9 +29,9 @@ derived from their type, and stored with them as an indexed flag
 (`PENDING_SERVICE`), so that reads filter by it whatever the number of
 pending types; registrations set it, approvals clear it, and the app
 reconciles it on startup (cf. `sync_pending_services()`). Pending types are
-only listed (`GET /services/types`) to
-admins and the user who added them, pending services (`GET /services`,
-`GET /services/{serviceId}`) to admins and the users with a role on them;
+only listed (`GET /services/types`) to admins and the user who added them,
+pending services (`GET /services`, `GET /services/{serviceId}`) to admins
+and the users with a role on them;
 reads that don't require login have no user, so they don't list them (cf.
 `GET /approvals`, which requires login). Only admins may update pending
 services, other users only to an approved type (cf. `PendingService`);
@@ -294,54 +294,62 @@ def is_pending(service_type: dict[str, str] | None) -> bool:
     return collection.count_documents({**service_type, PENDING: True}, limit=1) > 0
 
 
-def sync_pending_flag(serviceId: str, service_type: dict[str, str] | None) -> None:
+def _sync_flags(service_type: dict[str, str], query: dict[str, Any]) -> None:
+    """Set or clear the pending flags of services by their type.
+
+    Writes first and checks the type again after setting flags, so that an
+    approval meanwhile isn't undone: approvals approve the type, then clear
+    the flags, so either the approval clears flags set here, or the second
+    check sees the approval.
+
+    Args:
+        service_type: Type of the services, in its stored form.
+        query: Query for the services (of that type, as written).
+    """
+    services = get_collection("services")
+    if is_pending(service_type):
+        services.update_many(
+            {**query, PENDING_SERVICE: {"$ne": True}},
+            {"$set": {PENDING_SERVICE: True}},
+        )
+        if is_pending(service_type):
+            return
+    services.update_many(
+        {**query, PENDING_SERVICE: True}, {"$unset": {PENDING_SERVICE: ""}}
+    )
+
+
+def sync_pending_flag(serviceId: str, service_type: dict[str, str]) -> None:
     """Set or clear the pending flag of a stored service by its type.
 
     Called after a service is stored, with the flag as read before (cf.
-    `RegisterService.pending`), so that an approval or removal of its type
-    meanwhile isn't undone: approvals clear the flag after they approve the
-    type, so either the approval or this call sees the other.
+    `RegisterService.pending`), in case its type was approved (or removed and
+    added again) meanwhile. Only changes the service if it still has the
+    type, so that a concurrent change of its type isn't overwritten.
 
     Args:
         serviceId: Service identifier.
         service_type: Type of the service, in its stored form (cf.
-            `type_document()`); `None` for invalid types, which aren't
-            pending.
+            `type_document()`).
     """
-    update = (
-        {"$set": {PENDING_SERVICE: True}}
-        if is_pending(service_type)
-        else {"$unset": {PENDING_SERVICE: ""}}
-    )
-    get_collection("services").update_one({"id": serviceId}, update)
+    _sync_flags(service_type, {"id": serviceId, **_services_of_type(service_type)})
 
 
 def sync_pending_services() -> None:
     """Set the pending flags of the stored services by their types.
 
-    Run on startup, so that flags missed by interrupted or concurrent
-    requests (e.g., an approval during a registration) are corrected;
-    idempotent, and safe to run concurrently. Queries once per distinct type
-    of the stored services, not per stored type.
+    Run on startup, so that flags missed by interrupted requests are
+    corrected; idempotent, and safe to run concurrently (cf.
+    `_sync_flags()`). Queries once per distinct type of the stored services,
+    not per stored type.
     """
-    services = get_collection("services")
-    types = services.aggregate(
+    types = get_collection("services").aggregate(
         [{"$group": {"_id": {field: f"$type.{field}" for field in TYPE_FIELDS}}}]
     )
     for group in types:
         service_type = type_document(group["_id"])
-        if service_type is None:
-            continue
-        query = _services_of_type(service_type)
-        if is_pending(service_type):
-            services.update_many(
-                {**query, PENDING_SERVICE: {"$ne": True}},
-                {"$set": {PENDING_SERVICE: True}},
-            )
-        else:
-            services.update_many(
-                {**query, PENDING_SERVICE: True}, {"$unset": {PENDING_SERVICE: ""}}
-            )
+        if service_type is not None:
+            _sync_flags(service_type, _services_of_type(service_type))
 
 
 def visible_services() -> dict[str, Any]:
@@ -370,6 +378,10 @@ def visible_services() -> dict[str, Any]:
 
 def _count_unused_types(user: str, limit: int) -> int:
     """Count the types that a user added and no service has, up to a limit.
+
+    Takes one indexed query per type of the user, up to the `limit`-th
+    unused one (types that services have aren't limited); a `$lookup` would
+    take one, but mongomock, which the tests also run with, lacks it.
 
     Args:
         user: User identifier (cf. `CREATED_BY`).
