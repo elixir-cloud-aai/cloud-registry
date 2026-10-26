@@ -87,6 +87,13 @@ BULLETS_ONLY = "Sections hold bullets only, e.g., - <change> (#12, #34)"
 # Docs on Read the Docs and repository on GitHub, and links to versions of
 # them that move, as in `scripts/chart_readme.py` (copied, so that each
 # script runs on its own; the tests check that they match)
+# Names of curated notes: `<version>.md`, for release versions as the
+# release workflow accepts them (`TAG` of `scripts/release_version.py`)
+NOTES_NAME = re.compile(
+    r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
+    r"(?:(?:a|b|rc)(?:0|[1-9][0-9]*))?\.md",
+    re.ASCII,
+)
 DOCS_HOST = "cloud-registry.readthedocs.io"
 REPOSITORY = "elixir-cloud-aai/cloud-registry"
 _MOVING = r"(?![\w.-])"
@@ -551,8 +558,9 @@ def missing_notes(version: str, releases: Path) -> Path | None:
     """Get the curated notes that a release lacks, if they are required.
 
     Curated notes are required once notes of any other release exist (in
-    practice, for every release after the first one that had them); a repository
-    without any notes publishes GitHub's generated notes alone.
+    practice, for every release after the first one that had them); a
+    repository without any notes publishes GitHub's generated notes alone.
+    Only files named like notes count (`NOTES_NAME`), not, e.g., a README.
 
     Args:
         version: Version of the release, e.g., `1.2.3` or `1.2.3rc1`.
@@ -565,7 +573,11 @@ def missing_notes(version: str, releases: Path) -> Path | None:
     notes = releases / f"{version}.md"
     if notes.is_file():
         return None
-    others = [path for path in releases.glob("*.md") if path.name != notes.name]
+    others = [
+        path
+        for path in releases.glob("*.md")
+        if path.name != notes.name and NOTES_NAME.fullmatch(path.name)
+    ]
     return notes if others else None
 
 

@@ -371,8 +371,10 @@ def test_main_body_unexpected_generated(
         (["0.6.0.md"], True),
         (["0.4.0.md", "0.5.0.md"], False),
         (["0.5.0.md"], False),
+        (["0.4.0rc1.md"], True),
         # other files don't count
         (["README.txt"], False),
+        (["README.md", "draft-0.4.0.md", "0.4.md"], False),
     ],
 )
 def test_missing_notes(tmp_path: Path, files: list[str], missing: bool) -> None:

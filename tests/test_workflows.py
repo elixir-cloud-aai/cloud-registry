@@ -76,7 +76,9 @@ def test_verification_signer_workflow() -> None:
     assert version
     text = (ROOT / "docs" / "operations.md").read_text(encoding="utf-8")
     signers = re.findall(r"cloud-registry/\.github/workflows/(release\.ya?ml)", text)
-    assert signers
+    # `--signer-workflow` and `--certificate-identity` of the image and the
+    # chart (`gh attestation verify`, `cosign verify`, `cosign verify-blob`)
+    assert len(signers) == 4
     if Version(version) <= LAST_RELEASE_YAML:
         assert set(signers) == {"release.yaml"}
     else:
