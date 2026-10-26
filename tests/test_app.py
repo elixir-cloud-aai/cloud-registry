@@ -1473,6 +1473,9 @@ def test_create_app_checks(
 ) -> None:
     """`create_app()` logs admin groups and service info, and adds keys.
 
+    Logging the admin groups and warning of placeholders of the service info
+    is FOCA's.
+
     That is, it adds missing keys of services (in each Gunicorn worker).
     """
     # registered without a key, e.g., before keys were introduced
@@ -1486,11 +1489,11 @@ def test_create_app_checks(
     assert stored[KEY] == service_key(SERVICE)
     # FOCA configures logging to stderr
     err = capsys.readouterr().err
-    assert f"Groups mapped to the role 'admin': {ADMIN_GROUP}" in err
+    assert f"mapped to the role 'admin': {ADMIN_GROUP}" in err
     assert "keep_group_subjects" not in err
     assert "Serving service info 'org.example.cloud-registry'" in err
     # the test overlay keeps the placeholders
-    assert "placeholder" in err
+    assert "reserved example domains" in err
     assert "url_schemes" not in err
 
 
@@ -1617,7 +1620,7 @@ def test_create_app_requires_issuers(
 def test_create_app_requires_claim_groups(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
 ) -> None:
-    """`create_app()` refuses a group mapping without a group claim.
+    """`create_app()` refuses a group mapping without a group claim (FOCA).
 
     Without `claim_groups`, no group would be admin.
     """
@@ -1631,7 +1634,7 @@ def test_create_app_requires_claim_groups(
             }
         },
     )
-    with pytest.raises(RuntimeError, match="claim_groups"):
+    with pytest.raises(ValueError, match="no group claim"):
         cloud_registry.app.create_app()
 
 
@@ -1639,7 +1642,7 @@ def test_create_app_requires_claim_groups(
 def test_create_app_claim_groups_whitespace(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None, claim: str
 ) -> None:
-    """`create_app()` refuses a group claim with surrounding whitespace.
+    """`create_app()` refuses a group claim with surrounding whitespace (FOCA).
 
     FOCA looks up the claim as written, so users would have no groups.
     """
@@ -1649,32 +1652,12 @@ def test_create_app_claim_groups_whitespace(
         {
             "security": {
                 "auth": {"issuers": [ISSUER], "audience": ["a"]},
-                "access_control": {"claim_groups": claim},
+                "access_control": {"claim_groups": claim, "require_admin": False},
             },
-            "custom": {"access_control": {"require_admin": False}},
         },
     )
-    with pytest.raises(RuntimeError, match="without surrounding whitespace"):
+    with pytest.raises(ValueError, match="surrounding whitespace"):
         cloud_registry.app.create_app()
-
-
-def test_create_app_no_claim_groups(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    app_env: None,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """`create_app()` warns without a group claim, as users have no groups."""
-    _set_overlay(
-        monkeypatch,
-        tmp_path,
-        {
-            "security": {"auth": {"issuers": [ISSUER], "audience": ["a"]}},
-            "custom": {"access_control": {"require_admin": False}},
-        },
-    )
-    cloud_registry.app.create_app()
-    assert "No group claim is set" in capsys.readouterr().err
 
 
 def test_create_app_group_subjects(
@@ -1683,7 +1666,7 @@ def test_create_app_group_subjects(
     app_env: None,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`create_app()` warns if roles of groups don't apply.
+    """`create_app()` warns if roles of groups don't apply (FOCA).
 
     That is, if groups are mapped, but not kept as subjects.
     """
@@ -1702,7 +1685,7 @@ def test_create_app_group_subjects(
         },
     )
     cloud_registry.app.create_app()
-    assert "roles on services granted to groups don't apply" in (
+    assert "'security.access_control.keep_group_subjects' is not" in (
         capsys.readouterr().err
     )
 
@@ -1717,9 +1700,9 @@ def test_create_app_dev_overlay(
     monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(APP_DIR.parent / "config.dev.yaml"))
     cloud_registry.app.create_app()
     err = capsys.readouterr().err
-    assert "No group is mapped to the role 'admin'" in err
+    assert "No group or service client is mapped to the role 'admin'" in err
     assert "keep_group_subjects" not in err
-    assert "No group claim is set" not in err
+    assert "no group claim" not in err
 
 
 def test_create_app_duplicate_services(
@@ -1735,54 +1718,35 @@ def test_create_app_duplicate_services(
 def test_create_app_requires_admin(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
 ) -> None:
-    """`create_app()` fails if no group is mapped to the role `admin`."""
+    """`create_app()` fails without admins (FOCA's `require_admin`)."""
     _set_overlay(
         monkeypatch,
         tmp_path,
         {"security": {"auth": {"issuers": [ISSUER], "audience": ["a"]}}},
     )
-    with pytest.raises(RuntimeError, match="require_admin"):
+    with pytest.raises(ValueError, match="require_admin"):
         cloud_registry.app.create_app()
 
 
-@pytest.mark.parametrize(
-    "mode, consequence",
-    [
-        ("open", None),
-        ("moderated", "nobody can approve service types"),
-        ("controlled", "nobody can add service types"),
-    ],
-)
 def test_create_app_admin_optional(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     app_env: None,
     capsys: pytest.CaptureFixture[str],
-    mode: str,
-    consequence: str | None,
 ) -> None:
-    """Without admin groups, `create_app()` warns if admins are not required.
-
-    The warning also names what nobody can do in the mode of service types.
-    """
+    """Without admins, `create_app()` warns if admins are not required (FOCA)."""
     _set_overlay(
         monkeypatch,
         tmp_path,
         {
-            "security": {"auth": {"issuers": [ISSUER], "audience": ["a"]}},
-            "custom": {
-                "access_control": {"require_admin": False, "service_types": mode}
-            },
+            "security": {
+                "auth": {"issuers": [ISSUER], "audience": ["a"]},
+                "access_control": {"require_admin": False},
+            }
         },
     )
     cloud_registry.app.create_app()
-    err = capsys.readouterr().err
-    assert "No group is mapped to the role 'admin'" in err
-    assert "remove service types" in err
-    if consequence is None:
-        assert "in mode '" not in err
-    else:
-        assert consequence in err
+    assert "nobody is an admin" in capsys.readouterr().err
 
 
 def _service_info_overlay(service_info: dict[str, Any]) -> dict[str, Any]:
@@ -1795,8 +1759,11 @@ def _service_info_overlay(service_info: dict[str, Any]) -> dict[str, Any]:
         Config overlay.
     """
     return {
-        "security": {"auth": {"issuers": [ISSUER], "audience": ["a"]}},
-        "custom": {"access_control": {"require_admin": False}},
+        "security": {
+            "auth": {"issuers": [ISSUER], "audience": ["a"]},
+            "access_control": {"require_admin": False},
+        },
+        "custom": {},
         "service_info": service_info,
     }
 
@@ -1804,16 +1771,11 @@ def _service_info_overlay(service_info: dict[str, Any]) -> dict[str, Any]:
 @pytest.mark.parametrize(
     "service, fields",
     [
-        ({}, "`id`, `organization`"),
-        ({"id": "org.example.registry"}, "`organization`"),
-        ({"organization": {"name": "My organization"}}, "`id`, `organization`"),
+        ({}, "'id', 'organization.url'"),
+        ({"id": "org.registry.example.com"}, "'organization.url'"),
         (
-            {"id": "org.example.registry", "organization": {"name": "My org"}},
-            "`organization`",
-        ),
-        (
-            {"organization": {"name": "My org", "url": "https://my.example.org"}},
-            "`id`",
+            {"organization": {"name": "My org", "url": "https://registry.org"}},
+            "'id'",
         ),
     ],
 )
@@ -1827,15 +1789,15 @@ def test_create_app_placeholder_service_info(
 ) -> None:
     """`create_app()` warns while placeholders of the service info are kept.
 
-    Naming the fields still to set: `id`, and `organization` while its name or
-    URL is the placeholder's.
+    That is, values in reserved example domains, as the base config's (FOCA),
+    naming the fields still to set.
     """
     _set_overlay(monkeypatch, tmp_path, _service_info_overlay({"service": service}))
     cloud_registry.app.create_app()
     # FOCA configures logging to stderr
     err = capsys.readouterr().err
-    assert err.count("placeholder values") == 1
-    assert f"placeholder values; set {fields} to" in err
+    assert err.count("reserved example domains") == 1
+    assert f"e.g., from a template: {fields}" in err
 
 
 def test_create_app_deployment_service_info(
@@ -1846,12 +1808,14 @@ def test_create_app_deployment_service_info(
 ) -> None:
     """`create_app()` doesn't warn if the deployment sets its service info."""
     service = {
-        "id": "org.example.registry",
-        "organization": {"name": "My organization", "url": "https://my.example.org"},
+        "id": "org.registry",
+        "organization": {"name": "My organization", "url": "https://registry.org"},
+        "contactUrl": "https://registry.org/contact",
+        "documentationUrl": "https://docs.registry.org",
     }
     _set_overlay(monkeypatch, tmp_path, _service_info_overlay({"service": service}))
     cloud_registry.app.create_app()
-    assert "placeholder" not in capsys.readouterr().err
+    assert "reserved example domains" not in capsys.readouterr().err
 
 
 def test_create_app_service_info_nulls(
@@ -1945,7 +1909,7 @@ def test_main_check_fails(
         {"security": {"auth": {"issuers": [ISSUER], "audience": ["a"]}}},
     )
     ports = _mock_run(monkeypatch)
-    with pytest.raises(RuntimeError, match="require_admin"):
+    with pytest.raises(ValueError, match="require_admin"):
         cloud_registry.app.main()
     assert ports == []
 

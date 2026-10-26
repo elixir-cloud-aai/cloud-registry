@@ -67,13 +67,20 @@ upgrade), which the app rejects
 {{- if and (kindIs "map" $endpoints) (hasKey $endpoints "service_info") -}}
 {{- fail "config.custom.endpoints.service_info was removed with the FOCA 0.15 upgrade: set config.service_info.service instead (see deployment/README.md, Configuration)" -}}
 {{- end -}}
+{{- /* Replaced by FOCA's (with the FOCA 0.18 upgrade) */ -}}
+{{- $customAccessControl := index $custom "access_control" -}}
+{{- if and (kindIs "map" $customAccessControl) (hasKey $customAccessControl "require_admin") -}}
+{{- fail "config.custom.access_control.require_admin was removed with the FOCA 0.18 upgrade: set config.security.access_control.require_admin instead (see deployment/README.md#to-app-version-060)" -}}
+{{- end -}}
 {{- end -}}
 {{- /*
 As the app on startup, refuse to render without a group mapped to the role
-`admin`, unless admins are explicitly not required (`custom: null` is like
+`admin`, unless admins are explicitly not required
+(`security.access_control.require_admin`, FOCA's; `null` sections are like
 no such section, see `foca-common.configOverlay`)
 */ -}}
 {{- $mapping := dict -}}
+{{- $requireAdmin := "true" -}}
 {{- $claimGroups := "" -}}
 {{- $issuers := list -}}
 {{- $security := get $config "security" -}}
@@ -83,6 +90,12 @@ no such section, see `foca-common.configOverlay`)
 {{- /* Only if set, as `get` returns an empty string for missing keys */ -}}
 {{- if hasKey $securityAccessControl "group_mapping" -}}
 {{- $mapping = get $securityAccessControl "group_mapping" -}}
+{{- end -}}
+{{- if hasKey $securityAccessControl "require_admin" -}}
+{{- $requireAdmin = include "cloud-registry.parseBool" (dict
+  "value" (get $securityAccessControl "require_admin")
+  "key" "config.security.access_control.require_admin"
+) -}}
 {{- end -}}
 {{- if hasKey $securityAccessControl "claim_groups" -}}
 {{- $claimGroups = get $securityAccessControl "claim_groups" -}}
@@ -131,19 +144,8 @@ with the groups of users, as no mapping would apply
 {{- if and $mapping (not $claimGroups) -}}
 {{- fail "config.security.access_control.claim_groups must name the claim with the groups of users (e.g., groups), as groups are mapped to roles (group_mapping); also add it to config.security.auth.userinfo_claims if the identity provider releases it via user info only" -}}
 {{- end -}}
-{{- $requireAdmin := "true" -}}
-{{- $accessControl := dict -}}
-{{- if kindIs "map" $custom -}}
-{{- $accessControl = get $custom "access_control" | default dict -}}
-{{- end -}}
-{{- if and (kindIs "map" $accessControl) (hasKey $accessControl "require_admin") -}}
-{{- $requireAdmin = include "cloud-registry.parseBool" (dict
-  "value" (get $accessControl "require_admin")
-  "key" "config.custom.access_control.require_admin"
-) -}}
-{{- end -}}
 {{- if and (eq $requireAdmin "true") (not (has "admin" (values $mapping))) -}}
-{{- fail "config.security.access_control.group_mapping must map a group to the role admin (e.g., the admin group of the identity provider), or set config.custom.access_control.require_admin to false" -}}
+{{- fail "config.security.access_control.group_mapping must map a group to the role admin (e.g., the admin group of the identity provider), or set config.security.access_control.require_admin to false" -}}
 {{- end -}}
 {{- $_ := required "hostName must be set" .Values.hostName -}}
 {{- end -}}

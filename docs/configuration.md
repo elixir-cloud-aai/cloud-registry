@@ -41,7 +41,7 @@ chart's `config` value), otherwise the app refuses to start:
 - `security.access_control.group_mapping`: the group(s) whose members are
   admins (values of the group claim, see [Access
   control](access-control.md#admins)), or
-  `custom.access_control.require_admin: false` to run without admins.
+  `security.access_control.require_admin: false` to run without admins.
 
 For example:
 

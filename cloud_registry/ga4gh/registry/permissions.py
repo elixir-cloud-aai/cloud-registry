@@ -25,7 +25,6 @@ from urllib.parse import quote
 
 from flask import current_app, g, has_request_context, request
 from flask.globals import request_ctx
-from foca import get_config
 from foca.security.access_control import (
     SubjectType,
     get_current_group_values,
@@ -172,111 +171,6 @@ def check_read_token[T](func: Callable[..., T]) -> Callable[..., T]:
 
 # Collection with the display names of users with roles on services
 USER_NAMES = "user_names"
-# What nobody can do without admins, by mode of service types
-# (`custom.access_control.service_types`), besides what is so in every mode
-_NO_ADMIN_SERVICE_TYPES = {
-    "moderated": (
-        "; in mode 'moderated', nobody can approve service types either, so "
-        "those of users and their services stay pending"
-    ),
-    "controlled": (
-        "; in mode 'controlled', nobody can add service types either, so "
-        "services can only be registered with stored types"
-    ),
-}
-
-
-def check_admin_groups() -> None:
-    """Check that groups are mapped to the role `admin`, and log them.
-
-    Without such groups, nobody can manage services they don't own, register
-    services with chosen identifiers or verify services, so this is an error
-    unless `custom.access_control.require_admin` is false; then a warning is
-    logged, which also names what nobody can do in the mode of service types
-    (`custom.access_control.service_types`). A warning is also logged if
-    groups are mapped, but `keep_group_subjects` is not set, as roles on
-    services granted to groups don't apply then (and FOCA refuses to grant
-    them), and if no group claim is set, as users then have no groups.
-
-    Raises:
-        RuntimeError: The group claim (`claim_groups`) has surrounding
-            whitespace; groups are mapped to roles, but no group claim is
-            set, so that no mapping applies; or no group is
-            mapped to the role `admin`, and
-            `custom.access_control.require_admin` is true.
-    """
-    conf = get_config().security.access_control
-    mapping = conf.group_mapping or {}
-    claim_groups = conf.claim_groups or ""
-    # FOCA looks up the claim as written
-    if claim_groups != claim_groups.strip():
-        raise RuntimeError(
-            "`security.access_control.claim_groups` must be the name of a "
-            f"claim, without surrounding whitespace: {claim_groups!r}"
-        )
-    if mapping and not claim_groups:
-        raise RuntimeError(
-            "Groups are mapped to roles, but no group claim is set: set "
-            "`security.access_control.claim_groups` to the claim with the "
-            "groups of users (e.g., `groups`), and add it to "
-            "`security.auth.userinfo_claims` if the identity provider "
-            "releases it via user info only"
-        )
-    if not claim_groups:
-        logger.warning(
-            "No group claim is set (`security.access_control.claim_groups`), "
-            "so users have no groups: roles on services can't be granted to "
-            "groups, and roles of groups don't apply"
-        )
-    # FOCA drops group claim values that aren't mapped once a mapping is set,
-    # also an empty one
-    if conf.group_mapping is not None and not conf.keep_group_subjects:
-        logger.warning(
-            "`security.access_control.keep_group_subjects` is not set, so "
-            "roles on services granted to groups don't apply, and can't be "
-            "granted (`400 Bad Request`)"
-        )
-    groups = sorted(group for group, role in mapping.items() if role == "admin")
-    if groups:
-        logger.info("Groups mapped to the role 'admin': %s", ", ".join(groups))
-    elif get_custom_config().access_control.require_admin:
-        raise RuntimeError(
-            "No group is mapped to the role 'admin': set "
-            "`security.access_control.group_mapping` (e.g., to map an admin "
-            "group of the identity provider to 'admin'), or set "
-            "`custom.access_control.require_admin` to false to run without "
-            "admins"
-        )
-    else:
-        mode = get_custom_config().access_control.service_types
-        logger.warning(
-            "No group is mapped to the role 'admin', so nobody can manage "
-            "services they don't own, register services with chosen "
-            "identifiers, verify services or remove service types%s",
-            _NO_ADMIN_SERVICE_TYPES.get(mode, ""),
-        )
-
-
-def check_no_service_clients() -> None:
-    """Check that service clients are not configured, as they aren't supported.
-
-    With service clients (`security.auth.service_clients`), FOCA's ownership
-    helpers attribute new services to the client, or to the user it names
-    (`security.auth.on_behalf_of_header`), while the app's endpoints only
-    list and manage roles of users and groups, and take the token's subject
-    as the user.
-
-    Raises:
-        RuntimeError: Service clients or the header naming the user they act
-            for are configured.
-    """
-    auth = get_config().security.auth
-    if auth.service_clients or auth.on_behalf_of_header is not None:
-        raise RuntimeError(
-            "Service clients are not supported: remove "
-            "`security.auth.service_clients` and "
-            "`security.auth.on_behalf_of_header`"
-        )
 
 
 def _api_base_path() -> str:

@@ -655,13 +655,18 @@ def test_security_config_empty(value: str, error: str) -> None:
     [
         ("config.custom.max_content_length", "config.server.max_content_length"),
         ("config.custom.endpoints.service_info", "config.service_info.service"),
+        (
+            "config.custom.access_control.require_admin",
+            "config.security.access_control.require_admin",
+        ),
     ],
-    ids=["max_content_length", "service_info"],
+    ids=["max_content_length", "service_info", "require_admin"],
 )
 def test_custom_config_removed(removed: str, replacement: str) -> None:
     """Settings of the custom config replaced by FOCA's are rejected.
 
-    Replaced in the FOCA 0.15 upgrade; the error names the replacement.
+    Replaced in the FOCA 0.15 and 0.18 upgrades; the error names the
+    replacement.
     """
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render("--set-json", f'{removed}={{"name": "x"}}')
@@ -1084,7 +1089,7 @@ def test_admins_not_required(value: str) -> None:
     """Admins are optional if `require_admin` is false, as parsed by the app."""
     _render(
         "--set-json",
-        f"config.custom.access_control.require_admin={value}",
+        f"config.security.access_control.require_admin={value}",
         admin_group=None,
     )
 
@@ -1098,7 +1103,7 @@ def test_admins_required(value: str) -> None:
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render(
             "--set-json",
-            f"config.custom.access_control.require_admin={value}",
+            f"config.security.access_control.require_admin={value}",
             admin_group=None,
         )
     assert "must map a group to the role admin" in exc.value.stderr
@@ -1112,7 +1117,7 @@ def test_require_admin_invalid(tmp_path: Path, value: str) -> None:
     """
     values = tmp_path / "values.yaml"
     values.write_text(
-        f"config:\n  custom:\n    access_control:\n      require_admin: {value}\n"
+        f"config:\n  security:\n    access_control:\n      require_admin: {value}\n"
     )
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render("-f", str(values))

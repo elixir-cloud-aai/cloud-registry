@@ -200,9 +200,6 @@ class AccessControlConfig(FOCABaseConfig):
     """Model for access control settings of the app.
 
     Args:
-        require_admin: Whether the app refuses to start unless a group is
-            mapped to the role `admin` (in
-            `security.access_control.group_mapping`).
         service_types: Who may add service types: `open` (the default), any
             authenticated user, explicitly (`POST /services/types`) or by
             registering a service with a new type; `controlled`, admins
@@ -216,9 +213,6 @@ class AccessControlConfig(FOCABaseConfig):
             and of pending types, that users can grow.
 
     Attributes:
-        require_admin: Whether the app refuses to start unless a group is
-            mapped to the role `admin` (in
-            `security.access_control.group_mapping`).
         service_types: Who may add service types: `open` (the default), any
             authenticated user, explicitly (`POST /services/types`) or by
             registering a service with a new type; `controlled`, admins
@@ -237,12 +231,10 @@ class AccessControlConfig(FOCABaseConfig):
             `moderated`, or `max_unused_service_types` is negative.
 
     Example:
-        >>> AccessControlConfig(require_admin=False, service_types='controlled')
-        AccessControlConfig(require_admin=False, service_types='controlled', max_\
-unused_service_types=10)
+        >>> AccessControlConfig(service_types='controlled')
+        AccessControlConfig(service_types='controlled', max_unused_service_types=10)
     """
 
-    require_admin: bool = True
     service_types: Literal["open", "controlled", "moderated"] = "open"
     max_unused_service_types: NonNegativeInt | None = 10
 

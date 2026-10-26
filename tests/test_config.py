@@ -297,7 +297,7 @@ def test_config_dev_overlay(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(ROOT / "config.dev.yaml"))
     config = _parse_config()
     assert config.security.auth.verify_audience is False
-    assert _custom(config).access_control.require_admin is False
+    assert config.security.access_control.require_admin is False
     assert _custom(config).endpoints.services.url_schemes == ["http", "https"]
 
 
@@ -543,11 +543,11 @@ class TestChartOverlay:
             "--set",
             "hostName=example.org",
             "--set",
-            "config.custom.access_control.require_admin=false",
+            "config.security.access_control.require_admin=false",
             admin_group=None,
             group_claim=None,
         )
-        assert overlay["custom"]["access_control"] == {"require_admin": False}
+        assert overlay["security"]["access_control"]["require_admin"] is False
 
     @pytest.mark.parametrize(
         "args",

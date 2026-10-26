@@ -50,7 +50,7 @@ Rendering fails, as the app would refuse to start, unless each deployment sets:
   any audience;
 - an admin group mapped to the role `admin`
   (`config.security.access_control.group_mapping`), unless
-  `config.custom.access_control.require_admin` is `false` (a boolean, as
+  `config.security.access_control.require_admin` is `false` (a boolean, as
   the app parses it, e.g., `"no"`; rendering fails on other values);
 - the claim with the groups of users
   (`config.security.access_control.claim_groups`), if groups are mapped.
