@@ -44,6 +44,7 @@ no service has (`custom.access_control.max_unused_service_types`; cf.
 types (or of pending types) without bound.
 """
 
+from itertools import islice
 import json
 import logging
 from typing import Any
@@ -112,6 +113,10 @@ class PendingService(Conflict):
         )
 
 
+# Number of types per query when counting the unused types of a user
+UNUSED_TYPES_BATCH = 100
+
+
 class UnusedTypesLimit(Conflict):
     """A user other than an admin has added too many unused types."""
 
@@ -124,7 +129,7 @@ class UnusedTypesLimit(Conflict):
         super().__init__(
             f"You have added {limit} service types that no service has, as "
             "many as allowed; use them for services, or ask an admin to "
-            "approve or remove them, before adding others."
+            "remove them, before adding others."
         )
 
 
@@ -379,9 +384,11 @@ def visible_services() -> dict[str, Any]:
 def _count_unused_types(user: str, limit: int) -> int:
     """Count the types that a user added and no service has, up to a limit.
 
-    Takes one indexed query per type of the user, up to the `limit`-th
-    unused one (types that services have aren't limited); a `$lookup` would
-    take one, but mongomock, which the tests also run with, lacks it.
+    Approved types count too, as approval doesn't give them services.
+    Takes one indexed query per `UNUSED_TYPES_BATCH` types of the user, up
+    to the batch with the `limit`-th unused one, as users may have added any
+    number of types that services have (a `$lookup` would take one query,
+    but mongomock, which the tests also run with, lacks it).
 
     Args:
         user: User identifier (cf. `CREATED_BY`).
@@ -391,14 +398,31 @@ def _count_unused_types(user: str, limit: int) -> int:
         Number of such types, at most `limit`.
     """
     count = 0
-    for service_type in get_collection("service_types").find(
-        {CREATED_BY: user}, TYPE_PROJECTION
-    ):
-        if not _type_in_use(service_type):
-            count += 1
-            if count >= limit:
-                break
+    types = get_collection("service_types").find({CREATED_BY: user}, TYPE_PROJECTION)
+    while batch := list(islice(types, UNUSED_TYPES_BATCH)):
+        used = get_collection("services").aggregate(
+            [
+                {"$match": {"$or": [_services_of_type(item) for item in batch]}},
+                {"$group": {"_id": {field: f"$type.{field}" for field in TYPE_FIELDS}}},
+            ]
+        )
+        in_use = {_type_key(group["_id"]) for group in used}
+        count += sum(_type_key(item) not in in_use for item in batch)
+        if count >= limit:
+            return limit
     return count
+
+
+def _type_key(service_type: dict[str, Any]) -> tuple[Any, ...]:
+    """Get a hashable key of a service type.
+
+    Args:
+        service_type: Service type (`group`, `artifact` and `version`).
+
+    Returns:
+        The values of the type's fields, in order.
+    """
+    return tuple(service_type.get(field) for field in TYPE_FIELDS)
 
 
 def check_unused_types() -> None:

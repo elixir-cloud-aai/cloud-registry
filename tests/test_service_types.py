@@ -893,9 +893,13 @@ def test_unused_types_limit_changes(client: FlaskClient, unused_limit: None) -> 
     )
     assert response.status_code == 200, response.get_json()
     assert add_type(client, {**TES, "artifact": "drs"}).status_code == 409
+    # with one unused type left, deleting the service leaves its type unused
+    assert remove_type(client, TES).status_code == 200
+    assert remove_type(client, {**TES, "artifact": "trs"}).status_code == 200
+    assert add_type(client, {**TES, "artifact": "drs"}).status_code == 201
     response = client.delete(f"{BASE}/services/{service_id}", headers=headers())
     assert response.status_code == 200
-    assert add_type(client, {**TES, "artifact": "drs"}).status_code == 409
+    assert add_type(client, {**TES, "artifact": "trs"}).status_code == 409
 
 
 def test_indexes(app: App, mongo_client: MongoClient[dict[str, Any]]) -> None:
@@ -976,3 +980,20 @@ def test_approved_during_sync(
     with client.application.test_request_context():
         service_types.sync_pending_flag(service_id, TES)
     assert _flags(mongo_client) == {service_id: False}
+
+
+def test_unused_types_batches(
+    client: FlaskClient,
+    moderated: None,
+    unused_limit: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unused types are counted in batches; approved ones count too."""
+    monkeypatch.setattr(service_types, "UNUSED_TYPES_BATCH", 2)
+    for artifact in ["a", "b", "c"]:
+        service = _service({**TES, "artifact": artifact}, url=f"https://{artifact}.org")
+        assert register(client, service).status_code == 201
+    assert add_type(client, TES).status_code == 201
+    assert approve(client, TES).status_code == 200
+    assert add_type(client, WES).status_code == 201
+    assert add_type(client, {**TES, "artifact": "drs"}).status_code == 409

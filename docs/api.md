@@ -201,8 +201,9 @@ An admin who registers a service with a pending type doesn't approve it:
 admins approve types with `PUT /services/types/approval`. A pending type is
 stored only for a valid service, before the service is stored, so it stays
 pending only if the registration then fails (e.g., for a duplicate
-registered meanwhile); admins remove such types, as other unwanted ones. Types are unique also while pending: `POST
-/services/types` returns `409 Conflict` for a type that another user added.
+registered meanwhile); admins remove such types, as other unwanted ones.
+Types are unique also while pending: `POST /services/types` returns `409
+Conflict` for a type that another user added.
 
 ```bash
 curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/types/approval" \

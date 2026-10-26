@@ -196,7 +196,7 @@ Users other than admins may only have added
 `custom.access_control.max_unused_service_types` types that no service has
 (default: 10; `null` for no limit), in every mode: further types are rejected
 (`409`), whether added explicitly or by registering or changing services,
-until services have them or admins approve (`moderated`) or remove them.
+until services have them or admins remove them (approved types count too).
 Types become unused when their services are deleted or change their type, so
 the limit bounds how many types each user can add without services; set `0`
 to let only admins add types other than those of services. Concurrent
