@@ -36,6 +36,7 @@ from cloud_registry.utils import get_custom_config
 from tests.conftest import (
     ADMIN_GROUP,
     APP_DIR,
+    AUDIENCE,
     CONFIG_OVERLAY,
     ISSUER,
     USER,
@@ -43,6 +44,9 @@ from tests.conftest import (
     make_headers,
     mock_get,
     without_timestamps,
+)
+from tests.conftest import (
+    KEY as SIGNING_KEY,
 )
 from tests.mock_data import ERROR_MEDIA_TYPE, MAX_CONTENT_LENGTH
 
@@ -233,9 +237,54 @@ def test_public_read_tokens(client: FlaskClient, path: str) -> None:
     _assert_invalid_token(
         client.get(f"{BASE}{path}", headers=make_headers(key=other_key))
     )
-    _assert_invalid_token(
-        client.get(f"{BASE}{path}", headers={"Authorization": "bearer invalid"})
+    for header in ["bearer invalid", "Bearer", "Bearer  ", "Bearer\tinvalid"]:
+        _assert_invalid_token(
+            client.get(f"{BASE}{path}", headers={"Authorization": header})
+        )
+    expired = jwt.encode(
+        {"aud": AUDIENCE, "sub": USER, "iss": ISSUER, "iat": 1, "exp": 2},
+        SIGNING_KEY,
+        algorithm="RS256",
+        headers={"kid": "rsa1", "typ": "at+jwt"},
     )
+    response = client.get(
+        f"{BASE}{path}", headers={"Authorization": f"Bearer {expired}"}
+    )
+    _assert_invalid_token(response)
+
+
+def test_public_read_identity_provider_down(
+    client: FlaskClient,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Public reads stay anonymous if tokens can't be validated otherwise.
+
+    E.g., if the identity provider is unavailable: the reads keep working
+    (as without a token), and a warning is logged; other operations fail.
+    """
+
+    def unavailable(token: str, conf: Any) -> NoReturn:
+        """Fail as FOCA does if the identity provider is unavailable.
+
+        Args:
+            token: Access token.
+            conf: Auth config.
+
+        Raises:
+            connexion.exceptions.Unauthorized: Always, without the error
+                `invalid_token`.
+        """
+        raise auth._unauthorized("identity provider down", invalid_token=False)
+
+    monkeypatch.setattr(auth, "_validate", unavailable)
+    with caplog.at_level(logging.WARNING):
+        response = client.get(f"{BASE}/services", headers=make_headers())
+    assert response.status_code == 200
+    assert "identity provider down" in caplog.text
+    response = client.post(f"{BASE}/services", json=_service(), headers=make_headers())
+    _assert_error(response, 401)
+    assert response.headers["WWW-Authenticate"] == "Bearer"
 
 
 @pytest.mark.parametrize("typ", ["at+jwt", "application/at+jwt", "AT+JWT"])

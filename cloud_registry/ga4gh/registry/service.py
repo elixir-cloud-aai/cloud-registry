@@ -462,9 +462,8 @@ class RegisterService:
         changed meanwhile (compare-and-swap); otherwise, it is read again.
         So a verification is never kept for another URL or API type, and
         verifications concurrent with a replacement keeping both are not
-        lost. Only if the service is
-        inserted concurrently (after it was read as missing) is a
-        verification of the inserted service removed.
+        lost. Only if the service is inserted concurrently (after it was
+        read as missing) is a verification of the inserted service removed.
 
         The service is only inserted if `allow_create` is set, also when it
         was deleted after it was read (e.g., by a concurrent `DELETE`), so

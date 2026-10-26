@@ -40,7 +40,6 @@ from cloud_registry.ga4gh.registry.service import (
     PENDING_SERVICE,
     VERIFIED,
     InvalidService,
-    service_exists,
     service_key,
 )
 from cloud_registry.ga4gh.registry.service_types import visible_services
@@ -217,11 +216,12 @@ def putServiceVerification(
         return_document=ReturnDocument.AFTER,
     )
     if service is None:
-        if not service_exists(serviceId):
+        stored = get_collection("services").find_one(
+            {"id": serviceId}, {"_id": False, PENDING_SERVICE: True}
+        )
+        if stored is None:
             raise NotFound
-        if get_collection("services").count_documents(
-            {"id": serviceId, PENDING_SERVICE: True}, limit=1
-        ):
+        if stored.get(PENDING_SERVICE) is True:
             return _not_verified(serviceId, PendingVerification())
         return _not_verified(serviceId, VerificationConflict())
     logger.info(

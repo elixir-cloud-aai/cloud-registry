@@ -588,7 +588,7 @@ def test_verification_changes_logged(
     messages = [
         f"Service '{SERVICE_ID}' verified by '{ADMIN}'.",
         f"Verification of service '{SERVICE_ID}' removed by an update by "
-        f"'{ADMIN}' (URL or API type changed).",
+        f"'{ADMIN}' (URL or API type changed, or pending).",
         f"Verification of service '{SERVICE_ID}' removed by '{ADMIN}'.",
     ]
     for message in messages:

@@ -33,7 +33,10 @@ accept requests without and with an access token: with one, they show what
 the user may see (e.g., [pending](#pending-approvals) services of the user).
 Invalid or expired tokens are rejected (`401 Unauthorized`, with
 `WWW-Authenticate: Bearer error="invalid_token"`, as on other operations),
-not treated as anonymous, so that clients notice and log in again.
+not treated as anonymous, so that clients notice and log in again. Tokens
+that can't be validated for other reasons (e.g., the identity provider is
+unavailable) are: the reads then keep working, without what only the user
+may see.
 
 The [Swagger UI](getting-started.md#quick-start) of a deployment documents
 all operations and serves the API specification

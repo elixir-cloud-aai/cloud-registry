@@ -307,7 +307,7 @@ def _register_service(
     if service.verification_removed:
         logger.info(
             "Verification of service '%s' removed by an update by '%s' (URL or "
-            "API type changed).",
+            "API type changed, or pending).",
             escape_log_value(service.data["id"]),
             current_user(),
         )

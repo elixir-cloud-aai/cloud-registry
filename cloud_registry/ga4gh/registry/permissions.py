@@ -61,10 +61,28 @@ def _bearer_token() -> str | None:
 
     Returns:
         The token in the `Authorization` header if its scheme is `Bearer`
-        (in any case, cf. RFC 6750), or `None`.
+        (in any case, cf. RFC 6750; empty if it has none), or `None`. Split
+        at any whitespace, as Connexion does.
     """
-    scheme, _, token = request.headers.get("Authorization", "").partition(" ")
-    return token.strip() if scheme.lower() == "bearer" else None
+    parts = request.headers.get("Authorization", "").split(None, 1)
+    if not parts or parts[0].lower() != "bearer":
+        return None
+    return parts[1].strip() if len(parts) > 1 else ""
+
+
+def _is_invalid_token(exc: Unauthorized) -> bool:
+    """Check whether a rejection of a token is because it is invalid.
+
+    Args:
+        exc: Exception of FOCA's `validate_token()`.
+
+    Returns:
+        Whether its challenge has the error `invalid_token` (RFC 6750); FOCA
+        leaves it out if the token couldn't be validated for other reasons
+        (e.g., the identity provider is unavailable).
+    """
+    challenge = getattr(exc, "www_authenticate", None) or []
+    return any(item.parameters.get("error") == "invalid_token" for item in challenge)
 
 
 def check_read_token[T](func: Callable[..., T]) -> Callable[..., T]:
@@ -74,9 +92,12 @@ def check_read_token[T](func: Callable[..., T]) -> Callable[..., T]:
     (for the visibility rules of the user; cf. `security` in the API
     specification). Connexion treats requests whose token it can't validate
     as anonymous then; so that clients notice (e.g., an expired token) and
-    log in again, rather than see less without a hint, such requests are
-    rejected as on other operations (`401`, with an `invalid_token`
-    challenge).
+    log in again, rather than see less without a hint, requests with an
+    invalid token are rejected as on other operations (`401`, with an
+    `invalid_token` challenge). To this end, the token is validated again;
+    if it can't be validated for other reasons (e.g., the identity provider
+    is unavailable), the request stays anonymous, so that public reads
+    keep working, and a warning is logged.
 
     Args:
         func: Controller of a read.
@@ -101,8 +122,16 @@ def check_read_token[T](func: Callable[..., T]) -> Callable[..., T]:
         if token is not None:
             context = getattr(request_ctx, "connexion_context", None) or {}
             if not context.get("token_info"):
-                # raises the error of other operations (the token was rejected)
-                validate_token(token)
+                try:
+                    validate_token(token)
+                except Unauthorized as exc:
+                    if _is_invalid_token(exc):
+                        raise
+                    logger.warning(
+                        "Token sent with a public read not validated, read as "
+                        "anonymous: %s",
+                        escape_log_value(str(exc.description)),
+                    )
         return func(*args, **kwargs)
 
     return wrapper
