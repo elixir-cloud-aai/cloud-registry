@@ -62,7 +62,8 @@ UPDATED = "updatedAt"
 DATE_TIME_FIELDS = (CREATED, UPDATED)
 # Identifiers that can't be used for services: dot segments, which clients
 # resolve in URLs, and `types`, as `/services/types` lists the service types
-# (cf. the pattern of `serviceId` of `PUT` in `additions.openapi.yaml`)
+# (cf. the pattern of `serviceId` of `PUT`, and of `ServiceRename`, in
+# `additions.openapi.yaml`)
 RESERVED_IDS = frozenset({".", "..", "types"})
 
 

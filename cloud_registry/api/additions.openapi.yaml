@@ -288,6 +288,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '500':
           $ref: '#/components/responses/InternalServerError'
         default:
@@ -349,6 +351,67 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/DuplicateService'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+  "/services/{serviceId}/rename":
+    post:
+      summary: Rename service.
+      description: |
+        Change the identifier of a service. Only for admins. Everything
+        stored under the old identifier moves to the new one: the service
+        (with its verification and `createdAt`; `updatedAt` is renewed), the
+        roles of users and groups on it and the names of these users. The
+        service is never registered under both identifiers: the old one
+        returns `404` once the service has moved, while its roles are moved.
+        New identifiers that are registered (also the service's own) return
+        `409` (`code`: `service-id-taken`). Renames wait for other renames and
+        changes (`PUT`, `DELETE`, roles) of either identifier, and changes
+        wait for renames, for up to about a second (`409` otherwise, `code`:
+        `service-busy`; see
+        https://cloud-registry.readthedocs.io/en/latest/api/#renaming-services
+        for interrupted renames). New identifiers must be usable in URLs
+        (not `.`, `..` or `types`; no slashes) and in roles (no commas or
+        line breaks), otherwise `400` is returned.
+      operationId: renameService
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.rename
+      tags:
+        - cloud-registry
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+      requestBody:
+        description: New identifier of the service.
+        required: true
+        content:
+          application/json:
+            schema:
+              x-body-name: rename
+              $ref: '#/components/schemas/ServiceRename'
+      responses:
+        '200':
+          description: The service was renamed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceId'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            The new identifier is registered, or either identifier is being
+            renamed or changed; nothing was changed (`code`:
+            `service-id-taken` or `service-busy`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConflictError'
         '500':
           $ref: '#/components/responses/InternalServerError'
         default:
@@ -836,7 +899,9 @@ components:
     Conflict:
       description: |
         The request conflicts with the current state of the resource; `code`
-        tells why (see the schema `ConflictError`).
+        tells why (see the schema `ConflictError`). E.g., `service-busy` for
+        changes of services (`DELETE /services/{serviceId}`, roles) while they
+        are renamed; try again later.
       content:
         application/json:
           schema:
@@ -858,7 +923,8 @@ components:
         /approvals`), and for new types of users who have added as many
         unused types as allowed (see `POST /services/types`); `code` tells
         these conflicts apart (`duplicate-service`, `pending-service`,
-        `unused-types-limit`).
+        `unused-types-limit`), and for services that are being renamed
+        (`service-busy`, `PUT /services/{serviceId}`).
       content:
         application/json:
           schema:
@@ -909,6 +975,13 @@ components:
                 - `last-owner`: the subject is the last owner of the service
                   (`PUT` and `DELETE` of
                   `/services/{serviceId}/permissions/...`).
+                - `service-id-taken`: a service with the new identifier is
+                  registered (`POST /services/{serviceId}/rename`).
+                - `service-busy`: the service is being renamed (`PUT` and
+                  `DELETE` of `/services/{serviceId}` and
+                  `/services/{serviceId}/permissions/...`), or the service or
+                  the new identifier is being renamed or changed (`POST
+                  /services/{serviceId}/rename`); try again later.
                 - `conflict`: other conflicts (e.g., changes of policy rules
                   set in the configuration via FOCA's permissions API).
 
@@ -922,6 +995,8 @@ components:
                 - service-type-in-use
                 - verification-mismatch
                 - last-owner
+                - service-id-taken
+                - service-busy
                 - conflict
     ServiceId:
       description: Service identifier.
@@ -1003,6 +1078,22 @@ components:
             (`custom.access_control.max_unused_service_types: null`).
             Concurrent requests of a user can exceed it by their number.
           example: 10
+    ServiceRename:
+      description: New identifier of a service.
+      type: object
+      required:
+        - id
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          description: |
+            New identifier of the service; not `.`, `..` or `types`, and
+            without slashes (cf. `PUT /services/{serviceId}`).
+          minLength: 1
+          # as `serviceId` of `PUT /services/{serviceId}`, which can't contain
+          # slashes either
+          pattern: '^(?!(\.\.?|types)$)[^/]+$'
     PermissionRegister:
       description: Role to grant on a service.
       type: object

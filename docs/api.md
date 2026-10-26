@@ -20,6 +20,7 @@ under the API base path `/ga4gh/registry/v1`:
 | `/services/{serviceId}` | `GET` (GA4GH) | anyone |
 | `/services/{serviceId}` | `PUT` | owners, maintainers, admins (new identifiers: admins) |
 | `/services/{serviceId}` | `DELETE` | owners, admins |
+| `/services/{serviceId}/rename` | `POST` | admins |
 | `/services/{serviceId}/permissions` | `GET` | owners, admins |
 | `/services/{serviceId}/permissions/{userId}` | `PUT`, `DELETE` | owners, admins |
 | `/services/{serviceId}/permissions/groups/{group}` | `PUT`, `DELETE` | owners, admins (`PUT` by owners: groups they are members of) |
@@ -173,13 +174,45 @@ limits](deployment.md#rate-limits)). Users other than admins may only have
 added a limited number of service types that no service has (`409 Conflict`
 for further ones; see [Service types](configuration.md#service-types)).
 
+## Renaming services
+
+Admins can change the identifier of a service (`POST
+/services/{serviceId}/rename`, with the new identifier in the body, e.g.,
+`{"id": "my-tes"}`; `200 OK`, with the new identifier). Everything stored
+under the old identifier moves to the new one: the service, with its
+[verification](#verified-services) and `createdAt` (`updatedAt` is renewed),
+the roles of users and groups on it and the stored names of these users.
+Registering the service again under a new identifier and deleting the old one
+would lose all of these.
+
+The service is never registered under both identifiers: it moves in a single
+write, after which the old identifier is not found (`404 Not Found`) and
+links to it break. Owners and maintainers keep their roles, which move right
+after it; clients that stored the old identifier must use the new one.
+New identifiers that are registered (also the service's own) are rejected
+(`409 Conflict`, code `service-id-taken`); so are identifiers that can't be
+used in URLs (as for `PUT`, see [Registrations](#registrations); also
+slashes) or in roles (commas, line breaks), with `400 Bad Request`.
+
+Renames don't need MongoDB transactions (which need a replica set): while a
+service is renamed, both identifiers are locked (collection `service_locks`),
+so that the rename doesn't interleave with other changes of either service
+(`PUT`, `DELETE`, granting and revoking roles) or other renames. Renames and
+changes wait for each other for up to about a second, then give up (`409
+Conflict`, code `service-busy`; try again). If a rename fails after the
+service moved (e.g., the app crashes), the service may lack roles, and both
+identifiers stay locked, until the rename is finished, a minute after it
+started: when the app next handles a request, or starts. Renames are logged
+with the admin.
+
 ## Timestamps
 
 The registry sets the timestamps of services, so that clients can rely on
 them (e.g., to sort services or show when they were last changed):
 
 - `createdAt`: when the service was registered; kept on updates;
-- `updatedAt`: when the service was registered or last updated (each `PUT`).
+- `updatedAt`: when the service was registered or last updated (each `PUT`,
+  and [renames](#renaming-services)).
 
 The registry sets them as RFC 3339 date-times in UTC, in milliseconds
 (e.g., `2026-10-20T12:34:56.789Z`). Timestamps sent in registrations are
@@ -326,6 +359,8 @@ unlike `detail`, codes are stable, so clients branch on them (e.g., `{"title":
 | `service-type-in-use` | services have the service type, so it can't be removed |
 | `verification-mismatch` | the service has another URL or API type than the one checked (see [Verified services](#verified-services)) |
 | `last-owner` | the subject is the last owner of the service |
+| `service-id-taken` | a service with the new identifier is registered (see [Renaming services](#renaming-services)) |
+| `service-busy` | the service, or the new identifier, is being renamed or changed (see [Renaming services](#renaming-services)) |
 | `conflict` | other conflicts (e.g., changes of policy rules set in the configuration via FOCA's permissions API) |
 
 Further codes may be added; treat unknown ones like `conflict`. The API

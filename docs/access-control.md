@@ -270,7 +270,8 @@ of a request to the identity provider each time (see FOCA's
 Members of the groups that the deployment maps to the role `admin`
 (`security.access_control.group_mapping`) are **admins**: they can do
 everything, including registering services with chosen identifiers (`PUT` of
-a new service) and [verifying services](api.md#verified-services). E.g.,
+a new service), [renaming services](api.md#renaming-services) and [verifying
+services](api.md#verified-services). E.g.,
 with the group claim `groups`:
 
 ```yaml

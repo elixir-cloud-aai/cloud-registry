@@ -50,6 +50,7 @@ from cloud_registry.exceptions import (
     NotFound,
     Unauthorized,
 )
+from cloud_registry.ga4gh.registry.locks import changing
 from cloud_registry.ga4gh.registry.service import service_exists
 from cloud_registry.utils import get_collection, get_custom_config
 
@@ -589,7 +590,7 @@ def _put_role(serviceId: str, subject: str, subject_type: SubjectType) -> None:
     again if the service was deleted meanwhile, and logs the change. On a
     user's first role on the service, a name stored for them on it is deleted
     (cf. `remember_current_user()`), as it is if the service was deleted
-    meanwhile.
+    meanwhile. Not while the service is renamed (cf. `changing()`).
 
     Args:
         serviceId: Service identifier.
@@ -607,44 +608,45 @@ def _put_role(serviceId: str, subject: str, subject_type: SubjectType) -> None:
             was deleted meanwhile.
     """
     role = request.json["role"]
-    if not service_exists(serviceId):
-        raise NotFound
-    resource = service_path(serviceId)
-    is_user = subject_type == "user"
-    if is_user and all(
-        (granted.subject_type, granted.subject) != ("user", subject)
-        for granted in list_roles(resource)
-    ):
-        _forget_names(serviceId, subject)
-    try:
-        grant_role(
-            resource,
-            subject,
-            role,
-            subject_type=subject_type,
-            exists=lambda: service_exists(serviceId),
-        )
-    # FOCA rejects values that can't be stored in policy rules (e.g.,
-    # subjects with commas), and roles that wouldn't apply
-    except ValueError as exc:
-        logger.info(
-            "Invalid permission of %s on service '%s': %s",
-            _describe(subject, subject_type),
-            escape_log_value(serviceId),
-            escape_log_value(exc),
-        )
-        raise BadRequest from exc
-    except NotFound:
-        if is_user:
+    with changing(serviceId):
+        if not service_exists(serviceId):
+            raise NotFound
+        resource = service_path(serviceId)
+        is_user = subject_type == "user"
+        if is_user and all(
+            (granted.subject_type, granted.subject) != ("user", subject)
+            for granted in list_roles(resource)
+        ):
             _forget_names(serviceId, subject)
-        raise
+        try:
+            grant_role(
+                resource,
+                subject,
+                role,
+                subject_type=subject_type,
+                exists=lambda: service_exists(serviceId),
+            )
+        # FOCA rejects values that can't be stored in policy rules (e.g.,
+        # subjects with commas), and roles that wouldn't apply
+        except ValueError as exc:
+            logger.info(
+                "Invalid permission of %s on service '%s': %s",
+                _describe(subject, subject_type),
+                escape_log_value(serviceId),
+                escape_log_value(exc),
+            )
+            raise BadRequest from exc
+        except NotFound:
+            if is_user:
+                _forget_names(serviceId, subject)
+            raise
 
 
 def _delete_roles(serviceId: str, subject: str, subject_type: SubjectType) -> None:
     """Revoke all roles of a user or group on a service.
 
     See FOCA's `revoke_roles()`, which keeps the last owner and logs the
-    change.
+    change. Not while the service is renamed (cf. `changing()`).
 
     Args:
         serviceId: Service identifier.
@@ -657,23 +659,25 @@ def _delete_roles(serviceId: str, subject: str, subject_type: SubjectType) -> No
         cloud_registry.exceptions.NotFound: The service doesn't exist, or
             the subject has no role on it.
     """
-    if not service_exists(serviceId):
-        raise NotFound
-    try:
-        revoked = revoke_roles(
-            service_path(serviceId),
-            subject,
-            subject_type=subject_type,
-            exists=lambda: service_exists(serviceId),
-        )
-    # FOCA rejects resources that can't be in policy rules (e.g., of services
-    # stored with commas in their identifiers), so no role exists on them
-    except ValueError as exc:
-        raise NotFound from exc
-    if not revoked:
-        raise NotFound
-    if subject_type == "user":
-        _forget_names(serviceId, subject)
+    with changing(serviceId):
+        if not service_exists(serviceId):
+            raise NotFound
+        try:
+            revoked = revoke_roles(
+                service_path(serviceId),
+                subject,
+                subject_type=subject_type,
+                exists=lambda: service_exists(serviceId),
+            )
+        # FOCA rejects resources that can't be in policy rules (e.g., of
+        # services stored with commas in their identifiers), so no role
+        # exists on them
+        except ValueError as exc:
+            raise NotFound from exc
+        if not revoked:
+            raise NotFound
+        if subject_type == "user":
+            _forget_names(serviceId, subject)
 
 
 def _check_user_id(userId: str) -> None:
