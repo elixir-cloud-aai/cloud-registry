@@ -19,6 +19,8 @@ HTTP API, see [API](api.md) and the Swagger UI of a deployment.
 
 ::: cloud_registry.ga4gh.registry.service
 
+::: cloud_registry.ga4gh.registry.service_info
+
 ::: cloud_registry.ga4gh.registry.verification
 
 ## Access control

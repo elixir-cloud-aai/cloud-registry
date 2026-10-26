@@ -74,11 +74,26 @@ Data is kept. Before upgrading:
    give the policies as a list (see [Service types](#service-types)).
 3. Tell clients that the registry sets the [timestamps](api.md#timestamps)
    now: those that users other than admins send are ignored.
+4. Users other than admins may add at most 10 types that no service has
+   (`custom.access_control.max_unused_service_types`; see [Service
+   types](configuration.md#service-types)); change the limit in the same
+   rollout if needed, and rate-limit `POST /services/types` and `POST
+   /services` at the ingress (see [Rate limits](deployment.md#rate-limits)).
+5. Overlays that set their own `x-bearerInfoFunc` (in
+   `api.specs.registry.add_security_fields`) keep working, but tokens sent
+   with a public read that the overlay's function rejects are then validated
+   twice. The base config now
+   uses `cloud_registry.ga4gh.registry.permissions.validate_bearer_token`, a
+   thin wrapper around FOCA's `validate_token()`; drop the setting from the
+   overlay, or point it to that function (see
+   [Authentication](access-control.md#authentication)).
 
 Then upgrade, and restart the app once after the rollout (or upgrade with
 the app scaled to 0 replicas), so that it stores the types of the services
 that pods of 0.4.0 registered during the rollout (see [Service
-types](#service-types)). Switch to the mode `moderated` (see [Service
+types](#service-types)). On startup, the app also creates its new indexes
+and reconciles which services are pending; nothing needs to be done for
+them. Switch to the mode `moderated` (see [Service
 types](configuration.md#service-types)) only after that: while pods of 0.4.0
 still register services, a user's pending type can hide another user's
 service that a pod of 0.4.0 registered with the same type, until an admin
@@ -185,7 +200,8 @@ when upgrading (see [Service info](configuration.md#service-info)).
 
 ## Service types
 
-Service types are stored since 0.5.0 (see [Service
+Previously, service types were not stored: `GET /services/types` listed the
+types of the registered services. Now they are stored (see [Service
 types](api.md#service-types)). On startup, the app stores the types of the
 registered services, so `GET /services/types` lists the same types as
 before; afterwards, it also lists types that no service has (yet), and types

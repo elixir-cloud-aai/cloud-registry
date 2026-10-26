@@ -18,6 +18,7 @@ from cloud_registry.ga4gh.registry.service import (
     warn_invalid_urls,
     warn_url_schemes,
 )
+from cloud_registry.ga4gh.registry.service_info import check_service_info_fields
 from cloud_registry.ga4gh.registry.service_types import (
     add_service_types,
     sync_pending_services,
@@ -30,15 +31,15 @@ def create_app() -> App:
     """Create the app from the config, with the registry's checks.
 
     Refuses service clients (FOCA's `require_no_service_clients()`), as the
-    app doesn't support them, requires a size limit of request bodies, adds
-    missing keys of services and the types of registered services that
-    aren't stored (e.g., on upgrades), and warns of stored services with
-    invalid URLs or URL schemes that are not allowed. FOCA validates the
-    config, e.g., that token issuers are trusted (needed for access control)
-    with an audience, the group settings and the service info
-    (`service_info`), refuses to start without admins
-    (`security.access_control.require_admin`), warns of placeholders in the
-    service info, and limits the size of request bodies
+    app doesn't support them, requires a size limit of request bodies and
+    that the service info serves the registration rules, adds missing keys
+    of services and the types of registered services that aren't stored
+    (e.g., on upgrades), and warns of stored services with invalid URLs or
+    URL schemes that are not allowed. FOCA validates the config, e.g., that
+    token issuers are trusted (needed for access control) with an audience,
+    the group settings and the service info (`service_info`), refuses to
+    start without admins (`security.access_control.require_admin`), warns of
+    placeholders in the service info, and limits the size of request bodies
     (`server.max_content_length`). Also requires the public URL of the app
     (`server.public_url`), for the `Location` header of new services.
 
@@ -53,8 +54,9 @@ def create_app() -> App:
         RuntimeError: Request bodies are not limited in size
             (`server.max_content_length` is null), the public URL
             (`server.public_url`) is not set, service clients are
-            configured (which the app doesn't support), or stored services
-            are invalid or duplicates.
+            configured (which the app doesn't support), the service info
+            doesn't serve the registration rules of the app, or stored
+            services are invalid or duplicates.
         pydantic.ValidationError: The config is invalid, e.g., no token
             issuers are trusted, or the service info is invalid (naming the
             invalid field).
@@ -73,6 +75,7 @@ def create_app() -> App:
     require_no_service_clients(app.app)
 
     with app.app.app_context():
+        check_service_info_fields()
         # `null` would remove FOCA's size limit of request bodies, so that
         # bodies of any size are read before the access token is checked
         if get_config().server.max_content_length is None:

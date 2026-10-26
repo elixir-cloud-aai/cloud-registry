@@ -137,7 +137,9 @@ rejected with `400 Bad Request`, naming the allowed schemes. Only `http` and
 `https` can be listed, and the list must not be empty. Links
 (`documentationUrl`, `organization.url`) can be HTTP(S) URLs either way, and
 `contactUrl` also a `mailto:` URL (see [Registrations](api.md#registrations)).
-The Docker Compose setup allows `http` too, in
+Clients read the allowed schemes from the service info (see [Registration
+rules](api.md#registration-rules)). The Docker Compose setup allows `http`
+too, in
 [`config.dev.yaml`](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/config.dev.yaml),
 e.g., for services running locally; the Helm chart keeps the default (set
 `config.custom.endpoints.services.url_schemes` to change it).
@@ -170,9 +172,10 @@ custom:
 ```
 
 Clients that let users choose an environment (e.g., UIs) must offer the
-same values. Stored services with other values are served as they are, and
-only checked when they are next written; the app logs a warning on startup
-that names them (see
+same values: they read them from the service info rather than configuring
+them (see [Registration rules](api.md#registration-rules)). Stored services
+with other values are served as they are, and only checked when they are
+next written; the app logs a warning on startup that names them (see
 [Upgrading](upgrading.md#stored-services)).
 
 ## Service types
@@ -203,7 +206,9 @@ the limit bounds how many types each user can add without services (users
 can still leave more types unused by registering services with new types and
 deleting them, one registration per type); set `0`
 to let only admins add types other than those of services. Concurrent
-requests of a user can exceed the limit by their number.
+requests of a user can exceed the limit by their number. Clients read the
+mode and the limit from the service info, rather than configuring them (see
+[Registration rules](api.md#registration-rules)).
 
 The limit is per user, so accounts that anyone can create (e.g., with LS
 Login) can still add types, and pending types in mode `moderated`, without
@@ -293,7 +298,12 @@ e.g., in reverse domain name notation), `name`, `description`, `organization`,
 or URL of `organization` are the placeholders, the app logs a warning on
 startup, naming the fields to set (also with Docker Compose, whose
 development config keeps them). Fields and list items set to `null`
-(e.g., in a config overlay) are not served. To change the service info, change
+(e.g., in a config overlay) are not served. The app adds the [registration
+rules](api.md#registration-rules) (`registration_rules`), built from the
+`custom` config on each request (`service_info.runtime_fields`): keep that
+option, and don't set `registration_rules` in `service_info.service` (not
+even to `null`), so that they are always the rules the registry enforces;
+the app refuses to start otherwise. To change the service info, change
 the config and restart the app (the Helm chart restarts it when the `config`
 value changes). Previously, service info was set via the API; see
 [Upgrading](upgrading.md#service-info).
