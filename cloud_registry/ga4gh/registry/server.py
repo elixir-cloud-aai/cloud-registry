@@ -23,6 +23,7 @@ from cloud_registry.ga4gh.registry.permissions import (
     service_types_pending,
 )
 from cloud_registry.ga4gh.registry.service import (
+    PENDING_SERVICE,
     PROJECTION,
     DuplicateService,
     InvalidService,
@@ -32,12 +33,14 @@ from cloud_registry.ga4gh.registry.service import (
 )
 from cloud_registry.ga4gh.registry.service_types import (
     PendingService,
+    UnusedTypesLimit,
     check_service_type,
     is_approved,
     is_pending,
     list_service_types,
     store_pending_type,
     store_service_type,
+    sync_pending_flag,
     type_document,
     visible_services,
     visible_types,
@@ -260,9 +263,12 @@ def _register_service(
             return refused
     try:
         check_service_type(service.data.get("type"))
+        # pending types are only stored for valid services
+        service.validate()
         store_pending_type(service.data.get("type"))
+        service.pending = is_pending(type_document(service.data.get("type")))
         service.register_metadata()
-    except InvalidService as exc:
+    except (InvalidService, UnusedTypesLimit) as exc:
         logger.info(
             "Service not registered: %s",
             escape_log_value(shorten_detail(exc.description)),
@@ -292,6 +298,8 @@ def _register_service(
         store_service_type(
             service_type, created_by=created_by, pending=service_types_pending()
         )
+    # if the type was approved (or removed and added) meanwhile
+    sync_pending_flag(service.data["id"], service_type)
     if service.verification_removed:
         logger.info(
             "Verification of service '%s' removed by an update by '%s' (URL or "
@@ -343,7 +351,7 @@ def _check_pending_update(serviceId: str, value: object) -> Response | None:
         return None
     new_type = type_document(value)
     try:
-        check_strings(new_type or {})
+        check_strings(new_type or {}, field="type")
     except InvalidService as exc:
         return problem(exc)
     if is_approved(new_type):
@@ -364,11 +372,10 @@ def _is_pending(serviceId: str) -> bool:
         serviceId: Service identifier.
 
     Returns:
-        Whether the service exists and has a pending type (cf.
-        `cloud_registry.ga4gh.registry.service_types`).
+        Whether the service exists and is pending (cf. `PENDING_SERVICE`).
     """
-    stored = get_collection("services").find_one({"id": serviceId}, {"type": True})
-    return stored is not None and is_pending(type_document(stored.get("type")))
+    query = {"id": serviceId, PENDING_SERVICE: True}
+    return get_collection("services").count_documents(query, limit=1) > 0
 
 
 def _may_see(serviceId: str) -> bool:

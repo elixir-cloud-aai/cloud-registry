@@ -188,7 +188,29 @@ types](api.md#service-types):
   approves them (see [Pending approvals](api.md#pending-approvals)), so that
   admins curate the list without being asked for each type.
   Switch to this mode only once all instances of the app support it (e.g.,
-  after a rolling update), as older versions store new types as approved.
+  after a rolling update): older versions (0.4.0) store no types, so the
+  services they register are served at once, and their types are added as
+  approved when the app next starts (with the types of all stored services).
+
+Users other than admins may only have added
+`custom.access_control.max_unused_service_types` types that no service has
+(default: 10; `null` for no limit), in every mode: further types are rejected
+(`409`), whether added explicitly or by registering or changing services,
+until services have them or admins approve (`moderated`) or remove them.
+Types become unused when their services are deleted or change their type, so
+the limit bounds how many types each user can add without services; set `0`
+to let only admins add types other than those of services. Concurrent
+requests of a user can exceed the limit by their number.
+
+The limit is per user, so accounts that anyone can create (e.g., with LS
+Login) can still add types, and pending types in mode `moderated`, without
+bound. Reads don't slow down with the number of pending types, as services
+are marked as pending when stored, but `GET /services/types` and `GET
+/approvals` list them all. Rate-limit write requests, at least `POST
+/services/types` and `POST /services`, at the ingress or reverse proxy in
+front of the app (e.g., ingress-nginx's `nginx.ingress.kubernetes.io/limit-rpm`
+annotation; see [Ingress](deployment.md#ingress)), and remove unwanted types
+as an admin (`DELETE /services/types`).
 
 Only admins can remove types, in every mode. Set this option rather than
 removing the policy `add-service-types` (in `security.access_control.policies`),
@@ -202,6 +224,7 @@ overlay (with the Helm chart, in `config`):
 custom:
     access_control:
         service_types: controlled
+        max_unused_service_types: 5
 ```
 
 ## Request size limit

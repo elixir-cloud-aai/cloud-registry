@@ -7,7 +7,7 @@ from copy import deepcopy
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from connexion import App
 from flask.testing import FlaskClient
@@ -17,7 +17,8 @@ from werkzeug.test import TestResponse
 import yaml
 
 from cloud_registry.app import create_app
-from cloud_registry.ga4gh.registry import server
+from cloud_registry.ga4gh.registry import server, service_types
+from cloud_registry.ga4gh.registry.service import PENDING_SERVICE, RegisterService
 from cloud_registry.utils import get_custom_config
 from tests.conftest import ADMIN, CONFIG_OVERLAY, USER, make_headers
 from tests.mock_data import DB
@@ -622,14 +623,15 @@ def test_moderated_type_stored_first(
     moderated: None,
     mongo_client: MongoClient[dict[str, Any]],
 ) -> None:
-    """New types are stored as pending before the service.
+    """New types are only stored for valid services.
 
-    They stay pending if the registration fails; strings that can't be
-    stored are rejected.
+    Registrations that fail validation store no pending type; strings that
+    can't be stored are rejected.
     """
     response = register(client, _service(url="https://[::1"))
     assert response.status_code == 400
-    assert approvals(client, USER)["service_types"] == ["tes"]
+    assert approvals(client, USER)["service_types"] == []
+    assert mongo_client[DB]["service_types"].count_documents({}) == 0
     service = _service()
     service["type"]["artifact"] = "\ud800"
     response = client.post(
@@ -638,7 +640,7 @@ def test_moderated_type_stored_first(
         headers={**headers(), "Content-Type": "application/json"},
     )
     assert response.status_code == 400
-    assert mongo_client[DB]["service_types"].count_documents({}) == 1
+    assert mongo_client[DB]["service_types"].count_documents({}) == 0
 
 
 def test_moderated_update_surrogates(client: FlaskClient, moderated: None) -> None:
@@ -652,4 +654,216 @@ def test_moderated_update_surrogates(client: FlaskClient, moderated: None) -> No
         headers={**headers(), "Content-Type": "application/json"},
     )
     assert response.status_code == 400
-    assert "'artifact'" in response.get_json()["detail"]
+    assert "'type.artifact'" in response.get_json()["detail"]
+
+
+def _flags(mongo_client: MongoClient[dict[str, Any]]) -> dict[str, bool]:
+    """Get the stored pending flags of the services.
+
+    Args:
+        mongo_client: MongoDB client of the app.
+
+    Returns:
+        Whether each service is flagged as pending, by identifier.
+    """
+    return {
+        doc["id"]: doc.get(PENDING_SERVICE, False)
+        for doc in mongo_client[DB]["services"].find()
+    }
+
+
+@pytest.fixture
+def unused_limit(app: App) -> None:
+    """Let users other than admins add at most two unused types."""
+    with app.app.app_context():
+        get_custom_config().access_control.max_unused_service_types = 2
+
+
+def test_many_pending_types(
+    client: FlaskClient,
+    moderated: None,
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Reads don't grow with the number of pending types.
+
+    A filter by all pending types would exceed MongoDB's limit of 16 MB.
+    """
+    long = "x" * 100
+    mongo_client[DB]["service_types"].insert_many(
+        {"group": long, "artifact": f"{long}{index}", "version": long, "pending": True}
+        for index in range(60000)
+    )
+    approved_id = register(client, _service(), ADMIN).get_json()
+    pending_id = register(client, _service(WES, url="https://wes.example.org"))
+    pending_id = pending_id.get_json()
+    ids = {service["id"] for service in client.get(f"{BASE}/services").get_json()}
+    assert ids == {approved_id}
+    assert client.get(f"{BASE}/services/{pending_id}").status_code == 404
+    assert client.get(f"{BASE}/verifications").status_code == 200
+    assert approvals(client, USER) == {
+        "service_types": ["wes"],
+        "services": [pending_id],
+    }
+
+
+def test_pending_flag_not_served(
+    client: FlaskClient,
+    moderated: None,
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Pending services are flagged in the database, but it isn't served.
+
+    Approvals clear the flag; changes to an approved type clear it too.
+    """
+    service_id = register(client, _service()).get_json()
+    other_id = register(client, _service(WES, url="https://wes.example.org"))
+    other_id = other_id.get_json()
+    assert _flags(mongo_client) == {service_id: True, other_id: True}
+    response = client.get(f"{BASE}/approvals", headers=headers())
+    assert response.status_code == 200
+    assert all(PENDING_SERVICE not in item for item in response.get_json()["services"])
+    assert approve(client, TES).status_code == 200
+    assert _flags(mongo_client) == {service_id: False, other_id: True}
+    response = client.put(
+        f"{BASE}/services/{other_id}",
+        json=_service(url="https://wes.example.org"),
+        headers=headers(ADMIN),
+    )
+    assert response.status_code == 200, response.get_json()
+    assert _flags(mongo_client) == {service_id: False, other_id: False}
+    # and back to the pending type
+    response = client.put(
+        f"{BASE}/services/{other_id}",
+        json=_service(WES, url="https://wes.example.org"),
+        headers=headers(ADMIN),
+    )
+    assert response.status_code == 200, response.get_json()
+    assert _flags(mongo_client) == {service_id: False, other_id: True}
+
+
+def test_approved_during_registration(
+    client: FlaskClient,
+    moderated: None,
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A type approved during a registration doesn't leave it pending."""
+    register_metadata = RegisterService.register_metadata
+
+    def approve_and_register(self: RegisterService, retries: int = 9) -> None:
+        """Let an admin approve the type, then register the service.
+
+        Args:
+            self: The registration.
+            retries: Cf. `RegisterService.register_metadata()`.
+        """
+        assert self.pending
+        assert approve(client, TES).status_code == 200
+        register_metadata(self, retries=retries)
+
+    monkeypatch.setattr(RegisterService, "register_metadata", approve_and_register)
+    service_id = register(client, _service()).get_json()
+    assert _flags(mongo_client) == {service_id: False}
+    assert len(client.get(f"{BASE}/services").get_json()) == 1
+
+
+def test_approve_again_clears_flags(
+    client: FlaskClient,
+    moderated: None,
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Approving an approved type clears flags left on its services."""
+    service_id = register(client, _service()).get_json()
+    assert approve(client, TES).status_code == 200
+    mongo_client[DB]["services"].update_one(
+        {"id": service_id}, {"$set": {PENDING_SERVICE: True}}
+    )
+    assert approve(client, TES).status_code == 200
+    assert _flags(mongo_client) == {service_id: False}
+
+
+def test_pending_flags_synced_on_startup(
+    app_env: None, mongo_client: MongoClient[dict[str, Any]]
+) -> None:
+    """Pending flags are set and cleared by the types on startup."""
+    mongo_client[DB]["service_types"].insert_many([{**TES}, {**WES, "pending": True}])
+    mongo_client[DB]["services"].insert_many(
+        [
+            {**SERVICE, "id": "A", PENDING_SERVICE: True},
+            {**_service(WES), "id": "B", "url": "https://wes.example.org"},
+            {**_service(WES), "id": "C", "url": "https://c.org", PENDING_SERVICE: True},
+            # invalid types are skipped
+            {**_service({**WES, "version": 1}), "id": "D", "url": "https://d.org"},
+        ]
+    )
+    create_app()
+    assert _flags(mongo_client) == {"A": False, "B": True, "C": True, "D": False}
+    # idempotent
+    create_app()
+    assert _flags(mongo_client) == {"A": False, "B": True, "C": True, "D": False}
+
+
+@pytest.mark.parametrize("mode", ["open", "moderated"])
+def test_unused_types_limit(
+    app: App,
+    client: FlaskClient,
+    unused_limit: None,
+    mode: Literal["open", "moderated"],
+) -> None:
+    """Users other than admins add a limited number of unused types.
+
+    Added through `POST /services/types` or services, in every mode; types
+    that services have don't count, nor do those of other users.
+    """
+    with app.app.app_context():
+        get_custom_config().access_control.service_types = mode
+    assert add_type(client, TES).status_code == 201
+    assert add_type(client, WES).status_code == 201
+    third = {**TES, "artifact": "drs"}
+    response = add_type(client, third)
+    assert response.status_code == 409
+    assert "2 service types that no service has" in response.get_json()["detail"]
+    response = register(client, _service(third))
+    assert response.status_code == 409
+    assert "2 service types" in response.get_json()["detail"]
+    # types that exist can be used
+    assert register(client, _service()).status_code == 201
+    assert add_type(client, third).status_code == 201
+    assert add_type(client, {**TES, "artifact": "trs"}).status_code == 409
+    # other users and admins have their own limits, or none
+    assert add_type(client, {**TES, "artifact": "trs"}, user=OTHER).status_code == 201
+    for index in range(3):
+        response = add_type(client, {**TES, "version": str(index)}, user=ADMIN)
+        assert response.status_code == 201
+
+
+def test_unused_types_unlimited(
+    app: App, client: FlaskClient, mongo_client: MongoClient[dict[str, Any]]
+) -> None:
+    """Without a limit, users add any number of unused types."""
+    with app.app.app_context():
+        get_custom_config().access_control.max_unused_service_types = None
+    for index in range(12):
+        assert add_type(client, {**TES, "version": str(index)}).status_code == 201
+    assert mongo_client[DB]["service_types"].count_documents({}) == 12
+
+
+def test_unused_types_none(app: App, client: FlaskClient) -> None:
+    """With a limit of zero, only admins add types."""
+    with app.app.app_context():
+        get_custom_config().access_control.max_unused_service_types = 0
+    assert add_type(client, TES).status_code == 409
+    assert register(client, _service()).status_code == 409
+    assert add_type(client, TES, user=ADMIN).status_code == 201
+    assert register(client, _service()).status_code == 201
+
+
+def test_add_type_concurrently(
+    client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A type added by a concurrent request is registered (`409`)."""
+    assert add_type(client, TES).status_code == 201
+    monkeypatch.setattr(service_types, "service_type_exists", lambda _: False)
+    response = add_type(client, TES, user=OTHER)
+    assert response.status_code == 409
+    assert response.get_json()["detail"] == "The service type is registered."
