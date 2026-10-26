@@ -7,8 +7,9 @@ these settings (`settings`). They follow the base config in the image
 (`server.max_content_length`), its token issuers (so an audience is
 required), its database (`db.dbs`) and that of access control
 (`security.access_control.db_name`). The generated config sets the public
-URL of the app from `hostName`, with HTTPS on port 443, as TLS is usually
-terminated by the ingress, the route or a proxy in front of the cluster.
+URL of the app (`server.public_url`) to `publicUrl`, or else from
+`hostName`, with HTTPS, as TLS is usually terminated by the ingress, the
+route or a proxy in front of the cluster.
 Every template includes the settings, so the app's checks
 (`cloud-registry.validate`) run first, before those of the library and
 whichever template Helm renders first.
@@ -22,12 +23,11 @@ mongodb:
   databases: [serviceStore]
   accessControlDatabase: serviceStore
 config:
-  custom:
-    endpoints:
-      service:
-        url_prefix: https
-        external_host: {{ .Values.hostName | toJson }}
-        external_port: 443
+  server:
+    public_url: {{ .Values.publicUrl | default (printf "https://%s/" .Values.hostName) | toJson }}
+  # Empty, so that `config.custom: null` is like no custom config (merged
+  # into this), not a null section, which the app would refuse
+  custom: {}
 {{- end -}}
 
 {{/*
@@ -68,6 +68,9 @@ upgrade), which the app rejects
 {{- fail "config.custom.endpoints.service_info was removed with the FOCA 0.15 upgrade: set config.service_info.service instead (see deployment/README.md, Configuration)" -}}
 {{- end -}}
 {{- /* Replaced by FOCA's (with the FOCA 0.18 upgrade) */ -}}
+{{- if and (kindIs "map" $endpoints) (hasKey $endpoints "service") -}}
+{{- fail "config.custom.endpoints.service was removed with the FOCA 0.18 upgrade: set publicUrl instead, to the public URL of the app if not https://<hostName>/, e.g., with the path prefix of a proxy (see deployment/README.md#to-app-version-060)" -}}
+{{- end -}}
 {{- $customAccessControl := index $custom "access_control" -}}
 {{- if and (kindIs "map" $customAccessControl) (hasKey $customAccessControl "require_admin") -}}
 {{- fail "config.custom.access_control.require_admin was removed with the FOCA 0.18 upgrade: set config.security.access_control.require_admin instead (see deployment/README.md#to-app-version-060)" -}}

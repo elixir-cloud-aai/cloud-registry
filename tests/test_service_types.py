@@ -12,6 +12,7 @@ from urllib.parse import quote
 
 from connexion import App
 from flask.testing import FlaskClient
+from foca import get_custom_config
 from pymongo import MongoClient
 import pytest
 from werkzeug.test import TestResponse
@@ -24,7 +25,7 @@ from cloud_registry.ga4gh.registry.service import (
     VERIFIED,
     RegisterService,
 )
-from cloud_registry.utils import get_custom_config
+from cloud_registry.service_models.custom_config import CustomConfig
 from tests.conftest import ADMIN, CONFIG_OVERLAY, TEAM_GROUP, USER, make_headers
 from tests.mock_data import DB
 
@@ -158,7 +159,7 @@ def may_add(client: FlaskClient, user: str) -> bool:
 def moderated(app: App) -> None:
     """Let admins approve the service types of other users."""
     with app.app.app_context():
-        get_custom_config().access_control.service_types = "moderated"
+        get_custom_config(CustomConfig).access_control.service_types = "moderated"
 
 
 def approvals(client: FlaskClient, user: str) -> dict[str, list[Any]]:
@@ -216,7 +217,7 @@ def pending(client: FlaskClient, user: str) -> bool:
 def controlled(app: App) -> None:
     """Let only admins add service types."""
     with app.app.app_context():
-        get_custom_config().access_control.service_types = "controlled"
+        get_custom_config(CustomConfig).access_control.service_types = "controlled"
 
 
 def _created_by(mongo_client: MongoClient[dict[str, Any]]) -> dict[str, Any]:
@@ -658,7 +659,7 @@ def test_moderated_then_open(app: App, client: FlaskClient, moderated: None) -> 
     """Pending types stay pending if the mode changes; new types aren't."""
     service_id = register(client, _service()).get_json()
     with app.app.app_context():
-        get_custom_config().access_control.service_types = "open"
+        get_custom_config(CustomConfig).access_control.service_types = "open"
     assert not pending(client, USER)
     assert add_type(client, WES).status_code == 201
     assert listed(client) == [WES]
@@ -726,7 +727,7 @@ def _flags(mongo_client: MongoClient[dict[str, Any]]) -> dict[str, bool]:
 def unused_limit(app: App) -> None:
     """Let users other than admins add at most two unused types."""
     with app.app.app_context():
-        get_custom_config().access_control.max_unused_service_types = 2
+        get_custom_config(CustomConfig).access_control.max_unused_service_types = 2
 
 
 def test_many_pending_types(
@@ -869,7 +870,7 @@ def test_unused_types_limit(
     that services have don't count, nor do those of other users.
     """
     with app.app.app_context():
-        get_custom_config().access_control.service_types = mode
+        get_custom_config(CustomConfig).access_control.service_types = mode
     assert add_type(client, TES).status_code == 201
     assert add_type(client, WES).status_code == 201
     third = {**TES, "artifact": "drs"}
@@ -895,7 +896,7 @@ def test_unused_types_unlimited(
 ) -> None:
     """Without a limit, users add any number of unused types."""
     with app.app.app_context():
-        get_custom_config().access_control.max_unused_service_types = None
+        get_custom_config(CustomConfig).access_control.max_unused_service_types = None
     for index in range(12):
         assert add_type(client, {**TES, "version": str(index)}).status_code == 201
     assert mongo_client[DB]["service_types"].count_documents({}) == 12
@@ -904,7 +905,7 @@ def test_unused_types_unlimited(
 def test_unused_types_none(app: App, client: FlaskClient) -> None:
     """With a limit of zero, only admins add types."""
     with app.app.app_context():
-        get_custom_config().access_control.max_unused_service_types = 0
+        get_custom_config(CustomConfig).access_control.max_unused_service_types = 0
     assert add_type(client, TES).status_code == 409
     assert register(client, _service()).status_code == 409
     assert add_type(client, TES, user=ADMIN).status_code == 201

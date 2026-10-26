@@ -659,8 +659,9 @@ def test_security_config_empty(value: str, error: str) -> None:
             "config.custom.access_control.require_admin",
             "config.security.access_control.require_admin",
         ),
+        ("config.custom.endpoints.service", "publicUrl"),
     ],
-    ids=["max_content_length", "service_info", "require_admin"],
+    ids=["max_content_length", "service_info", "require_admin", "service"],
 )
 def test_custom_config_removed(removed: str, replacement: str) -> None:
     """Settings of the custom config replaced by FOCA's are rejected.
@@ -1228,12 +1229,13 @@ def test_library_dependency() -> None:
 
 
 def test_schema_of_library() -> None:
-    """The values schema is that of the library chart, with the app's key.
+    """The values schema is that of the library chart, with the app's keys.
 
     That is the library's `app-values.schema.json` with the changes that
     its `$comment` documents: the app's values (`cloudRegistry`) also
     require the Gunicorn settings and the `preStop` delay, MongoDB's image
-    is pinned to a minor version, and there is no Celery worker or broker.
+    is pinned to a minor version, there is no Celery worker or broker, and
+    the public URL can be set (`publicUrl`).
     The `$comment` names the library's version, which the release pin
     check compares with the pinned one.
     """
@@ -1252,6 +1254,7 @@ def test_schema_of_library() -> None:
         "allOf": [{"$ref": "#/$defs/app"}],
         "required": ["preStopSleepSeconds", "gunicorn"],
     }
+    assert properties.pop("publicUrl")["type"] == "string"
     image = properties["mongodb"]["properties"]["image"]
     assert "minor version" in image.pop("description")
     expected = dict(library["properties"])
@@ -1446,19 +1449,20 @@ def test_max_content_length_invalid(args: tuple[str, ...]) -> None:
 def test_custom_null() -> None:
     """`config.custom: null` is like no custom config.
 
-    The generated custom config is kept.
+    The generated, empty custom config is kept (not `null`, which the app
+    would refuse).
     """
     docs = _render("--set", "config.custom=null")
-    assert _overlay(docs)["custom"]["endpoints"]["service"]["external_host"] == "x"
+    assert _overlay(docs)["custom"] == {}
 
 
 def test_server_null() -> None:
     """`config.server: null` is like no server config.
 
-    The overlay has no `server` (FOCA would refuse `null`).
+    The overlay has the generated `server` (FOCA would refuse `null`).
     """
     docs = _render("--set-json", "config.server=null")
-    assert "server" not in _overlay(docs)
+    assert _overlay(docs)["server"] == {"public_url": "https://x/"}
 
 
 def test_ingress_body_size_annotation() -> None:

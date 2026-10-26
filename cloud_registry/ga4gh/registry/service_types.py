@@ -51,6 +51,7 @@ import logging
 from typing import Any
 
 from flask import Response
+from foca import get_custom_config
 from foca.security.access_control import get_current_subject, is_admin, resource_filter
 from foca.utils.logging import escape_log_value
 from pymongo.errors import DuplicateKeyError
@@ -74,7 +75,8 @@ from cloud_registry.ga4gh.registry.service import (
     InvalidService,
     check_strings,
 )
-from cloud_registry.utils import get_collection, get_custom_config
+from cloud_registry.service_models.custom_config import CustomConfig
+from cloud_registry.utils import get_collection
 
 logger = logging.getLogger(__name__)
 # Fields of service types, in the order they are sorted by
@@ -484,7 +486,7 @@ def check_unused_types() -> None:
             types that no service has as allowed
             (`custom.access_control.max_unused_service_types`).
     """
-    limit = get_custom_config().access_control.max_unused_service_types
+    limit = get_custom_config(CustomConfig).access_control.max_unused_service_types
     subject = get_current_subject()
     if limit is None or subject is None or is_admin():
         return

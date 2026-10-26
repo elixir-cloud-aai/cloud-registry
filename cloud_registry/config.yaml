@@ -22,6 +22,12 @@ server:
     # `nginx.ingress.kubernetes.io/proxy-body-size` for ingress-nginx, whose
     # default is 1 MiB)
     max_content_length: 1048576
+    # Public URL of the app as clients see it, including any path prefix of a
+    # reverse proxy (e.g., `https://registry.example.org/` or
+    # `https://example.org/registry/`), for the `Location` header of new
+    # services; required: the app refuses to start without it (deployments
+    # set it; the Helm chart from `hostName` or `publicUrl`)
+    # public_url: https://registry.example.org/
 
 # Security configuration
 # Cf. https://foca.readthedocs.io/en/latest/configuration/auth/ and
@@ -300,14 +306,6 @@ custom:
         # limit (see "Service types" in `docs/configuration.md`)
         max_unused_service_types: 10
     endpoints:
-        # Public URL of the app, e.g., for the `Location` header; `api_path` is
-        # a path prefix in front of the API base path (e.g., of a reverse
-        # proxy)
-        service:
-            url_prefix: https
-            external_host: 0.0.0.0
-            external_port: 8080
-            api_path: ''
         services:
             id:
                 charset: ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789

@@ -33,15 +33,9 @@ MONGO_CONFIG: dict[str, Any] = {
         "serviceStore": DB_CONFIG,
     },
 }
-SERVICE_CONFIG: dict[str, Any] = {
-    "url_prefix": "http",
-    "external_host": "1.2.3.4",
-    "external_port": 80,
-    # Path prefix of a reverse proxy
-    "api_path": "registry",
-}
-# Public URL of the app with `SERVICE_CONFIG`
-MOCK_PUBLIC_URL = "http://1.2.3.4:80/registry"
+# Public URL of the app (`server.public_url`), with the path prefix of a
+# reverse proxy
+MOCK_PUBLIC_URL = "http://1.2.3.4/registry"
 SERVICES_CONFIG: dict[str, Any] = {
     "id": {
         "charset": CHARSET,
@@ -49,7 +43,6 @@ SERVICES_CONFIG: dict[str, Any] = {
     },
 }
 ENDPOINT_CONFIG: dict[str, Any] = {
-    "service": SERVICE_CONFIG,
     "services": SERVICES_CONFIG,
 }
 CUSTOM_CONFIG: dict[str, Any] = {"endpoints": ENDPOINT_CONFIG}

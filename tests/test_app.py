@@ -17,6 +17,7 @@ import connexion
 from connexion import App
 from cryptography.hazmat.primitives.asymmetric import rsa
 from flask.testing import FlaskClient
+from foca import get_custom_config
 import foca.api.service_info
 from foca.config.access import get_app_config
 from foca.security import auth
@@ -31,7 +32,6 @@ import cloud_registry.app
 import cloud_registry.ga4gh.registry.server
 from cloud_registry.ga4gh.registry.service import KEY, service_key
 from cloud_registry.service_models.custom_config import CustomConfig
-from cloud_registry.utils import get_custom_config
 from tests.conftest import (
     ADMIN_GROUP,
     APP_DIR,
@@ -53,7 +53,8 @@ BASE = "/ga4gh/registry/v1"
 # Fields of OpenAPI Path Item Objects holding Operation Objects
 HTTP_METHODS = {"get", "put", "post", "delete", "options", "head", "patch", "trace"}
 # Public URL of the app, as configured in `config.yaml`
-PUBLIC_URL = "https://0.0.0.0:8080"
+# Public URL of the app in the test overlay (`server.public_url`, normalized)
+PUBLIC_URL = "https://registry.org"
 TIMESTAMPS = {"createdAt", "updatedAt"}
 # Times of registrations and updates of services (cf. `_set_service_clock()`)
 TIME = datetime(2026, 10, 20, 12, 34, 56, 789000, tzinfo=UTC)
@@ -135,7 +136,7 @@ def _custom_config(app: App) -> CustomConfig:
         Custom config.
     """
     with app.app.app_context():
-        return get_custom_config()
+        return get_custom_config(CustomConfig)
 
 
 def _service_info(app: App) -> dict[str, Any]:
@@ -1096,8 +1097,8 @@ def proxy_app(app: App) -> App:
 
     It has one possible generated service identifier (`A`).
     """
+    get_app_config(app.app).server.public_url = "https://example.org/proxy/registry"
     endpoints = _custom_config(app).endpoints
-    endpoints.service.api_path = "/proxy/registry/"
     endpoints.services.id.charset = "A"
     endpoints.services.id.length = 1
     return app
@@ -1109,17 +1110,17 @@ def proxy_app(app: App) -> App:
         (
             "POST",
             "/services",
-            "https://0.0.0.0:8080/proxy/registry/ga4gh/registry/v1/services/A",
+            "https://example.org/proxy/registry/ga4gh/registry/v1/services/A",
         ),
         (
             "PUT",
             "/services/my-tes",
-            "https://0.0.0.0:8080/proxy/registry/ga4gh/registry/v1/services/my-tes",
+            "https://example.org/proxy/registry/ga4gh/registry/v1/services/my-tes",
         ),
         (
             "PUT",
             "/services/my%20tes",
-            "https://0.0.0.0:8080/proxy/registry/ga4gh/registry/v1/services/my%20tes",
+            "https://example.org/proxy/registry/ga4gh/registry/v1/services/my%20tes",
         ),
     ],
 )
@@ -1461,6 +1462,8 @@ def _set_overlay(
         tmp_path: Directory to write the overlay to.
         overlay: Config overlay.
     """
+    # the app refuses to start without a public URL
+    overlay = {"server": {"public_url": PUBLIC_URL}, **overlay}
     path = tmp_path / "overlay.yaml"
     path.write_text(yaml.safe_dump(overlay))
     monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(path))
@@ -1703,6 +1706,51 @@ def test_create_app_dev_overlay(
     assert "No group or service client is mapped to the role 'admin'" in err
     assert "keep_group_subjects" not in err
     assert "no group claim" not in err
+
+
+def test_create_app_requires_public_url(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
+) -> None:
+    """`create_app()` fails without a public URL (`server.public_url`).
+
+    FOCA would only fail on the first registration (`Location` header).
+    """
+    _set_overlay(
+        monkeypatch,
+        tmp_path,
+        {
+            "server": {},
+            "security": {
+                "auth": {"issuers": [ISSUER], "audience": ["a"]},
+                "access_control": {"require_admin": False},
+            },
+        },
+    )
+    with pytest.raises(RuntimeError, match=r"server\.public_url"):
+        cloud_registry.app.create_app()
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["https://registry.org/?a=b", "https://registry.org/#a", "ftp://registry.org/"],
+)
+def test_create_app_invalid_public_url(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None, url: str
+) -> None:
+    """`create_app()` fails with an invalid public URL (FOCA)."""
+    _set_overlay(
+        monkeypatch,
+        tmp_path,
+        {
+            "server": {"public_url": url},
+            "security": {
+                "auth": {"issuers": [ISSUER], "audience": ["a"]},
+                "access_control": {"require_admin": False},
+            },
+        },
+    )
+    with pytest.raises(ValidationError, match="public_url"):
+        cloud_registry.app.create_app()
 
 
 def test_create_app_duplicate_services(

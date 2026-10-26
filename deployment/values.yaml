@@ -13,10 +13,15 @@
 nameOverride: ""
 fullnameOverride: ""
 
-# Public host name of the app; sets `custom.endpoints.service.external_host`
-# in the app config, with URL scheme `https` and port 443 (override them via
-# `config.custom.endpoints.service`)
+# Public host name of the app (of the Ingress, HTTPRoute or Route); also sets
+# the public URL of the app (`server.public_url` in the app config) to
+# `https://<hostName>/`, unless `publicUrl` is set
 hostName: ""
+
+# Public URL of the app as clients see it, if not `https://<hostName>/`,
+# e.g., with the path prefix of a proxy (`https://example.org/registry/`);
+# sets `server.public_url` in the app config
+publicUrl: ""
 
 # App config overriding the base config in the image (`cloud_registry/config.yaml`
 # of the image's version); mappings are merged recursively, other values

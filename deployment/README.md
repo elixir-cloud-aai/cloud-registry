@@ -17,8 +17,9 @@ renders a config overlay into the `<app>-config` ConfigMap (see
 [Names and labels](#names-and-labels)), which FOCA merges into the base
 config on startup (via `FOCA_CONFIG_OVERLAY`):
 
-- `hostName` sets the public URL of the app
-  (`custom.endpoints.service`: `https://<hostName>:443`);
+- `hostName` sets the public URL of the app (`server.public_url`:
+  `https://<hostName>/`), unless `publicUrl` sets it (e.g., with the path
+  prefix of a proxy, `https://example.org/registry/`);
 - `db.host` is set to the release's MongoDB Service (`<app>-mongodb`),
   unless MongoDB is external (see [External MongoDB](#external-mongodb));
 - `config` overrides keys of the base config; it takes precedence over the

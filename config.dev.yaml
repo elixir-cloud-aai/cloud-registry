@@ -21,14 +21,12 @@ security:
         # Start without admin groups (nobody can manage services they don't
         # own)
         require_admin: False
+server:
+    # Public URL of the app as published by `docker-compose.yaml`, e.g., for
+    # `Location` headers
+    public_url: http://localhost:8080
 custom:
     endpoints:
-        # Public URL of the app as published by `docker-compose.yaml`, e.g.,
-        # for `Location` headers
-        service:
-            url_prefix: http
-            external_host: localhost
-            external_port: 8080
         # Also accept `http` service URLs, e.g., of services running locally
         services:
             url_schemes:

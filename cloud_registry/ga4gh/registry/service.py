@@ -6,6 +6,7 @@ import json
 import logging
 from typing import Any
 
+from foca import get_custom_config
 from foca.utils.logging import escape_log_value
 from foca.utils.misc import generate_id
 from foca.utils.urls import (
@@ -23,10 +24,10 @@ from cloud_registry.exceptions import (
     InternalServerError,
     NotFound,
 )
+from cloud_registry.service_models.custom_config import CustomConfig
 from cloud_registry.utils import (
     format_time,
     get_collection,
-    get_custom_config,
     is_date_time,
     now,
 )
@@ -340,7 +341,7 @@ class RegisterService:
             environments: Values allowed for `environment`; any if empty.
             db_coll: Database collection for storing service objects.
         """
-        endpoint_conf = get_custom_config().endpoints
+        endpoint_conf = get_custom_config(CustomConfig).endpoints
         self.data = deepcopy(data)
         if not keep_timestamps:
             for field in DATE_TIME_FIELDS:
@@ -685,7 +686,7 @@ def warn_environments() -> None:
     (`custom.endpoints.services.environments`). Such services are still
     served, but can only be updated with an allowed environment (or none).
     """
-    environments = get_custom_config().endpoints.services.environments
+    environments = get_custom_config(CustomConfig).endpoints.services.environments
     if not environments:
         return
     ids = []
@@ -716,7 +717,7 @@ def warn_url_schemes() -> None:
     scheme. Services with URLs that aren't strings or valid URLs (cf.
     `normalize_url()`) are skipped.
     """
-    schemes = frozenset(get_custom_config().endpoints.services.url_schemes)
+    schemes = frozenset(get_custom_config(CustomConfig).endpoints.services.url_schemes)
     ids = []
     for service in get_collection("services").find(
         {}, {"_id": False, "id": True, "url": True}

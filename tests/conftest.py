@@ -44,7 +44,13 @@ from cloud_registry.app import create_app
 from cloud_registry.ga4gh.registry.service import DATE_TIME_FIELDS
 from cloud_registry.ga4gh.registry.service import KEY as SERVICE_KEY
 from cloud_registry.service_models.custom_config import CustomConfig
-from tests.mock_data import CUSTOM_CONFIG, DB, ERROR_MEDIA_TYPE, MONGO_CONFIG
+from tests.mock_data import (
+    CUSTOM_CONFIG,
+    DB,
+    ERROR_MEDIA_TYPE,
+    MOCK_PUBLIC_URL,
+    MONGO_CONFIG,
+)
 
 APP_DIR = Path(__file__).parents[1] / "cloud_registry"
 # Config overlay with the settings each deployment must make (issuer,
@@ -404,6 +410,7 @@ def unit_app(db_client: MongoClient[dict[str, Any]]) -> Flask:
             {
                 "db": MongoConfig.model_validate(MONGO_CONFIG),
                 "exceptions": ExceptionConfig(media_type=ERROR_MEDIA_TYPE),
+                "server": {"public_url": MOCK_PUBLIC_URL},
                 "custom": CustomConfig.model_validate(CUSTOM_CONFIG),
             }
         ),

@@ -6,6 +6,7 @@ import logging
 from typing import Any, NoReturn
 
 from flask import Flask
+from foca import get_custom_config
 from pymongo.collection import Collection
 from pymongo.cursor import Cursor
 from pymongo.errors import DuplicateKeyError
@@ -32,7 +33,7 @@ from cloud_registry.ga4gh.registry.service import (
     warn_invalid_urls,
     warn_url_schemes,
 )
-from cloud_registry.utils import get_custom_config
+from cloud_registry.service_models.custom_config import CustomConfig
 from tests.mock_data import (
     MOCK_ID,
     MOCK_ID_ONE_CHAR,
@@ -152,7 +153,7 @@ class TestRegisterService:
         The identifier is generated from a literal character set.
         """
         with unit_app.app_context():
-            id_conf = get_custom_config().endpoints.services.id
+            id_conf = get_custom_config(CustomConfig).endpoints.services.id
         id_conf.charset = MOCK_ID_ONE_CHAR
         id_conf.length = 1
 
@@ -229,7 +230,7 @@ class TestRegisterService:
     ) -> None:
         """Test for registering a service; running out of unique identifiers."""
         with unit_app.app_context():
-            id_conf = get_custom_config().endpoints.services.id
+            id_conf = get_custom_config(CustomConfig).endpoints.services.id
         id_conf.charset = MOCK_ID_ONE_CHAR
         id_conf.length = 1
         services.insert_one({"id": MOCK_ID_ONE_CHAR})
@@ -276,7 +277,10 @@ class TestRegisterService:
     ) -> None:
         """Service URLs with `http` are accepted if the scheme is allowed."""
         with unit_app.app_context():
-            get_custom_config().endpoints.services.url_schemes = ["http", "https"]
+            get_custom_config(CustomConfig).endpoints.services.url_schemes = [
+                "http",
+                "https",
+            ]
             for url in ("http://beacon.example.org/api", MOCK_SERVICE["url"]):
                 obj = RegisterService(data={**MOCK_SERVICE, "url": url})
                 obj.register_metadata()
@@ -285,7 +289,7 @@ class TestRegisterService:
     def test_register_metadata_https_disallowed(self, unit_app: Flask) -> None:
         """Only the allowed schemes are accepted, e.g., `http` only."""
         with unit_app.app_context():
-            get_custom_config().endpoints.services.url_schemes = ["http"]
+            get_custom_config(CustomConfig).endpoints.services.url_schemes = ["http"]
             obj = RegisterService(data=deepcopy(MOCK_SERVICE))
             with pytest.raises(InvalidService, match=r"one of these schemes: 'http'\."):
                 obj.register_metadata()
@@ -905,7 +909,10 @@ class TestWarnUrlSchemes:
             services.insert_one(
                 {**MOCK_SERVICE, "id": "HTTP", "url": "http://beacon.example.org"}
             )
-            get_custom_config().endpoints.services.url_schemes = ["http", "https"]
+            get_custom_config(CustomConfig).endpoints.services.url_schemes = [
+                "http",
+                "https",
+            ]
             warn_url_schemes()
         assert not caplog.records
 
@@ -969,7 +976,7 @@ class TestWarnEnvironments:
         with unit_app.app_context(), caplog.at_level(logging.WARNING):
             warn_environments()
             services.insert_one({**MOCK_SERVICE, "id": "X", "environment": "x"})
-            get_custom_config().endpoints.services.environments = []
+            get_custom_config(CustomConfig).endpoints.services.environments = []
             warn_environments()
         assert not caplog.records
 

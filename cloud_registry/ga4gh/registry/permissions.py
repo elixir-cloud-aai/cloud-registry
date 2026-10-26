@@ -25,6 +25,7 @@ from urllib.parse import quote
 
 from flask import current_app, g, has_request_context, request
 from flask.globals import request_ctx
+from foca import get_custom_config
 from foca.security.access_control import (
     SubjectType,
     get_current_group_values,
@@ -50,7 +51,8 @@ from cloud_registry.exceptions import (
     Unauthorized,
 )
 from cloud_registry.ga4gh.registry.service import service_exists
-from cloud_registry.utils import get_collection, get_custom_config
+from cloud_registry.service_models.custom_config import CustomConfig
+from cloud_registry.utils import get_collection
 
 logger = logging.getLogger(__name__)
 
@@ -283,7 +285,7 @@ def may_add_service_types() -> bool:
         is `open` or `moderated`; cf.
         `cloud_registry.ga4gh.registry.service_types`).
     """
-    mode = get_custom_config().access_control.service_types
+    mode = get_custom_config(CustomConfig).access_control.service_types
     return mode in ("open", "moderated") or is_admin()
 
 
@@ -298,7 +300,7 @@ def service_types_pending() -> bool:
         is not an admin, so that their new types are pending until an admin
         approves them.
     """
-    mode = get_custom_config().access_control.service_types
+    mode = get_custom_config(CustomConfig).access_control.service_types
     return mode == "moderated" and not is_admin()
 
 

@@ -1,5 +1,8 @@
 # Config overlay for app tests, with the settings each deployment must make;
 # the identity provider is fictitious (and mocked by the tests)
+server:
+    # Required (the app refuses to start without it)
+    public_url: https://registry.org/
 security:
     auth:
         issuers:
