@@ -261,7 +261,7 @@ Conflicts (`409 Conflict`) also have a `code`, which tells them apart:
 unlike `detail`, codes are stable, so clients branch on them (e.g., `{"title":
 "Conflict", "status": 409, "detail": "...", "code": "pending-service"}`).
 
-| `code` | Conflict |
+| Code | Conflict |
 |---|---|
 | `duplicate-service` | a service with the same URL and API type is registered (see [Duplicate services](#duplicate-services)) |
 | `pending-service` | the service is [pending](#pending-approvals): only admins update it, and it can't be verified |
@@ -272,7 +272,8 @@ unlike `detail`, codes are stable, so clients branch on them (e.g., `{"title":
 | `last-owner` | the subject is the last owner of the service |
 | `conflict` | other conflicts (e.g., changes of policy rules set in the configuration via FOCA's permissions API) |
 
-Further codes may be added; treat unknown ones like `conflict`.
+Further codes may be added; treat unknown ones like `conflict`. The API
+specification documents the codes in the schema `ConflictError`.
 
 See [Access control](access-control.md) for the roles and [Verified
 services](#verified-services) for verifications. Extensions of the GA4GH

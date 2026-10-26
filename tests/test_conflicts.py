@@ -5,16 +5,24 @@ the API specification (schema `Conflict`).
 """
 
 from pathlib import Path
+import re
 from typing import Any
 
 from connexion import App
 from flask.testing import FlaskClient
+from foca.security.access_control import LastOwner
 import pytest
 from werkzeug.test import TestResponse
 import yaml
 
 from cloud_registry import exceptions
-from cloud_registry.exceptions import CONFLICT_CODE, CodedConflict, Conflict, problem
+from cloud_registry.exceptions import (
+    CONFLICT_CODE,
+    CONFLICT_DETAIL,
+    CodedConflict,
+    Conflict,
+    problem,
+)
 from cloud_registry.utils import get_custom_config
 from tests.conftest import ADMIN, APP_DIR, USER, make_headers
 
@@ -73,11 +81,16 @@ def _set_access_control(app: App, **kwargs: Any) -> None:
 
 
 def test_duplicate_service(client: FlaskClient) -> None:
-    """Duplicates have the code `duplicate-service`."""
+    """Duplicates have the code `duplicate-service`, also on updates."""
     service_id = _register(client).get_json()
     response = _register(client)
     assert _code(response) == "duplicate-service"
     assert response.get_json()["serviceId"] == service_id
+    other_id = _register(client, url="https://other.example.org").get_json()
+    response = client.put(
+        f"{BASE}/services/{other_id}", json=SERVICE, headers=make_headers(ADMIN)
+    )
+    assert _code(response) == "duplicate-service"
 
 
 def test_pending_service(app: App, client: FlaskClient) -> None:
@@ -104,6 +117,16 @@ def test_unused_types_limit(app: App, client: FlaskClient) -> None:
     )
     assert _code(response) == "unused-types-limit"
     assert _code(_register(client, user=USER)) == "unused-types-limit"
+    _set_access_control(app, max_unused_service_types=10)
+    service_id = _register(client, user=USER).get_json()
+    _set_access_control(app, max_unused_service_types=0)
+    new_type = {**TES, "version": "2.0.0"}
+    response = client.put(
+        f"{BASE}/services/{service_id}",
+        json={**SERVICE, "type": new_type},
+        headers=make_headers(USER),
+    )
+    assert _code(response) == "unused-types-limit"
 
 
 def test_service_type_registered(client: FlaskClient) -> None:
@@ -141,7 +164,7 @@ def test_last_owner(client: FlaskClient) -> None:
         f"{BASE}/services/{service_id}/permissions/{USER}", headers=make_headers()
     )
     assert _code(response) == "last-owner"
-    assert response.get_json()["detail"] == exceptions.CONFLICT_DETAIL
+    assert response.get_json()["detail"] == CONFLICT_DETAIL
 
 
 def test_configured_policy(client: FlaskClient) -> None:
@@ -169,6 +192,13 @@ def test_problem_conflict(app: App) -> None:
     }
 
 
+def test_problem_mapped_conflict(app: App) -> None:
+    """Conflicts with an entry in the mapping have its code."""
+    with app.app.app_context():
+        response = problem(LastOwner("Last owner."))
+    assert response.get_json()["code"] == "last-owner"
+
+
 def _subclasses(cls: type[CodedConflict]) -> set[type[CodedConflict]]:
     """Get the subclasses of a class, recursively.
 
@@ -188,16 +218,16 @@ def documented_codes() -> list[str]:
     """Get the codes of conflicts documented in the API specification.
 
     Returns:
-        The values of `code` in the schema `Conflict`.
+        The values of `code` in the schema `ConflictError`.
     """
     spec = yaml.safe_load(Path(APP_DIR, "api", "additions.openapi.yaml").read_text())
-    schema = spec["components"]["schemas"]["Conflict"]["allOf"][1]
-    codes: list[str] = schema["properties"]["code"]["enum"]
+    schema = spec["components"]["schemas"]["ConflictError"]["allOf"][1]
+    codes: list[str] = schema["properties"]["code"]["x-extensible-enum"]
     return codes
 
 
 def test_codes_documented(app: App, documented_codes: list[str]) -> None:
-    """All codes are documented in the API specification, and only those."""
+    """All codes are documented in the API specification and docs, only those."""
     import cloud_registry.ga4gh.registry.server  # noqa: F401, PLC0415 (subclasses)
 
     codes = {cls.problem_code for cls in _subclasses(CodedConflict)}
@@ -207,3 +237,6 @@ def test_codes_documented(app: App, documented_codes: list[str]) -> None:
         if "code" in details
     }
     assert codes == set(documented_codes)
+    docs = Path(APP_DIR, "..", "docs", "api.md").read_text()
+    table = docs.split("| Code | Conflict |", 1)[1].split("\n\n", 1)[0]
+    assert set(re.findall(r"^\| `([a-z-]+)` \|", table, re.MULTILINE)) == codes

@@ -626,7 +626,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Conflict'
+                $ref: '#/components/schemas/ConflictError'
         '500':
           $ref: '#/components/responses/InternalServerError'
         default:
@@ -810,11 +810,11 @@ components:
     Conflict:
       description: |
         The request conflicts with the current state of the resource; `code`
-        tells why (see the schema `Conflict`).
+        tells why (see the schema `ConflictError`).
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Conflict'
+            $ref: '#/components/schemas/ConflictError'
     DuplicateService:
       description: |
         A service with the same URL and API type (`type.group` and
@@ -837,7 +837,7 @@ components:
         application/json:
           schema:
             allOf:
-              - $ref: '#/components/schemas/Conflict'
+              - $ref: '#/components/schemas/ConflictError'
               - type: object
                 properties:
                   serviceId:
@@ -846,7 +846,7 @@ components:
                       Identifier of the registered service; only for users
                       who may read it.
   schemas:
-    Conflict:
+    ConflictError:
       description: |
         Problem details of a `409 Conflict`, with a code that tells
         conflicts apart: unlike `detail`, codes are stable, so clients
@@ -886,9 +886,9 @@ components:
                 - `conflict`: other conflicts (e.g., changes of policy rules
                   set in the configuration via FOCA's permissions API).
 
-                Further codes may be added; treat unknown ones like
-                `conflict`.
-              enum:
+                Further codes may be added (so the codes are an extensible
+                enum, not a closed one); treat unknown ones like `conflict`.
+              x-extensible-enum:
                 - duplicate-service
                 - pending-service
                 - unused-types-limit

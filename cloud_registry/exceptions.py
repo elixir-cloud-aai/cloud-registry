@@ -32,8 +32,8 @@ logger = logging.getLogger(__name__)
 # which can be as large as the request body
 MAX_DETAIL_LENGTH = 500
 
-# Code of conflicts that have no other (`code` member of their problem
-# details; cf. `CodedConflict`), e.g., of FOCA's permissions API
+# Default code of conflicts without a code of their own (`code` member of
+# their problem details; cf. `CodedConflict`), e.g., of FOCA's permissions API
 CONFLICT_CODE = "conflict"
 # Detail of conflicts with fixed problem details
 CONFLICT_DETAIL = "The request conflicts with the current state of the resource."
@@ -43,8 +43,11 @@ class CodedConflict(Conflict):
     """`409 Conflict` with a stable code, for clients to tell conflicts apart.
 
     The code is served as the extension member `code` of the problem details
-    (cf. `problem()`), next to the unchanged `detail`, and documented in the
-    API specification (schema `Conflict`).
+    built with `problem()`, next to the unchanged `detail`, and documented in
+    the API specification (schema `ConflictError`). Conflicts that reach
+    FOCA's error handler instead (i.e., raised, not returned) get the code of
+    their entry in `exceptions` (default: `CONFLICT_CODE`), so add an entry
+    for those, as for FOCA's `LastOwner`.
 
     Attributes:
         problem_code: Code of the conflict (kebab case); not `code`, which
@@ -54,7 +57,8 @@ class CodedConflict(Conflict):
     problem_code: ClassVar[str] = CONFLICT_CODE
 
 
-# exceptions raised in app context
+# exceptions raised in app context; entries of conflicts have their code
+# (`code`; cf. `CodedConflict`)
 exceptions = {
     Exception: {
         "title": "Unknown error",
@@ -165,10 +169,12 @@ def problem(exc: HTTPException, **extensions: str) -> Response:
             f"Problem details need an exception with a code and a description: {exc!r}"
         )
     if isinstance(exc, Conflict):
-        extensions = {
-            "code": getattr(exc, "problem_code", CONFLICT_CODE),
-            **extensions,
-        }
+        code = (
+            exc.problem_code
+            if isinstance(exc, CodedConflict)
+            else _mapped(exc).get("code", CONFLICT_CODE)
+        )
+        extensions = {"code": code, **extensions}
     return _response(
         title=_mapped(exc)["title"],
         status=exc.code,
