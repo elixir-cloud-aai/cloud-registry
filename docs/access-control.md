@@ -24,6 +24,13 @@ curl -X POST "http://localhost:8080/ga4gh/registry/v1/services" \
   -d @service.json
 ```
 
+Public reads accept an optional token: with one, they apply the user's
+visibility rules (e.g., they show the user's
+[pending](api.md#pending-approvals) types and services). Invalid or expired
+tokens are rejected as below; if the token can't be validated for other
+reasons (e.g., the identity provider is unavailable), the request is treated
+as anonymous (see the [API](api.md)).
+
 Requests without a valid token are rejected with `401 Unauthorized` and a
 Bearer challenge (`WWW-Authenticate: Bearer`, RFC 6750; with
 `error="invalid_token"` for invalid tokens); requests with a valid token, but

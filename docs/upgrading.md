@@ -33,6 +33,13 @@ Data is kept. Before upgrading:
    types](configuration.md#service-types)); change the limit in the same
    rollout if needed, and rate-limit `POST /services/types` and `POST
    /services` at the ingress (see [Rate limits](deployment.md#rate-limits)).
+5. Overlays that set their own `x-bearerInfoFunc` (in
+   `api.specs.registry.add_security_fields`) keep working, but each token
+   sent with a public read is then validated twice. The base config now
+   uses `cloud_registry.ga4gh.registry.permissions.validate_bearer_token`, a
+   thin wrapper around FOCA's `validate_token()`; drop the setting from the
+   overlay, or point it to that function (see
+   [Authentication](access-control.md#authentication)).
 
 Then upgrade, and restart the app once after the rollout (or upgrade with
 the app scaled to 0 replicas), so that it stores the types of the services
