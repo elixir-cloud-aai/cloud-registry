@@ -198,7 +198,9 @@ Users other than admins may only have added
 (`409`), whether added explicitly or by registering or changing services,
 until services have them or admins remove them (approved types count too).
 Types become unused when their services are deleted or change their type, so
-the limit bounds how many types each user can add without services; set `0`
+the limit bounds how many types each user can add without services (users
+can still leave more types unused by registering services with new types and
+deleting them, one registration per type); set `0`
 to let only admins add types other than those of services. Concurrent
 requests of a user can exceed the limit by their number.
 

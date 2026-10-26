@@ -281,6 +281,8 @@ def _restore_type(service_type: dict[str, str], removed: dict[str, Any]) -> None
     result = get_collection("service_types").update_one(dict(service_type), update)
     if not result.matched_count:
         store_service_type(service_type, created_by=fields[CREATED_BY], pending=pending)
+    # services registered meanwhile were flagged by the type then stored
+    _sync_flags(service_type, _services_of_type(service_type))
 
 
 def is_pending(service_type: dict[str, str] | None) -> bool:
@@ -302,26 +304,33 @@ def is_pending(service_type: dict[str, str] | None) -> bool:
 def _sync_flags(service_type: dict[str, str], query: dict[str, Any]) -> None:
     """Set or clear the pending flags of services by their type.
 
-    Writes first and checks the type again after setting flags, so that an
-    approval meanwhile isn't undone: approvals approve the type, then clear
-    the flags, so either the approval clears flags set here, or the second
-    check sees the approval.
+    Writes first, then checks the type again, and writes again if its state
+    changed meanwhile (e.g., approved, or removed and added again as
+    pending), so that concurrent calls, approvals and removals of the type
+    end with the flags of its last state: each change of the state is
+    followed by a call (cf. `putServiceTypeApproval()`, `_restore_type()`),
+    and either that call or the check here sees the other's write.
 
     Args:
         service_type: Type of the services, in its stored form.
         query: Query for the services (of that type, as written).
     """
     services = get_collection("services")
-    if is_pending(service_type):
-        services.update_many(
-            {**query, PENDING_SERVICE: {"$ne": True}},
-            {"$set": {PENDING_SERVICE: True}},
-        )
-        if is_pending(service_type):
+    pending = is_pending(service_type)
+    while True:
+        if pending:
+            services.update_many(
+                {**query, PENDING_SERVICE: {"$ne": True}},
+                {"$set": {PENDING_SERVICE: True}},
+            )
+        else:
+            services.update_many(
+                {**query, PENDING_SERVICE: True}, {"$unset": {PENDING_SERVICE: ""}}
+            )
+        changed = is_pending(service_type)
+        if changed == pending:
             return
-    services.update_many(
-        {**query, PENDING_SERVICE: True}, {"$unset": {PENDING_SERVICE: ""}}
-    )
+        pending = changed
 
 
 def sync_pending_flag(serviceId: str, service_type: dict[str, str]) -> None:
@@ -345,14 +354,20 @@ def sync_pending_services() -> None:
 
     Run on startup, so that flags missed by interrupted requests are
     corrected; idempotent, and safe to run concurrently (cf.
-    `_sync_flags()`). Queries once per distinct type of the stored services,
-    not per stored type.
+    `_sync_flags()`). Only checks the pending types, and the types of the
+    services flagged as pending, not all types.
     """
-    types = get_collection("services").aggregate(
-        [{"$group": {"_id": {field: f"$type.{field}" for field in TYPE_FIELDS}}}]
+    pending = list(
+        get_collection("service_types").find({PENDING: True}, TYPE_PROJECTION)
     )
-    for group in types:
-        service_type = type_document(group["_id"])
+    flagged = get_collection("services").aggregate(
+        [
+            {"$match": {PENDING_SERVICE: True}},
+            {"$group": {"_id": {field: f"$type.{field}" for field in TYPE_FIELDS}}},
+        ]
+    )
+    for value in [*pending, *(group["_id"] for group in flagged)]:
+        service_type = type_document(value)
         if service_type is not None:
             _sync_flags(service_type, _services_of_type(service_type))
 
@@ -714,10 +729,7 @@ def putServiceTypeApproval(
         {**document, PENDING: True}, {"$unset": {PENDING: ""}}
     )
     # also if the type was approved before, to clear flags missed meanwhile
-    get_collection("services").update_many(
-        {**_services_of_type(document), PENDING_SERVICE: True},
-        {"$unset": {PENDING_SERVICE: ""}},
-    )
+    _sync_flags(document, _services_of_type(document))
     if approved is None:
         if not service_type_exists(document):
             raise NotFound

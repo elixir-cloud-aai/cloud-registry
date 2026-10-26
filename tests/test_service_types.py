@@ -1041,3 +1041,32 @@ def test_unused_types_batches(
     assert approve(client, TES).status_code == 200
     assert add_type(client, WES).status_code == 201
     assert add_type(client, {**TES, "artifact": "drs"}).status_code == 409
+
+
+def test_sync_flags_state_changed(
+    client: FlaskClient,
+    moderated: None,
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Flags follow a type that is pending again after they were cleared."""
+    service_id = register(client, _service()).get_json()
+    states = iter([False, True, True])
+    monkeypatch.setattr(service_types, "is_pending", lambda _: next(states))
+    with client.application.test_request_context():
+        service_types.sync_pending_flag(service_id, TES)
+    assert _flags(mongo_client) == {service_id: True}
+
+
+def test_restored_type_syncs_flags(
+    client: FlaskClient,
+    moderated: None,
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """Restoring a removed approved type clears the flags set meanwhile."""
+    service_id = register(client, _service()).get_json()
+    assert _flags(mongo_client) == {service_id: True}
+    with client.application.test_request_context():
+        service_types._restore_type(dict(TES), {"created_by": USER})
+    assert _flags(mongo_client) == {service_id: False}
+    assert len(client.get(f"{BASE}/services").get_json()) == 1
