@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from connexion import App
 from flask.testing import FlaskClient
@@ -19,12 +20,17 @@ import yaml
 from cloud_registry.app import create_app
 from cloud_registry.ga4gh.registry import server
 from cloud_registry.utils import get_custom_config
-from tests.conftest import ADMIN, CONFIG_OVERLAY, USER, make_headers
+from tests.conftest import ADMIN, CONFIG_OVERLAY, TEAM_GROUP, USER, make_headers
 from tests.mock_data import DB
 
 BASE = "/ga4gh/registry/v1"
 # Another user than `USER`
 OTHER = "bob@example.org"
+# Users without groups (cf. `GROUPS` of `tests.conftest`), and a member of
+# `TEAM_GROUP` who isn't `USER`
+MAINTAINER = "carol@example.org"
+NOBODY = "dave@example.org"
+MEMBER = "erin@example.org"
 TYPES = f"{BASE}/services/types"
 TES = {"group": "org.ga4gh", "artifact": "tes", "version": "1.1.0"}
 WES = {"group": "org.ga4gh", "artifact": "wes", "version": "1.1.0"}
@@ -593,6 +599,44 @@ def test_moderated_type_changed(client: FlaskClient, moderated: None) -> None:
     response = client.put(path, json=_service(TES), headers=headers())
     assert response.status_code == 200, response.get_json()
     assert approvals(client, USER)["services"] == []
+
+
+def test_moderated_maintainers(client: FlaskClient, moderated: None) -> None:
+    """Maintainers of pending services see them, but can't update them."""
+    service_id = register(client, _service(), OTHER).get_json()
+    assert approvals(client, MAINTAINER)["services"] == []
+    response = client.put(
+        f"{BASE}/services/{service_id}/permissions/{MAINTAINER}",
+        json={"role": "maintainer"},
+        headers=headers(OTHER),
+    )
+    assert response.status_code == 200, response.get_json()
+    # the service, not the type, which another user added
+    assert approvals(client, MAINTAINER) == {
+        "service_types": [],
+        "services": [service_id],
+    }
+    assert approvals(client, NOBODY) == {"service_types": [], "services": []}
+    response = client.put(
+        f"{BASE}/services/{service_id}",
+        json=_service(name="New"),
+        headers=headers(MAINTAINER),
+    )
+    assert response.status_code == 409
+
+
+def test_moderated_group_roles(client: FlaskClient, moderated: None) -> None:
+    """Members of groups with a role on pending services see them."""
+    service_id = register(client, _service(), OTHER).get_json()
+    assert approvals(client, MEMBER)["services"] == []
+    response = client.put(
+        f"{BASE}/services/{service_id}/permissions/groups/{quote(TEAM_GROUP, safe='')}",
+        json={"role": "maintainer"},
+        headers=headers(ADMIN),
+    )
+    assert response.status_code == 200, response.get_json()
+    assert approvals(client, MEMBER) == {"service_types": [], "services": [service_id]}
+    assert approvals(client, NOBODY) == {"service_types": [], "services": []}
 
 
 def test_moderated_duplicate_named(client: FlaskClient, moderated: None) -> None:
