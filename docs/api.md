@@ -97,7 +97,8 @@ forms, `GET /service-info` serves them in `registration_rules`:
   `moderated` (see [Service types](#service-types));
 - `max_unused_service_types`: how many types that no service has users other
   than admins may have added (`409 Conflict` for further ones); `0` if they
-  can't add types, and not set if there is no limit (see [Service
+  can't add types, and not set if there is no limit; concurrent requests of
+  a user can exceed it by their number (see [Service
   types](configuration.md#service-types)).
 
 The registry builds the rules from its config on each request, so they are

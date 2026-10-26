@@ -930,6 +930,7 @@ components:
             `0` if they can't add types (explicitly or with services). Not
             set if there is no limit
             (`custom.access_control.max_unused_service_types: null`).
+            Concurrent requests of a user can exceed it by their number.
           example: 10
     PermissionRegister:
       description: Role to grant on a service.
