@@ -774,8 +774,9 @@ components:
       required: true
       schema:
         type: string
-        # no dot segments (`.`, `..`), also between backslashes (cf. `Group`)
-        pattern: '^(?!(.*[/\\])?\.\.?([/\\]|$))'
+        # no dot segments (`.`, `..`), also between backslashes (cf. `Group`);
+        # `[\s\S]`, as `.` doesn't match line breaks
+        pattern: '^(?!([\s\S]*[/\\])?\.\.?([/\\]|$))'
     Group:
       name: group
       in: path
@@ -795,7 +796,7 @@ components:
         # may contain slashes (e.g., URLs), but no dot segments (`.`, `..`),
         # also between backslashes (WHATWG URLs)
         format: path
-        pattern: '^(?!(.*[/\\])?\.\.?([/\\]|$))'
+        pattern: '^(?!([\s\S]*[/\\])?\.\.?([/\\]|$))'
   responses:
     ServiceCreated:
       description: The service was successfully registered.

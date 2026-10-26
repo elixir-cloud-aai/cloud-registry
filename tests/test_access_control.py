@@ -1263,6 +1263,7 @@ def test_dot_segments_in_users(client: FlaskClient, user: str) -> None:
     response = client.put(url, json={"role": "owner"}, headers=headers(ADMIN))
     assert response.status_code == 400
     assert client.delete(url, headers=headers(ADMIN)).status_code == 400
+    assert permissions(client, service_id) == [(ALICE, "owner")]
 
 
 @pytest.mark.parametrize("principal", ["...", ".a", "a."])
@@ -1271,8 +1272,14 @@ def test_dotted_principals(client: FlaskClient, principal: str) -> None:
     service_id = register(client)
     assert grant(client, service_id, principal, "maintainer", ADMIN) == 200
     assert grant_group(client, service_id, principal, "maintainer", ADMIN) == 200
+    assert permissions(client, service_id) == sorted(
+        [(ALICE, "owner"), (principal, "maintainer")]
+    )
+    assert group_permissions(client, service_id) == [(principal, "maintainer")]
     assert revoke(client, service_id, principal, as_user=ADMIN) == 200
     assert revoke_group(client, service_id, principal, as_user=ADMIN) == 200
+    assert permissions(client, service_id) == [(ALICE, "owner")]
+    assert group_permissions(client, service_id) == []
 
 
 def test_users_and_groups_distinct(client: FlaskClient) -> None:
