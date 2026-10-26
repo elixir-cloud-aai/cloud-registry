@@ -4,16 +4,20 @@ The app and its fixtures are set up in `tests/conftest.py`; the helpers for
 roles are those of `tests/test_access_control.py`.
 """
 
+from collections.abc import Callable
 from datetime import timedelta
+import time
 from typing import Any
 from urllib.parse import quote
 
 from connexion import App
 from flask.testing import FlaskClient
+from foca.security.access_control import add_resource_role, list_roles
 import pytest
 from werkzeug.test import TestResponse
 
 from cloud_registry.app import create_app
+from cloud_registry.ga4gh.registry import locks as locks_module
 from cloud_registry.ga4gh.registry import rename as rename_module
 from cloud_registry.ga4gh.registry.permissions import USER_NAMES
 from cloud_registry.ga4gh.registry.service import VERIFIED
@@ -26,6 +30,7 @@ from tests.test_access_control import (
     before_first_call,
     grant,
     grant_group,
+    group_path,
     headers,
     permission_list,
     register,
@@ -34,6 +39,21 @@ from tests.test_access_control import (
 NEW_ID = "NEWSRV"
 # Path of the services, under which roles are granted
 PATH = f"{BASE}/services"
+# Age of locks that are stale
+STALE = timedelta(minutes=5)
+
+
+@pytest.fixture(autouse=True)
+def _fast_locks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Don't wait for locks, and don't resume renames before requests.
+
+    Args:
+        monkeypatch: Fixture to patch the waits and the last resume.
+    """
+    monkeypatch.setattr(locks_module, "LOCK_WAIT", 0)
+    monkeypatch.setattr(locks_module, "LOCK_ATTEMPTS", 2)
+    monkeypatch.setattr(rename_module, "_last_resume", time.monotonic())
+    monkeypatch.setattr(rename_module, "RESUME_INTERVAL", float("inf"))
 
 
 def rename(
@@ -101,26 +121,101 @@ def stored_service(app: App, service_id: str) -> dict[str, Any] | None:
 
 
 def locks(app: App) -> list[dict[str, Any]]:
-    """Read the locks of renames.
+    """Read the stored locks.
 
     Args:
         app: App.
 
     Returns:
-        Stored locks, sorted by identifier.
+        Locks, without their times, sorted.
     """
     with app.app.app_context():
-        return list(get_collection(rename_module.RENAMES).find({}, sort=[("_id", 1)]))
+        found = get_collection(locks_module.LOCKS).find({}, {"started_at": False})
+        return sorted(found, key=repr)
+
+
+def lock_ids(app: App) -> list[Any]:
+    """Get the identifiers of the stored locks.
+
+    Args:
+        app: App.
+
+    Returns:
+        Identifiers (`_id`) of the locks, sorted.
+    """
+    return sorted((lock["_id"] for lock in locks(app)), key=repr)
 
 
 def resume(app: App) -> None:
-    """Finish or roll back all interrupted renames, as on startup.
+    """Resume renames whose locks are stale, as on startup.
 
     Args:
         app: App.
     """
-    with app.app.test_request_context(f"{BASE}/services"):
-        rename_module.resume_renames(min_age=timedelta(0))
+    with app.app.app_context():
+        rename_module.resume_renames()
+
+
+def make_lock(
+    app: App, source: str, target: str = NEW_ID, age: timedelta = STALE
+) -> None:
+    """Store the locks of a rename, as if it was interrupted.
+
+    Args:
+        app: App.
+        source: Identifier of the renamed service.
+        target: New identifier.
+        age: How long ago the rename started.
+    """
+    started_at = now() - age
+    with app.app.app_context():
+        get_collection(locks_module.LOCKS).insert_many(
+            [
+                {
+                    "_id": source,
+                    "to": target,
+                    "path": PATH,
+                    "token": "a",
+                    "started_at": started_at,
+                },
+                {
+                    "_id": target,
+                    "from": source,
+                    "token": "b",
+                    "started_at": started_at,
+                },
+            ]
+        )
+
+
+def make_change_lock(app: App, service_id: str, age: timedelta) -> None:
+    """Store the lock of a change of a service, as if it was running.
+
+    Args:
+        app: App.
+        service_id: Identifier of the service.
+        age: How long ago the change started.
+    """
+    with app.app.app_context():
+        get_collection(locks_module.LOCKS).insert_one(
+            {
+                "_id": {"change": "c"},
+                "service": service_id,
+                "started_at": now() - age,
+            }
+        )
+
+
+def move_service(app: App, source: str, target: str) -> None:
+    """Change the identifier of a stored service, as a rename does first.
+
+    Args:
+        app: App.
+        source: Identifier of the service.
+        target: New identifier.
+    """
+    with app.app.app_context():
+        get_collection("services").update_one({"id": source}, {"$set": {"id": target}})
 
 
 @pytest.fixture
@@ -218,24 +313,6 @@ def test_rename_unknown(client: FlaskClient) -> None:
     assert get(client, NEW_ID).status_code == 404
 
 
-@pytest.mark.parametrize("new_id", [NEW_ID, None])
-def test_rename_taken(client: FlaskClient, service_id: str, new_id: Any) -> None:
-    """Identifiers of registered services, also its own, are taken (`409`)."""
-    if new_id is None:
-        new_id = service_id
-    else:
-        response = client.put(
-            f"{BASE}/services/{new_id}",
-            json={"name": "x"} | _other_service(),
-            headers=headers(ADMIN),
-        )
-        assert response.status_code == 201, response.get_json()
-    response = rename(client, service_id, new_id=new_id)
-    assert response.status_code == 409
-    assert response.get_json()["code"] == "service-id-taken"
-    assert roles(client, service_id) == EXPECTED_ROLES
-
-
 def _other_service() -> dict[str, Any]:
     """Get another service than those `register()` registers.
 
@@ -243,11 +320,27 @@ def _other_service() -> dict[str, Any]:
         Service with its own URL.
     """
     return {
+        "name": "Other",
         "type": {"group": "org.ga4gh", "artifact": "tes", "version": "1.1.0"},
         "organization": {"name": "Other", "url": "https://example.org"},
         "version": "1.0.0",
         "url": "https://other.example.org/ga4gh/tes/v1",
     }
+
+
+@pytest.mark.parametrize("own", [False, True], ids=["other", "own"])
+def test_rename_taken(client: FlaskClient, service_id: str, own: bool) -> None:
+    """Identifiers of registered services, also its own, are taken (`409`)."""
+    new_id = service_id if own else NEW_ID
+    if not own:
+        response = client.put(
+            f"{BASE}/services/{new_id}", json=_other_service(), headers=headers(ADMIN)
+        )
+        assert response.status_code == 201, response.get_json()
+    response = rename(client, service_id, new_id=new_id)
+    assert response.status_code == 409
+    assert response.get_json()["code"] == "service-id-taken"
+    assert roles(client, service_id) == EXPECTED_ROLES
 
 
 @pytest.mark.parametrize(
@@ -273,7 +366,7 @@ def test_rename_invalid_body(
     assert get(client, service_id).status_code == 200
 
 
-@pytest.mark.parametrize("new_id", ["my tes", "a.b", "...", "Types", "#a", "\u00fc"])
+@pytest.mark.parametrize("new_id", ["my tes", "a.b", "...", "Types", "#a", "ü"])
 def test_rename_special(client: FlaskClient, service_id: str, new_id: str) -> None:
     """Identifiers that clients can request (encoded) are accepted."""
     assert rename(client, service_id, new_id=new_id).status_code == 200
@@ -283,35 +376,135 @@ def test_rename_special(client: FlaskClient, service_id: str, new_id: str) -> No
 
 
 @pytest.mark.parametrize("locked", ["source", "target"])
-def test_rename_in_progress(
+def test_rename_locked(
     app: App, client: FlaskClient, service_id: str, locked: str
 ) -> None:
-    """Services and identifiers of renames in progress can't be renamed (`409`).
+    """Identifiers of running renames can't be renamed (`409`).
 
-    Neither as source nor as target, until the rename is finished.
+    Neither as old nor as new identifier.
     """
     other = register(client)
-    with app.app.app_context():
-        lock = (
-            {"_id": service_id, "to": "X", "path": PATH, "started_at": now()}
-            if locked == "source"
-            else {"_id": NEW_ID, "from": "X", "started_at": now()}
-        )
-        get_collection(rename_module.RENAMES).insert_one(lock)
-    source = service_id if locked == "source" else other
+    if locked == "source":
+        make_lock(app, service_id, "X", age=timedelta(0))
+        source = service_id
+    else:
+        make_lock(app, "X", NEW_ID, age=timedelta(0))
+        source = other
+    before = locks(app)
     response = rename(client, source)
     assert response.status_code == 409
-    assert response.get_json()["code"] == "rename-in-progress"
+    assert response.get_json()["code"] == "service-busy"
     assert get(client, source).status_code == 200
-    assert [lock["_id"] for lock in locks(app)] == [
-        service_id if locked == "source" else NEW_ID
+    assert locks(app) == before
+
+
+@pytest.mark.parametrize("identifier", ["source", "target"])
+def test_rename_waits_for_changes(
+    app: App, client: FlaskClient, service_id: str, identifier: str
+) -> None:
+    """Renames don't start while either service is changed (`409`)."""
+    make_change_lock(
+        app, service_id if identifier == "source" else NEW_ID, timedelta(0)
+    )
+    before = locks(app)
+    response = rename(client, service_id)
+    assert response.status_code == 409
+    assert response.get_json()["code"] == "service-busy"
+    assert locks(app) == before
+    assert roles(client, service_id) == EXPECTED_ROLES
+
+
+def test_rename_ignores_stale_changes(
+    app: App, client: FlaskClient, service_id: str
+) -> None:
+    """Locks of changes that are stale (e.g., crashed) don't block renames."""
+    make_change_lock(app, service_id, STALE)
+    assert rename(client, service_id).status_code == 200
+    assert roles(client, NEW_ID) == EXPECTED_ROLES
+
+
+def _changes(service_id: str) -> list[tuple[str, str, dict[str, Any] | None, str]]:
+    """Get changes of a service, as requests.
+
+    Args:
+        service_id: Identifier of the service.
+
+    Returns:
+        Method, path, body and user of each change.
+    """
+    service = f"{BASE}/services/{service_id}"
+    role = {"role": "owner"}
+    return [
+        ("PUT", service, _other_service(), ALICE),
+        ("PUT", service, _other_service(), ADMIN),
+        ("DELETE", service, None, ALICE),
+        ("PUT", f"{service}/permissions/{BOB}", role, ALICE),
+        ("DELETE", f"{service}/permissions/{BOB}", None, ALICE),
+        ("PUT", group_path(service_id, TEAM_GROUP), role, ALICE),
+        ("DELETE", group_path(service_id, TEAM_GROUP), None, ALICE),
     ]
+
+
+def _send(client: FlaskClient, change: tuple[Any, ...]) -> TestResponse:
+    """Send a change of a service.
+
+    Args:
+        client: Test client of the app.
+        change: Method, path, body and user (cf. `_changes()`).
+
+    Returns:
+        Response.
+    """
+    method, path, body, user = change
+    return client.open(path, method=method, json=body, headers=headers(user))
+
+
+@pytest.mark.parametrize("index", range(7))
+def test_changes_wait_for_renames(
+    app: App, client: FlaskClient, service_id: str, index: int
+) -> None:
+    """Services aren't changed while they are renamed (`409`)."""
+    make_lock(app, service_id, age=timedelta(0))
+    response = _send(client, _changes(service_id)[index])
+    assert response.status_code == 409, response.get_json()
+    assert response.get_json()["code"] == "service-busy"
+    assert roles(client, service_id) == EXPECTED_ROLES
+    assert lock_ids(app) == sorted([service_id, NEW_ID], key=repr)
+
+
+@pytest.mark.parametrize("index", range(7))
+def test_changes_during_rename(
+    app: App,
+    client: FlaskClient,
+    service_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+    index: int,
+) -> None:
+    """Changes sent while a service moves don't interleave with the rename.
+
+    E.g., a revoked role would otherwise move to the new identifier, or a
+    deletion leave the renamed service without roles.
+    """
+    responses: list[TestResponse] = []
+    change = _changes(service_id)[index]
+
+    def send() -> None:
+        responses.append(_send(client, change))
+
+    with monkeypatch.context() as patch:
+        before_first_call(patch, "update_one", "services", send)
+        assert rename(client, service_id).status_code == 200
+    assert responses[0].status_code == 409
+    assert responses[0].get_json()["code"] == "service-busy"
+    assert roles(client, NEW_ID) == EXPECTED_ROLES
+    assert get(client, service_id).status_code == 404
+    assert locks(app) == []
 
 
 def test_rename_deleted_concurrently(
     app: App, client: FlaskClient, service_id: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Services deleted before they are renamed are not found; nothing is kept."""
+    """Services deleted before they move are not found; nothing is kept."""
 
     def delete() -> None:
         with app.app.app_context():
@@ -328,7 +521,10 @@ def test_rename_deleted_concurrently(
 def test_rename_taken_concurrently(
     app: App, client: FlaskClient, service_id: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Identifiers registered before the service is renamed are taken."""
+    """Identifiers registered before the service moves are taken.
+
+    E.g., by `POST /services`, which doesn't wait for renames.
+    """
 
     def register_new() -> None:
         with app.app.app_context():
@@ -348,15 +544,8 @@ def test_stale_roles_of_new_id_removed(
     app: App, client: FlaskClient, service_id: str
 ) -> None:
     """Roles left on the new identifier (e.g., of a deleted service) are removed."""
-    stale = register(client, user=BOB)
-    assert rename(client, stale, new_id=NEW_ID).status_code == 200
-    response = client.delete(f"{BASE}/services/{NEW_ID}", headers=headers(BOB))
-    assert response.status_code == 200
-    # a role left on the identifier, as if revoking it had failed
-    with app.app.test_request_context(f"{BASE}/services"):
-        from foca.security.access_control import add_resource_role  # noqa: PLC0415
-
-        add_resource_role(BOB, "owner", f"{BASE}/services/{NEW_ID}")
+    with app.app.app_context():
+        add_resource_role(BOB, "owner", f"{PATH}/{NEW_ID}")
     assert rename(client, service_id).status_code == 200
     assert roles(client, NEW_ID) == EXPECTED_ROLES
 
@@ -366,8 +555,8 @@ def test_failure_after_move_resumed(
 ) -> None:
     """A rename that fails after the service moved is finished later.
 
-    The new identifier then has all roles, the old one none; until then, the
-    rename stays locked.
+    Until then, both identifiers stay locked; once the locks are stale, the
+    new identifier gets all roles, the old one keeps none.
     """
     calls = 0
     original = rename_module.add_resource_role
@@ -384,14 +573,38 @@ def test_failure_after_move_resumed(
         assert rename(client, service_id).status_code == 500
     assert get(client, service_id).status_code == 404
     assert get(client, NEW_ID).status_code == 200
+    assert lock_ids(app) == sorted([service_id, NEW_ID], key=repr)
+    response = rename(client, NEW_ID, new_id="OTHER")
+    assert response.get_json()["code"] == "service-busy"
+    resume(app)
     assert len(locks(app)) == 2
-    assert rename(client, NEW_ID, new_id="OTHER").get_json()["code"] == (
-        "rename-in-progress"
-    )
+    with app.app.app_context():
+        get_collection(locks_module.LOCKS).update_many(
+            {}, {"$set": {"started_at": now() - STALE}}
+        )
     resume(app)
     assert roles(client, NEW_ID) == EXPECTED_ROLES
     assert locks(app) == []
     assert rename(client, NEW_ID, new_id="OTHER").status_code == 200
+
+
+def test_failure_before_move_rolled_back(
+    app: App, client: FlaskClient, service_id: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rename that fails before the service moved is rolled back.
+
+    The service keeps its identifier and roles; the locks are removed.
+    """
+
+    def fail() -> None:
+        raise RuntimeError("database unavailable")
+
+    with monkeypatch.context() as patch:
+        before_first_call(patch, "update_one", "services", fail)
+        assert rename(client, service_id).status_code == 500
+    assert locks(app) == []
+    assert roles(client, service_id) == EXPECTED_ROLES
+    assert get(client, NEW_ID).status_code == 404
 
 
 def test_invalid_role_not_moved(
@@ -422,60 +635,10 @@ def test_invalid_role_not_moved(
     )
 
 
-def test_failure_before_move_rolled_back(
-    app: App, client: FlaskClient, service_id: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A rename that fails before the service moved is rolled back.
-
-    The service keeps its identifier and roles; the locks are removed.
-    """
-
-    def fail() -> None:
-        raise RuntimeError("database unavailable")
-
-    with monkeypatch.context() as patch:
-        before_first_call(patch, "update_one", "services", fail)
-        assert rename(client, service_id).status_code == 500
-    assert locks(app) == []
-    assert roles(client, service_id) == EXPECTED_ROLES
-    assert get(client, NEW_ID).status_code == 404
-
-
-def _lock(app: App, source: str, target: str, age: timedelta) -> None:
-    """Store the locks of a rename, as if it was interrupted.
-
-    Args:
-        app: App.
-        source: Identifier of the renamed service.
-        target: New identifier.
-        age: How long ago the rename started.
-    """
-    started_at = now() - age
-    with app.app.app_context():
-        get_collection(rename_module.RENAMES).insert_many(
-            [
-                {"_id": source, "to": target, "path": PATH, "started_at": started_at},
-                {"_id": target, "from": source, "started_at": started_at},
-            ]
-        )
-
-
-def _move(app: App, source: str, target: str) -> None:
-    """Change the identifier of a stored service, as a rename does first.
-
-    Args:
-        app: App.
-        source: Identifier of the service.
-        target: New identifier.
-    """
-    with app.app.app_context():
-        get_collection("services").update_one({"id": source}, {"$set": {"id": target}})
-
-
 def test_resume_moved(app: App, client: FlaskClient, service_id: str) -> None:
     """Interrupted renames of moved services are finished."""
-    _lock(app, service_id, NEW_ID, timedelta(minutes=5))
-    _move(app, service_id, NEW_ID)
+    make_lock(app, service_id)
+    move_service(app, service_id, NEW_ID)
     resume(app)
     assert roles(client, NEW_ID) == EXPECTED_ROLES
     assert locks(app) == []
@@ -483,7 +646,7 @@ def test_resume_moved(app: App, client: FlaskClient, service_id: str) -> None:
 
 def test_resume_not_moved(app: App, client: FlaskClient, service_id: str) -> None:
     """Interrupted renames of services that didn't move are rolled back."""
-    _lock(app, service_id, NEW_ID, timedelta(minutes=5))
+    make_lock(app, service_id)
     resume(app)
     assert roles(client, service_id) == EXPECTED_ROLES
     assert get(client, NEW_ID).status_code == 404
@@ -497,9 +660,9 @@ def test_resume_both_exist(
 
     Roles are not moved, as they might go to another service; this is logged.
     """
-    _lock(app, service_id, NEW_ID, timedelta(minutes=5))
+    make_lock(app, service_id)
     other = register(client, user=BOB)
-    _move(app, other, NEW_ID)
+    move_service(app, other, NEW_ID)
     resume(app)
     assert roles(client, service_id) == EXPECTED_ROLES
     assert locks(app) == []
@@ -508,41 +671,31 @@ def test_resume_both_exist(
 
 def test_resume_both_deleted(app: App, client: FlaskClient, service_id: str) -> None:
     """Roles left on the old identifier are removed if neither is registered."""
-    _lock(app, service_id, NEW_ID, timedelta(minutes=5))
-    _move(app, service_id, NEW_ID)
+    make_lock(app, service_id)
+    move_service(app, service_id, NEW_ID)
     with app.app.app_context():
         get_collection("services").delete_one({"id": NEW_ID})
     resume(app)
     assert locks(app) == []
-    with app.app.test_request_context(f"{BASE}/services"):
-        from foca.security.access_control import list_roles  # noqa: PLC0415
-
-        assert list_roles(f"{BASE}/services/{service_id}") == []
-        assert list_roles(f"{BASE}/services/{NEW_ID}") == []
-
-
-def test_resume_on_startup(app: App, client: FlaskClient, service_id: str) -> None:
-    """The app resumes interrupted renames when it starts."""
-    _lock(app, service_id, NEW_ID, timedelta(minutes=5))
-    _move(app, service_id, NEW_ID)
-    restarted = create_app()
-    assert roles(restarted.app.test_client(), NEW_ID) == EXPECTED_ROLES
-    assert locks(restarted) == []
+    with app.app.app_context():
+        assert list_roles(f"{PATH}/{service_id}") == []
+        assert list_roles(f"{PATH}/{NEW_ID}") == []
 
 
 def test_resume_recent_kept(app: App, client: FlaskClient, service_id: str) -> None:
-    """Renames that may still run (started recently) are left alone."""
-    _lock(app, service_id, NEW_ID, timedelta(seconds=1))
-    with app.app.test_request_context(f"{BASE}/services"):
-        rename_module.resume_renames()
-    assert len(locks(app)) == 2
+    """Renames and changes that may still run (not stale) are left alone."""
+    make_lock(app, service_id, age=timedelta(seconds=1))
+    make_change_lock(app, "X", timedelta(seconds=1))
+    resume(app)
+    assert len(locks(app)) == 3
 
 
-def test_resume_orphaned_target(app: App, client: FlaskClient) -> None:
-    """Locks of new identifiers without a lock of their rename are removed."""
+def test_resume_removes_stale_locks(app: App, client: FlaskClient) -> None:
+    """Stale locks of changes, and of new identifiers alone, are removed."""
+    make_change_lock(app, "X", STALE)
     with app.app.app_context():
-        get_collection(rename_module.RENAMES).insert_one(
-            {"_id": NEW_ID, "from": "X", "started_at": now() - timedelta(minutes=5)}
+        get_collection(locks_module.LOCKS).insert_one(
+            {"_id": NEW_ID, "from": "X", "token": "b", "started_at": now() - STALE}
         )
     resume(app)
     assert locks(app) == []
@@ -552,13 +705,13 @@ def test_resume_claimed_once(
     app: App, client: FlaskClient, service_id: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Interrupted renames are resumed once, also by concurrent calls."""
-    _lock(app, service_id, NEW_ID, timedelta(minutes=5))
-    _move(app, service_id, NEW_ID)
+    make_lock(app, service_id)
+    move_service(app, service_id, NEW_ID)
     original = rename_module._claim
 
-    def claimed_meanwhile(lock: dict[str, Any]) -> bool:
+    def claimed_meanwhile(lock: dict[str, Any]) -> str | None:
         # another call claims the lock first
-        assert original(lock)
+        assert original(lock) is not None
         return original(lock)
 
     monkeypatch.setattr(rename_module, "_claim", claimed_meanwhile)
@@ -566,11 +719,65 @@ def test_resume_claimed_once(
     assert len(locks(app)) == 2
 
 
-def test_stale_renames_resumed_on_rename(
-    app: App, client: FlaskClient, service_id: str
+def test_resume_failure_logged(
+    app: App,
+    client: FlaskClient,
+    service_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Renames resume interrupted ones first, so a retry succeeds."""
-    _lock(app, service_id, NEW_ID, timedelta(minutes=5))
-    assert rename(client, service_id).status_code == 200
-    assert roles(client, NEW_ID) == EXPECTED_ROLES
-    assert locks(app) == []
+    """Renames that fail to resume are logged and tried again; others resume."""
+    other = register(client)
+    make_lock(app, service_id)
+    make_lock(app, other, "OTHER")
+    move_service(app, service_id, NEW_ID)
+    move_service(app, other, "OTHER")
+    original = rename_module._move_roles
+
+    def fail_first(path: str, source: str, target: str) -> None:
+        if source == service_id:
+            raise RuntimeError("database unavailable")
+        original(path, source, target)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(rename_module, "_move_roles", fail_first)
+        resume(app)
+    assert (
+        f"Interrupted rename of service '{service_id}' to '{NEW_ID}' not resumed"
+        in caplog.text
+    )
+    assert lock_ids(app) == sorted([service_id, NEW_ID], key=repr)
+    assert roles(client, "OTHER") == [
+        {"user_id": ALICE, "name": NAMES[ALICE], "role": "owner"}
+    ]
+
+
+def test_resume_on_startup(app: App, client: FlaskClient, service_id: str) -> None:
+    """The app resumes interrupted renames when it starts."""
+    make_lock(app, service_id)
+    move_service(app, service_id, NEW_ID)
+    restarted = create_app()
+    assert roles(restarted.app.test_client(), NEW_ID) == EXPECTED_ROLES
+    assert locks(restarted) == []
+
+
+@pytest.mark.parametrize(
+    "last, resumed",
+    [(None, True), (time.monotonic, False)],
+    ids=["due", "recent"],
+)
+def test_resume_before_requests(
+    app: App,
+    client: FlaskClient,
+    service_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+    last: Callable[[], float] | None,
+    resumed: bool,
+) -> None:
+    """Requests resume interrupted renames, at most every few seconds."""
+    make_lock(app, service_id)
+    move_service(app, service_id, NEW_ID)
+    monkeypatch.setattr(rename_module, "RESUME_INTERVAL", 10.0)
+    monkeypatch.setattr(rename_module, "_last_resume", None if last is None else last())
+    assert client.get(f"{BASE}/services").status_code == 200
+    assert (locks(app) == []) is resumed

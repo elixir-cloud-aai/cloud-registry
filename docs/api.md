@@ -190,16 +190,20 @@ write, after which the old identifier is not found (`404 Not Found`) and
 links to it break. Owners and maintainers keep their roles, which move right
 after it; clients that stored the old identifier must use the new one.
 New identifiers that are registered (also the service's own) are rejected
-(`409 Conflict`, code `service-id-taken`), as are the identifiers of services
-that are being renamed (`rename-in-progress`), and identifiers that can't be
+(`409 Conflict`, code `service-id-taken`); so are identifiers that can't be
 used in URLs (as for `PUT`, see [Registrations](#registrations); also
-slashes) or roles (commas, line breaks; `400 Bad Request`).
+slashes) or in roles (commas, line breaks), with `400 Bad Request`.
 
-Renames don't need MongoDB transactions (which need a replica set): the
-identifiers are locked while a rename runs (collection `service_renames`).
-If a rename fails after the service moved (e.g., the app crashes), the
-service may lack roles until the rename is finished: by the next rename after
-a minute, or when the app starts. Renames are logged with the admin.
+Renames don't need MongoDB transactions (which need a replica set): while a
+service is renamed, both identifiers are locked (collection `service_locks`),
+so that the rename doesn't interleave with other changes of either service
+(`PUT`, `DELETE`, granting and revoking roles) or other renames. Renames and
+changes wait for each other for up to about a second, then give up (`409
+Conflict`, code `service-busy`; try again). If a rename fails after the
+service moved (e.g., the app crashes), the service may lack roles, and both
+identifiers stay locked, until the rename is finished, a minute after it
+started: when the app next handles a request, or starts. Renames are logged
+with the admin.
 
 ## Timestamps
 
@@ -356,7 +360,7 @@ unlike `detail`, codes are stable, so clients branch on them (e.g., `{"title":
 | `verification-mismatch` | the service has another URL or API type than the one checked (see [Verified services](#verified-services)) |
 | `last-owner` | the subject is the last owner of the service |
 | `service-id-taken` | a service with the new identifier is registered (see [Renaming services](#renaming-services)) |
-| `rename-in-progress` | the service or the new identifier is being renamed (see [Renaming services](#renaming-services)) |
+| `service-busy` | the service, or the new identifier, is being renamed or changed (see [Renaming services](#renaming-services)) |
 | `conflict` | other conflicts (e.g., changes of policy rules set in the configuration via FOCA's permissions API) |
 
 Further codes may be added; treat unknown ones like `conflict`. The API

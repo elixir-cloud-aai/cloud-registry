@@ -8,34 +8,31 @@ the roles on the service and the names of its users.
 MongoDB transactions need a replica set, which deployments (Docker Compose,
 Helm chart) don't run, so renames are ordered to be safe without them:
 
-1. The old and the new identifier are locked (one document each in
-   `RENAMES`, by identifier), so that no other rename uses either until this
-   one is done (`409`).
+1. Both identifiers are locked exclusively (cf.
+   `cloud_registry.ga4gh.registry.locks`): no other rename uses either, and
+   no other change of either service (e.g., of its roles) runs until the
+   rename is done.
 2. Roles left on the new identifier (e.g., by a deleted service whose roles
    couldn't be revoked) are revoked, as when a service is registered.
 3. The service document gets the new identifier, in a single write: the
    service is never registered under both identifiers, and its old one
    returns `404` from then on. The unique index of identifiers rejects new
-   identifiers registered meanwhile (`409`); if the service was deleted
-   meanwhile, nothing moves (`404`). Up to here, failures release the locks
-   and leave the service as it was.
+   identifiers registered meanwhile (e.g., by `POST /services`); up to here,
+   failures release the locks and leave the service as it was.
 4. The roles and names are copied to the new identifier, then removed from
-   the old one, and the locks released. Roles changed on the old identifier
-   before step 3 are copied; after step 3, FOCA's helpers reject changes of
-   roles on it, as the service doesn't exist.
+   the old one, and the locks released.
 
 If step 4 fails (e.g., the app crashes, or the database is unavailable), the
-service may lack roles under its new identifier until the rename is resumed
-(cf. `resume_renames()`): on the next rename, and when the app starts, for
-renames that started at least `RENAME_TIMEOUT` ago (so that running ones are
-not resumed). Whether the service moved is told from which identifiers are
-registered: it is finished if only the new one is, rolled back if the old one
-still is.
+service may lack roles under its new identifier, and both identifiers stay
+locked, until the rename is resumed (cf. `resume_renames()`), once its locks
+are stale.
 """
 
-from datetime import datetime, timedelta
+from enum import Enum
 import logging
+import time
 from typing import Any
+from uuid import uuid4
 
 from foca.security.access_control import (
     add_resource_role,
@@ -48,7 +45,14 @@ from foca.security.access_control.foca_casbin_adapter.casbin_rule import (
 from foca.utils.logging import escape_log_value
 from pymongo.errors import DuplicateKeyError
 
-from cloud_registry.exceptions import CodedConflict, NotFound, problem
+from cloud_registry.exceptions import CodedConflict, NotFound, ServiceBusy, problem
+from cloud_registry.ga4gh.registry.locks import (
+    LOCKS,
+    lock_exclusive,
+    remove_stale_changes,
+    stale_before,
+    unlock,
+)
 from cloud_registry.ga4gh.registry.permissions import (
     USER_NAMES,
     current_user,
@@ -64,14 +68,11 @@ from cloud_registry.ga4gh.registry.service import (
 from cloud_registry.utils import format_time, get_collection, now
 
 logger = logging.getLogger(__name__)
-# Collection with the locks of renames: per rename, a document for the old
-# identifier (`_id`, with the new one as `to`) and one for the new identifier
-# (`_id`, with the old one as `from`); both with the time the rename started
-# (`started_at`), and the old one with the path of the services (`path`)
-RENAMES = "service_renames"
-# Time after which renames that haven't finished are resumed; renames take a
-# few writes, so they are done by then unless they failed
-RENAME_TIMEOUT = timedelta(minutes=1)
+# Minimum time between checks for interrupted renames per worker, on
+# requests (cf. `resume_renames_periodically()`), in seconds
+RESUME_INTERVAL = 10.0
+# Time of the last check for interrupted renames in this worker (monotonic)
+_last_resume: float | None = None
 
 
 class ServiceIdTaken(CodedConflict):
@@ -86,23 +87,21 @@ class ServiceIdTaken(CodedConflict):
         )
 
 
-class RenameInProgress(CodedConflict):
-    """The service or the new identifier is being renamed."""
+class _Moved(Enum):
+    """Outcome of moving a service document (cf. `_start()`)."""
 
-    problem_code = "rename-in-progress"
-
-    def __init__(self) -> None:
-        """Create the exception, with a description of what to do."""
-        super().__init__(
-            "The service or the new identifier is being renamed; try again later."
-        )
+    MOVED = "moved"
+    TAKEN = "taken"
+    GONE = "gone"
 
 
 # POST /services/{serviceId}/rename
 def renameService(serviceId: str, rename: dict[str, Any], **kwargs: Any) -> Any:
     """Change the identifier of a service (cf. the module docstring).
 
-    Interrupted renames are resumed first (cf. `resume_renames()`).
+    Errors with a description specific to the request are returned rather
+    than raised, so that their problem details have it (cf.
+    `cloud_registry.exceptions.problem()`).
 
     Args:
         serviceId: Identifier of the service.
@@ -112,16 +111,14 @@ def renameService(serviceId: str, rename: dict[str, Any], **kwargs: Any) -> Any:
 
     Returns:
         New identifier; or an error response: `400` for identifiers that
-        can't be used in URLs or roles, `409` if a service with the new
-        identifier is registered, or if the service or the new identifier is
-        being renamed.
+        can't be used in roles, `409` if a service with the new identifier is
+        registered, or if either identifier is being renamed or changed.
 
     Raises:
         cloud_registry.exceptions.NotFound: The service doesn't exist, or was
             deleted meanwhile.
     """
     new_id: str = rename["id"]
-    resume_renames()
     try:
         _check_id(new_id)
     except InvalidService as exc:
@@ -136,26 +133,17 @@ def renameService(serviceId: str, rename: dict[str, Any], **kwargs: Any) -> Any:
     if service_exists(new_id):
         return problem(ServiceIdTaken())
     path = services_path()
-    if not _lock(path, serviceId, new_id):
-        return problem(RenameInProgress())
-    try:
-        # As when a service is registered (cf. `_register_service()`); the
-        # new identifier is not registered (checked above), unless an admin
-        # registers it concurrently, which then fails or loses its roles
-        remove_permissions(new_id)
-        moved = _move_service(serviceId, new_id)
-    except DuplicateKeyError:
-        _unlock(serviceId, new_id)
+    tokens = _lock(path, serviceId, new_id)
+    if tokens is None:
+        return problem(ServiceBusy())
+    moved = _start(serviceId, new_id, tokens)
+    if moved is _Moved.TAKEN:
         return problem(ServiceIdTaken())
-    except Exception:
-        _unlock(serviceId, new_id)
-        raise
-    if not moved:
-        _unlock(serviceId, new_id)
+    if moved is _Moved.GONE:
         raise NotFound
     # failures leave the locks, so that the rename is resumed
     _move_roles(path, serviceId, new_id)
-    _unlock(serviceId, new_id)
+    _unlock(serviceId, new_id, tokens)
     logger.info(
         "Service '%s' renamed to '%s' by '%s'.",
         escape_log_value(serviceId),
@@ -188,65 +176,74 @@ def _check_id(new_id: str) -> None:
         ) from exc
 
 
-def _lock(path: str, source: str, target: str) -> bool:
-    """Lock the identifiers of a rename.
+def _lock(path: str, source: str, target: str) -> tuple[str, str] | None:
+    """Lock both identifiers of a rename (cf. `lock_exclusive()`).
 
     Args:
         path: Path of the services, under which roles are granted (cf.
-            `services_path()`).
+            `services_path()`), stored for resuming the rename.
         source: Old identifier.
         target: New identifier.
 
     Returns:
-        Whether both were locked; `False` if either is locked already (then
-        neither is locked by this call).
+        Tokens of the locks of the old and new identifier, or `None` if
+        either is locked or being changed (then neither is locked).
     """
-    collection = get_collection(RENAMES)
-    started_at = now()
-    try:
-        collection.insert_one(
-            {"_id": source, "to": target, "path": path, "started_at": started_at}
-        )
-    except DuplicateKeyError:
-        return False
-    try:
-        collection.insert_one({"_id": target, "from": source, "started_at": started_at})
-    except DuplicateKeyError:
-        collection.delete_one({"_id": source, "to": target})
-        return False
-    return True
+    source_token = lock_exclusive(source, to=target, path=path)
+    if source_token is None:
+        return None
+    target_token = lock_exclusive(target, **{"from": source})
+    if target_token is None:
+        unlock(source, source_token)
+        return None
+    return source_token, target_token
 
 
-def _unlock(source: str, target: str) -> None:
+def _unlock(source: str, target: str, tokens: tuple[str, str]) -> None:
     """Release the locks of a rename (cf. `_lock()`).
 
+    The lock of the new identifier first, so that no lock of a new
+    identifier is left without the lock of its rename.
+
     Args:
         source: Old identifier.
         target: New identifier.
+        tokens: Tokens of the locks of the old and new identifier.
     """
-    collection = get_collection(RENAMES)
-    collection.delete_one({"_id": target, "from": source})
-    collection.delete_one({"_id": source, "to": target})
+    unlock(target, tokens[1])
+    unlock(source, tokens[0])
 
 
-def _move_service(source: str, target: str) -> bool:
-    """Change the identifier of a stored service, renewing `updatedAt`.
+def _start(source: str, target: str, tokens: tuple[str, str]) -> _Moved:
+    """Move the service document to the new identifier (steps 2 and 3).
+
+    Unless the document moved, the locks are released, also on errors.
 
     Args:
         source: Old identifier.
         target: New identifier.
+        tokens: Tokens of the locks (cf. `_lock()`).
 
     Returns:
-        Whether the service was changed; `False` if it doesn't exist.
-
-    Raises:
-        pymongo.errors.DuplicateKeyError: A service with the new identifier
-            is registered.
+        Whether the service moved, the new identifier was registered
+        meanwhile, or the service was deleted meanwhile.
     """
-    result = get_collection("services").update_one(
-        {"id": source}, {"$set": {"id": target, UPDATED: format_time(now())}}
-    )
-    return result.matched_count > 0
+    outcome = _Moved.GONE
+    try:
+        # As when a service is registered (cf. `_register_service()`); the
+        # new identifier is locked, and wasn't registered when checked
+        remove_permissions(target)
+        result = get_collection("services").update_one(
+            {"id": source}, {"$set": {"id": target, UPDATED: format_time(now())}}
+        )
+        if result.matched_count:
+            outcome = _Moved.MOVED
+    except DuplicateKeyError:
+        outcome = _Moved.TAKEN
+    finally:
+        if outcome is not _Moved.MOVED:
+            _unlock(source, target, tokens)
+    return outcome
 
 
 def _move_roles(path: str, source: str, target: str) -> None:
@@ -291,65 +288,93 @@ def _move_roles(path: str, source: str, target: str) -> None:
     names.delete_many({"service_id": source})
 
 
-def resume_renames(min_age: timedelta = RENAME_TIMEOUT) -> None:
-    """Finish or roll back renames that were interrupted.
+def resume_renames() -> None:
+    """Resume renames whose locks are stale, and remove other stale locks.
 
-    For renames that started at least `min_age` ago (cf. the module
-    docstring): renames of services that are only registered under their
-    new identifier are finished (cf. `_move_roles()`); renames of services
-    that are still registered under their old identifier are rolled back,
-    i.e., their locks released (nothing else has changed then); if both
-    identifiers are registered (e.g., one was registered again meanwhile),
-    too, with a warning, as roles might otherwise move to another service; if
-    neither is, the roles left on the old identifier are removed. Each rename
-    is resumed once, also by concurrent calls (cf. `_claim()`). Locks of new
-    identifiers whose rename has no lock are removed.
+    Renames are finished or rolled back (cf. `_finish()`), each once, also
+    by concurrent calls (cf. `_claim()`); failures are logged, so that one
+    rename doesn't block others or the app (it is tried again by the next
+    call). Stale locks of changes, and locks of new identifiers without a
+    lock of their rename, are removed.
 
-    Must be called in an app context.
-
-    Args:
-        min_age: How long ago renames must have started to be resumed.
+    Called when the app starts and before requests (cf.
+    `resume_renames_periodically()`); must be called in an app context.
     """
-    collection = get_collection(RENAMES)
-    cutoff = now() - min_age
-    stale = {"started_at": {"$lte": cutoff}}
+    collection = get_collection(LOCKS)
+    stale = {"started_at": {"$lte": stale_before()}}
     for lock in collection.find({"to": {"$exists": True}, **stale}):
-        if _claim(lock):
-            _finish(lock["path"], lock["_id"], lock["to"])
+        token = _claim(lock)
+        if token is None:
+            continue
+        try:
+            _finish(lock["path"], lock["_id"], lock["to"], token)
+        except Exception:
+            logger.exception(
+                "Interrupted rename of service '%s' to '%s' not resumed; "
+                "tried again later.",
+                escape_log_value(lock["_id"]),
+                escape_log_value(lock["to"]),
+            )
     for lock in collection.find({"from": {"$exists": True}, **stale}):
         if not collection.count_documents(
             {"_id": lock["from"], "to": lock["_id"]}, limit=1
         ):
-            collection.delete_one({"_id": lock["_id"], "from": lock["from"]})
+            unlock(lock["_id"], lock["token"])
+    remove_stale_changes()
 
 
-def _claim(lock: dict[str, Any]) -> bool:
+def resume_renames_periodically() -> None:
+    """Resume interrupted renames, at most every `RESUME_INTERVAL` seconds.
+
+    Called before each request (cf. `cloud_registry.app.create_app()`), so
+    that interrupted renames are resumed soon after their locks are stale,
+    not only when the app starts.
+    """
+    global _last_resume  # noqa: PLW0603 (per worker)
+    current = time.monotonic()
+    if _last_resume is not None and current - _last_resume < RESUME_INTERVAL:
+        return
+    _last_resume = current
+    resume_renames()
+
+
+def _claim(lock: dict[str, Any]) -> str | None:
     """Claim an interrupted rename, so that only one call resumes it.
 
-    Its start is set to the current time, unless it changed since the lock
+    The token of the lock is the compare-and-swap value: a new one is set,
+    with the current time as start, unless the token changed since the lock
     was read (i.e., another call claimed it).
 
     Args:
         lock: Lock of the old identifier, as read.
 
     Returns:
-        Whether the rename was claimed.
+        New token of the lock, or `None` if another call claimed it.
     """
-    started_at: datetime = lock["started_at"]
-    claimed = get_collection(RENAMES).find_one_and_update(
-        {"_id": lock["_id"], "started_at": started_at},
-        {"$set": {"started_at": now()}},
+    token = uuid4().hex
+    claimed = get_collection(LOCKS).find_one_and_update(
+        {"_id": lock["_id"], "token": lock["token"]},
+        {"$set": {"token": token, "started_at": now()}},
     )
-    return claimed is not None
+    return None if claimed is None else token
 
 
-def _finish(path: str, source: str, target: str) -> None:
-    """Finish or roll back an interrupted rename (cf. `resume_renames()`).
+def _finish(path: str, source: str, target: str, token: str) -> None:
+    """Finish or roll back an interrupted rename.
+
+    - Only the new identifier is registered: the roles are moved.
+    - The old one is still registered: rolled back, i.e., the locks released
+      (nothing else changed before the service moved).
+    - Both are registered (e.g., the new one by `POST /services`): rolled
+      back, with a warning, as roles might otherwise move to another service.
+    - Neither is (the service was deleted after it moved): the roles left on
+      the old identifier are removed.
 
     Args:
         path: Path of the services, under which roles are granted.
         source: Old identifier.
         target: New identifier.
+        token: Token of the claimed lock of the old identifier.
     """
     names = (escape_log_value(source), escape_log_value(target))
     source_exists, target_exists = service_exists(source), service_exists(target)
@@ -373,4 +398,5 @@ def _finish(path: str, source: str, target: str) -> None:
             *names,
             names[0],
         )
-    _unlock(source, target)
+    get_collection(LOCKS).delete_one({"_id": target, "from": source})
+    unlock(source, token)
