@@ -440,6 +440,8 @@ paths:
               schema:
                 type: string
                 description: Identifier of the user.
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -522,6 +524,8 @@ paths:
               schema:
                 type: string
                 description: The group.
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -764,10 +768,13 @@ components:
         Identifier of the user, i.e., the `sub` claim of the user's tokens
         (e.g., `abc123@login.example.org`). Not `groups`: the
         path is then that of the roles of groups without a group, which is
-        not found (`404`).
+        not found (`404`). `.` and `..` are not allowed (`400`), as they are
+        path segments of their own in URLs.
       required: true
       schema:
         type: string
+        # anything but `.` and `..` (dot segments in URLs)
+        pattern: '^(?!\.\.?$)'
     Group:
       name: group
       in: path
@@ -777,12 +784,15 @@ components:
         `urn:example:group:registry-team#login.example.org`), URL-encoded
         (e.g., `#` as `%23`; may contain `/`, but not start with it: the
         path then has a double slash, which is redirected to the path
-        without it, i.e., to another group).
+        without it, i.e., to another group). `.` and `..` are not allowed
+        (`400`), as they are path segments of their own in URLs.
       required: true
       schema:
         type: string
-        # may contain slashes (e.g., URLs)
+        # may contain slashes (e.g., URLs); anything but `.` and `..` (dot
+        # segments in URLs)
         format: path
+        pattern: '^(?!\.\.?$)'
   responses:
     ServiceCreated:
       description: The service was successfully registered.

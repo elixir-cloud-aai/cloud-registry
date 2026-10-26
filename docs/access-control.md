@@ -212,7 +212,9 @@ curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/<id>/permissions/g
 Granting roles to groups the owner is not a member of is refused (`403
 Forbidden`), as owners could otherwise hand a service to any group; admins can
 grant roles to any group. Any owner can revoke the roles of a group
-(`DELETE /services/<id>/permissions/groups/<group>`).
+(`DELETE /services/<id>/permissions/groups/<group>`). Users and groups `.` and
+`..` (which clients resolve in URLs, as `encodeURIComponent` leaves dots
+unencoded) are rejected (`400 Bad Request`).
 `GET /services/<id>/permissions` lists the roles of groups together with those
 of users, as `{"group": <group>, "role": <role>}` (users: `user_id`,
 `name`, `role`). Groups count as owners: the last user owner can be removed

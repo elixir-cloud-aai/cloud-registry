@@ -1208,6 +1208,34 @@ def test_group_with_slash(client: FlaskClient) -> None:
     assert group_permissions(client, service_id) == []
 
 
+@pytest.mark.parametrize("principal", [".", "..", "%2E", "%2E%2E"])
+def test_dot_segment_principals(client: FlaskClient, principal: str) -> None:
+    """Users and groups that are dot segments are rejected.
+
+    Clients would resolve their URLs to other ones (e.g., `encodeURIComponent`
+    leaves dots unencoded).
+    """
+    service_id = register(client)
+    for kind in ("", "groups/"):
+        url = f"{BASE}/services/{service_id}/permissions/{kind}{principal}"
+        response = client.put(url, json={"role": "owner"}, headers=headers(ADMIN))
+        assert response.status_code == 400
+        assert client.delete(url, headers=headers(ADMIN)).status_code == 400
+    assert permission_list(client, service_id) == [
+        {"user_id": ALICE, "name": NAMES[ALICE], "role": "owner"}
+    ]
+
+
+@pytest.mark.parametrize("principal", ["...", ".a", "a."])
+def test_dotted_principals(client: FlaskClient, principal: str) -> None:
+    """Users and groups with dots that aren't dot segments are accepted."""
+    service_id = register(client)
+    assert grant(client, service_id, principal, "maintainer", ADMIN) == 200
+    assert grant_group(client, service_id, principal, "maintainer", ADMIN) == 200
+    assert revoke(client, service_id, principal, as_user=ADMIN) == 200
+    assert revoke_group(client, service_id, principal, as_user=ADMIN) == 200
+
+
 def test_users_and_groups_distinct(client: FlaskClient) -> None:
     """A user whose identifier starts with `group:` is not a group."""
     service_id = register(client)
