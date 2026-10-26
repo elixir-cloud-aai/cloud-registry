@@ -56,7 +56,7 @@ from foca.utils.logging import escape_log_value
 from pymongo.errors import DuplicateKeyError
 
 from cloud_registry.exceptions import (
-    Conflict,
+    CodedConflict,
     Forbidden,
     NotFound,
     problem,
@@ -103,8 +103,10 @@ AddedResponse = tuple[dict[str, str], int] | Response
 RemovedResponse = dict[str, str] | Response
 
 
-class PendingService(Conflict):
+class PendingService(CodedConflict):
     """A user other than an admin updates a pending service."""
+
+    problem_code = "pending-service"
 
     def __init__(self) -> None:
         """Create the exception, with a description of what to do."""
@@ -119,8 +121,10 @@ class PendingService(Conflict):
 UNUSED_TYPES_BATCH = 100
 
 
-class UnusedTypesLimit(Conflict):
+class UnusedTypesLimit(CodedConflict):
     """A user other than an admin has added too many unused types."""
+
+    problem_code = "unused-types-limit"
 
     def __init__(self, limit: int) -> None:
         """Create the exception, with a description of what to do.
@@ -133,6 +137,26 @@ class UnusedTypesLimit(Conflict):
             "many as allowed; use them for services, or ask an admin to "
             "remove them, before adding others."
         )
+
+
+class ServiceTypeRegistered(CodedConflict):
+    """The service type to add is registered (also if it is pending)."""
+
+    problem_code = "service-type-registered"
+
+    def __init__(self) -> None:
+        """Create the exception."""
+        super().__init__("The service type is registered.")
+
+
+class ServiceTypeInUse(CodedConflict):
+    """The service type to remove is the type of services."""
+
+    problem_code = "service-type-in-use"
+
+    def __init__(self) -> None:
+        """Create the exception, with a description of what to do."""
+        super().__init__(IN_USE)
 
 
 class UnregisteredServiceType(InvalidService):
@@ -642,7 +666,7 @@ def postServiceType(service_type: dict[str, Any], **kwargs: Any) -> AddedRespons
     except InvalidService as exc:
         return problem(exc)
     if service_type_exists(document):
-        return problem(Conflict("The service type is registered."))
+        return problem(ServiceTypeRegistered())
     try:
         check_unused_types()
     except UnusedTypesLimit as exc:
@@ -655,7 +679,7 @@ def postServiceType(service_type: dict[str, Any], **kwargs: Any) -> AddedRespons
             | ({PENDING: True} if pending else {})
         )
     except DuplicateKeyError:
-        return problem(Conflict("The service type is registered."))
+        return problem(ServiceTypeRegistered())
     logger.info(
         "Service type %s added by '%s'%s.",
         escape_log_value(describe_type(document)),
@@ -694,14 +718,14 @@ def deleteServiceType(
     """
     document = {"group": group, "artifact": artifact, "version": version}
     if _type_in_use(document):
-        return problem(Conflict(IN_USE))
+        return problem(ServiceTypeInUse())
     removed = get_collection("service_types").find_one_and_delete(dict(document))
     if removed is None:
         raise NotFound
     if _type_in_use(document):
         # a service with the type was registered meanwhile
         _restore_type(document, removed)
-        return problem(Conflict(IN_USE))
+        return problem(ServiceTypeInUse())
     logger.info(
         "Service type %s removed by '%s'.",
         escape_log_value(describe_type(document)),
