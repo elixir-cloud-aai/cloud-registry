@@ -3,7 +3,9 @@
 The endpoints of the [GA4GH Service Registry
 API](https://github.com/ga4gh-discovery/ga4gh-service-registry) (version
 1.0.0) are unchanged: the registry does not extend their requests or
-responses. Everything else is added as extra operations and endpoints, all
+responses, except for an extension field of the service info (see
+[Registration rules](#registration-rules)), as the GA4GH specifications
+extend it. Everything else is added as extra operations and endpoints, all
 under the API base path `/ga4gh/registry/v1`:
 
 | Endpoint | Methods | Who |
@@ -59,6 +61,56 @@ semantics differ, so that clients can rely on the registry's data:
   environments](configuration.md#service-environments)).
 - In mode `moderated`, the reads don't list pending services and types to
   other users (see [Pending approvals](#pending-approvals)).
+- `GET /service-info` serves the registration rules of the deployment
+  (`registration_rules`) besides the fields of the GA4GH `Service` (see
+  [Registration rules](#registration-rules)).
+
+## Registration rules
+
+Registrations must follow rules that each deployment configures. So that
+clients (e.g., UIs, the [ELIXIR Cloud
+Components](https://github.com/elixir-cloud-aai/cloud-components)) can check
+registrations as the registry does, e.g., offer only the allowed values in
+forms, `GET /service-info` serves them in `registration_rules`:
+
+```json
+{
+  "id": "org.example.cloud-registry",
+  "name": "Cloud Registry",
+  "...": "...",
+  "registration_rules": {
+    "environments": ["prod", "test", "dev", "staging"],
+    "url_schemes": ["https"],
+    "service_types": "open",
+    "max_unused_service_types": 10
+  }
+}
+```
+
+- `environments`: the values allowed for the environment of services
+  (`environment`, case-sensitive); empty if any value is allowed (see
+  [Service environments](configuration.md#service-environments));
+- `url_schemes`: the schemes allowed in service URLs (`url`): `https`, and
+  `http` if the deployment allows it (see [Service URL
+  schemes](configuration.md#service-url-schemes));
+- `service_types`: who may add service types, `open`, `controlled` or
+  `moderated` (see [Service types](#service-types));
+- `max_unused_service_types`: how many types that no service has users other
+  than admins may have added (`409 Conflict` for further ones); `0` if they
+  can't add types, and not set if there is no limit; concurrent requests of
+  a user can exceed it by their number (see [Service
+  types](configuration.md#service-types)).
+
+The registry builds the rules from its config on each request, so they are
+always those it enforces; the rules for the current user (e.g., whether they
+may add types, as admins always may) are in `GET /me`. Read the rules
+rather than configuring them in clients, which would go out of date when the
+deployment changes them. Like all of the service info, they are public, also
+if the deployment [requires login](access-control.md#requiring-login-for-reads)
+for other reads. The OpenAPI specification describes them as an extension of
+the GA4GH `Service` schema (`RegistryServiceInfo`), as GA4GH APIs extend it
+for their service info (e.g., `TesServiceInfo` of the TES specification);
+their fields are `snake_case`, like the other fields the registry adds.
 
 ## Registrations
 
@@ -184,7 +236,9 @@ types](configuration.md#service-types)):
 
 `GET /me` tells clients whether the current user may add types
 (`may_add_service_types`), e.g., to offer "Add new service type" only then,
-and whether their new types are pending (`service_types_pending`).
+and whether their new types are pending (`service_types_pending`); `GET
+/service-info` tells them the mode and the limit of unused types (see
+[Registration rules](#registration-rules)).
 
 In every mode, only admins can remove types: `DELETE
 /services/types?group=<group>&artifact=<artifact>&version=<version>`

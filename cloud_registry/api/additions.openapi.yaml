@@ -28,6 +28,18 @@ paths:
     get:
       x-openapi-router-controller: foca.api.service_info
       security: []
+      description: |
+        Get the service info of the registry: the GA4GH `Service`, extended
+        with the rules for registrations of the deployment
+        (`registration_rules`), so that clients (e.g., forms) can check
+        registrations as the registry does instead of configuring the rules
+        themselves. Public, also if a deployment requires login for reads.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistryServiceInfo'
   /services:
     get:
       security:
@@ -914,6 +926,83 @@ components:
     ServiceId:
       description: Service identifier.
       type: string
+    # Extension of the GA4GH `Service` schema, as GA4GH APIs extend it for
+    # their service info (e.g., `TesServiceInfo` of the TES specification);
+    # extension fields are snake_case, as the other fields the registry adds
+    RegistryServiceInfo:
+      description: |
+        Service info of the registry: a GA4GH service, with the rules for
+        registrations of the deployment.
+      allOf:
+        - $ref: '#/components/schemas/Service'
+        - type: object
+          required:
+            - registration_rules
+          properties:
+            registration_rules:
+              $ref: '#/components/schemas/RegistrationRules'
+    RegistrationRules:
+      description: |
+        Rules for registrations of services and service types, as configured
+        by the deployment; registrations that break them are rejected. Set
+        by the app from the config in effect, so that clients can check
+        registrations in advance, rather than configuring the rules
+        themselves.
+      type: object
+      required:
+        - environments
+        - url_schemes
+        - service_types
+      additionalProperties: false
+      properties:
+        environments:
+          type: array
+          description: |
+            Values allowed for the environment of services (`environment`;
+            case-sensitive; `400` otherwise); empty if any value is allowed
+            (`custom.endpoints.services.environments`).
+          items:
+            type: string
+          example: ['prod', 'test', 'dev', 'staging']
+        url_schemes:
+          type: array
+          description: |
+            Schemes allowed in service URLs (`url`; `400` otherwise): `https`
+            and, if the deployment allows it, `http`
+            (`custom.endpoints.services.url_schemes`). Links (e.g.,
+            `documentationUrl`) may be HTTP(S) URLs either way.
+          minItems: 1
+          items:
+            type: string
+            enum:
+              - http
+              - https
+          example: ['https']
+        service_types:
+          type: string
+          description: |
+            Who may add service types (`custom.access_control.service_types`):
+            `open`, any authenticated user; `controlled`, admins only;
+            `moderated`, any authenticated user, but types of users other
+            than admins are pending until an admin approves them (see `POST
+            /services/types`). Whether the current user may add types, and
+            whether they are pending, is in `GET /me`.
+          enum:
+            - open
+            - controlled
+            - moderated
+          example: 'open'
+        max_unused_service_types:
+          type: integer
+          minimum: 0
+          description: |
+            How many service types that no service has a user other than an
+            admin may have added (`409` above; see `POST /services/types`);
+            `0` if they can't add types (explicitly or with services). Not
+            set if there is no limit
+            (`custom.access_control.max_unused_service_types: null`).
+            Concurrent requests of a user can exceed it by their number.
+          example: 10
     PermissionRegister:
       description: Role to grant on a service.
       type: object
