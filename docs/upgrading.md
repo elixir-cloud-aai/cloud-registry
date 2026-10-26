@@ -28,11 +28,18 @@ Data is kept. Before upgrading:
    give the policies as a list (see [Service types](#service-types)).
 3. Tell clients that the registry sets the [timestamps](api.md#timestamps)
    now: those that users other than admins send are ignored.
+4. Users other than admins may add at most 10 types that no service has
+   (`custom.access_control.max_unused_service_types`; see [Service
+   types](configuration.md#service-types)); change the limit in the same
+   rollout if needed, and rate-limit `POST /services/types` and `POST
+   /services` at the ingress (see [Rate limits](deployment.md#rate-limits)).
 
 Then upgrade, and restart the app once after the rollout (or upgrade with
 the app scaled to 0 replicas), so that it stores the types of the services
 that pods of 0.4.0 registered during the rollout (see [Service
-types](#service-types)). Switch to the mode `moderated` (see [Service
+types](#service-types)). On startup, the app also creates its new indexes
+and reconciles which services are pending; nothing needs to be done for
+them. Switch to the mode `moderated` (see [Service
 types](configuration.md#service-types)) only after that: while pods of 0.4.0
 still register services, a user's pending type can hide another user's
 service that a pod of 0.4.0 registered with the same type, until an admin
