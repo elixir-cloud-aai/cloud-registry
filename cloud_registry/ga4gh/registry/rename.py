@@ -217,7 +217,9 @@ def _unlock(source: str, target: str, tokens: tuple[str, str]) -> None:
 def _start(source: str, target: str, tokens: tuple[str, str]) -> _Moved:
     """Move the service document to the new identifier (steps 2 and 3).
 
-    Unless the document moved, the locks are released, also on errors.
+    Checks the identifiers again, as they may have changed before they were
+    locked. Unless the document moved, the locks are released, also on
+    errors.
 
     Args:
         source: Old identifier.
@@ -230,8 +232,16 @@ def _start(source: str, target: str, tokens: tuple[str, str]) -> _Moved:
     """
     outcome = _Moved.GONE
     try:
+        # checked again now that both identifiers are locked: the service may
+        # have moved (e.g., by a repeated request), or the new identifier been
+        # registered, since the first checks; its roles must stay then
+        if service_exists(target):
+            outcome = _Moved.TAKEN
+            return outcome
+        if not service_exists(source):
+            return outcome
         # As when a service is registered (cf. `_register_service()`); the
-        # new identifier is locked, and wasn't registered when checked
+        # new identifier is locked, and isn't registered
         remove_permissions(target)
         result = get_collection("services").update_one(
             {"id": source}, {"$set": {"id": target, UPDATED: format_time(now())}}

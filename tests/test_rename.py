@@ -459,7 +459,7 @@ def _send(client: FlaskClient, change: tuple[Any, ...]) -> TestResponse:
     return client.open(path, method=method, json=body, headers=headers(user))
 
 
-@pytest.mark.parametrize("index", range(7))
+@pytest.mark.parametrize("index", range(len(_changes(""))))
 def test_changes_wait_for_renames(
     app: App, client: FlaskClient, service_id: str, index: int
 ) -> None:
@@ -472,7 +472,7 @@ def test_changes_wait_for_renames(
     assert lock_ids(app) == sorted([service_id, NEW_ID], key=repr)
 
 
-@pytest.mark.parametrize("index", range(7))
+@pytest.mark.parametrize("index", range(len(_changes(""))))
 def test_changes_during_rename(
     app: App,
     client: FlaskClient,
@@ -498,6 +498,116 @@ def test_changes_during_rename(
     assert responses[0].get_json()["code"] == "service-busy"
     assert roles(client, NEW_ID) == EXPECTED_ROLES
     assert get(client, service_id).status_code == 404
+    assert locks(app) == []
+
+
+def test_change_retried_after_rename(
+    app: App, client: FlaskClient, service_id: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Changes that wait for a rename go ahead once it finished."""
+
+    def finish() -> None:
+        with app.app.app_context():
+            get_collection(locks_module.LOCKS).delete_many({})
+
+    make_lock(app, service_id, age=timedelta(0))
+    with monkeypatch.context() as patch:
+        fired = before_first_call(patch, "delete_one", locks_module.LOCKS, finish)
+        response = _send(client, _changes(service_id)[2])
+    assert fired
+    assert response.status_code == 200
+    assert get(client, service_id).status_code == 404
+    assert locks(app) == []
+
+
+def test_change_lock_released_on_failure(
+    app: App, client: FlaskClient, service_id: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Changes that fail don't keep their lock (renames aren't blocked)."""
+
+    def fail() -> None:
+        raise RuntimeError("failure")
+
+    with monkeypatch.context() as patch:
+        fired = before_first_call(patch, "delete_one", "services", fail)
+        response = _send(client, _changes(service_id)[2])
+    assert fired
+    assert response.status_code == 500
+    assert locks(app) == []
+    assert rename(client, service_id).status_code == 200
+
+
+def test_stale_rename_blocks_changes(
+    app: App, client: FlaskClient, service_id: str
+) -> None:
+    """Interrupted renames block changes until they are resumed."""
+    make_lock(app, service_id)
+    response = _send(client, _changes(service_id)[2])
+    assert response.status_code == 409
+    assert response.get_json()["code"] == "service-busy"
+    resume(app)
+    assert _send(client, _changes(service_id)[2]).status_code == 200
+
+
+@pytest.mark.parametrize("competitor", ["repeat", "other", "register"])
+def test_target_taken_before_lock(
+    app: App,
+    client: FlaskClient,
+    service_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+    competitor: str,
+) -> None:
+    """Identifiers taken after the checks, before the locks, keep their roles.
+
+    E.g., by a repeated request, a rename of another service to the same
+    identifier, or an admin registering it (regression: the roles of the
+    new identifier were removed).
+    """
+    other = register(client) if competitor == "other" else service_id
+    moved = roles(client, other)
+    competitors = {
+        "repeat": lambda: rename(client, service_id),
+        "other": lambda: rename(client, other),
+        "register": lambda: client.put(
+            f"{BASE}/services/{NEW_ID}", json=_other_service(), headers=headers(ADMIN)
+        ),
+    }
+    responses: list[TestResponse] = []
+    with monkeypatch.context() as patch:
+        before_first_call(
+            patch,
+            "insert_one",
+            locks_module.LOCKS,
+            lambda: responses.append(competitors[competitor]()),
+        )
+        response = rename(client, service_id)
+    assert responses[0].status_code in (200, 201)
+    assert response.status_code == 409
+    assert response.get_json()["code"] == "service-id-taken"
+    assert roles(client, NEW_ID)
+    if competitor != "register":
+        assert roles(client, NEW_ID) == moved
+    if competitor != "repeat":
+        assert roles(client, service_id) == EXPECTED_ROLES
+    assert locks(app) == []
+
+
+def test_rename_deleted_before_lock(
+    app: App, client: FlaskClient, service_id: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Services deleted after the checks, before the locks, are not found."""
+    responses: list[TestResponse] = []
+    with monkeypatch.context() as patch:
+        before_first_call(
+            patch,
+            "insert_one",
+            locks_module.LOCKS,
+            lambda: responses.append(_send(client, _changes(service_id)[2])),
+        )
+        response = rename(client, service_id)
+    assert responses[0].status_code == 200
+    assert response.status_code == 404
+    assert get(client, NEW_ID).status_code == 404
     assert locks(app) == []
 
 
@@ -714,8 +824,11 @@ def test_resume_claimed_once(
         assert original(lock) is not None
         return original(lock)
 
+    finished: list[Any] = []
     monkeypatch.setattr(rename_module, "_claim", claimed_meanwhile)
+    monkeypatch.setattr(rename_module, "_finish", lambda *args: finished.append(args))
     resume(app)
+    assert finished == []
     assert len(locks(app)) == 2
 
 

@@ -899,7 +899,9 @@ components:
     Conflict:
       description: |
         The request conflicts with the current state of the resource; `code`
-        tells why (see the schema `ConflictError`).
+        tells why (see the schema `ConflictError`). E.g., `service-busy` for
+        changes of services (`DELETE /services/{serviceId}`, roles) while they
+        are renamed; try again later.
       content:
         application/json:
           schema:
