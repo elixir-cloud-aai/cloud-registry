@@ -784,15 +784,15 @@ components:
         `urn:example:group:registry-team#login.example.org`), URL-encoded
         (e.g., `#` as `%23`; may contain `/`, but not start with it: the
         path then has a double slash, which is redirected to the path
-        without it, i.e., to another group). `.` and `..` are not allowed
-        (`400`), as they are path segments of their own in URLs.
+        without it, i.e., to another group). Segments `.` and `..` (between
+        slashes, or the whole group) are not allowed (`400`), as clients
+        resolve them in URLs if slashes aren't encoded.
       required: true
       schema:
         type: string
-        # may contain slashes (e.g., URLs); anything but `.` and `..` (dot
-        # segments in URLs)
+        # may contain slashes (e.g., URLs), but no dot segments (`.`, `..`)
         format: path
-        pattern: '^(?!\.\.?$)'
+        pattern: '^(?!(.*/)?\.\.?(/|$))'
   responses:
     ServiceCreated:
       description: The service was successfully registered.

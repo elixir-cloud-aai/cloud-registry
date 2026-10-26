@@ -180,6 +180,9 @@ in the same overlay, too.
   service instead. The role `maintainer` is only granted on services with an
   owner (`400 Bad Request` otherwise, e.g., on services stored before owners
   were introduced: admins grant `owner` first).
+  User identifiers `.` and `..`, and [groups](#roles-of-groups) with such
+  segments (e.g., `a/../b`), are rejected (`400 Bad Request`), as clients
+  resolve them in URLs (`encodeURIComponent` leaves dots unencoded).
 - **Maintainers** can update, but not delete a service.
 - [Admins](#admins) can do everything.
 
@@ -212,9 +215,7 @@ curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/<id>/permissions/g
 Granting roles to groups the owner is not a member of is refused (`403
 Forbidden`), as owners could otherwise hand a service to any group; admins can
 grant roles to any group. Any owner can revoke the roles of a group
-(`DELETE /services/<id>/permissions/groups/<group>`). Users and groups `.` and
-`..` (which clients resolve in URLs, as `encodeURIComponent` leaves dots
-unencoded) are rejected (`400 Bad Request`).
+(`DELETE /services/<id>/permissions/groups/<group>`).
 `GET /services/<id>/permissions` lists the roles of groups together with those
 of users, as `{"group": <group>, "role": <role>}` (users: `user_id`,
 `name`, `role`). Groups count as owners: the last user owner can be removed
