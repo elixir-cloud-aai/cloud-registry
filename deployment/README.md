@@ -728,6 +728,21 @@ kubectl rollout restart deployment/cloud-registry -n <namespace>
 Set `config.custom.access_control.service_types: moderated` only after
 that, in a later upgrade.
 
+### To app version 0.6.0
+
+Data is kept. Rendering fails while removed keys are set:
+
+- `config.custom.endpoints.service` (the public URL of the app): `hostName`
+  sets `https://<hostName>/`, as before; set `publicUrl` for any other URL,
+  e.g., with the path prefix of a proxy (`https://example.org/registry/`).
+- `config.custom.access_control.require_admin`: set
+  `config.security.access_control.require_admin` instead.
+
+Commands that load `cloud_registry.gunicorn_config` must load FOCA's
+`foca.gunicorn_config` (same settings). See [From
+0.5.0](https://cloud-registry.readthedocs.io/en/latest/upgrading/#from-050)
+for the other changes.
+
 ## Probes
 
 - **App:** ready once it serves its Swagger UI (`/ga4gh/registry/v1/ui/`;
