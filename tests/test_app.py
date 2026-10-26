@@ -56,6 +56,13 @@ HTTP_METHODS = {"get", "put", "post", "delete", "options", "head", "patch", "tra
 # Public URL of the app, as configured in `config.yaml`
 PUBLIC_URL = "https://0.0.0.0:8080"
 TIMESTAMPS = {"createdAt", "updatedAt"}
+# Registration rules in the service info, with the defaults of `config.yaml`
+DEFAULT_RULES: dict[str, Any] = {
+    "environments": ["prod", "test", "dev", "staging"],
+    "url_schemes": ["https"],
+    "service_types": "open",
+    "max_unused_service_types": 10,
+}
 # Times of registrations and updates of services (cf. `_set_service_clock()`)
 TIME = datetime(2026, 10, 20, 12, 34, 56, 789000, tzinfo=UTC)
 FORMATTED_TIME = "2026-10-20T12:34:56.789Z"
@@ -1223,13 +1230,115 @@ def test_get_service_types(client: FlaskClient, headers: dict[str, str]) -> None
 def test_service_info(app: App, client: FlaskClient) -> None:
     """Service info is served by FOCA from the config.
 
-    With the package version, and without timestamps that aren't configured.
+    With the package version and the registration rules, and without
+    timestamps that aren't configured.
     """
     config = _service_info(app)
     response = client.get(f"{BASE}/service-info")
     assert response.status_code == 200
-    assert response.get_json() == {**config, "version": version("cloud-registry")}
+    assert response.get_json() == {
+        **config,
+        "version": version("cloud-registry"),
+        "registration_rules": DEFAULT_RULES,
+    }
     assert not TIMESTAMPS & response.get_json().keys()
+
+
+def test_registration_rules_configured(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
+) -> None:
+    """The service info serves the registration rules of the config in effect.
+
+    Set in a config overlay; without a limit of unused types (`null`),
+    `max_unused_service_types` is left out.
+    """
+    overlay = yaml.safe_load(CONFIG_OVERLAY.read_text())
+    overlay["custom"] = {
+        "endpoints": {
+            "services": {"url_schemes": ["http", "https"], "environments": []}
+        },
+        "access_control": {
+            "service_types": "moderated",
+            "max_unused_service_types": None,
+        },
+    }
+    _set_overlay(monkeypatch, tmp_path, overlay)
+    client = cloud_registry.app.create_app().app.test_client()
+    response = client.get(f"{BASE}/service-info")
+    assert response.status_code == 200
+    assert response.get_json()["registration_rules"] == {
+        "environments": [],
+        "url_schemes": ["http", "https"],
+        "service_types": "moderated",
+    }
+
+
+def test_registration_rules_follow_config(app: App, client: FlaskClient) -> None:
+    """The registration rules are read from the config on each request.
+
+    So they match the rules the registry enforces, e.g., a limit of `0`.
+    """
+    custom = _custom_config(app)
+    custom.access_control.service_types = "controlled"
+    custom.access_control.max_unused_service_types = 0
+    custom.endpoints.services.environments = ["production"]
+    rules = client.get(f"{BASE}/service-info").get_json()["registration_rules"]
+    assert rules == {
+        **DEFAULT_RULES,
+        "environments": ["production"],
+        "service_types": "controlled",
+        "max_unused_service_types": 0,
+    }
+
+
+def test_registration_rules_in_spec(client: FlaskClient) -> None:
+    """The specification declares the registration rules of the service info.
+
+    As an extension of the GA4GH `Service` schema, which responses are
+    validated against.
+    """
+    spec = client.get(f"{BASE}/openapi.json").get_json()
+    response = spec["paths"]["/service-info"]["get"]["responses"]["200"]
+    schema = response["content"]["application/json"]["schema"]
+    assert schema == {"$ref": "#/components/schemas/RegistryServiceInfo"}
+    info = spec["components"]["schemas"]["RegistryServiceInfo"]
+    assert info["allOf"][0] == {"$ref": "#/components/schemas/Service"}
+    rules = spec["components"]["schemas"]["RegistrationRules"]
+    assert set(rules["properties"]) == set(DEFAULT_RULES)
+    assert set(rules["required"]) == set(DEFAULT_RULES) - {"max_unused_service_types"}
+
+
+def test_registration_rules_validated(app: App, client: FlaskClient) -> None:
+    """Responses with registration rules that the specification rejects fail.
+
+    The schema of the extension applies to the responses.
+    """
+    custom = _custom_config(app)
+    custom.access_control.service_types = "closed"  # type: ignore[assignment]
+    assert client.get(f"{BASE}/service-info").status_code == 500
+
+
+@pytest.mark.parametrize(
+    "service_info",
+    [
+        {"service": {"registration_rules": {"environments": []}}},
+        {"service": {"registration_rules": None}},
+        {"runtime_fields": None},
+    ],
+)
+def test_create_app_registration_rules_configured(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    service_info: dict[str, Any],
+) -> None:
+    """`create_app()` fails if the config sets or drops the registration rules.
+
+    They must match the rules the registry enforces.
+    """
+    _set_overlay(monkeypatch, tmp_path, _service_info_overlay(service_info))
+    with pytest.raises(RuntimeError, match="registration_rules"):
+        cloud_registry.app.create_app()
 
 
 def test_service_info_served_by_foca(app: App) -> None:
