@@ -254,6 +254,10 @@ def test_rename(app: App, client: FlaskClient, service_id: str) -> None:
 
     They are only found under the new identifier; `updatedAt` is renewed.
     """
+    with app.app.app_context():
+        get_collection("services").update_one(
+            {"id": service_id}, {"$set": {"updatedAt": "2020-01-01T00:00:00Z"}}
+        )
     before = stored_service(app, service_id)
     assert before is not None
     response = rename(client, service_id)
@@ -262,7 +266,7 @@ def test_rename(app: App, client: FlaskClient, service_id: str) -> None:
     after = stored_service(app, NEW_ID)
     assert after is not None
     assert after["createdAt"] == before["createdAt"]
-    assert after["updatedAt"] >= before["updatedAt"]
+    assert after["updatedAt"] > before["updatedAt"]
     assert after[VERIFIED] == before[VERIFIED]
     assert get(client, NEW_ID).get_json()["id"] == NEW_ID
     assert get(client, service_id).status_code == 404
