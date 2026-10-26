@@ -7,8 +7,6 @@ HTTP API, see [API](api.md) and the Swagger UI of a deployment.
 
 ::: cloud_registry.app
 
-::: cloud_registry.gunicorn_config
-
 ## Configuration
 
 ::: cloud_registry.service_models.custom_config

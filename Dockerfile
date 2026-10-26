@@ -55,10 +55,10 @@ ENV HEALTHCHECK_URL=http://localhost:8080/ga4gh/registry/v1/ui/
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen(os.environ['HEALTHCHECK_URL'], timeout=4)"]
 
-## Serve with Gunicorn (settings in `cloud_registry/gunicorn_config.py`;
+## Serve with Gunicorn (FOCA's settings for containers, `foca.gunicorn_config`;
 ## override them via `GUNICORN_CMD_ARGS`, e.g., `--workers 2`); each worker
 ## creates the app (no preloading) and runs its startup checks, and Gunicorn
 ## exits if they fail. `python -m cloud_registry.app` runs Flask's development
 ## server instead
-CMD ["gunicorn", "--config", "python:cloud_registry.gunicorn_config", \
+CMD ["gunicorn", "--config", "python:foca.gunicorn_config", \
   "cloud_registry.app:create_app()"]

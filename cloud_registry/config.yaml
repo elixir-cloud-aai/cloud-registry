@@ -7,7 +7,7 @@
 # Cf. https://foca.readthedocs.io/en/latest/configuration/server/
 # `host` and `port` apply to the development server
 # (`python -m cloud_registry.app`) only: the image serves the app with
-# Gunicorn on port 8080 (`--bind`, see `cloud_registry/gunicorn_config.py`)
+# Gunicorn on port 8080 (`--bind`, see FOCA's `foca.gunicorn_config`)
 server:
     host: '0.0.0.0'
     port: 8080

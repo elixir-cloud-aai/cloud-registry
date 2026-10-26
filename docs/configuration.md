@@ -250,17 +250,15 @@ default, the app's default; see [Ingress](deployment.md#ingress)).
 ## Server
 
 The image serves the app with [Gunicorn](https://gunicorn.org/) on port 8080,
-with settings for a small container in
-[`cloud_registry/gunicorn_config.py`](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/cloud_registry/gunicorn_config.py):
-one worker process with 4 threads, workers restarted if their main loop
-doesn't respond for 30 seconds (requests run in threads, so slow requests
-don't count), 20 seconds to finish requests on shutdown, idle keep-alive
-connections closed after 100 seconds, and Gunicorn's size limits of the request
-line and headers. Keep the keep-alive timeout longer than that of a reverse
-proxy in front of the app for its connections to the app (e.g., 60 seconds
-for ingress-nginx, 90 seconds for Traefik): otherwise, the proxy may reuse a
-connection just as Gunicorn closes it, and the request fails (`502`). To change the settings, set
-`GUNICORN_CMD_ARGS` to [Gunicorn
+with FOCA's settings for apps in containers (`foca.gunicorn_config`; see
+[Running in
+production](https://foca.readthedocs.io/en/latest/deployment/#running-in-production)
+in FOCA's docs): one worker process with 4 threads, and idle keep-alive
+connections closed after 100 seconds. Keep the keep-alive timeout longer than
+that of a reverse proxy in front of the app for its connections to the app
+(e.g., 60 seconds for ingress-nginx, 90 seconds for Traefik): otherwise, the
+proxy may reuse a connection just as Gunicorn closes it, and the request
+fails (`502`). To change the settings, set `GUNICORN_CMD_ARGS` to [Gunicorn
 options](https://gunicorn.org/reference/settings/) (e.g., `--workers 2
 --threads 8`); Docker Compose passes it on from the host, and the Helm chart
 sets it from its `cloudRegistry.gunicorn` values.

@@ -1,8 +1,8 @@
 """App factory, and entry point for development.
 
-The image serves the app with Gunicorn (`cloud_registry.app:create_app()`, see
-`cloud_registry.gunicorn_config`); `python -m cloud_registry.app` runs it with
-Flask's development server.
+The image serves the app with Gunicorn (`cloud_registry.app:create_app()`, with
+FOCA's settings, `foca.gunicorn_config`); `python -m cloud_registry.app` runs it
+with Flask's development server.
 """
 
 import logging
