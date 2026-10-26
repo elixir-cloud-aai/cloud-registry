@@ -452,17 +452,18 @@ class RegisterService:
         """Replace the service with the provided identifier, or insert it.
 
         The verification of the service (cf. `VERIFIED`) is kept if its URL
-        is unchanged, exactly as written, and so is its key (API type);
-        otherwise, it is removed in the same write. Other spellings of the
-        URL (e.g., with a query, which normalized URLs, and so keys, don't
-        have) remove it, too: the admin checked the URL as written. To this
-        end, the stored service is read first, and only replaced if neither
-        its URL, key nor verification changed meanwhile (compare-and-swap);
-        otherwise, it is read again. So a verification is never kept for
-        another URL or API type, and verifications concurrent with a
-        replacement keeping both are not lost. Only if the service is
-        inserted concurrently (after it was read as missing) is a
-        verification of the inserted service removed.
+        is unchanged, exactly as written, and so is its key (API type), and
+        the service isn't stored as pending (`pending`, e.g., changed to a
+        new version of its type); otherwise, it is removed in the same
+        write. Other spellings of the URL (e.g., with a query, which
+        normalized URLs, and so keys, don't have) remove it, too: the admin
+        checked the URL as written. To this end, the stored service is read
+        first, and only replaced if neither its URL, key nor verification
+        changed meanwhile (compare-and-swap); otherwise, it is read again.
+        So a verification is never kept for another URL or API type, and
+        verifications concurrent with a replacement keeping both are not
+        lost. Only if the service is inserted concurrently (after it was
+        read as missing) is a verification of the inserted service removed.
 
         The service is only inserted if `allow_create` is set, also when it
         was deleted after it was read (e.g., by a concurrent `DELETE`), so
@@ -526,7 +527,8 @@ class RegisterService:
                 unchanged = (
                     stored.get("url") == self.data["url"] and stored.get(KEY) == key
                 )
-                if unchanged and VERIFIED in stored:
+                # pending services aren't verified (cf. `PENDING_SERVICE`)
+                if unchanged and VERIFIED in stored and not self.pending:
                     replacement[VERIFIED] = stored[VERIFIED]
             try:
                 result = self.db_coll.replace_one(

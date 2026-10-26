@@ -36,6 +36,7 @@ from cloud_registry.utils import get_custom_config
 from tests.conftest import (
     ADMIN_GROUP,
     APP_DIR,
+    AUDIENCE,
     CONFIG_OVERLAY,
     ISSUER,
     USER,
@@ -43,6 +44,9 @@ from tests.conftest import (
     make_headers,
     mock_get,
     without_timestamps,
+)
+from tests.conftest import (
+    KEY as SIGNING_KEY,
 )
 from tests.mock_data import ERROR_MEDIA_TYPE, MAX_CONTENT_LENGTH
 
@@ -205,6 +209,88 @@ def test_invalid_token(client: FlaskClient) -> None:
         f"{BASE}/services", json=_service(), headers=make_headers(key=other_key)
     )
     _assert_invalid_token(response)
+
+
+PUBLIC_READS = [
+    "/services",
+    "/services/abc",
+    "/services/types",
+    "/verifications",
+    "/services/abc/verification",
+]
+
+
+@pytest.mark.parametrize("path", PUBLIC_READS)
+def test_public_read_tokens(client: FlaskClient, path: str) -> None:
+    """Public reads accept requests without and with a valid token.
+
+    Requests with a token that isn't valid are rejected as on other
+    operations (`401`, `invalid_token`), not treated as anonymous; other
+    schemes than `Bearer` are ignored.
+    """
+    other_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    expected = client.get(f"{BASE}{path}").status_code
+    assert expected in (200, 404)
+    assert client.get(f"{BASE}{path}", headers=make_headers()).status_code == expected
+    response = client.get(f"{BASE}{path}", headers={"Authorization": "Basic eA=="})
+    assert response.status_code == expected
+    _assert_invalid_token(
+        client.get(f"{BASE}{path}", headers=make_headers(key=other_key))
+    )
+    for header in ["bearer invalid", "Bearer", "Bearer  ", "Bearer\tinvalid"]:
+        _assert_invalid_token(
+            client.get(f"{BASE}{path}", headers={"Authorization": header})
+        )
+    expired = jwt.encode(
+        {"aud": AUDIENCE, "sub": USER, "iss": ISSUER, "iat": 1, "exp": 2},
+        SIGNING_KEY,
+        algorithm="RS256",
+        headers={"kid": "rsa1", "typ": "at+jwt"},
+    )
+    response = client.get(
+        f"{BASE}{path}", headers={"Authorization": f"Bearer {expired}"}
+    )
+    _assert_invalid_token(response)
+
+
+def test_public_read_identity_provider_down(
+    client: FlaskClient,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Public reads stay anonymous if tokens can't be validated otherwise.
+
+    E.g., if the identity provider is unavailable: the reads keep working
+    (as without a token), the token is validated once, and this is logged;
+    other operations fail.
+    """
+    calls: list[str] = []
+
+    def unavailable(token: str, conf: Any) -> NoReturn:
+        """Fail as FOCA does if the identity provider is unavailable.
+
+        Args:
+            token: Access token.
+            conf: Auth config.
+
+        Raises:
+            connexion.exceptions.Unauthorized: Always, without the error
+                `invalid_token`.
+        """
+        calls.append(token)
+        # private API of FOCA, as it fails if the identity provider is down
+        raise auth._unauthorized("identity provider down", invalid_token=False)
+
+    monkeypatch.setattr(auth, "_validate", unavailable)
+    with caplog.at_level(logging.INFO):
+        response = client.get(f"{BASE}/services", headers=make_headers())
+    assert response.status_code == 200
+    assert "identity provider down" in caplog.text
+    # validated once
+    assert len(calls) == 1
+    response = client.post(f"{BASE}/services", json=_service(), headers=make_headers())
+    _assert_error(response, 401)
+    assert response.headers["WWW-Authenticate"] == "Bearer"
 
 
 @pytest.mark.parametrize("typ", ["at+jwt", "application/at+jwt", "AT+JWT"])
