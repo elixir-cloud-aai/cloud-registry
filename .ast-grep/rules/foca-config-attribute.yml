@@ -3,8 +3,8 @@ language: python
 severity: error
 message: Untyped access to the FOCA config
 note: |
-  Use `get_custom_config()` and `get_collection()` from
-  `cloud_registry.utils` (or `foca.get_config()`). Only direct attribute
+  Use FOCA's `get_custom_config(CustomConfig)` (`foca`), `get_collection()`
+  from `cloud_registry.utils` (or `foca.get_config()`). Only direct attribute
   access is detected.
 # Scoped to app code: tests may access and change the config of test apps
 files:

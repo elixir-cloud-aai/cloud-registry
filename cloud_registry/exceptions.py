@@ -132,7 +132,10 @@ def problem(exc: HTTPException, **extensions: Any) -> Response:
         Problem details response.
     """
     if isinstance(exc, Conflict):
-        # the code of the conflict wins over extension members of the caller
+        # the code of the conflict wins over extension members of the caller;
+        # for conflicts without a code of their own, FOCA's
+        # `problem_response()` sends the members of their entry in
+        # `exceptions`, including `code` (cf. `tests/test_conflicts.py`)
         extensions.pop("code", None)
         if isinstance(exc, CodedConflict):
             extensions["code"] = exc.problem_code

@@ -11,16 +11,16 @@ security:
         # Accept tokens for any audience (i.e., of any app)
         verify_audience: False
     access_control:
-        # The claim with the groups of users, for roles of groups (an
-        # example; set that of your identity provider in `config.local.yaml`)
-        claim_groups: groups
-        # No admin groups (cf. `require_admin`). Set,
-        # but empty, as FOCA warns that `keep_group_subjects` has no effect
-        # without a mapping (roles of groups apply either way)
-        group_mapping: {}
         # Start without admin groups (nobody can manage services they don't
         # own)
         require_admin: False
+        # The claim with the groups of users, for roles of groups (an
+        # example; set that of your identity provider in `config.local.yaml`)
+        claim_groups: groups
+        # No admin groups. Set, but empty, as FOCA warns that
+        # `keep_group_subjects` has no effect without a mapping (roles of
+        # groups apply either way)
+        group_mapping: {}
 server:
     # Public URL of the app as published by `docker-compose.yaml`, e.g., for
     # `Location` headers

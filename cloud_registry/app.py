@@ -53,16 +53,17 @@ def create_app() -> App:
         RuntimeError: Request bodies are not limited in size
             (`server.max_content_length` is null), the public URL
             (`server.public_url`) is not set, service clients are
-            configured (which the app doesn't support), there are no admins
-            (unless admins are optional), or stored services are invalid or
-            duplicates.
+            configured (which the app doesn't support), or stored services
+            are invalid or duplicates.
         pydantic.ValidationError: The config is invalid, e.g., no token
             issuers are trusted, or the service info is invalid (naming the
             invalid field).
         ValueError: The config is invalid, e.g., groups are mapped without
-            a group claim, or the custom config (`custom`) still sets the
-            service info (`custom.endpoints.service_info`) or the size limit
-            of request bodies (`custom.max_content_length`).
+            a group claim, there are no admins (unless admins are optional,
+            `security.access_control.require_admin`), or the custom config
+            (`custom`) still sets the service info
+            (`custom.endpoints.service_info`) or the size limit of request
+            bodies (`custom.max_content_length`).
     """
     foca = Foca(
         config_file=Path(__file__).parent / "config.yaml",

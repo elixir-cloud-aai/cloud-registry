@@ -1456,6 +1456,30 @@ def test_custom_null() -> None:
     assert _overlay(docs)["custom"] == {}
 
 
+@pytest.mark.parametrize(
+    "args, url",
+    [
+        ((), "https://x/"),
+        (
+            ("--set", "publicUrl=https://example.org/registry/"),
+            "https://example.org/registry/",
+        ),
+        (
+            ("--set", "config.server.public_url=https://example.org:8443/"),
+            "https://example.org:8443/",
+        ),
+    ],
+    ids=["host_name", "public_url", "config"],
+)
+def test_public_url(args: tuple[str, ...], url: str) -> None:
+    """The public URL of the app is `https://<hostName>/`.
+
+    Unless `publicUrl` sets it, or `config` (which takes precedence).
+    """
+    docs = _render(*args)
+    assert _overlay(docs)["server"]["public_url"] == url
+
+
 def test_server_null() -> None:
     """`config.server: null` is like no server config.
 
