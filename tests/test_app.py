@@ -1660,23 +1660,44 @@ def test_create_app_requires_admin(
         cloud_registry.app.create_app()
 
 
+@pytest.mark.parametrize(
+    "mode, consequence",
+    [
+        ("open", None),
+        ("moderated", "nobody can approve service types"),
+        ("controlled", "nobody can add service types"),
+    ],
+)
 def test_create_app_admin_optional(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     app_env: None,
     capsys: pytest.CaptureFixture[str],
+    mode: str,
+    consequence: str | None,
 ) -> None:
-    """Without admin groups, `create_app()` warns if admins are not required."""
+    """Without admin groups, `create_app()` warns if admins are not required.
+
+    The warning also names what nobody can do in the mode of service types.
+    """
     _set_overlay(
         monkeypatch,
         tmp_path,
         {
             "security": {"auth": {"issuers": [ISSUER], "audience": ["a"]}},
-            "custom": {"access_control": {"require_admin": False}},
+            "custom": {
+                "access_control": {"require_admin": False, "service_types": mode}
+            },
         },
     )
     cloud_registry.app.create_app()
-    assert "No group is mapped to the role 'admin'" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "No group is mapped to the role 'admin'" in err
+    assert "remove service types" in err
+    if consequence is None:
+        assert "in mode '" not in err
+    else:
+        assert consequence in err
 
 
 def _service_info_overlay(service_info: dict[str, Any]) -> dict[str, Any]:
