@@ -34,8 +34,9 @@ Data is kept. Before upgrading:
    rollout if needed, and rate-limit `POST /services/types` and `POST
    /services` at the ingress (see [Rate limits](deployment.md#rate-limits)).
 5. Overlays that set their own `x-bearerInfoFunc` (in
-   `api.specs.registry.add_security_fields`) keep working, but each token
-   sent with a public read is then validated twice. The base config now
+   `api.specs.registry.add_security_fields`) keep working, but tokens sent
+   with a public read that the overlay's function rejects are then validated
+   twice. The base config now
    uses `cloud_registry.ga4gh.registry.permissions.validate_bearer_token`, a
    thin wrapper around FOCA's `validate_token()`; drop the setting from the
    overlay, or point it to that function (see
