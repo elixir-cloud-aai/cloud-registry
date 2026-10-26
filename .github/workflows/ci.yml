@@ -266,6 +266,10 @@ jobs:
           python scripts/check_release_pins.py 2> pins.txt || status=1
           sed "s/^::error::/::${level}::/" pins.txt
           notes="docs/releases/${version}.md"
+          # Curated notes are required for every release after the first
+          # one that had them
+          python scripts/release_notes.py require "${version}" 2> require.txt || status=1
+          sed "s/^::error::/::${level}::/" require.txt
           if [[ -f "${notes}" ]]; then
               if grep -n "TODO" "${notes}"; then
                   echo "::${level}::${notes} contains TODO: finish the release notes before tagging v${version}"

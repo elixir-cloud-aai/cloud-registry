@@ -706,6 +706,27 @@ ingress-nginx (`nginx.ingress.kubernetes.io/proxy-body-size`); with the
 app's default limit, that of ingress-nginx is the same (1 MiB), so set the
 annotation only with a higher limit (see [Ingress](#ingress)).
 
+### To app version 0.5.0
+
+Data is kept; check the environments of the stored services before
+upgrading, and allow values other than `prod`, `test`, `dev` and `staging`
+in `config.custom.endpoints.services.environments` if services should keep
+them (see [From
+0.4.0](https://cloud-registry.readthedocs.io/en/latest/upgrading/#from-040)).
+Values files that give `config.security.access_control.policies` as a list
+must add the rules `add-service-types` and `list-approvals`.
+
+Restart the app once after the rollout, so that it stores the types of the
+services that pods of the previous version registered meanwhile (or upgrade
+with the app scaled to 0 replicas, as for 0.4.0 above):
+
+```bash
+kubectl rollout restart deployment/cloud-registry -n <namespace>
+```
+
+Set `config.custom.access_control.service_types: moderated` only after
+that, in a later upgrade.
+
 ## Probes
 
 - **App:** ready once it serves its Swagger UI (`/ga4gh/registry/v1/ui/`;

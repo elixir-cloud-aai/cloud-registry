@@ -6,6 +6,38 @@ steps on this page. Upgrades of Helm releases are described in
 [Deployment](deployment.md#upgrades). This page describes how to upgrade, and
 how existing setups and data are affected.
 
+## From 0.4.0
+
+Data is kept. Before upgrading:
+
+1. Check the environments of the stored services, e.g., with `mongosh` (see
+   [MongoDB](deployment.md#mongodb) for access to the database of a Helm
+   deployment):
+
+    ```javascript
+    db.getSiblingDB("serviceStore").services.distinct("environment")
+    ```
+
+    Registrations may only use the [allowed
+    environments](configuration.md#service-environments) now, by default
+    `prod`, `test`, `dev` and `staging`. To keep other values, allow them in
+    `custom.endpoints.services.environments` in the same rollout; otherwise,
+    services with other values are served, but can only be updated with an
+    allowed value (see [Stored services](#stored-services)).
+2. Add the rules `add-service-types` and `list-approvals` to overlays that
+   give the policies as a list (see [Service types](#service-types)).
+3. Tell clients that the registry sets the [timestamps](api.md#timestamps)
+   now: those that users other than admins send are ignored.
+
+Then upgrade, and restart the app once after the rollout (or upgrade with
+the app scaled to 0 replicas), so that it stores the types of the services
+that pods of 0.4.0 registered during the rollout (see [Service
+types](#service-types)). Switch to the mode `moderated` (see [Service
+types](configuration.md#service-types)) only after that: while pods of 0.4.0
+still register services, a user's pending type can hide another user's
+service that a pod of 0.4.0 registered with the same type, until an admin
+approves the type.
+
 ## From versions before 0.4.0
 
 **Redeploy with a fresh install and an empty database; don't migrate the

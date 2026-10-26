@@ -32,6 +32,9 @@ Commands:
         the history of the release commit (see `first_release_notes`), from
         the closed pull requests of the API (`gh api --paginate --slurp`)
         and the commits of the release (`git rev-list`, one SHA per line).
+    `require <version> [--releases <dir>]`: fail if the curated notes of a
+        release (`<dir>/<version>.md`, by default in `docs/releases/`) are
+        missing, unless no other release has notes (see `missing_notes`).
 
 Errors (and warnings) are printed as GitHub annotations to standard error.
 Only the stdlib is used, so the workflow runs it without installing the app.
@@ -84,6 +87,13 @@ BULLETS_ONLY = "Sections hold bullets only, e.g., - <change> (#12, #34)"
 # Docs on Read the Docs and repository on GitHub, and links to versions of
 # them that move, as in `scripts/chart_readme.py` (copied, so that each
 # script runs on its own; the tests check that they match)
+# Names of curated notes: `<version>.md`, for release versions as the
+# release workflow accepts them (`TAG` of `scripts/release_version.py`)
+NOTES_NAME = re.compile(
+    r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
+    r"(?:(?:a|b|rc)(?:0|[1-9][0-9]*))?\.md",
+    re.ASCII,
+)
 DOCS_HOST = "cloud-registry.readthedocs.io"
 REPOSITORY = "elixir-cloud-aai/cloud-registry"
 _MOVING = r"(?![\w.-])"
@@ -544,6 +554,54 @@ def first_release_notes(
     return "\n".join(lines) + "\n"
 
 
+def missing_notes(version: str, releases: Path) -> Path | None:
+    """Get the curated notes that a release lacks, if they are required.
+
+    Curated notes are required once notes of any other release exist (in
+    practice, for every release after the first one that had them); a
+    repository without any notes publishes GitHub's generated notes alone.
+    Only files named like notes count (`NOTES_NAME`), not, e.g., a README.
+
+    Args:
+        version: Version of the release, e.g., `1.2.3` or `1.2.3rc1`.
+        releases: Directory with the curated notes, one `<version>.md` each.
+
+    Returns:
+        The path of the missing notes, or `None` if they exist or no other
+        release has notes.
+    """
+    notes = releases / f"{version}.md"
+    if notes.is_file():
+        return None
+    others = [
+        path
+        for path in releases.glob("*.md")
+        if path.name != notes.name and NOTES_NAME.fullmatch(path.name)
+    ]
+    return notes if others else None
+
+
+def _require(args: argparse.Namespace) -> int:
+    """Fail if a release lacks required curated notes (command `require`).
+
+    Args:
+        args: Parsed arguments of the command.
+
+    Returns:
+        The exit status: 0 if the notes exist or aren't required, 1 if they
+        are missing.
+    """
+    notes = missing_notes(args.version, args.releases)
+    if notes is None:
+        return 0
+    print(
+        f"::error::{notes} is missing: curated release notes are required for"
+        " every release after the first one that had them",
+        file=sys.stderr,
+    )
+    return 1
+
+
 def _first(args: argparse.Namespace) -> int:
     """Print the generated notes of a first release (command `first`).
 
@@ -574,8 +632,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             process if `None`.
 
     Returns:
-        The exit status: 0 on success, 1 if the curated notes have findings, a
-        file can't be read or the pull requests are invalid.
+        The exit status: 0 on success, 1 if the curated notes have findings or
+        are missing (`require`), a file can't be read or the pull requests are
+        invalid.
     """
     parser = argparse.ArgumentParser(
         description="Check curated release notes and build the release body"
@@ -602,9 +661,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     first_parser.add_argument(
         "--commits", type=Path, required=True, help="commits of the release"
     )
+    require_parser = commands.add_parser(
+        "require", help="fail if required curated notes are missing"
+    )
+    require_parser.add_argument("version", help="release version, e.g., 1.2.3")
+    require_parser.add_argument(
+        "--releases",
+        type=Path,
+        default=Path("docs/releases"),
+        help="directory with the curated notes (default: docs/releases)",
+    )
     args = parser.parse_args(argv)
     if args.command == "first":
         return _first(args)
+    if args.command == "require":
+        return _require(args)
     notes: Path = args.notes
     try:
         curated = notes.read_text(encoding="utf-8")

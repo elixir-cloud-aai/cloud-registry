@@ -66,18 +66,21 @@ def test_verification_signer_workflow() -> None:
     """The verification commands name the workflow that signed the release.
 
     They are for the version in `CITATION.cff` (`{{ version }}`): releases up
-    to 0.4.0 were signed by `release.yaml`, later ones by `release.yml`. When
-    the version is bumped, also reword the note below the commands.
+    to 0.4.0 were signed by `release.yaml`, later ones by `release.yml`. So
+    when the version is bumped past 0.4.0, the commands must name
+    `release.yml`, and the note below them that 0.4.0 was signed by
+    `release.yaml` (whitespace-insensitive, as the note is wrapped).
     """
     # As read by the docs (`docs/hooks.py`)
     version = citation.release_version(citation.CITATION.read_text(encoding="utf-8"))
     assert version
-    expected = (
-        "release.yaml" if Version(version) <= LAST_RELEASE_YAML else "release.yml"
-    )
-    signers = re.findall(
-        r"cloud-registry/\.github/workflows/(release\.ya?ml)",
-        (ROOT / "docs" / "operations.md").read_text(),
-    )
-    assert signers
-    assert set(signers) == {expected}
+    text = (ROOT / "docs" / "operations.md").read_text(encoding="utf-8")
+    signers = re.findall(r"cloud-registry/\.github/workflows/(release\.ya?ml)", text)
+    # `--signer-workflow` and `--certificate-identity` of the image and the
+    # chart (`gh attestation verify`, `cosign verify`, `cosign verify-blob`)
+    assert len(signers) == 4
+    if Version(version) <= LAST_RELEASE_YAML:
+        assert set(signers) == {"release.yaml"}
+    else:
+        assert set(signers) == {"release.yml"}
+        assert "0.4.0 was signed by `release.yaml`" in " ".join(text.split())
