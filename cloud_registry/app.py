@@ -12,6 +12,10 @@ from connexion import App
 from foca import Foca, get_config
 from foca.security.auth import require_no_service_clients
 
+from cloud_registry.ga4gh.registry.rename import (
+    resume_renames,
+    resume_renames_periodically,
+)
 from cloud_registry.ga4gh.registry.service import (
     add_service_keys,
     warn_environments,
@@ -33,9 +37,12 @@ def create_app() -> App:
     Refuses service clients (FOCA's `require_no_service_clients()`), as the
     app doesn't support them, requires a size limit of request bodies and
     that the service info serves the registration rules, adds missing keys
-    of services and the types of registered services that aren't stored
-    (e.g., on upgrades), and warns of stored services with invalid URLs or
-    URL schemes that are not allowed. FOCA validates the config, e.g., that
+    of services, resumes interrupted renames of services (cf.
+    `resume_renames()`; also before requests, cf.
+    `resume_renames_periodically()`) and adds the types of registered
+    services that aren't stored (e.g., on upgrades), and warns of stored
+    services with invalid URLs or URL schemes that are not allowed. FOCA
+    validates the config, e.g., that
     token issuers are trusted (needed for access control) with an audience,
     the group settings and the service info (`service_info`), refuses to
     start without admins (`security.access_control.require_admin`), warns of
@@ -73,6 +80,7 @@ def create_app() -> App:
     )
     app = foca.create_app()
     require_no_service_clients(app.app)
+    app.app.before_request(resume_renames_periodically)
 
     with app.app.app_context():
         check_service_info_fields()
@@ -92,6 +100,7 @@ def create_app() -> App:
                 "`https://registry.example.org/`)"
             )
         add_service_keys()
+        resume_renames()
         add_service_types()
         sync_pending_services()
         warn_invalid_urls()

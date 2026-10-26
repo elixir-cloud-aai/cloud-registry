@@ -14,6 +14,7 @@ from cloud_registry.exceptions import (
     NotFound,
     problem,
 )
+from cloud_registry.ga4gh.registry.locks import changing
 from cloud_registry.ga4gh.registry.permissions import (
     add_owner,
     check_read_token,
@@ -151,6 +152,7 @@ def deleteService(serviceId: str, **kwargs: Any) -> str:
     deleted service if deleting it fails, and nobody can act on it in
     between; and again afterwards, as roles granted concurrently (after
     their request checked that the service exists) would be left otherwise.
+    Not while the service is renamed (cf. `changing()`).
 
     Args:
         serviceId: Identifier of service to be deleted.
@@ -161,15 +163,16 @@ def deleteService(serviceId: str, **kwargs: Any) -> str:
         Identifier of deleted service.
     """
     db_collection_service = get_collection("services")
-    if not service_exists(serviceId):
-        raise NotFound
-    remove_permissions(serviceId)
-    res = db_collection_service.delete_one({"id": serviceId})
-    if not res.deleted_count:
-        raise NotFound
-    # a no-op unless a role was granted during the deletion (logged only if
-    # roles are revoked)
-    remove_permissions(serviceId)
+    with changing(serviceId):
+        if not service_exists(serviceId):
+            raise NotFound
+        remove_permissions(serviceId)
+        res = db_collection_service.delete_one({"id": serviceId})
+        if not res.deleted_count:
+            raise NotFound
+        # a no-op unless a role was granted during the deletion (logged only
+        # if roles are revoked)
+        remove_permissions(serviceId)
     logger.info(
         "Service '%s' deleted by '%s'.", escape_log_value(serviceId), current_user()
     )
@@ -182,7 +185,8 @@ def putService(serviceId: str, **kwargs: Any) -> RegisterResponse:
     """Add/replace service with a user-supplied ID.
 
     Only admins may add services: for others, the service must exist (cf.
-    `RegisterService._replace()`), also if it is deleted concurrently.
+    `RegisterService._replace()`), also if it is deleted concurrently. Not
+    while the service is renamed (cf. `changing()`).
 
     Args:
         serviceId: Identifier of service to be registered/updated.
@@ -196,9 +200,12 @@ def putService(serviceId: str, **kwargs: Any) -> RegisterResponse:
     # the request path is the service's URL path: `/services/{serviceId}`,
     # with the API base path and the identifier as routed (decoded)
     collection_path = request.path.removesuffix(f"/{serviceId}")
-    return _register_service(
-        collection_path=collection_path, service_id=serviceId, allow_create=is_admin()
-    )
+    with changing(serviceId):
+        return _register_service(
+            collection_path=collection_path,
+            service_id=serviceId,
+            allow_create=is_admin(),
+        )
 
 
 def _get_request_object() -> dict[str, Any]:

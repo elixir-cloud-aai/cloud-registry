@@ -46,6 +46,28 @@ class CodedConflict(Conflict):
     problem_code: ClassVar[str] = CONFLICT_CODE
 
 
+# Detail of `ServiceBusy`
+SERVICE_BUSY_DETAIL = (
+    "The service or the new identifier is being renamed or changed; try again later."
+)
+
+
+class ServiceBusy(CodedConflict):
+    """The service is being renamed, or changed while it is to be renamed.
+
+    Raised by changes of services that waited in vain for a rename to finish,
+    and returned by renames that waited in vain for changes or another rename
+    (cf. `cloud_registry.ga4gh.registry.locks`); in `exceptions`, so that the
+    raised one has its code, too.
+    """
+
+    problem_code = "service-busy"
+
+    def __init__(self) -> None:
+        """Create the exception, with a description of what to do."""
+        super().__init__(SERVICE_BUSY_DETAIL)
+
+
 # exceptions raised in app context; entries of conflicts have their code
 # (`code`; cf. `CodedConflict`)
 exceptions = {
@@ -102,6 +124,12 @@ exceptions = {
         "detail": CONFLICT_DETAIL,
         "status": 409,
         "code": "last-owner",
+    },
+    ServiceBusy: {
+        "title": "Conflict",
+        "detail": SERVICE_BUSY_DETAIL,
+        "status": 409,
+        "code": ServiceBusy.problem_code,
     },
     RequestEntityTooLarge: {
         "title": "Content Too Large",

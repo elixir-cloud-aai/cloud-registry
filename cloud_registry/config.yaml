@@ -206,6 +206,20 @@ db:
                               user_id: 1
                           options:
                             'unique': True
+                # Locks of services, so that renames don't interleave with
+                # other changes: of renames by identifier (`_id`), of other
+                # changes by service (`service`); stale ones are removed or
+                # resumed by their start (cf.
+                # `cloud_registry.ga4gh.registry.locks`)
+                service_locks:
+                    indexes:
+                        - keys:
+                              service: 1
+                              started_at: 1
+                          options:
+                            'sparse': True
+                        - keys:
+                              started_at: 1
 
 # API configuration
 # Cf. https://foca.readthedocs.io/en/latest/configuration/api/
