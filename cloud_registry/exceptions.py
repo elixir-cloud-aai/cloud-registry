@@ -174,7 +174,8 @@ def problem(exc: HTTPException, **extensions: str) -> Response:
             if isinstance(exc, CodedConflict)
             else _mapped(exc).get("code", CONFLICT_CODE)
         )
-        extensions = {"code": code, **extensions}
+        # the code of the conflict wins over extension members of the caller
+        extensions = {**extensions, "code": code}
     return _response(
         title=_mapped(exc)["title"],
         status=exc.code,

@@ -179,10 +179,10 @@ def test_configured_policy(client: FlaskClient) -> None:
 def test_problem_conflict(app: App) -> None:
     """Conflicts without a code of their own have the code `conflict`.
 
-    Extension members are kept.
+    Extension members are kept, except for one named `code`.
     """
     with app.app.app_context():
-        response = problem(Conflict("Other conflict."), serviceId="A")
+        response = problem(Conflict("Other conflict."), serviceId="A", code="x")
     assert response.get_json() == {
         "title": "Conflict",
         "status": 409,
