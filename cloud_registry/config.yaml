@@ -231,6 +231,11 @@ api:
 # Cf. https://foca.readthedocs.io/en/latest/configuration/service-info/
 service_info:
     package: cloud-registry
+    # Adds the rules for registrations (`registration_rules`), built from the
+    # `custom` config on each request, so that clients can read them; keep
+    # it, and don't set `registration_rules` in `service` (the app refuses
+    # to start otherwise; see "Registration rules" in `docs/api.md`)
+    runtime_fields: cloud_registry.ga4gh.registry.service_info.runtime_fields
     service:
         id: "org.example.cloud-registry"
         name: "Cloud Registry"
@@ -313,8 +318,9 @@ custom:
                 - https
             # Values allowed for the environment of services (`environment`):
             # the values that the GA4GH specification suggests; an empty list
-            # allows any value. Clients (e.g., UIs) should offer the same
-            # values
+            # allows any value. Served in the service info
+            # (`registration_rules`), for clients (e.g., UIs) to offer the
+            # same values
             environments:
                 - prod
                 - test
