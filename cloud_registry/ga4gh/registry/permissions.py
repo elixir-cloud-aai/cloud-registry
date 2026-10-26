@@ -54,6 +54,18 @@ logger = logging.getLogger(__name__)
 
 # Collection with the display names of users with roles on services
 USER_NAMES = "user_names"
+# What nobody can do without admins, by mode of service types
+# (`custom.access_control.service_types`), besides what is so in every mode
+_NO_ADMIN_SERVICE_TYPES = {
+    "moderated": (
+        "; in mode 'moderated', nobody can approve service types either, so "
+        "those of users and their services stay pending"
+    ),
+    "controlled": (
+        "; in mode 'controlled', nobody can add service types either, so "
+        "services can only be registered with stored types"
+    ),
+}
 
 
 def check_admin_groups() -> None:
@@ -61,11 +73,12 @@ def check_admin_groups() -> None:
 
     Without such groups, nobody can manage services they don't own, register
     services with chosen identifiers or verify services, so this is an error
-    unless `custom.access_control.require_admin` is false. A warning is
-    logged if groups are mapped, but `keep_group_subjects` is not set, as
-    roles on services granted to groups don't apply then (and FOCA refuses
-    to grant them), and if no group claim is set, as users then have no
-    groups.
+    unless `custom.access_control.require_admin` is false; then a warning is
+    logged, which also names what nobody can do in the mode of service types
+    (`custom.access_control.service_types`). A warning is also logged if
+    groups are mapped, but `keep_group_subjects` is not set, as roles on
+    services granted to groups don't apply then (and FOCA refuses to grant
+    them), and if no group claim is set, as users then have no groups.
 
     Raises:
         RuntimeError: The group claim (`claim_groups`) has surrounding
@@ -117,10 +130,12 @@ def check_admin_groups() -> None:
             "admins"
         )
     else:
+        mode = get_custom_config().access_control.service_types
         logger.warning(
             "No group is mapped to the role 'admin', so nobody can manage "
             "services they don't own, register services with chosen "
-            "identifiers or verify services"
+            "identifiers, verify services or remove service types%s",
+            _NO_ADMIN_SERVICE_TYPES.get(mode, ""),
         )
 
 
