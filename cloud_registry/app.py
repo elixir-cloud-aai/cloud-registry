@@ -23,7 +23,10 @@ from cloud_registry.ga4gh.registry.service import (
     warn_invalid_urls,
     warn_url_schemes,
 )
-from cloud_registry.ga4gh.registry.service_types import add_service_types
+from cloud_registry.ga4gh.registry.service_types import (
+    add_service_types,
+    sync_pending_services,
+)
 
 logger = logging.getLogger(__name__)
 # Logger of Connexion's request validation
@@ -127,6 +130,7 @@ def create_app() -> App:
             )
         add_service_keys()
         add_service_types()
+        sync_pending_services()
         warn_invalid_urls()
         warn_url_schemes()
         warn_environments()

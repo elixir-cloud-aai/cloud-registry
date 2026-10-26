@@ -24,18 +24,27 @@ user if they may not add types.
 In mode `moderated`, any authenticated user may add types, but the types
 that users other than admins add are pending (`PENDING`) until an admin
 approves them (`PUT /services/types/approval`); there is no way back, admins
-remove types instead. Services that have a pending type are pending too: it
-is not stored with them, but derived from their type, so approving a type
-approves them. Pending types are only listed (`GET /services/types`) to
-admins and the user who added them, pending services (`GET /services`,
-`GET /services/{serviceId}`) to admins and the users with a role on them;
+remove types instead. Services that have a pending type are pending too:
+derived from their type, and stored with them as an indexed flag
+(`PENDING_SERVICE`), so that reads filter by it whatever the number of
+pending types; registrations set it, approvals clear it, and the app
+reconciles it on startup (cf. `sync_pending_services()`). Pending types are
+only listed (`GET /services/types`) to admins and the user who added them,
+pending services (`GET /services`, `GET /services/{serviceId}`) to admins
+and the users with a role on them;
 reads that don't require login have no user, so they don't list them (cf.
 `GET /approvals`, which requires login). Only admins may update pending
 services, other users only to an approved type (cf. `PendingService`);
 their owners may delete them. Pending types stay pending if the mode
 changes.
+
+Users other than admins may only have added a limited number of types that
+no service has (`custom.access_control.max_unused_service_types`; cf.
+`check_unused_types()`), in every mode, so that they can't grow the list of
+types (or of pending types) without bound.
 """
 
+from itertools import islice
 import json
 import logging
 from typing import Any
@@ -58,11 +67,12 @@ from cloud_registry.ga4gh.registry.permissions import (
     services_path,
 )
 from cloud_registry.ga4gh.registry.service import (
+    PENDING_SERVICE,
     PROJECTION,
     InvalidService,
     check_strings,
 )
-from cloud_registry.utils import get_collection
+from cloud_registry.utils import get_collection, get_custom_config
 
 logger = logging.getLogger(__name__)
 # Fields of service types, in the order they are sorted by
@@ -100,6 +110,26 @@ class PendingService(Conflict):
             "The service has a service type that is pending until an admin "
             "approves it; until then, it can only be updated to an approved "
             "type, or deleted."
+        )
+
+
+# Number of types per query when counting the unused types of a user
+UNUSED_TYPES_BATCH = 100
+
+
+class UnusedTypesLimit(Conflict):
+    """A user other than an admin has added too many unused types."""
+
+    def __init__(self, limit: int) -> None:
+        """Create the exception, with a description of what to do.
+
+        Args:
+            limit: How many unused types a user may have added.
+        """
+        super().__init__(
+            f"You have added {limit} service types that no service has, as "
+            "many as allowed; use them for services, or ask an admin to "
+            "remove them, before adding others."
         )
 
 
@@ -210,10 +240,12 @@ def is_approved(service_type: dict[str, str] | None) -> bool:
 def store_pending_type(value: object) -> None:
     """Store the type of a service as pending, if the user's types are.
 
-    Called before the service is stored, so that a service with a new type
-    is never served as approved, not even briefly (or if storing its type
-    fails). A type stays pending if the registration fails; admins remove it.
-    Must be called in a request context.
+    Called after the service is validated (cf. `RegisterService.validate()`)
+    and before it is stored, so that a service with a new type is never
+    served as approved, not even briefly (or if storing its type fails). A
+    type stays pending only if the registration fails concurrently (e.g., a
+    duplicate registered meanwhile); admins remove it. Must be called in a
+    request context.
 
     Args:
         value: Type of the service (`type`); not stored if it is invalid
@@ -249,6 +281,8 @@ def _restore_type(service_type: dict[str, str], removed: dict[str, Any]) -> None
     result = get_collection("service_types").update_one(dict(service_type), update)
     if not result.matched_count:
         store_service_type(service_type, created_by=fields[CREATED_BY], pending=pending)
+    # services registered meanwhile were flagged by the type then stored
+    _sync_flags(service_type, _services_of_type(service_type))
 
 
 def is_pending(service_type: dict[str, str] | None) -> bool:
@@ -267,37 +301,167 @@ def is_pending(service_type: dict[str, str] | None) -> bool:
     return collection.count_documents({**service_type, PENDING: True}, limit=1) > 0
 
 
-def pending_services() -> dict[str, Any] | None:
-    """Get the query for the pending services.
+def _sync_flags(service_type: dict[str, str], query: dict[str, Any]) -> None:
+    """Set or clear the pending flags of services by their type.
 
-    Returns:
-        Query for the services that have a pending type, or `None` if no
-        type is pending.
+    Writes first, then checks the type again, and writes again if its state
+    changed meanwhile (e.g., approved, or removed and added again as
+    pending), so that concurrent calls, approvals and removals of the type
+    end with the flags of its last state: each change of the state is
+    followed by a call (cf. `putServiceTypeApproval()`, `_restore_type()`),
+    and either that call or the check here sees the other's write.
+
+    Args:
+        service_type: Type of the services, in its stored form.
+        query: Query for the services (of that type, as written).
     """
-    types = get_collection("service_types").find({PENDING: True}, TYPE_PROJECTION)
-    queries = [_services_of_type(service_type) for service_type in types]
-    return {"$or": queries} if queries else None
+    services = get_collection("services")
+    pending = is_pending(service_type)
+    while True:
+        if pending:
+            services.update_many(
+                {**query, PENDING_SERVICE: {"$ne": True}},
+                {"$set": {PENDING_SERVICE: True}},
+            )
+        else:
+            services.update_many(
+                {**query, PENDING_SERVICE: True}, {"$unset": {PENDING_SERVICE: ""}}
+            )
+        changed = is_pending(service_type)
+        if changed == pending:
+            return
+        pending = changed
+
+
+def sync_pending_flag(serviceId: str, service_type: dict[str, str]) -> None:
+    """Set or clear the pending flag of a stored service by its type.
+
+    Called after a service is stored, with the flag as read before (cf.
+    `RegisterService.pending`), in case its type was approved (or removed and
+    added again) meanwhile. Only changes the service if it still has the
+    type, so that a concurrent change of its type isn't overwritten.
+
+    Args:
+        serviceId: Service identifier.
+        service_type: Type of the service, in its stored form (cf.
+            `type_document()`).
+    """
+    _sync_flags(service_type, {"id": serviceId, **_services_of_type(service_type)})
+
+
+def sync_pending_services() -> None:
+    """Set the pending flags of the stored services by their types.
+
+    Run on startup, so that flags missed by interrupted requests are
+    corrected; idempotent, and safe to run concurrently (cf.
+    `_sync_flags()`). Only checks the pending types, and the types of the
+    services flagged as pending, not all types.
+    """
+    pending = list(
+        get_collection("service_types").find({PENDING: True}, TYPE_PROJECTION)
+    )
+    flagged = get_collection("services").aggregate(
+        [
+            {"$match": {PENDING_SERVICE: True}},
+            {"$group": {"_id": {field: f"$type.{field}" for field in TYPE_FIELDS}}},
+        ]
+    )
+    for value in [*pending, *(group["_id"] for group in flagged)]:
+        service_type = type_document(value)
+        if service_type is not None:
+            _sync_flags(service_type, _services_of_type(service_type))
 
 
 def visible_services() -> dict[str, Any]:
     """Get the filter for the services that the current user may see.
 
-    Must be called in a request context.
+    Must be called in a request context. The filter has the same size for
+    any number of pending types or services.
 
     Returns:
-        Filter for all services if no type is pending or the user is an
-        admin; otherwise, for the services that aren't pending, and those the
-        user has a role on (also through groups; cf. FOCA's
-        `resource_filter()`).
+        Filter for all services if no service is pending (one indexed
+        lookup) or the user is an admin; otherwise, for the services that
+        aren't pending (cf. `PENDING_SERVICE`), and those the user has a role
+        on (also through groups; cf. FOCA's `resource_filter()`).
     """
-    pending = pending_services()
-    if pending is None:
+    if (
+        get_collection("services").find_one({PENDING_SERVICE: True}, {"_id": True})
+        is None
+    ):
         return {}
     own = resource_filter(services_path())
     if not own:
         # admins see all services
         return {}
-    return {"$or": [{"$nor": [pending]}, own]}
+    return {"$or": [{PENDING_SERVICE: {"$ne": True}}, own]}
+
+
+def _count_unused_types(user: str, limit: int) -> int:
+    """Count the types that a user added and no service has, up to a limit.
+
+    Approved types count too, as approval doesn't give them services.
+    Takes one indexed query per `UNUSED_TYPES_BATCH` types of the user, up
+    to the batch with the `limit`-th unused one, as users may have added any
+    number of types that services have (a `$lookup` would take one query,
+    but mongomock, which the tests also run with, lacks it).
+
+    Args:
+        user: User identifier (cf. `CREATED_BY`).
+        limit: Number at which to stop counting.
+
+    Returns:
+        Number of such types, at most `limit`.
+    """
+    count = 0
+    types = get_collection("service_types").find({CREATED_BY: user}, TYPE_PROJECTION)
+    while batch := list(islice(types, UNUSED_TYPES_BATCH)):
+        used = get_collection("services").aggregate(
+            [
+                {"$match": {"$or": [_services_of_type(item) for item in batch]}},
+                {"$group": {"_id": {field: f"$type.{field}" for field in TYPE_FIELDS}}},
+            ]
+        )
+        in_use = {_type_key(group["_id"]) for group in used}
+        count += sum(_type_key(item) not in in_use for item in batch)
+        if count >= limit:
+            return limit
+    return count
+
+
+def _type_key(service_type: dict[str, Any]) -> tuple[Any, ...]:
+    """Get a hashable key of a service type.
+
+    Args:
+        service_type: Service type (`group`, `artifact` and `version`).
+
+    Returns:
+        The values of the type's fields, in order.
+    """
+    return tuple(service_type.get(field) for field in TYPE_FIELDS)
+
+
+def check_unused_types() -> None:
+    """Check that the current user may add another type that no service has.
+
+    Must be called in a request context, before a type is added. Concurrent
+    requests of a user may exceed the limit by their number.
+
+    Raises:
+        UnusedTypesLimit: The user is not an admin, and has added as many
+            types that no service has as allowed
+            (`custom.access_control.max_unused_service_types`).
+    """
+    limit = get_custom_config().access_control.max_unused_service_types
+    subject = get_current_subject()
+    if limit is None or subject is None or is_admin():
+        return
+    if _count_unused_types(subject, limit) >= limit:
+        logger.info(
+            "Service type not added: '%s' added %d types that no service has.",
+            current_user(),
+            limit,
+        )
+        raise UnusedTypesLimit(limit)
 
 
 def visible_types() -> dict[str, Any]:
@@ -363,14 +527,24 @@ def check_service_type(value: object) -> None:
             (cf. `type_document()`), as the registration rejects it.
 
     Raises:
+        cloud_registry.ga4gh.registry.service.InvalidService: A string of the
+            type can't be stored (cf. `check_strings()`).
         UnregisteredServiceType: The user may not add types (cf.
             `may_add_service_types()`), and the type is not stored.
+        UnusedTypesLimit: The type is not stored, and the user has added as
+            many types that no service has as allowed (cf.
+            `check_unused_types()`): registering services with new types and
+            changing them leaves types unused, too.
     """
     service_type = type_document(value)
-    if service_type is None or may_add_service_types():
+    if service_type is None:
         return
-    if not service_type_exists(service_type):
+    check_strings(service_type, field="type")
+    if service_type_exists(service_type):
+        return
+    if not may_add_service_types():
         raise UnregisteredServiceType(service_type)
+    check_unused_types()
 
 
 def add_service_types() -> None:
@@ -446,7 +620,8 @@ def postServiceType(service_type: dict[str, Any], **kwargs: Any) -> AddedRespons
         (cf. `service_types_pending()`). Or an error response: `400` for
         strings that can't be stored, `403` if the user may not add types
         (cf. `may_add_service_types()`), `409` if the type is registered
-        (also if it is pending).
+        (also if it is pending) or the user has added as many unused types
+        as allowed (cf. `check_unused_types()`).
     """
     if not may_add_service_types():
         logger.info(
@@ -456,6 +631,12 @@ def postServiceType(service_type: dict[str, Any], **kwargs: Any) -> AddedRespons
     try:
         document = _requested_type(service_type)
     except InvalidService as exc:
+        return problem(exc)
+    if service_type_exists(document):
+        return problem(Conflict("The service type is registered."))
+    try:
+        check_unused_types()
+    except UnusedTypesLimit as exc:
         return problem(exc)
     try:
         # insert a copy, as `insert_one()` adds an `_id` field
@@ -547,6 +728,8 @@ def putServiceTypeApproval(
     approved = get_collection("service_types").find_one_and_update(
         {**document, PENDING: True}, {"$unset": {PENDING: ""}}
     )
+    # also if the type was approved before, to clear flags missed meanwhile
+    _sync_flags(document, _services_of_type(document))
     if approved is None:
         if not service_type_exists(document):
             raise NotFound
@@ -574,13 +757,9 @@ def getApprovals(**kwargs: Any) -> dict[str, list[dict[str, Any]]]:
         admins, those the user has a role on for other users.
     """
     types = list_service_types({"$and": [{PENDING: True}, visible_types()]})
-    pending = pending_services()
-    services = []
-    if pending is not None:
-        records = get_collection("services").find(
-            {**pending, **resource_filter(services_path())},
-            PROJECTION,
-            sort=[("id", 1)],
-        )
-        services = list(records)
-    return {"service_types": types, "services": services}
+    records = get_collection("services").find(
+        {PENDING_SERVICE: True, **resource_filter(services_path())},
+        PROJECTION,
+        sort=[("id", 1)],
+    )
+    return {"service_types": types, "services": list(records)}

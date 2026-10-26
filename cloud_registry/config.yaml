@@ -164,6 +164,12 @@ db:
                               type.group: 1
                               type.artifact: 1
                               type.version: 1
+                        # Pending services, which reads filter by (internal
+                        # flag, set while their type is pending)
+                        - keys:
+                              _pending: 1
+                          options:
+                            'sparse': True
                 # Service types (`GET /services/types`), unique as written
                 service_types:
                     indexes:
@@ -173,6 +179,15 @@ db:
                               version: 1
                           options:
                             'unique': True
+                        # Pending types (`GET /approvals`)
+                        - keys:
+                              pending: 1
+                          options:
+                            'sparse': True
+                        # Types by the user who added them, for the limit of
+                        # unused types per user
+                        - keys:
+                              created_by: 1
                 # Display names of users with roles on services, per service
                 user_names:
                     indexes:
@@ -272,6 +287,10 @@ custom:
         # admins are pending until an admin approves them, and so are the
         # services that have them (see "Service types" in `docs/api.md`)
         service_types: open
+        # How many service types that no service has a user other than an
+        # admin may have added, in every mode (`409` above); `null` for no
+        # limit (see "Service types" in `docs/configuration.md`)
+        max_unused_service_types: 10
     endpoints:
         # Public URL of the app, e.g., for the `Location` header; `api_path` is
         # a path prefix in front of the API base path (e.g., of a reverse
