@@ -47,7 +47,10 @@ Noticeable, but no action needed:
       and doesn't check `organization.name`.
 - Requests rejected by the validation of the API specification still get
   the reason as `detail`, now from FOCA (`exceptions.validation_details`);
-  the reasons are logged by FOCA.
+  the reasons are logged by FOCA. Responses that fail the validation of the
+  API specification (e.g., of stored services that are invalid) are now
+  logged by Connexion (`ERROR`, with the response), as FOCA only filters
+  the log records of rejected requests.
 
 ## From 0.4.0
 
@@ -113,7 +116,8 @@ them.
       mappings);
     - `config.security.access_control.group_mapping`: the admin group mapped
       to the role `admin` (required, unless
-      `config.custom.access_control.require_admin` is `false`);
+      `config.security.access_control.require_admin` is `false`; before
+      0.6.0, `config.custom.access_control.require_admin`);
     - `mongodb.auth.existingSecret`: the name of the Secret;
     - `config.service_info.service`: the service info of the deployment
       (e.g., `id`, `name`, `organization`, `contactUrl` and

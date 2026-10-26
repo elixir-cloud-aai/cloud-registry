@@ -408,6 +408,7 @@
     },
     "publicUrl": {
       "type": "string",
+      "pattern": "^(https?://[^?#\\s]+)?$",
       "description": "Public URL of the app as clients see it, if not https://<hostName>/ (e.g., with the path prefix of a proxy); sets server.public_url"
     },
     "config": {

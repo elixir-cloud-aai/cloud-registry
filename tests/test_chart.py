@@ -1480,6 +1480,16 @@ def test_public_url(args: tuple[str, ...], url: str) -> None:
     assert _overlay(docs)["server"]["public_url"] == url
 
 
+@pytest.mark.parametrize(
+    "url", ["registry.org", "ftp://registry.org/", "https://registry.org/?a=b"]
+)
+def test_public_url_invalid(url: str) -> None:
+    """`publicUrl` must be an `http` or `https` URL without query or fragment."""
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render("--set", f"publicUrl={url}")
+    assert "/publicUrl" in exc.value.stderr
+
+
 def test_server_null() -> None:
     """`config.server: null` is like no server config.
 
