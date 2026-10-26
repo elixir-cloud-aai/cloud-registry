@@ -2,7 +2,7 @@
 
 from json import dumps
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 from connexion.exceptions import (
     BadRequestProblem,
@@ -13,6 +13,7 @@ from connexion.exceptions import (
 )
 from flask import Response
 from foca import get_config
+from foca.security.access_control import LastOwner
 from foca.utils.logging import escape_log_value
 from werkzeug.exceptions import (
     BadRequest,
@@ -30,6 +31,28 @@ logger = logging.getLogger(__name__)
 # e.g., the field names at their end), as they may quote rejected values,
 # which can be as large as the request body
 MAX_DETAIL_LENGTH = 500
+
+# Code of conflicts that have no other (`code` member of their problem
+# details; cf. `CodedConflict`), e.g., of FOCA's permissions API
+CONFLICT_CODE = "conflict"
+# Detail of conflicts with fixed problem details
+CONFLICT_DETAIL = "The request conflicts with the current state of the resource."
+
+
+class CodedConflict(Conflict):
+    """`409 Conflict` with a stable code, for clients to tell conflicts apart.
+
+    The code is served as the extension member `code` of the problem details
+    (cf. `problem()`), next to the unchanged `detail`, and documented in the
+    API specification (schema `Conflict`).
+
+    Attributes:
+        problem_code: Code of the conflict (kebab case); not `code`, which
+            is the status code of werkzeug's exceptions.
+    """
+
+    problem_code: ClassVar[str] = CONFLICT_CODE
+
 
 # exceptions raised in app context
 exceptions = {
@@ -75,8 +98,17 @@ exceptions = {
     },
     Conflict: {
         "title": "Conflict",
-        "detail": "The request conflicts with the current state of the resource.",
+        "detail": CONFLICT_DETAIL,
         "status": 409,
+        "code": CONFLICT_CODE,
+    },
+    # raised by FOCA's helpers of resource roles (cf.
+    # `cloud_registry.ga4gh.registry.permissions`)
+    LastOwner: {
+        "title": "Conflict",
+        "detail": CONFLICT_DETAIL,
+        "status": 409,
+        "code": "last-owner",
     },
     RequestEntityTooLarge: {
         "title": "Content Too Large",
@@ -121,7 +153,8 @@ def problem(exc: HTTPException, **extensions: str) -> Response:
         extensions: Extension members of the problem details.
 
     Returns:
-        Problem details response.
+        Problem details response; for conflicts (`409`), with their code
+        (`code`; cf. `CodedConflict`).
 
     Raises:
         ValueError: The exception has no code or no description (e.g., a
@@ -131,6 +164,11 @@ def problem(exc: HTTPException, **extensions: str) -> Response:
         raise ValueError(
             f"Problem details need an exception with a code and a description: {exc!r}"
         )
+    if isinstance(exc, Conflict):
+        extensions = {
+            "code": getattr(exc, "problem_code", CONFLICT_CODE),
+            **extensions,
+        }
     return _response(
         title=_mapped(exc)["title"],
         status=exc.code,

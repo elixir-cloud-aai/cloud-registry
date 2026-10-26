@@ -26,7 +26,7 @@ from werkzeug.exceptions import HTTPException
 
 from cloud_registry.exceptions import (
     BadRequest,
-    Conflict,
+    CodedConflict,
     NotFound,
     problem,
     shorten_detail,
@@ -50,8 +50,10 @@ logger = logging.getLogger(__name__)
 VERIFICATION_PROJECTION = {"_id": False, "url": True, "type": True, VERIFIED: True}
 
 
-class VerificationConflict(Conflict):
+class VerificationConflict(CodedConflict):
     """The service has another URL or API type than the one checked."""
+
+    problem_code = "verification-mismatch"
 
     def __init__(self) -> None:
         """Create the exception, with a description of what to do."""
@@ -61,8 +63,10 @@ class VerificationConflict(Conflict):
         )
 
 
-class PendingVerification(Conflict):
+class PendingVerification(CodedConflict):
     """The service is pending, so it can't be verified."""
+
+    problem_code = "pending-service"
 
     def __init__(self) -> None:
         """Create the exception, with a description of what to do."""

@@ -19,7 +19,7 @@ from pymongo.errors import DuplicateKeyError
 
 from cloud_registry.exceptions import (
     BadRequest,
-    Conflict,
+    CodedConflict,
     InternalServerError,
     NotFound,
 )
@@ -66,7 +66,13 @@ DATE_TIME_FIELDS = (CREATED, UPDATED)
 RESERVED_IDS = frozenset({".", "..", "types"})
 
 
-class DuplicateService(Conflict):
+class HiddenDuplicateService(CodedConflict):
+    """A service with the same URL and API type is registered (not named)."""
+
+    problem_code = "duplicate-service"
+
+
+class DuplicateService(CodedConflict):
     """A service with the same URL and API type is registered.
 
     The description names the registered service; for users who may not
@@ -77,15 +83,17 @@ class DuplicateService(Conflict):
         existing_id: Identifier of the registered service.
     """
 
+    problem_code = "duplicate-service"
     HIDDEN_DESCRIPTION = "A service with the same URL and API type is registered."
 
-    def hidden(self) -> Conflict:
+    def hidden(self) -> HiddenDuplicateService:
         """Get the conflict without the registered service.
 
         Returns:
-            Conflict whose description doesn't name the registered service.
+            Conflict whose description doesn't name the registered service,
+            with the same code.
         """
-        return Conflict(self.HIDDEN_DESCRIPTION)
+        return HiddenDuplicateService(self.HIDDEN_DESCRIPTION)
 
     def __init__(self, existing_id: str) -> None:
         """Create the exception for a service with the same URL and API type.
