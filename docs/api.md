@@ -34,6 +34,24 @@ The [Swagger UI](getting-started.md#quick-start) of a deployment documents
 all operations and serves the API specification
 (`/ga4gh/registry/v1/openapi.json`).
 
+## Deviations from the GA4GH specification
+
+The GA4GH endpoints keep their requests and responses, but some of their
+semantics differ, so that clients can rely on the registry's data:
+
+- `GET /services/types` lists the stored types, also types that no service
+  has (yet), rather than the types of the registered services (see [Service
+  types](#service-types)).
+- `createdAt` and `updatedAt` describe the registry's entry, and the
+  registry sets them, rather than describing the deployment of the service
+  (see [Timestamps](#timestamps)).
+- `environment` must be one of the values that the deployment allows, by
+  default `prod`, `test`, `dev` and `staging`, which the specification only
+  suggests (see [Service
+  environments](configuration.md#service-environments)).
+- In mode `moderated`, the reads don't list pending services and types to
+  other users (see [Pending approvals](#pending-approvals)).
+
 ## Registrations
 
 Registering a service (`POST /services`, or `PUT /services/{serviceId}` with a
@@ -198,9 +216,11 @@ service has, see above). Pending types stay pending if the mode changes.
 An admin who registers a service with a pending type doesn't approve it:
 admins approve types with `PUT /services/types/approval`. A pending type is
 stored before the service that adds it, so it stays pending if the
-registration fails (e.g., for a duplicate); admins remove such types, as
-other unwanted ones. Types are unique also while pending: `POST
-/services/types` returns `409 Conflict` for a type that another user added.
+registration fails (e.g., for a duplicate), and also if the service is then
+changed back to its previous type: pending types stay when no service has
+them. Admins remove such types, as other unwanted ones. Types are unique
+also while pending: `POST /services/types` returns `409 Conflict` for a
+type that another user added.
 
 ```bash
 curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/types/approval" \

@@ -131,7 +131,14 @@ above, e.g., for the readers' role, or `null` for admins only:
 
 ```yaml
             register-services: [p, reader, /ga4gh/registry/v1/services, POST]
+            add-service-types: [p, reader, /ga4gh/registry/v1/services/types, POST]
 ```
+
+`add-service-types` restricts `POST /services/types` the same way, which
+otherwise stays open to any authenticated user. Users who may register
+services still add types by registering services with new ones: to let only
+admins add types, set `custom.access_control.service_types: controlled`
+instead (see [Service types](configuration.md#service-types)).
 
 This only stops new registrations: owners and maintainers can still find out
 the same by changing one of their services to the URL and API type of
