@@ -748,9 +748,10 @@ Data is kept. Rendering fails while removed keys are set:
 This chart version requires images of app version 0.6.0 or later (built
 with FOCA 0.18). Commands that load `cloud_registry.gunicorn_config` must
 load FOCA's `foca.gunicorn_config` (same settings). Admins act as admins
-only in requests with the header `X-Request-Roles: admin` (admin mode); set
-`config.security.access_control.opt_in_roles: []` to keep the previous
-behaviour. See [From
+only in requests with the header `X-Request-Roles: admin` ([admin
+mode](https://cloud-registry.readthedocs.io/en/latest/access-control/#admin-mode));
+set `config.security.access_control.opt_in_roles: []` in the values to keep
+the previous behaviour. See [From
 0.5.0](https://cloud-registry.readthedocs.io/en/latest/upgrading/#from-050)
 for the other changes.
 

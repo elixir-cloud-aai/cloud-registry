@@ -995,31 +995,89 @@ def test_admin_via_permissions_api(client: FlaskClient) -> None:
     assert update(client, service_id, CAROL) == 403
 
 
-def test_admin_mode(client: FlaskClient) -> None:
+# Operations of admins on a service of another user (`{id}`): method, path
+# and JSON body
+ADMIN_OPERATIONS: list[tuple[str, str, dict[str, Any] | None]] = [
+    ("PUT", "/services/{id}", _service()),
+    ("DELETE", "/services/{id}", None),
+    ("GET", "/services/{id}/permissions", None),
+    ("PUT", "/services/{id}/permissions/carol@example.org", {"role": "owner"}),
+    ("PUT", "/services/{id}/verification", None),
+    # new identifiers
+    ("PUT", "/services/ADMNEW", _service()),
+]
+
+
+@pytest.mark.parametrize(("method", "path", "body"), ADMIN_OPERATIONS)
+def test_admin_mode(
+    client: FlaskClient, method: str, path: str, body: dict[str, Any] | None
+) -> None:
     """Admins have the permissions of other users unless they opt in.
 
-    Responses vary by the header of opt-in roles, e.g., for caches.
+    Without admin mode, an admin gets the same response as another user
+    without roles on the service; with it, the request succeeds. Asking for
+    admin mode grants other users nothing.
     """
+    url = f"{BASE}{path.format(id=register(client))}"
+
+    def status(user: str, admin_mode: bool = True) -> int:
+        """Send the request as a user.
+
+        Args:
+            user: User who sends the request.
+            admin_mode: Whether the request asks for admin mode.
+
+        Returns:
+            Status code of the response.
+        """
+        response = client.open(
+            url, method=method, json=body, headers=headers(user, admin_mode)
+        )
+        return response.status_code
+
+    regular = status(CAROL)
+    assert regular in (403, 404)
+    assert status(ADMIN, admin_mode=False) == regular
+    assert status(ADMIN) in (200, 201)
+
+
+def test_admin_mode_vary(client: FlaskClient) -> None:
+    """Responses vary by the header of opt-in roles, e.g., for caches."""
     service_id = register(client)
-    assert update(client, service_id, ADMIN) == 200
+    for admin_mode in (False, True):
+        response = client.get(
+            f"{BASE}/services/{service_id}", headers=headers(ADMIN, admin_mode)
+        )
+        assert response.status_code == 200
+        assert ROLES_HEADER in response.headers["Vary"]
+
+
+def test_admin_mode_permissions_api(client: FlaskClient) -> None:
+    """The permissions API needs admin mode."""
+    response = client.get(PERMISSIONS_API, headers=headers(ADMIN, admin_mode=False))
+    assert response.status_code == 403
+    assert client.get(PERMISSIONS_API, headers=headers(ADMIN)).status_code == 200
+
+
+def test_admin_mode_off(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
+) -> None:
+    """Without the opt-in (`opt_in_roles: []`), admins are always admins.
+
+    `GET /me` then reports admin mode as available, too.
+    """
+    overlay: dict[str, Any] = {"security": {"access_control": {"opt_in_roles": []}}}
+    client = _create_app(monkeypatch, tmp_path, overlay)
+    for admin_mode in (False, True):
+        admin = me(client, ADMIN, admin_mode)
+        assert (admin["admin"], admin["admin_available"]) == (True, True)
+    service_id = register(client)
     response = client.put(
         f"{BASE}/services/{service_id}",
         json=_service(),
         headers=headers(ADMIN, admin_mode=False),
     )
-    assert response.status_code == 403
-    assert ROLES_HEADER in response.headers["Vary"]
-    response = client.get(
-        f"{BASE}/services/{service_id}/permissions",
-        headers=headers(ADMIN, admin_mode=False),
-    )
-    assert response.status_code == 403
-    response = client.get(
-        f"{BASE}/services/{service_id}/permissions", headers=headers(ADMIN)
-    )
     assert response.status_code == 200
-    # asking for admin mode grants other users nothing
-    assert update(client, service_id, CAROL) == 403
 
 
 # Loggers of role changes: FOCA's ownership helpers, and the app (deletions)
@@ -1585,7 +1643,7 @@ def test_login_for_reads_readers(
 
 
 def _duplicates(
-    client: FlaskClient, existing_id: str, user: str
+    client: FlaskClient, existing_id: str, user: str, admin_mode: bool = True
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Register a service, and change one, to the URL and type of another one.
 
@@ -1593,6 +1651,7 @@ def _duplicates(
         client: Test client of the app.
         existing_id: Identifier of the registered service.
         user: User who registers (and owns) the services.
+        admin_mode: Whether the conflicting requests ask for admin mode.
 
     Returns:
         Problem details of the `409` responses: of registering the service
@@ -1607,11 +1666,13 @@ def _duplicates(
         if key not in ("id", "createdAt", "updatedAt")
     }
     responses = [
-        client.post(f"{BASE}/services", json=service, headers=headers(user)),
+        client.post(
+            f"{BASE}/services", json=service, headers=headers(user, admin_mode)
+        ),
         client.put(
             f"{BASE}/services/{register(client, user)}",
             json=service,
-            headers=headers(user),
+            headers=headers(user, admin_mode),
         ),
     ]
     for response in responses:
@@ -1670,9 +1731,9 @@ def test_duplicates_login_for_reads_readers(
 ) -> None:
     """With the rules for readers, `409` names the service to readers only.
 
-    Readers (members of the team group) and admins learn the registered
-    service, other users get a `409` without it, also for services they
-    registered themselves.
+    Readers (members of the team group) and admins (in admin mode) learn
+    the registered service, other users (and admins without admin mode) get
+    a `409` without it, also for services they registered themselves.
     """
     readers = _docs_overlay("readers.yaml")
     readers["security"]["access_control"]["group_mapping"] = {TEAM_GROUP: "reader"}
@@ -1683,6 +1744,8 @@ def test_duplicates_login_for_reads_readers(
             for problem in _duplicates(client, existing_id, user):
                 _assert_named(problem, existing_id)
         for problem in _duplicates(client, existing_id, BOB):
+            _assert_hidden(problem, existing_id)
+        for problem in _duplicates(client, existing_id, ADMIN, admin_mode=False):
             _assert_hidden(problem, existing_id)
 
 

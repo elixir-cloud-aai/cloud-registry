@@ -32,13 +32,15 @@ its settings and checks; change the config before upgrading:
    (header `X-Request-Roles: admin`; see [Admin
    mode](access-control.md#admin-mode)). Tell the maintainers of clients
    and scripts that need admin rights to send the header, or remove the
-   opt-in (`security.access_control.opt_in_roles: []`). FOCA refuses
+   opt-in (`security.access_control.opt_in_roles: []`). In `GET /me`,
+   `admin` is now true only in admin mode; clients decide whether to offer
+   the switch by the new field `admin_available`. FOCA refuses
    configured rules that grant the role `admin`
    (`security.access_control.policies`) on startup. Stored ones (e.g.,
    granted via the permissions API) still apply, without admin mode, and
    FOCA warns of them when policies are first loaded. Revoke them (`DELETE
-   /admin/access-control/permissions/<rule-id>`), and add the users to an
-   admin group instead.
+   /admin/access-control/permissions/<rule-id>`, in admin mode), and add
+   the users to an admin group instead.
 
 Noticeable, but no action needed:
 
@@ -49,7 +51,8 @@ Noticeable, but no action needed:
       surrounding whitespace with a `ValueError` (before: a `RuntimeError`
       of the app), and doesn't warn if no group claim is set at all.
     - FOCA's admin check also counts configured rules
-      (`security.access_control.policies`) that grant the role `admin`, and
+      (`security.access_control.policies`) that grant the role `admin`
+      (only without admin mode, which refuses such rules), and
       its warning without admins no longer names what nobody can do in the
       mode of service types (see [Service
       types](configuration.md#service-types)).

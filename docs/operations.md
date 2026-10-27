@@ -33,12 +33,13 @@ stored names of users (see `GET /services/{serviceId}/permissions`) in place.
 The configured policies (`security.access_control.policies`) are managed on
 startup and can't be changed via the API.
 
-### More admins
+### Making users admins
 
-Admins are members of the groups mapped to the role `admin` (see
-[Admins](access-control.md#admins)): add users to such a group to make them
-admins. The role is opt-in ([admin mode](access-control.md#admin-mode)), so
-the permissions API refuses rules that grant it (`400 Bad Request`), e.g.,
+Add users to a group mapped to the role `admin` to make them admins (see
+[Admins](access-control.md#admins)).
+
+The role is opt-in ([admin mode](access-control.md#admin-mode)), so the
+permissions API refuses rules that grant it (`400 Bad Request`), e.g.,
 `{"policy_type": "g", "rule": {"v0": "user:<user-id>", "v1": "admin"}}`, as
 users would then be admins without opting in. Requests to the API need admin
 mode (header `X-Request-Roles: admin`). The API is served like the registry's

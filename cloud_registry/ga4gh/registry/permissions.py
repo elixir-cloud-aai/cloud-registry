@@ -264,6 +264,8 @@ def may_read_service(serviceId: str) -> bool:
     # current request (Connexion's security handlers store it on the request
     # context); the identifier is encoded, as in requests, and routed decoded
     path = service_path(quote(serviceId, safe=""))
+    # only the header of opt-in roles, so that the read is decided for the
+    # same roles as the current request (e.g., in admin mode)
     header = get_config().security.access_control.opt_in_header
     opt_in = [(header, value) for value in request.headers.getlist(header)]
     with current_app.test_request_context(path, method="GET", headers=opt_in):
@@ -714,7 +716,8 @@ def getMe(**kwargs: Any) -> dict[str, Any]:
         User identifier, whether the user is an admin on this request (cf.
         FOCA's `is_admin()`; in admin mode, i.e., if the request asks for
         the opt-in role `admin`) and whether they may switch to admin mode
-        (cf. FOCA's `get_available_opt_in_roles()`), whether they may add
+        (cf. FOCA's `get_available_opt_in_roles()`; always if the user is an
+        admin on this request, e.g., without opt-in), whether they may add
         service types (cf. `may_add_service_types()`) and whether these are pending (cf.
         `service_types_pending()`), and the user's roles on services (cf.
         FOCA's `list_subject_roles()`): granted to the user, and granted to
@@ -736,10 +739,12 @@ def getMe(**kwargs: Any) -> dict[str, Any]:
     remember_current_user(
         [service["service_id"] for service in services if "group" not in service]
     )
+    admin = is_admin()
     return {
         "user_id": user_id,
-        "admin": is_admin(),
-        "admin_available": ADMIN_ROLE in get_available_opt_in_roles(),
+        "admin": admin,
+        # admins without opt-in (e.g., `opt_in_roles: []`) are always admins
+        "admin_available": admin or ADMIN_ROLE in get_available_opt_in_roles(),
         "may_add_service_types": may_add_service_types(),
         "service_types_pending": service_types_pending(),
         "services": services,

@@ -220,7 +220,10 @@ def make_headers(
     typ: str | None = "at+jwt",
     roles: str | None = ADMIN_ROLE,
 ) -> dict[str, str]:
-    """Get request headers with an access token for a user.
+    """Get request headers with an access token for a user, in admin mode.
+
+    By default, requests ask for admin mode, which only applies to admins
+    (cf. `roles`).
 
     Args:
         user: User identifier (`sub` claim).

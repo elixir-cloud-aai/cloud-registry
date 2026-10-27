@@ -103,12 +103,11 @@ security:
         # (FOCA; false: start with a warning)
         require_admin: True
         # Admin mode: the role `admin` applies only to requests that ask for
-        # it in the header `X-Request-Roles` (`opt_in_header`), e.g., `curl
-        # -H "X-Request-Roles: admin" ...`; without it, admins have the
-        # permissions of other users, so that being admin is a deliberate
-        # action (least privilege). `GET /me` tells whether a user may switch
-        # to admin mode (`admin_available`). The role can then only be mapped
-        # from groups (`group_mapping`), not granted via rules
+        # it in the header `opt_in_header` (default: `X-Request-Roles`);
+        # without it, admins have the permissions of other users. Only
+        # groups can then be admins: configured rules granting `admin` are
+        # refused on startup. `[]` lets admins act as admins on every
+        # request; see "Admin mode" in `docs/access-control.md`
         opt_in_roles:
             - admin
         # Managed on startup (removed rules are deleted); cannot be changed

@@ -807,8 +807,9 @@ paths:
       description: |
         Get the identifier of the current user, whether they act as an admin
         (admin mode) and may do so, and their roles on services. Also stores
-        or refreshes the user's display name (from the identity provider) for these services, where
-        their owners and admins can see it with the roles.
+        or refreshes the user's display name (from the identity provider) for
+        these services, where their owners and admins can see it with the
+        roles.
       operationId: getMe
       x-openapi-router-controller: cloud_registry.ga4gh.registry.permissions
       tags:
@@ -1165,7 +1166,9 @@ components:
           type: boolean
           description: |
             Whether the user may switch to admin mode: a member of a group
-            mapped to the role `admin` (with or without the header).
+            mapped to the role `admin` (with or without the header); also
+            true whenever `admin` is (e.g., in deployments without admin
+            mode).
         may_add_service_types:
           type: boolean
           description: |

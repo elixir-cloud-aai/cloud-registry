@@ -284,7 +284,7 @@ security:
 
 On startup, the app logs the groups mapped to `admin`. Only groups can make
 users admins: the role `admin` is opt-in (see [Admin mode](#admin-mode)), so
-rules can't grant it (see [Operations](operations.md#more-admins)).
+rules can't grant it (see [Operations](operations.md#making-users-admins)).
 
 ### Admin mode
 
