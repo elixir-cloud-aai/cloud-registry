@@ -1001,7 +1001,7 @@ ADMIN_OPERATIONS: list[tuple[str, str, dict[str, Any] | None]] = [
     ("PUT", "/services/{id}", _service()),
     ("DELETE", "/services/{id}", None),
     ("GET", "/services/{id}/permissions", None),
-    ("PUT", "/services/{id}/permissions/carol@example.org", {"role": "owner"}),
+    ("PUT", f"/services/{{id}}/permissions/{CAROL}", {"role": "owner"}),
     ("PUT", "/services/{id}/verification", None),
     # new identifiers
     ("PUT", "/services/ADMNEW", _service()),

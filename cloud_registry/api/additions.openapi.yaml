@@ -1161,7 +1161,10 @@ components:
             i.e., if the request asks for the role in the header
             `X-Request-Roles` (e.g., `X-Request-Roles: admin`) and the user
             may switch to it (`admin_available`). Without admin mode, admins
-            have the permissions of other users.
+            have the permissions of other users. Also true without the
+            header for users granted the role by stored rules (from before
+            admin mode) and in deployments without admin mode
+            (`security.access_control.opt_in_roles: []`).
         admin_available:
           type: boolean
           description: |

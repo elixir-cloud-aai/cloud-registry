@@ -64,7 +64,8 @@ JWKS_URI = f"{ISSUER}jwk"
 USERINFO_URI = f"{ISSUER}userinfo"
 USER = "alice@example.org"
 ADMIN = "admin@example.org"
-# Opt-in role of admins (admin mode), and the header that asks for it
+# Opt-in role of admins (admin mode; FOCA's role name, as in
+# `opt_in_roles` of the base config), and the header that asks for it
 ADMIN_ROLE = "admin"
 ROLES_HEADER = "X-Request-Roles"
 # Claim with the group memberships of users (`claim_groups` of the test

@@ -713,12 +713,14 @@ def getMe(**kwargs: Any) -> dict[str, Any]:
             `token_info`); unused.
 
     Returns:
-        User identifier, whether the user is an admin on this request (cf.
-        FOCA's `is_admin()`; in admin mode, i.e., if the request asks for
-        the opt-in role `admin`) and whether they may switch to admin mode
-        (cf. FOCA's `get_available_opt_in_roles()`; always if the user is an
-        admin on this request, e.g., without opt-in), whether they may add
-        service types (cf. `may_add_service_types()`) and whether these are pending (cf.
+        User identifier (`user_id`), whether the user is an admin on this
+        request (`admin`; cf. FOCA's `is_admin()`; in admin mode, i.e., if
+        the request asks for the opt-in role `admin`), whether they may
+        switch to admin mode (`admin_available`; cf. FOCA's
+        `get_available_opt_in_roles()`; always if `admin` is true, e.g.,
+        without opt-in), whether they may add service types
+        (`may_add_service_types`; cf. `may_add_service_types()`) and
+        whether these are pending (`service_types_pending`; cf.
         `service_types_pending()`), and the user's roles on services (cf.
         FOCA's `list_subject_roles()`): granted to the user, and granted to
         groups the user is a member of (with `group`), sorted by service

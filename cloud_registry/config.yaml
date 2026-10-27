@@ -99,8 +99,9 @@ security:
         # `group_mapping` is set
         keep_group_subjects: True
         # Refuse to start without admins, i.e., unless a group is mapped to
-        # the role `admin` (`group_mapping`) or a rule of `policies` grants it
-        # (FOCA; false: start with a warning)
+        # the role `admin` (`group_mapping`) or, without admin mode
+        # (`opt_in_roles: []`), a rule of `policies` grants it (FOCA; false:
+        # start with a warning)
         require_admin: True
         # Admin mode: the role `admin` applies only to requests that ask for
         # it in the header `opt_in_header` (default: `X-Request-Roles`);
