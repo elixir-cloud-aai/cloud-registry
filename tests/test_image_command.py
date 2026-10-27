@@ -17,12 +17,15 @@ def test_image_command() -> None:
     """The image serves the app with Gunicorn and FOCA's settings.
 
     Without preloading the app, so that each worker creates it after
-    forking (MongoDB clients must not be shared across forks).
+    forking (MongoDB clients must not be shared across forks). The command
+    has no other options, so that FOCA's settings apply (e.g., the number
+    of workers); deployments override them via `GUNICORN_CMD_ARGS`.
     """
-    assert image_command()[:3] == [
+    assert image_command() == [
         "gunicorn",
         "--config",
         "python:foca.gunicorn_config",
+        APP,
     ]
     settings = load_settings()
     assert settings.app_uri == APP
