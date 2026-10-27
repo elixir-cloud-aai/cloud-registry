@@ -9,13 +9,13 @@ page sums up how it applies to this repository, which is also the template for
 other apps built with [FOCA](https://foca.readthedocs.io/).
 
 Please follow the [code of
-conduct](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/CODE_OF_CONDUCT.md)
+conduct](https://github.com/elixir-cloud-aai/.github/blob/main/CODE_OF_CONDUCT.md)
 in all interactions with the community. To report a violation, email
 [cloud-service@elixir-europe.org](mailto:cloud-service@elixir-europe.org).
 
 Report vulnerabilities privately, not in issues, as described in the
 [security
-policy](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/SECURITY.md).
+policy](https://github.com/elixir-cloud-aai/.github/blob/main/SECURITY.md).
 
 ## Getting started
 

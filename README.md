@@ -81,9 +81,9 @@ as APA or BibTeX.
 
 ## Contributing
 
-Contributions are welcome! See [`CONTRIBUTING.md`](CONTRIBUTING.md) and
-[Contributing][docs-contributing] in the documentation, and mind our [code of
-conduct](CODE_OF_CONDUCT.md).
+Contributions are welcome! See [Contributing][docs-contributing] in the
+documentation and the organisation's [contributing guide][contributing], and
+mind our [code of conduct][code-of-conduct].
 
 [badge-build-status]: <https://github.com/elixir-cloud-aai/cloud-registry/actions/workflows/ci.yml/badge.svg?branch=dev>
 [badge-coverage]: <https://codecov.io/gh/elixir-cloud-aai/cloud-registry/branch/dev/graph/badge.svg?branch=dev>
@@ -99,6 +99,8 @@ conduct](CODE_OF_CONDUCT.md).
 [badge-url-docs]: <https://cloud-registry.readthedocs.io/en/latest/>
 [badge-url-github-tag]: <https://github.com/elixir-cloud-aai/cloud-registry/releases>
 [badge-url-license]: <https://www.apache.org/licenses/LICENSE-2.0>
+[code-of-conduct]: <https://github.com/elixir-cloud-aai/.github/blob/main/CODE_OF_CONDUCT.md>
+[contributing]: <https://github.com/elixir-cloud-aai/.github/blob/main/CONTRIBUTING.md>
 [deployment]: deployment/
 [docs]: <https://cloud-registry.readthedocs.io/en/latest/>
 [docs-contributing]: <https://cloud-registry.readthedocs.io/en/latest/contributing/>
