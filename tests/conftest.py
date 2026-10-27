@@ -60,8 +60,10 @@ AUDIENCE = "client-id"
 # The trusted issuer of the test overlay, a fictitious identity provider;
 # all its endpoints are mocked
 ISSUER = "https://login.example.org/oidc/"
-JWKS_URI = f"{ISSUER}jwk"
-USERINFO_URI = f"{ISSUER}userinfo"
+# A second fictitious identity provider, for deployments that trust several
+# issuers (subjects namespaced by issuer); it releases no groups, so that its
+# users can't be admins
+ISSUER2 = "https://login.other.example.org/"
 USER = "alice@example.org"
 ADMIN = "admin@example.org"
 # Opt-in role of admins (admin mode; FOCA's role name, as in
@@ -169,10 +171,10 @@ class MockResponse:
 def mock_get(
     url: str, headers: dict[str, str] | None = None, **kwargs: Any
 ) -> MockResponse:
-    """Mock `requests.get()` for the identity provider.
+    """Mock `requests.get()` for the identity providers.
 
-    Serves the discovery, JWK set and user info endpoints; other requests
-    fail.
+    Serves the discovery, JWK set and user info endpoints of `ISSUER` and
+    `ISSUER2` (whose user info has no groups or names); other requests fail.
 
     Args:
         url: Requested URL.
@@ -187,31 +189,38 @@ def mock_get(
         requests.ConnectionError: The URL is not an endpoint of the identity
             provider.
     """
-    if url.rstrip("/") == f"{ISSUER}.well-known/openid-configuration":
-        return MockResponse(
-            {
-                "issuer": ISSUER,
-                "jwks_uri": JWKS_URI,
-                "userinfo_endpoint": USERINFO_URI,
-            }
-        )
-    if url == JWKS_URI:
-        jwk = jwt.algorithms.RSAAlgorithm.to_jwk(KEY.public_key(), as_dict=True)
-        return MockResponse({"keys": [{**jwk, "kid": "rsa1", "use": "sig"}]})
-    if url == USERINFO_URI:
-        assert headers is not None
-        token = headers["Authorization"].removeprefix("Bearer ")
-        try:
-            claims = jwt.decode(
-                token, KEY.public_key(), algorithms=["RS256"], audience=AUDIENCE
+    for issuer in (ISSUER, ISSUER2):
+        if url.rstrip("/") == f"{issuer}.well-known/openid-configuration":
+            return MockResponse(
+                {
+                    "issuer": issuer,
+                    "jwks_uri": f"{issuer}jwk",
+                    "userinfo_endpoint": f"{issuer}userinfo",
+                }
             )
-        except jwt.InvalidTokenError:
-            return MockResponse({"error": "invalid_token"}, status_code=401)
-        sub = claims["sub"]
-        userinfo = {"sub": sub, GROUP_CLAIM: GROUPS.get(sub, [])}
-        if sub in NAMES:
-            userinfo["name"] = NAMES[sub]
-        return MockResponse(userinfo)
+        if url == f"{issuer}jwk":
+            jwk = jwt.algorithms.RSAAlgorithm.to_jwk(KEY.public_key(), as_dict=True)
+            return MockResponse({"keys": [{**jwk, "kid": "rsa1", "use": "sig"}]})
+        if url == f"{issuer}userinfo":
+            assert headers is not None
+            token = headers["Authorization"].removeprefix("Bearer ")
+            try:
+                claims = jwt.decode(
+                    token,
+                    KEY.public_key(),
+                    algorithms=["RS256"],
+                    audience=AUDIENCE,
+                    issuer=issuer,
+                )
+            except jwt.InvalidTokenError:
+                return MockResponse({"error": "invalid_token"}, status_code=401)
+            sub = claims["sub"]
+            if issuer != ISSUER:
+                return MockResponse({"sub": sub, GROUP_CLAIM: []})
+            userinfo = {"sub": sub, GROUP_CLAIM: GROUPS.get(sub, [])}
+            if sub in NAMES:
+                userinfo["name"] = NAMES[sub]
+            return MockResponse(userinfo)
     raise auth.requests.ConnectionError(f"Unexpected request in tests: {url}")
 
 
@@ -220,6 +229,7 @@ def make_headers(
     key: rsa.RSAPrivateKey = KEY,
     typ: str | None = "at+jwt",
     roles: str | None = ADMIN_ROLE,
+    issuer: str = ISSUER,
 ) -> dict[str, str]:
     """Get request headers with an access token for a user, in admin mode.
 
@@ -234,6 +244,7 @@ def make_headers(
         roles: Opt-in roles that the request asks for (header
             `X-Request-Roles`), by default admin mode, which applies to
             admins only; `None` for no header (admins act as other users).
+        issuer: Issuer of the token (`iss` claim).
 
     Returns:
         Request headers.
@@ -244,7 +255,7 @@ def make_headers(
             "aud": AUDIENCE,
             "sub": user,
             "scope": "openid groups",
-            "iss": ISSUER,
+            "iss": issuer,
             "iat": now,
             "exp": now + 300,
         },

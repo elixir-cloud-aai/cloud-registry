@@ -584,19 +584,22 @@ def _delete_roles(serviceId: str, subject: str, subject_type: SubjectType) -> No
 
 
 def _check_user_id(userId: str) -> None:
-    """Check that a user identifier is not `groups`.
+    """Check that a user identifier is not `groups`, nor starts with `groups/`.
 
     `/services/{serviceId}/permissions/groups` is the path of the roles of
     groups without a group (cf. `putServiceGroupPermission()`), not of a
-    user `groups`, so it is not found, like `.../permissions/groups/`.
+    user `groups`, so it is not found, like `.../permissions/groups/`, which
+    is routed here, as user identifiers may contain slashes (namespaced by
+    issuer); paths with a group are routed to the roles of groups.
 
     Args:
         userId: User identifier.
 
     Raises:
-        cloud_registry.exceptions.NotFound: The user identifier is `groups`.
+        cloud_registry.exceptions.NotFound: The user identifier is `groups`
+            or starts with `groups/`.
     """
-    if userId == "groups":
+    if userId.split("/", 1)[0] == "groups":
         raise NotFound
 
 
