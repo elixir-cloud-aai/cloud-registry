@@ -33,22 +33,16 @@ stored names of users (see `GET /services/{serviceId}/permissions`) in place.
 The configured policies (`security.access_control.policies`) are managed on
 startup and can't be changed via the API.
 
-### More admins
+### Making users admins
 
-Admins can make other users admins with it, by granting them the role `admin`
-(a `g` rule for the user identifier with the prefix `user:`); `GET /me`
-reports them as admins, too:
+Add users to a group mapped to the role `admin` to make them admins (see
+[Admins](access-control.md#admins)).
 
-```bash
-curl -X POST "http://localhost:8080/admin/access-control/permissions" \
-  -H "Authorization: Bearer <admin token>" -H "Content-Type: application/json" \
-  -d '{"policy_type": "g", "rule": {"v0": "user:<user-id>", "v1": "admin"}}'
-```
-
-The request returns the identifier of the rule; `DELETE` on
-`/admin/access-control/permissions/<rule-id>` revokes it. Prefer the group
-mapping for admins, as it is configured with the deployment; roles granted via
-the API are stored in the database. The API is served like the registry's
+The role is opt-in ([admin mode](access-control.md#admin-mode)), so the
+permissions API refuses rules that grant it (`400 Bad Request`), e.g.,
+`{"policy_type": "g", "rule": {"v0": "user:<user-id>", "v1": "admin"}}`, as
+users would then be admins without opting in. Requests to the API need admin
+mode (header `X-Request-Roles: admin`). The API is served like the registry's
 endpoints (e.g., the Helm chart's Ingress routes all paths); to keep it off
 the internet, route only `/ga4gh/registry/v1/` through a reverse proxy (see
 [Ingress](deployment.md#ingress) for the Helm chart).

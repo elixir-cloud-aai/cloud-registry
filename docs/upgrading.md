@@ -28,6 +28,24 @@ its settings and checks; change the config before upgrading:
 3. **Gunicorn:** the image loads FOCA's settings (`foca.gunicorn_config`);
    `cloud_registry.gunicorn_config` no longer exists. The settings are the
    same; custom commands that load the old module must load FOCA's.
+4. **Admin mode:** admins act as admins only in requests that ask for it
+   (header `X-Request-Roles: admin`; see [Admin
+   mode](access-control.md#admin-mode)). Tell the maintainers of clients
+   and scripts that need admin rights to send the header, or remove the
+   opt-in (`security.access_control.opt_in_roles: []`). In `GET /me`,
+   `admin` is now true only in admin mode; clients decide whether to offer
+   the switch by the new field `admin_available`. FOCA refuses
+   configured rules that grant the role `admin`
+   (`security.access_control.policies`) on startup. Stored ones (e.g.,
+   granted via the permissions API) still apply, without admin mode, and
+   FOCA warns of them when policies are first loaded. Revoke them (`DELETE
+   /admin/access-control/permissions/<rule-id>`, in admin mode), and add
+   the users to an admin group instead. During a rolling update, pods of
+   the previous version still grant admin rights without the header, and
+   may store new admin grants via the permissions API: if admin mode must
+   hold from the start, stop them before the new pods serve requests
+   (e.g., scale the app to 0 replicas, then upgrade), or revoke stored
+   admin grants once the rollout has finished.
 
 Noticeable, but no action needed:
 
@@ -38,7 +56,8 @@ Noticeable, but no action needed:
       surrounding whitespace with a `ValueError` (before: a `RuntimeError`
       of the app), and doesn't warn if no group claim is set at all.
     - FOCA's admin check also counts configured rules
-      (`security.access_control.policies`) that grant the role `admin`, and
+      (`security.access_control.policies`) that grant the role `admin`
+      (only without admin mode, which refuses such rules), and
       its warning without admins no longer names what nobody can do in the
       mode of service types (see [Service
       types](configuration.md#service-types)).

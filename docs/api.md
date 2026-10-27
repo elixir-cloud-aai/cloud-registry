@@ -30,6 +30,10 @@ under the API base path `/ga4gh/registry/v1`:
 | `/approvals` | `GET` | any authenticated user |
 | `/me` | `GET` | any authenticated user |
 
+Admins have their rights only in [admin mode](access-control.md#admin-mode):
+requests with the header `X-Request-Roles: admin`. Otherwise, they have the
+rights of other users.
+
 Deployments can [require login](access-control.md#requiring-login-for-reads)
 for the reads by anyone, except `GET /service-info`. Otherwise, these reads
 accept requests without and with an access token: with one, they show what
@@ -322,7 +326,8 @@ as other unwanted ones. Types are unique also while pending: `POST
 
 ```bash
 curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/types/approval" \
-  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <admin token>" -H "X-Request-Roles: admin" \
+  -H "Content-Type: application/json" \
   -d '{"group": "org.ga4gh", "artifact": "tes", "version": "1.1.0"}'
 ```
 
@@ -417,7 +422,8 @@ can't verify their own services.
 
 ```bash
 curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/<id>/verification" \
-  -H "Authorization: Bearer <admin token>" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <admin token>" -H "X-Request-Roles: admin" \
+  -H "Content-Type: application/json" \
   -d '{"url": "https://tes.example.org/ga4gh/tes/v1", "type": {"group": "org.ga4gh", "artifact": "tes", "version": "1.1.0"}}'
 ```
 

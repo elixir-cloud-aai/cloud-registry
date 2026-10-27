@@ -25,9 +25,10 @@ from urllib.parse import quote
 
 from flask import current_app, g, has_request_context, request
 from flask.globals import request_ctx
-from foca import get_custom_config
+from foca import get_config, get_custom_config
 from foca.security.access_control import (
     SubjectType,
+    get_available_opt_in_roles,
     get_current_group_values,
     get_current_subject,
     grant_role,
@@ -40,6 +41,7 @@ from foca.security.access_control import (
     revoke_roles,
 )
 from foca.security.access_control import add_owner as add_resource_owner
+from foca.security.access_control.constants import ADMIN_ROLE
 from foca.security.access_control.enforcement import _enforces_access_control
 from foca.security.auth import validate_token
 from foca.utils.logging import escape_log_value
@@ -237,11 +239,12 @@ def may_read_service(serviceId: str) -> bool:
     """Check whether the current user may get a service (`GET`).
 
     The same decision as for a request to `GET /services/{serviceId}` with
-    the token of the current request: the route of that request decides
-    whether FOCA enforces policies on it (only if reads require login, cf.
-    "Requiring login for reads" in `docs/access-control.md`), and if so, its
-    policies are evaluated by FOCA's `is_permitted()`, for the path and
-    method of that request.
+    the token of the current request, and the opt-in roles it asks for
+    (e.g., admin mode; `security.access_control.opt_in_header`): the route
+    of that request decides whether FOCA enforces policies on it (only if
+    reads require login, cf. "Requiring login for reads" in
+    `docs/access-control.md`), and if so, its policies are evaluated by
+    FOCA's `is_permitted()`, for the path and method of that request.
 
     The check relies on internals of FOCA (`_enforces_access_control()`) and
     Connexion (`connexion_context`), as FOCA has no public helper for the
@@ -261,7 +264,11 @@ def may_read_service(serviceId: str) -> bool:
     # current request (Connexion's security handlers store it on the request
     # context); the identifier is encoded, as in requests, and routed decoded
     path = service_path(quote(serviceId, safe=""))
-    with current_app.test_request_context(path, method="GET"):
+    # only the header of opt-in roles, so that the read is decided for the
+    # same roles as the current request (e.g., in admin mode)
+    header = get_config().security.access_control.opt_in_header
+    opt_in = [(header, value) for value in request.headers.getlist(header)]
+    with current_app.test_request_context(path, method="GET", headers=opt_in):
         rule = request.url_rule
         view = None if rule is None else current_app.view_functions.get(rule.endpoint)
         if view is None or request.view_args != {"serviceId": serviceId}:
@@ -706,9 +713,14 @@ def getMe(**kwargs: Any) -> dict[str, Any]:
             `token_info`); unused.
 
     Returns:
-        User identifier, whether the user is an admin (cf. FOCA's
-        `is_admin()`), whether they may add service types (cf.
-        `may_add_service_types()`) and whether these are pending (cf.
+        User identifier (`user_id`), whether the user is an admin on this
+        request (`admin`; cf. FOCA's `is_admin()`; in admin mode, i.e., if
+        the request asks for the opt-in role `admin`), whether they may
+        switch to admin mode (`admin_available`; cf. FOCA's
+        `get_available_opt_in_roles()`; always if `admin` is true, e.g.,
+        without opt-in), whether they may add service types
+        (`may_add_service_types`; cf. `may_add_service_types()`) and
+        whether these are pending (`service_types_pending`; cf.
         `service_types_pending()`), and the user's roles on services (cf.
         FOCA's `list_subject_roles()`): granted to the user, and granted to
         groups the user is a member of (with `group`), sorted by service
@@ -729,9 +741,12 @@ def getMe(**kwargs: Any) -> dict[str, Any]:
     remember_current_user(
         [service["service_id"] for service in services if "group" not in service]
     )
+    admin = is_admin()
     return {
         "user_id": user_id,
-        "admin": is_admin(),
+        "admin": admin,
+        # admins without opt-in (e.g., `opt_in_roles: []`) are always admins
+        "admin_available": admin or ADMIN_ROLE in get_available_opt_in_roles(),
         "may_add_service_types": may_add_service_types(),
         "service_types_pending": service_types_pending(),
         "services": services,

@@ -64,6 +64,10 @@ JWKS_URI = f"{ISSUER}jwk"
 USERINFO_URI = f"{ISSUER}userinfo"
 USER = "alice@example.org"
 ADMIN = "admin@example.org"
+# Opt-in role of admins (admin mode; FOCA's role name, as in
+# `opt_in_roles` of the base config), and the header that asks for it
+ADMIN_ROLE = "admin"
+ROLES_HEADER = "X-Request-Roles"
 # Claim with the group memberships of users (`claim_groups` of the test
 # overlay)
 GROUP_CLAIM = "groups"
@@ -212,15 +216,24 @@ def mock_get(
 
 
 def make_headers(
-    user: str = USER, key: rsa.RSAPrivateKey = KEY, typ: str | None = "at+jwt"
+    user: str = USER,
+    key: rsa.RSAPrivateKey = KEY,
+    typ: str | None = "at+jwt",
+    roles: str | None = ADMIN_ROLE,
 ) -> dict[str, str]:
-    """Get request headers with an access token for a user.
+    """Get request headers with an access token for a user, in admin mode.
+
+    By default, requests ask for admin mode, which only applies to admins
+    (cf. `roles`).
 
     Args:
         user: User identifier (`sub` claim).
         key: Key that signs the token.
         typ: Type of the token (`typ` header), `at+jwt` for access tokens
             (RFC 9068); `None` for no type.
+        roles: Opt-in roles that the request asks for (header
+            `X-Request-Roles`), by default admin mode, which applies to
+            admins only; `None` for no header (admins act as other users).
 
     Returns:
         Request headers.
@@ -240,7 +253,10 @@ def make_headers(
         # PyJWT omits `typ` if it is `None` (and sets `JWT` if it is missing)
         headers={"kid": "rsa1", "typ": typ},
     )
-    return {"Authorization": f"Bearer {token}"}
+    headers = {"Authorization": f"Bearer {token}"}
+    if roles is not None:
+        headers[ROLES_HEADER] = roles
+    return headers
 
 
 def _check_no_db(client: MongoClient[dict[str, Any]]) -> None:

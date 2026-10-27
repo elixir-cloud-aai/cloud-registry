@@ -21,6 +21,9 @@ security:
         # `keep_group_subjects` has no effect without a mapping (roles of
         # groups apply either way)
         group_mapping: {}
+        # No admin mode, as no group is mapped to `admin` (FOCA would warn
+        # that nobody can opt in to it)
+        opt_in_roles: []
 server:
     # Public URL of the app as published by `docker-compose.yaml`, e.g., for
     # `Location` headers
