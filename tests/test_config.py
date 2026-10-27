@@ -575,17 +575,27 @@ class TestChartOverlay:
 
     @pytest.mark.parametrize(
         ("claims", "valid"),
-        [(["", ""], False), (["", None], True), ([None, None], True)],
-        ids=["all-replaced", "one-replaced", "global"],
+        [
+            (["", ""], False),
+            (["", None], True),
+            ([None, None], True),
+            (["", "null"], True),
+        ],
+        ids=["all-replaced", "one-replaced", "global", "null"],
     )
     def test_issuer_group_claim_replaced(
         self, claims: list[str | None], valid: bool
     ) -> None:
-        """Group claims of issuers replace the global one, as in the app."""
+        """Group claims of issuers replace the global one, as in the app.
+
+        Unless unset or null (`"null"` in `claims`).
+        """
         issuers: list[dict[str, Any]] = []
         for index, claim in enumerate(claims):
             issuer: dict[str, Any] = {"issuer": f"https://{index}.example.org/"}
-            if claim is not None:
+            if claim == "null":
+                issuer["claim_groups"] = None
+            elif claim is not None:
                 issuer["claim_groups"] = claim
             issuers.append(issuer)
         args = (

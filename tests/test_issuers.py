@@ -94,17 +94,25 @@ def test_namespaced_permissions(two_issuers: FlaskClient, encode: bool) -> None:
     assert _update(client, service_id, _alice2()) == 403
 
 
-def test_group_permissions_routed(two_issuers: FlaskClient) -> None:
-    """Paths of roles of groups are not taken for users with slashes."""
+@pytest.mark.parametrize(
+    ("path", "group"), [("groups/team/a", "team/a"), ("groups%2Fx", "x")]
+)
+def test_group_permissions_routed(
+    two_issuers: FlaskClient, path: str, group: str
+) -> None:
+    """Paths of roles of groups are not taken for users with slashes.
+
+    Encoded slashes are decoded, so `groups%2Fx` is the group `x`.
+    """
     client = two_issuers
     service_id = register(client, ALICE)
     response = client.put(
-        f"{BASE}/services/{service_id}/permissions/groups/team/a",
+        f"{BASE}/services/{service_id}/permissions/{path}",
         json={"role": "maintainer"},
         headers=make_headers(ADMIN),
     )
     assert response.status_code == 200, response.get_json()
-    assert response.get_json() == {"group": "team/a", "role": "maintainer"}
+    assert response.get_json() == {"group": group, "role": "maintainer"}
 
 
 @pytest.mark.parametrize("user", ["groups", "groups%5Cx", "groups/"])
@@ -182,9 +190,9 @@ def test_upgrade_namespaced(
 ) -> None:
     """Adding an issuer with namespaced subjects needs the migration script.
 
-    Without it, stored users of the first issuer lose their roles; with it
-    (`python -m cloud_registry.namespace_subjects`), they keep them, also their roles on
-    services and the service types they added.
+    Without it, stored users of the first issuer lose their roles; with
+    it (`python -m cloud_registry.namespace_subjects`), they keep them, also
+    their roles on services and the service types they added.
     """
     client = _create_app(monkeypatch, tmp_path)
     service_id = register(client, ALICE)

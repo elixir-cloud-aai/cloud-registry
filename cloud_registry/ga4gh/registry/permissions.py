@@ -586,7 +586,8 @@ def _delete_roles(serviceId: str, subject: str, subject_type: SubjectType) -> No
 def _check_user_id(userId: str) -> None:
     """Check that a user identifier is not `groups`, nor starts with `groups/`.
 
-    Backslashes count as slashes, as in browsers (cf. the dot segments).
+    Backslashes count as slashes, as in browsers (cf. the patterns of
+    `userId` in `cloud_registry/api/additions.openapi.yaml`).
 
     `/services/{serviceId}/permissions/groups` is the path of the roles of
     groups without a group (cf. `putServiceGroupPermission()`), not of a

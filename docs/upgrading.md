@@ -246,9 +246,9 @@ types they added and their display names) then no longer match them:
 - **Otherwise:** after the config change, namespace the stored identifiers
   of the issuer trusted so far with the migration of the image, with the
   app's new config (e.g., in a pod of the app, whose deployment name
-  depends on the release; `--dry-run` only counts them, also with the new
-  config, and the migration refuses to run while the config trusts a
-  single issuer, or keeps the subjects of an issuer bare):
+  depends on the release; `--dry-run` only counts them). The migration,
+  also with `--dry-run`, refuses to run while the config trusts a single
+  issuer, or keeps the subjects of an issuer bare:
 
   ```bash
   kubectl exec deploy/cloud-registry -- \

@@ -203,7 +203,7 @@ def test_partial_run(client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> No
         adapter = client.application.config["casbin_adapter"]
         calls: list[None] = []
         monkeypatch.setattr(adapter, "mark_changed", lambda: calls.append(None))
-        with pytest.raises(RuntimeError):
+        with pytest.raises(RuntimeError, match="interrupted"):
             namespace_subjects(ISSUER)
         assert calls == [None]
 

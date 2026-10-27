@@ -132,7 +132,8 @@ group mappings need a group claim of at least one issuer
 {{- range $issuer := $issuers -}}
 {{- $claim := $claimGroups -}}
 {{- if kindIs "map" $issuer -}}
-{{- if hasKey $issuer "claim_groups" -}}
+{{- /* null, as unset, means the global claim (`get` returns "" for missing keys) */ -}}
+{{- if and (hasKey $issuer "claim_groups") (not (kindIs "invalid" (get $issuer "claim_groups"))) -}}
 {{- $claim = get $issuer "claim_groups" -}}
 {{- end -}}
 {{- $issuer = get $issuer "issuer" -}}
