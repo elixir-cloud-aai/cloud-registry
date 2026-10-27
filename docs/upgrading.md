@@ -40,7 +40,12 @@ its settings and checks; change the config before upgrading:
    granted via the permissions API) still apply, without admin mode, and
    FOCA warns of them when policies are first loaded. Revoke them (`DELETE
    /admin/access-control/permissions/<rule-id>`, in admin mode), and add
-   the users to an admin group instead.
+   the users to an admin group instead. During a rolling update, pods of
+   the previous version still grant admin rights without the header, and
+   may store new admin grants via the permissions API: if admin mode must
+   hold from the start, stop them before the new pods serve requests
+   (e.g., scale the app to 0 replicas, then upgrade), or revoke stored
+   admin grants once the rollout has finished.
 
 Noticeable, but no action needed:
 
