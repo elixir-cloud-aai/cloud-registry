@@ -50,10 +50,12 @@ The identity provider is deployment configuration, without defaults (see
 configuration](https://cloud-registry.readthedocs.io/en/latest/configuration/#deployment-configuration)).
 Rendering fails, as the app would refuse to start, unless each deployment sets:
 
-- the trusted token issuers (`config.security.auth.issuers`);
+- the trusted token issuers (`config.security.auth.issuers`): URLs, or
+  maps of the URL (`issuer`) and settings of the issuer (see [Several token
+  issuers](https://cloud-registry.readthedocs.io/en/latest/configuration/#several-token-issuers));
 - the audience (`config.security.auth.audience`), unless
   `config.security.auth.verify_audience` is `false`, which accepts tokens for
-  any audience;
+  any audience, or each issuer is a map with an `audience` of its own;
 - an admin group mapped to the role `admin`
   (`config.security.access_control.group_mapping`), unless
   `config.security.access_control.require_admin` is `false` (a boolean, as

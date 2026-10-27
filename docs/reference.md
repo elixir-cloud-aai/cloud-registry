@@ -27,6 +27,10 @@ HTTP API, see [API](api.md) and the Swagger UI of a deployment.
 
 ::: cloud_registry.ga4gh.registry.permissions
 
+## Migrations
+
+::: cloud_registry.namespace_subjects
+
 ## Errors
 
 ::: cloud_registry.exceptions

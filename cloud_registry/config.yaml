@@ -122,8 +122,11 @@ security:
             # permissions; maintainers may update them
             owners-change-services: [p, owner, "/ga4gh/registry/v1/services/:id", "(PUT)|(DELETE)"]
             owners-list-permissions: [p, owner, "/ga4gh/registry/v1/services/:id/permissions", GET]
-            owners-change-permissions: [p, owner, "/ga4gh/registry/v1/services/:id/permissions/:user", "(PUT)|(DELETE)"]
-            # groups may contain slashes
+            # users (namespaced by issuer, with several issuers) and groups
+            # may contain slashes; the first rule also covers the roles of
+            # groups (`keyMatch2` can't exclude them), so to restrict owners'
+            # roles of groups, override both rules
+            owners-change-permissions: [p, owner, "/ga4gh/registry/v1/services/:id/permissions/*", "(PUT)|(DELETE)"]
             owners-change-group-permissions: [p, owner, "/ga4gh/registry/v1/services/:id/permissions/groups/*", "(PUT)|(DELETE)"]
             maintainers-update-services: [p, maintainer, "/ga4gh/registry/v1/services/:id", PUT]
             # any authenticated user may add service types, unless only

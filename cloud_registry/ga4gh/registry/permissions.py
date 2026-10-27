@@ -583,20 +583,58 @@ def _delete_roles(serviceId: str, subject: str, subject_type: SubjectType) -> No
             _forget_names(serviceId, subject)
 
 
+def _first_segment(path: str) -> str:
+    """Get the first segment of a path, with backslashes as slashes.
+
+    Args:
+        path: Path, e.g., a user identifier.
+
+    Returns:
+        The part before the first slash or backslash (as in browsers).
+    """
+    return path.replace("\\", "/").split("/", 1)[0]
+
+
+def check_namespaces() -> None:
+    """Check that no trusted issuer has a namespace with the segment `groups`.
+
+    Must be called in an app context. The identifiers of its users would
+    start with `groups/`, the path of the roles of groups, so their roles
+    couldn't be changed via the permissions API (cf. `_check_user_id()`).
+
+    Raises:
+        ValueError: The namespace of a trusted issuer
+            (`security.auth.issuers`) is `groups` or starts with `groups/`.
+    """
+    for issuer, namespace in get_config().security.auth.get_namespaces().items():
+        if namespace is not None and _first_segment(namespace) == "groups":
+            raise ValueError(
+                f"The namespace {namespace!r} of the issuer {issuer!r} must "
+                "not start with 'groups/', the path of the roles of groups: "
+                "set another namespace ('security.auth.issuers')"
+            )
+
+
 def _check_user_id(userId: str) -> None:
-    """Check that a user identifier is not `groups`.
+    """Check that a user identifier is not `groups`, nor starts with `groups/`.
+
+    Backslashes count as slashes, as in browsers (cf. the patterns of
+    `userId` in `cloud_registry/api/additions.openapi.yaml`).
 
     `/services/{serviceId}/permissions/groups` is the path of the roles of
     groups without a group (cf. `putServiceGroupPermission()`), not of a
-    user `groups`, so it is not found, like `.../permissions/groups/`.
+    user `groups`, so it is not found, like `.../permissions/groups/`, which
+    is routed here, as user identifiers may contain slashes (namespaced by
+    issuer); paths with a group are routed to the roles of groups.
 
     Args:
         userId: User identifier.
 
     Raises:
-        cloud_registry.exceptions.NotFound: The user identifier is `groups`.
+        cloud_registry.exceptions.NotFound: The user identifier is `groups`
+            or starts with `groups/`.
     """
-    if userId == "groups":
+    if _first_segment(userId) == "groups":
         raise NotFound
 
 

@@ -36,7 +36,11 @@ publicUrl: ""
 config: {}
 #   security:
 #     auth:
-#       # Trusted token issuers (`iss` claim)
+#       # Trusted token issuers (`iss` claim), or maps of the issuer
+#       # (`issuer`) and settings of their own (`namespace`, `audience`,
+#       # `claim_groups`, `userinfo_claims`); with several, users are told
+#       # apart by issuer (see "Several token issuers" in the docs, on
+#       # configuration)
 #       issuers: ["https://login.example.org/oidc/"]
 #       # Client IDs of the apps calling the registry
 #       audience: ["my-portal-client-id"]

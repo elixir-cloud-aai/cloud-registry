@@ -1,6 +1,7 @@
 """Tests for the app config and the config overlay rendered by the Helm chart."""
 
 import fnmatch
+import json
 import os
 from pathlib import Path
 import re
@@ -458,6 +459,14 @@ class TestChartOverlay:
             ("--set-json", 'config.security.auth.issuers=[" https://x.org/"]'),
             ("--set-string", "config.security.auth.issuers=https://x.org/"),
             ("--set-json", "config.security.auth=null"),
+            ("--set-json", 'config.security.auth.issuers=[{"namespace": "x"}]'),
+            ("--set-json", 'config.security.auth.issuers=[{"issuer": " "}]'),
+            ("--set-json", 'config.security.auth.issuers=[{"issuer": 1}]'),
+            (
+                "--set-json",
+                'config.security.auth.issuers=[{"issuer": " https://x.org/"}]',
+            ),
+            ("--set-json", "config.security.auth.issuers=[[]]"),
         ],
         ids=[
             "missing",
@@ -469,6 +478,11 @@ class TestChartOverlay:
             "padded",
             "string",
             "auth-null",
+            "object-without-issuer",
+            "object-blank",
+            "object-number",
+            "object-padded",
+            "list",
         ],
     )
     def test_issuers_required(self, args: tuple[str, ...]) -> None:
@@ -496,6 +510,127 @@ class TestChartOverlay:
         )
         assert overlay["security"]["auth"]["issuers"] == ["https://issuer.example.org/"]
         assert overlay["security"]["access_control"]["claim_groups"] == "memberships"
+
+    def test_issuer_objects(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Issuers with settings of their own are passed to the app.
+
+        E.g., to trust a second issuer, keeping the subjects of the first one
+        bare (`namespace: ""`); their audiences and group claims replace the
+        global ones, which are then not required.
+        """
+        issuers = [
+            {
+                "issuer": "https://issuer.example.org/",
+                "namespace": "",
+                "audience": ["portal"],
+                "claim_groups": "memberships",
+            },
+            {"issuer": "https://other.example.org/", "audience": ["portal"]},
+        ]
+        overlay = _render_overlay(
+            "--set",
+            "hostName=example.org",
+            "--set-json",
+            f"config.security.auth.issuers={json.dumps(issuers)}",
+            issuer=None,
+            audience=None,
+            group_claim=None,
+        )
+        assert overlay["security"]["auth"]["issuers"] == issuers
+        config = _load_config(tmp_path, monkeypatch, overlay)
+        assert config.security.auth.get_namespaces() == {
+            "https://issuer.example.org/": None,
+            "https://other.example.org/": "https://other.example.org/",
+        }
+
+    @pytest.mark.parametrize(
+        "issuers",
+        [
+            [{"issuer": "https://x.org/", "audience": ["a"]}, "https://y.org/"],
+            [{"issuer": "https://x.org/"}],
+            [{"issuer": "https://x.org/", "audience": []}],
+            [{"issuer": "https://x.org/", "audience": [" "]}],
+            [{"issuer": "https://x.org/", "audience": None}],
+            [
+                {"issuer": "https://x.org/", "audience": ["a"]},
+                {"issuer": "https://y.org/"},
+            ],
+        ],
+        ids=["string", "unset", "empty", "blank", "null", "last-unset"],
+    )
+    def test_issuer_audience_required(self, issuers: list[Any]) -> None:
+        """Without a global audience, each issuer needs an audience of its own."""
+        with pytest.raises(subprocess.CalledProcessError) as exc:
+            _render_overlay(
+                "--set",
+                "hostName=example.org",
+                "--set-json",
+                f"config.security.auth.issuers={json.dumps(issuers)}",
+                issuer=None,
+                audience=None,
+            )
+        assert "config.security.auth.audience must" in exc.value.stderr
+
+    @pytest.mark.parametrize(
+        ("claims", "valid"),
+        [
+            (["", ""], False),
+            (["", None], True),
+            ([None, None], True),
+            (["", "null"], True),
+        ],
+        ids=["all-replaced", "one-replaced", "global", "null"],
+    )
+    def test_issuer_group_claim_replaced(
+        self, claims: list[str | None], valid: bool
+    ) -> None:
+        """Group claims of issuers replace the global one, as in the app.
+
+        Unless unset or null (`"null"` in `claims`).
+        """
+        issuers: list[dict[str, Any]] = []
+        for index, claim in enumerate(claims):
+            issuer: dict[str, Any] = {"issuer": f"https://{index}.example.org/"}
+            if claim == "null":
+                issuer["claim_groups"] = None
+            elif claim is not None:
+                issuer["claim_groups"] = claim
+            issuers.append(issuer)
+        args = (
+            "--set",
+            "hostName=example.org",
+            "--set-json",
+            f"config.security.auth.issuers={json.dumps(issuers)}",
+        )
+        if valid:
+            _render_overlay(*args, issuer=None)
+            return
+        with pytest.raises(subprocess.CalledProcessError) as exc:
+            _render_overlay(*args, issuer=None)
+        assert "config.security.access_control.claim_groups must" in exc.value.stderr
+
+    @pytest.mark.parametrize(
+        "claim",
+        [None, "", " groups"],
+        ids=["unset", "empty", "padded"],
+    )
+    def test_issuer_group_claim(self, claim: str | None) -> None:
+        """Group claims of issuers count for group mappings, if valid."""
+        issuer: dict[str, Any] = {"issuer": "https://x.org/"}
+        if claim is not None:
+            issuer["claim_groups"] = claim
+        with pytest.raises(subprocess.CalledProcessError) as exc:
+            _render_overlay(
+                "--set",
+                "hostName=example.org",
+                "--set-json",
+                f"config.security.auth.issuers={json.dumps([issuer])}",
+                issuer=None,
+                group_claim=None,
+            )
+        assert "config.security.access_control.claim_groups must" in exc.value.stderr
 
     @pytest.mark.parametrize(
         "args",
