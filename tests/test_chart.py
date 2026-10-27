@@ -655,13 +655,19 @@ def test_security_config_empty(value: str, error: str) -> None:
     [
         ("config.custom.max_content_length", "config.server.max_content_length"),
         ("config.custom.endpoints.service_info", "config.service_info.service"),
+        (
+            "config.custom.access_control.require_admin",
+            "config.security.access_control.require_admin",
+        ),
+        ("config.custom.endpoints.service", "publicUrl"),
     ],
-    ids=["max_content_length", "service_info"],
+    ids=["max_content_length", "service_info", "require_admin", "service"],
 )
 def test_custom_config_removed(removed: str, replacement: str) -> None:
     """Settings of the custom config replaced by FOCA's are rejected.
 
-    Replaced in the FOCA 0.15 upgrade; the error names the replacement.
+    Replaced in the FOCA 0.15 and 0.18 upgrades; the error names the
+    replacement.
     """
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render("--set-json", f'{removed}={{"name": "x"}}')
@@ -1084,7 +1090,7 @@ def test_admins_not_required(value: str) -> None:
     """Admins are optional if `require_admin` is false, as parsed by the app."""
     _render(
         "--set-json",
-        f"config.custom.access_control.require_admin={value}",
+        f"config.security.access_control.require_admin={value}",
         admin_group=None,
     )
 
@@ -1098,7 +1104,7 @@ def test_admins_required(value: str) -> None:
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render(
             "--set-json",
-            f"config.custom.access_control.require_admin={value}",
+            f"config.security.access_control.require_admin={value}",
             admin_group=None,
         )
     assert "must map a group to the role admin" in exc.value.stderr
@@ -1112,7 +1118,7 @@ def test_require_admin_invalid(tmp_path: Path, value: str) -> None:
     """
     values = tmp_path / "values.yaml"
     values.write_text(
-        f"config:\n  custom:\n    access_control:\n      require_admin: {value}\n"
+        f"config:\n  security:\n    access_control:\n      require_admin: {value}\n"
     )
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render("-f", str(values))
@@ -1223,12 +1229,13 @@ def test_library_dependency() -> None:
 
 
 def test_schema_of_library() -> None:
-    """The values schema is that of the library chart, with the app's key.
+    """The values schema is that of the library chart, with the app's keys.
 
     That is the library's `app-values.schema.json` with the changes that
     its `$comment` documents: the app's values (`cloudRegistry`) also
     require the Gunicorn settings and the `preStop` delay, MongoDB's image
-    is pinned to a minor version, and there is no Celery worker or broker.
+    is pinned to a minor version, there is no Celery worker or broker, and
+    the public URL can be set (`publicUrl`).
     The `$comment` names the library's version, which the release pin
     check compares with the pinned one.
     """
@@ -1247,6 +1254,7 @@ def test_schema_of_library() -> None:
         "allOf": [{"$ref": "#/$defs/app"}],
         "required": ["preStopSleepSeconds", "gunicorn"],
     }
+    assert properties.pop("publicUrl")["type"] == "string"
     image = properties["mongodb"]["properties"]["image"]
     assert "minor version" in image.pop("description")
     expected = dict(library["properties"])
@@ -1441,19 +1449,54 @@ def test_max_content_length_invalid(args: tuple[str, ...]) -> None:
 def test_custom_null() -> None:
     """`config.custom: null` is like no custom config.
 
-    The generated custom config is kept.
+    The generated, empty custom config is kept (not `null`, which the app
+    would refuse).
     """
     docs = _render("--set", "config.custom=null")
-    assert _overlay(docs)["custom"]["endpoints"]["service"]["external_host"] == "x"
+    assert _overlay(docs)["custom"] == {}
+
+
+@pytest.mark.parametrize(
+    "args, url",
+    [
+        ((), "https://x/"),
+        (
+            ("--set", "publicUrl=https://example.org/registry/"),
+            "https://example.org/registry/",
+        ),
+        (
+            ("--set", "config.server.public_url=https://example.org:8443/"),
+            "https://example.org:8443/",
+        ),
+    ],
+    ids=["host_name", "public_url", "config"],
+)
+def test_public_url(args: tuple[str, ...], url: str) -> None:
+    """The public URL of the app is `https://<hostName>/`.
+
+    Unless `publicUrl` sets it, or `config` (which takes precedence).
+    """
+    docs = _render(*args)
+    assert _overlay(docs)["server"]["public_url"] == url
+
+
+@pytest.mark.parametrize(
+    "url", ["registry.org", "ftp://registry.org/", "https://registry.org/?a=b"]
+)
+def test_public_url_invalid(url: str) -> None:
+    """`publicUrl` must be an `http` or `https` URL without query or fragment."""
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render("--set", f"publicUrl={url}")
+    assert "/publicUrl" in exc.value.stderr
 
 
 def test_server_null() -> None:
     """`config.server: null` is like no server config.
 
-    The overlay has no `server` (FOCA would refuse `null`).
+    The overlay has the generated `server` (FOCA would refuse `null`).
     """
     docs = _render("--set-json", "config.server=null")
-    assert "server" not in _overlay(docs)
+    assert _overlay(docs)["server"] == {"public_url": "https://x/"}
 
 
 def test_ingress_body_size_annotation() -> None:

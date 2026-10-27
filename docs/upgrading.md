@@ -6,6 +6,52 @@ steps on this page. Upgrades of Helm releases are described in
 [Deployment](deployment.md#upgrades). This page describes how to upgrade, and
 how existing setups and data are affected.
 
+## From 0.5.0
+
+Data is kept. The app now builds on FOCA 0.18, which provides several of
+its settings and checks; change the config before upgrading:
+
+1. **Public URL:** `custom.endpoints.service` is removed: set FOCA's
+   `server.public_url` to the absolute URL of the app as clients see it,
+   including any path prefix of a proxy (formerly `api_path`), e.g.,
+   `https://registry.example.org/` instead of `url_prefix: https`,
+   `external_host: registry.example.org` and `external_port: 443` (see
+   [Public URLs](configuration.md#public-urls)). The app refuses to start
+   without it, and FOCA refuses URLs with a query or fragment. With the Helm
+   chart, `hostName` keeps working (`https://<hostName>/`); set `publicUrl`
+   for anything else (see [Deployment](deployment.md#upgrades)).
+2. **Admins required:** `custom.access_control.require_admin` moves to
+   FOCA's `security.access_control.require_admin` (`true` in the base
+   config, as before); the old key is rejected. The other settings of
+   `custom.access_control` (`service_types`, `max_unused_service_types`)
+   stay.
+3. **Gunicorn:** the image loads FOCA's settings (`foca.gunicorn_config`);
+   `cloud_registry.gunicorn_config` no longer exists. The settings are the
+   same; custom commands that load the old module must load FOCA's.
+
+Noticeable, but no action needed:
+
+- Startup checks of the group settings, of the admins and of the service
+  info are FOCA's, with FOCA's log messages (other wording and loggers):
+    - FOCA refuses group mappings without a group claim
+      (`security.access_control.claim_groups`) and group claims with
+      surrounding whitespace with a `ValueError` (before: a `RuntimeError`
+      of the app), and doesn't warn if no group claim is set at all.
+    - FOCA's admin check also counts configured rules
+      (`security.access_control.policies`) that grant the role `admin`, and
+      its warning without admins no longer names what nobody can do in the
+      mode of service types (see [Service
+      types](configuration.md#service-types)).
+    - FOCA warns of values of the service info in reserved example domains
+      (e.g., `id`, `organization.url`, `contactUrl` and `documentationUrl`),
+      and doesn't check `organization.name`.
+- Requests rejected by the validation of the API specification still get
+  the reason as `detail`, now from FOCA (`exceptions.validation_details`);
+  the reasons are logged by FOCA. Responses that fail the validation of the
+  API specification (e.g., of stored services that are invalid) are now
+  logged by Connexion (`ERROR`, with the response), as FOCA only filters
+  the log records of rejected requests.
+
 ## From 0.4.0
 
 Data is kept. Before upgrading:
@@ -85,7 +131,8 @@ them.
       mappings);
     - `config.security.access_control.group_mapping`: the admin group mapped
       to the role `admin` (required, unless
-      `config.custom.access_control.require_admin` is `false`);
+      `config.security.access_control.require_admin` is `false`; before
+      0.6.0, `config.custom.access_control.require_admin`);
     - `mongodb.auth.existingSecret`: the name of the Secret;
     - `config.service_info.service`: the service info of the deployment
       (e.g., `id`, `name`, `organization`, `contactUrl` and

@@ -15,9 +15,9 @@ other than admins may have added (`max_unused_service_types`).
 
 from typing import Any
 
-from foca import get_config
+from foca import get_config, get_custom_config
 
-from cloud_registry.utils import get_custom_config
+from cloud_registry.service_models.custom_config import CustomConfig
 
 # Service info field with the registration rules
 RULES = "registration_rules"
@@ -38,7 +38,7 @@ def registration_rules() -> dict[str, Any]:
         than admins may have added (`max_unused_service_types`; left out if
         there is no limit; `0` if they can't add types). Lists are copies.
     """
-    custom = get_custom_config()
+    custom = get_custom_config(CustomConfig)
     services = custom.endpoints.services
     access_control = custom.access_control
     rules: dict[str, Any] = {

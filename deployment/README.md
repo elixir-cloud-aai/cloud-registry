@@ -17,8 +17,9 @@ renders a config overlay into the `<app>-config` ConfigMap (see
 [Names and labels](#names-and-labels)), which FOCA merges into the base
 config on startup (via `FOCA_CONFIG_OVERLAY`):
 
-- `hostName` sets the public URL of the app
-  (`custom.endpoints.service`: `https://<hostName>:443`);
+- `hostName` sets the public URL of the app (`server.public_url`:
+  `https://<hostName>/`), unless `publicUrl` sets it (e.g., with the path
+  prefix of a proxy, `https://example.org/registry/`);
 - `db.host` is set to the release's MongoDB Service (`<app>-mongodb`),
   unless MongoDB is external (see [External MongoDB](#external-mongodb));
 - `config` overrides keys of the base config; it takes precedence over the
@@ -38,6 +39,11 @@ login for
 reads](https://cloud-registry.readthedocs.io/en/latest/access-control/#requiring-login-for-reads), or
 policies by name) need images built with FOCA 0.17: any release,
 or `dev` and `sha-<commit>` images of commits since the upgrade to FOCA 0.17.
+This chart version sets the public URL (`config.server.public_url`) and
+requires images built with FOCA 0.18 (app 0.6.0 or later, or `dev` and
+`sha-<commit>` images of commits since the upgrade to FOCA 0.18): older
+images refuse to start, as they reject `config.server.public_url`, which the
+chart always sets (and `config.security.access_control.require_admin`).
 
 The identity provider is deployment configuration, without defaults (see
 [Deployment
@@ -50,8 +56,10 @@ Rendering fails, as the app would refuse to start, unless each deployment sets:
   any audience;
 - an admin group mapped to the role `admin`
   (`config.security.access_control.group_mapping`), unless
-  `config.custom.access_control.require_admin` is `false` (a boolean, as
-  the app parses it, e.g., `"no"`; rendering fails on other values);
+  `config.security.access_control.require_admin` is `false` (a boolean, as
+  the app parses it, e.g., `"no"`; rendering fails on other values); the
+  chart counts only group mappings, so set it to `false` if only rules of
+  `config.security.access_control.policies` grant the role;
 - the claim with the groups of users
   (`config.security.access_control.claim_groups`), if groups are mapped.
 
@@ -726,6 +734,22 @@ kubectl rollout restart deployment/cloud-registry -n <namespace>
 
 Set `config.custom.access_control.service_types: moderated` only after
 that, in a later upgrade.
+
+### To app version 0.6.0
+
+Data is kept. Rendering fails while removed keys are set:
+
+- `config.custom.endpoints.service` (the public URL of the app): `hostName`
+  sets `https://<hostName>/`, as before; set `publicUrl` for any other URL,
+  e.g., with the path prefix of a proxy (`https://example.org/registry/`).
+- `config.custom.access_control.require_admin`: set
+  `config.security.access_control.require_admin` instead.
+
+This chart version requires images of app version 0.6.0 or later (built
+with FOCA 0.18). Commands that load `cloud_registry.gunicorn_config` must
+load FOCA's `foca.gunicorn_config` (same settings). See [From
+0.5.0](https://cloud-registry.readthedocs.io/en/latest/upgrading/#from-050)
+for the other changes.
 
 ## Probes
 

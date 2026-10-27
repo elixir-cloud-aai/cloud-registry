@@ -2,7 +2,7 @@
 ## Pinned by digest, so that rebuilds (e.g., of a release) use the same base
 ## image; Dependabot updates the tag and digest together
 ## (`.github/dependabot.yml`)
-FROM elixircloud/foca:0.17.0-py3.13@sha256:9790ac2c07b6373ab10235d3ad39cb7eb9a29b0828419acfe71ac77a8a7a7291
+FROM elixircloud/foca:0.18.0-py3.13@sha256:dd8dd927d8d5e7ccb616d441c8db7a5e2c0b24c52a3329f484f6edac082b7a26
 
 ##### METADATA #####
 ## OCI annotations; images built from the FOCA image inherit its own, so all
@@ -50,10 +50,10 @@ ENV HEALTHCHECK_URL=http://localhost:8080/ga4gh/registry/v1/ui/
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen(os.environ['HEALTHCHECK_URL'], timeout=4)"]
 
-## Serve with Gunicorn (settings in `cloud_registry/gunicorn_config.py`;
+## Serve with Gunicorn (FOCA's settings for containers, `foca.gunicorn_config`;
 ## override them via `GUNICORN_CMD_ARGS`, e.g., `--workers 2`); each worker
 ## creates the app (no preloading) and runs its startup checks, and Gunicorn
 ## exits if they fail. `python -m cloud_registry.app` runs Flask's development
 ## server instead
-CMD ["gunicorn", "--config", "python:cloud_registry.gunicorn_config", \
+CMD ["gunicorn", "--config", "python:foca.gunicorn_config", \
   "cloud_registry.app:create_app()"]

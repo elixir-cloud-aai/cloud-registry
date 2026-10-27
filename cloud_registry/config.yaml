@@ -7,7 +7,7 @@
 # Cf. https://foca.readthedocs.io/en/latest/configuration/server/
 # `host` and `port` apply to the development server
 # (`python -m cloud_registry.app`) only: the image serves the app with
-# Gunicorn on port 8080 (`--bind`, see `cloud_registry/gunicorn_config.py`)
+# Gunicorn on port 8080 (`--bind`, see FOCA's `foca.gunicorn_config`)
 server:
     host: '0.0.0.0'
     port: 8080
@@ -22,6 +22,12 @@ server:
     # `nginx.ingress.kubernetes.io/proxy-body-size` for ingress-nginx, whose
     # default is 1 MiB)
     max_content_length: 1048576
+    # Public URL of the app as clients see it, including any path prefix of a
+    # reverse proxy (e.g., `https://registry.example.org/` or
+    # `https://example.org/registry/`), for the `Location` header of new
+    # services; required: the app refuses to start without it (deployments
+    # set it; the Helm chart from `hostName` or `publicUrl`)
+    # public_url: https://registry.example.org/
 
 # Security configuration
 # Cf. https://foca.readthedocs.io/en/latest/configuration/auth/ and
@@ -84,7 +90,7 @@ security:
         # Deployments set the claim with the groups of users (`claim_groups`)
         # and map their admin groups (values of that claim) to the role
         # `admin` (`group_mapping`); the app refuses to start without them,
-        # unless `custom.access_control.require_admin` is false. E.g.:
+        # unless `require_admin` is false. E.g.:
         # claim_groups: groups
         # group_mapping:
         #   registry-admins: admin
@@ -92,6 +98,10 @@ security:
         # subjects, so that roles on services granted to groups apply while
         # `group_mapping` is set
         keep_group_subjects: True
+        # Refuse to start without admins, i.e., unless a group is mapped to
+        # the role `admin` (`group_mapping`) or a rule of `policies` grants it
+        # (FOCA; false: start with a warning)
+        require_admin: True
         # Managed on startup (removed rules are deleted); cannot be changed
         # via the permissions API. Named, so that overlays can change, add or
         # remove single rules by name (`null` removes a rule)
@@ -294,12 +304,14 @@ log:
 exceptions:
     mapping: cloud_registry.exceptions.exceptions
     media_type: application/json
+    # Requests rejected by Connexion's validation (e.g., of the schema) get
+    # the reason as detail (shortened to `max_detail_length`, 500 characters
+    # by default); FOCA's default since 0.18, set explicitly, as clients rely
+    # on it
+    validation_details: True
 
 custom:
     access_control:
-        # Refuse to start unless a group is mapped to the role `admin` (see
-        # `security.access_control.group_mapping`)
-        require_admin: True
         # Who may add service types (`GET /services/types`): `open`, any
         # authenticated user, explicitly (`POST /services/types`) or by
         # registering a service with a new type; `controlled`, admins only,
@@ -313,14 +325,6 @@ custom:
         # limit (see "Service types" in `docs/configuration.md`)
         max_unused_service_types: 10
     endpoints:
-        # Public URL of the app, e.g., for the `Location` header; `api_path` is
-        # a path prefix in front of the API base path (e.g., of a reverse
-        # proxy)
-        service:
-            url_prefix: https
-            external_host: 0.0.0.0
-            external_port: 8080
-            api_path: ''
         services:
             id:
                 charset: ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789

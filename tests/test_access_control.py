@@ -26,7 +26,7 @@ from foca.security.access_control import (
 from foca.security.access_control import (
     ownership as ownership_module,
 )
-from foca.security.access_control.enforcement import get_enforcer
+from foca.security.access_control.enforcement import locked_enforcer
 from foca.security.access_control.foca_casbin_adapter.adapter import Adapter
 from pymongo.collection import Collection
 import pytest
@@ -701,7 +701,8 @@ def test_is_admin_without_subject(app: App) -> None:
     with app.app.test_request_context(f"{BASE}/me"):
         app.app.preprocess_request()
         prefix = get_config().security.access_control.subject_prefix
-        get_enforcer().add_role_for_user(f"{prefix}None", "admin")
+        with locked_enforcer() as enforcer:
+            enforcer.add_role_for_user(f"{prefix}None", "admin")
         assert not is_admin()
 
 

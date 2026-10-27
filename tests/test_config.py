@@ -138,24 +138,26 @@ def test_config_overlay(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
         monkeypatch,
         {
             "security": {"auth": {"audience": ["a"], "verify_audience": True}},
-            "custom": {"endpoints": {"service": {"external_host": "example.org"}}},
+            "custom": {"endpoints": {"services": {"id": {"length": 8}}}},
         },
     )
     assert config.security.auth.audience == ["a"]
     assert config.security.auth.verify_audience is True
     assert config.security.auth.verify_token_type is True  # kept from the base
-    assert _custom(config).endpoints.service.external_host == "example.org"
-    assert _custom(config).endpoints.service.external_port == 8080
+    assert _custom(config).endpoints.services.id.length == 8
+    assert _custom(config).endpoints.services.id.charset == (  # kept from the base
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    )
     assert config.db is not None
     assert config.db.host == "mongodb"
 
 
 def test_config_overlays(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Later overlays take precedence."""
-    service = {"custom": {"endpoints": {"service": {"external_host": "first"}}}}
-    later = {"custom": {"endpoints": {"service": {"external_host": "second"}}}}
-    config = _load_config(tmp_path, monkeypatch, service, later)
-    assert _custom(config).endpoints.service.external_host == "second"
+    first = {"server": {"public_url": "https://first.org/"}}
+    later = {"server": {"public_url": "https://second.org/"}}
+    config = _load_config(tmp_path, monkeypatch, first, later)
+    assert config.server.public_url == "https://second.org"
 
 
 def test_config_no_identity_provider(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -297,7 +299,7 @@ def test_config_dev_overlay(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(ROOT / "config.dev.yaml"))
     config = _parse_config()
     assert config.security.auth.verify_audience is False
-    assert _custom(config).access_control.require_admin is False
+    assert config.security.access_control.require_admin is False
     assert _custom(config).endpoints.services.url_schemes == ["http", "https"]
 
 
@@ -395,15 +397,18 @@ class TestChartOverlay:
     """Tests for the config overlay rendered by the Helm chart."""
 
     def test_host_name(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """`hostName` sets the public URL."""
+        """`hostName` sets the public URL, unless `publicUrl` does."""
         overlay = _render_overlay("--set", "hostName=registry.example.org")
         config = _load_config(tmp_path, monkeypatch, overlay)
-        service = _custom(config).endpoints.service
-        assert (service.url_prefix, service.external_host, service.external_port) == (
-            "https",
-            "registry.example.org",
-            443,
+        assert config.server.public_url == "https://registry.example.org"
+        overlay = _render_overlay(
+            "--set",
+            "hostName=example.org",
+            "--set",
+            "publicUrl=https://example.org/registry/",
         )
+        config = _load_config(tmp_path, monkeypatch, overlay)
+        assert config.server.public_url == "https://example.org/registry"
 
     def test_config_precedence(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -413,13 +418,10 @@ class TestChartOverlay:
             "-f",
             str(CHART / "ci" / "test-values.yaml"),
             "--set",
-            "config.custom.endpoints.service.external_port=8443",
+            "config.server.public_url=https://registry.example.org:8443/",
         )
         config = _load_config(tmp_path, monkeypatch, overlay)
-        assert _custom(config).endpoints.service.external_host == (
-            "registry.example.org"
-        )
-        assert _custom(config).endpoints.service.external_port == 8443
+        assert config.server.public_url == "https://registry.example.org:8443"
         assert config.security.auth.audience == ["test-client"]
 
     def test_service_info(
@@ -543,11 +545,11 @@ class TestChartOverlay:
             "--set",
             "hostName=example.org",
             "--set",
-            "config.custom.access_control.require_admin=false",
+            "config.security.access_control.require_admin=false",
             admin_group=None,
             group_claim=None,
         )
-        assert overlay["custom"]["access_control"] == {"require_admin": False}
+        assert overlay["security"]["access_control"]["require_admin"] is False
 
     @pytest.mark.parametrize(
         "args",

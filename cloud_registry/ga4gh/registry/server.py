@@ -4,14 +4,15 @@ import logging
 from typing import Any
 
 from flask import Response, request
+from foca.errors.exceptions import shorten_detail
 from foca.security.access_control import get_current_subject, is_admin
 from foca.utils.logging import escape_log_value, log_traffic
+from foca.utils.urls import get_public_url
 
 from cloud_registry.exceptions import (
     BadRequest,
     NotFound,
     problem,
-    shorten_detail,
 )
 from cloud_registry.ga4gh.registry.locks import changing
 from cloud_registry.ga4gh.registry.permissions import (
@@ -47,7 +48,7 @@ from cloud_registry.ga4gh.registry.service_types import (
     visible_services,
     visible_types,
 )
-from cloud_registry.utils import get_collection, get_public_url
+from cloud_registry.utils import get_collection
 
 logger = logging.getLogger(__name__)
 # Response for a registered service: its identifier, status `201` and its URL

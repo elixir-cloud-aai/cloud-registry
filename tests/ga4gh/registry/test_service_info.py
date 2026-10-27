@@ -1,6 +1,7 @@
 """Unit tests for the service info fields of the registry."""
 
 from flask import Flask
+from foca import get_custom_config
 from foca.config.access import get_app_config
 from foca.models.config import ServiceInfoConfig
 import pytest
@@ -12,7 +13,7 @@ from cloud_registry.ga4gh.registry.service_info import (
     registration_rules,
     runtime_fields,
 )
-from cloud_registry.utils import get_custom_config
+from cloud_registry.service_models.custom_config import CustomConfig
 
 # Service info as in `config.yaml`, with the fields required by the GA4GH
 # `Service` schema
@@ -43,7 +44,7 @@ def test_registration_rules_configured(unit_app: Flask) -> None:
     an empty list of environments (any value) is served as it is.
     """
     with unit_app.app_context():
-        custom = get_custom_config()
+        custom = get_custom_config(CustomConfig)
         custom.endpoints.services.environments = []
         custom.endpoints.services.url_schemes = ["http", "https"]
         custom.access_control.service_types = "moderated"

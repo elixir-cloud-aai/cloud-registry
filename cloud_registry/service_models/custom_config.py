@@ -7,44 +7,6 @@ from foca.utils.misc import generate_id
 from pydantic import Field, NonNegativeInt, PositiveInt, field_validator
 
 
-class ServiceConfig(FOCABaseConfig):
-    """Model for configuration parameters to set up a service.
-
-    Args:
-        url_prefix: Service protocol at which the application is exposed.
-        external_host: Host at which the application is exposed.
-        external_port: Port at which the application is exposed.
-        api_path: Path prefix in front of the API base path in public URLs,
-            e.g., when served behind a reverse proxy; empty for none.
-
-    Attributes:
-        url_prefix: Service protocol at which the application is exposed.
-        external_host: Host at which the application is exposed.
-        external_port: Port at which the application is exposed.
-        api_path: Path prefix in front of the API base path in public URLs,
-            e.g., when served behind a reverse proxy; empty for none.
-
-    Raises:
-        pydantic.ValidationError: The class was instantianted with an illegal
-            data type.
-
-    Example:
-        >>> ServiceConfig(
-        ...     url_prefix='https',
-        ...     external_host='0.0.0.0',
-        ...     external_port=8080,
-        ...     api_path=''
-        ... )
-        ServiceConfig(url_prefix='https', external_host='0.0.0.0', external_po\
-rt=8080, api_path='')
-    """
-
-    url_prefix: str
-    external_host: str
-    external_port: int
-    api_path: str
-
-
 class IdConfig(FOCABaseConfig):
     """Model for defining unique identifier for services on cloud registry.
 
@@ -160,11 +122,9 @@ class EndpointsConfig(FOCABaseConfig):
     """Model for defining endpoint configuration parameters.
 
     Args:
-        service: Service run parameters.
         services: Cloud registry service store parameters.
 
     Attributes:
-        service: Service run parameters.
         services: Cloud registry service store parameters.
 
     Raises:
@@ -173,12 +133,6 @@ class EndpointsConfig(FOCABaseConfig):
 
     Example:
         >>> EndpointsConfig(
-        ...     service=ServiceConfig(
-        ...         url_prefix='https',
-        ...         external_host='0.0.0.0',
-        ...         external_port=8080,
-        ...         api_path=''
-        ...     ),
         ...     services=ServicesConfig(
         ...         id=IdConfig(
         ...             charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
@@ -186,13 +140,11 @@ class EndpointsConfig(FOCABaseConfig):
         ...         )
         ...     )
         ... )
-        EndpointsConfig(service=ServiceConfig(url_prefix='https', external_hos\
-t='0.0.0.0', external_port=8080, api_path=''), services=ServicesConfig(id=IdCo\
-nfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', length=6), url_schemes=['\
-https'], environments=['prod', 'test', 'dev', 'staging']))
+        EndpointsConfig(services=ServicesConfig(id=IdConfig(charset='ABCDEFGHI\
+JKLMNOPQRSTUVWXYZ0123456789', length=6), url_schemes=['https'], environments=[\
+'prod', 'test', 'dev', 'staging']))
     """
 
-    service: ServiceConfig
     services: ServicesConfig
 
 
@@ -200,9 +152,6 @@ class AccessControlConfig(FOCABaseConfig):
     """Model for access control settings of the app.
 
     Args:
-        require_admin: Whether the app refuses to start unless a group is
-            mapped to the role `admin` (in
-            `security.access_control.group_mapping`).
         service_types: Who may add service types: `open` (the default), any
             authenticated user, explicitly (`POST /services/types`) or by
             registering a service with a new type; `controlled`, admins
@@ -216,9 +165,6 @@ class AccessControlConfig(FOCABaseConfig):
             and of pending types, that users can grow.
 
     Attributes:
-        require_admin: Whether the app refuses to start unless a group is
-            mapped to the role `admin` (in
-            `security.access_control.group_mapping`).
         service_types: Who may add service types: `open` (the default), any
             authenticated user, explicitly (`POST /services/types`) or by
             registering a service with a new type; `controlled`, admins
@@ -237,12 +183,10 @@ class AccessControlConfig(FOCABaseConfig):
             `moderated`, or `max_unused_service_types` is negative.
 
     Example:
-        >>> AccessControlConfig(require_admin=False, service_types='controlled')
-        AccessControlConfig(require_admin=False, service_types='controlled', max_\
-unused_service_types=10)
+        >>> AccessControlConfig(service_types='controlled')
+        AccessControlConfig(service_types='controlled', max_unused_service_types=10)
     """
 
-    require_admin: bool = True
     service_types: Literal["open", "controlled", "moderated"] = "open"
     max_unused_service_types: NonNegativeInt | None = 10
 
@@ -265,12 +209,6 @@ class CustomConfig(FOCABaseConfig):
     Example:
         >>> CustomConfig(
         ...     endpoints=EndpointsConfig(
-        ...         service=ServiceConfig(
-        ...             url_prefix='https',
-        ...             external_host='0.0.0.0',
-        ...             external_port=8080,
-        ...             api_path=''
-        ...         ),
         ...         services=ServicesConfig(
         ...             id=IdConfig(
         ...                 charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
@@ -279,12 +217,10 @@ class CustomConfig(FOCABaseConfig):
         ...         )
         ...     )
         ... )
-        CustomConfig(endpoints=EndpointsConfig(service=ServiceConfig(url_prefi\
-x='https', external_host='0.0.0.0', external_port=8080, api_path=''), services\
-=ServicesConfig(id=IdConfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', le\
-ngth=6), url_schemes=['https'], environments=['prod', 'test', 'dev', 'staging'\
-])), access_control=AccessControlConfig(require_admin=True, service_types='ope\
-n', max_unused_service_types=10))
+        CustomConfig(endpoints=EndpointsConfig(services=ServicesConfig(id=IdCo\
+nfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', length=6), url_schemes=['\
+https'], environments=['prod', 'test', 'dev', 'staging'])), access_control=Acc\
+essControlConfig(service_types='open', max_unused_service_types=10))
     """
 
     endpoints: EndpointsConfig

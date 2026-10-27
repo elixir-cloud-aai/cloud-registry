@@ -41,7 +41,7 @@ chart's `config` value), otherwise the app refuses to start:
 - `security.access_control.group_mapping`: the group(s) whose members are
   admins (values of the group claim, see [Access
   control](access-control.md#admins)), or
-  `custom.access_control.require_admin: false` to run without admins.
+  `security.access_control.require_admin: false` to run without admins.
 
 For example:
 
@@ -114,16 +114,17 @@ services:
 
 ## Public URLs
 
-Public URLs, e.g., in `Location` headers, are built from
-`custom.endpoints.service` (scheme, host and port). The Helm chart sets them
-from its `hostName` value; other deployments must set them, as the defaults
-(`https://0.0.0.0:8080`) aren't reachable (the Docker Compose setup sets
-`http://localhost:8080` in
+Public URLs, e.g., in `Location` headers, are built from the public URL of
+the app as clients see it, FOCA's
+[`server.public_url`](https://foca.readthedocs.io/en/latest/configuration/server/#public-url),
+including any path prefix of a reverse proxy (e.g.,
+`https://registry.example.org/` or `https://example.org/registry/`). The app
+refuses to start without it. The Helm chart sets it to
+`https://<hostName>/`, or to its `publicUrl` value; other deployments must
+set it (the Docker Compose setup sets `http://localhost:8080` in
 [`config.dev.yaml`](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/config.dev.yaml)).
-Set `api_path` to the path prefix in front of the API base path when the app
-is served behind a reverse proxy under a subpath (e.g., `registry`), or leave
-it empty. Previously, `api_path` held the API base path itself; see
-[Upgrading](upgrading.md#public-urls).
+It replaces `custom.endpoints.service` of earlier versions; see
+[Upgrading](upgrading.md#from-050).
 
 ## Service URL schemes
 
@@ -254,17 +255,15 @@ default, the app's default; see [Ingress](deployment.md#ingress)).
 ## Server
 
 The image serves the app with [Gunicorn](https://gunicorn.org/) on port 8080,
-with settings for a small container in
-[`cloud_registry/gunicorn_config.py`](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/cloud_registry/gunicorn_config.py):
-one worker process with 4 threads, workers restarted if their main loop
-doesn't respond for 30 seconds (requests run in threads, so slow requests
-don't count), 20 seconds to finish requests on shutdown, idle keep-alive
-connections closed after 100 seconds, and Gunicorn's size limits of the request
-line and headers. Keep the keep-alive timeout longer than that of a reverse
-proxy in front of the app for its connections to the app (e.g., 60 seconds
-for ingress-nginx, 90 seconds for Traefik): otherwise, the proxy may reuse a
-connection just as Gunicorn closes it, and the request fails (`502`). To change the settings, set
-`GUNICORN_CMD_ARGS` to [Gunicorn
+with FOCA's settings for apps in containers (`foca.gunicorn_config`; see
+[Running in
+production](https://foca.readthedocs.io/en/latest/deployment/#running-in-production)
+in FOCA's docs): one worker process with 4 threads, and idle keep-alive
+connections closed after 100 seconds. Keep the keep-alive timeout longer than
+that of a reverse proxy in front of the app for its connections to the app
+(e.g., 60 seconds for ingress-nginx, 90 seconds for Traefik): otherwise, the
+proxy may reuse a connection just as Gunicorn closes it, and the request
+fails (`502`). To change the settings, set `GUNICORN_CMD_ARGS` to [Gunicorn
 options](https://gunicorn.org/reference/settings/) (e.g., `--workers 2
 --threads 8`); Docker Compose passes it on from the host, and the Helm chart
 sets it from its `cloudRegistry.gunicorn` values.

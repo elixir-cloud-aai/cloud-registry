@@ -107,7 +107,7 @@ dependencies = [
     "connexion>=2.15.1,<3.0.0",
     # FOCA minors are bumped by hand, together with the base image in the
     # `Dockerfile` (`.github/dependabot.yml`).
-    "foca>=0.17.0,<0.18",
+    "foca>=0.18.0,<0.19",
     "gunicorn>=26.2.0,<27",
 ]
 

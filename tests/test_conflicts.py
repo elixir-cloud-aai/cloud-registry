@@ -10,6 +10,7 @@ from typing import Any
 
 from connexion import App
 from flask.testing import FlaskClient
+from foca import get_custom_config
 from foca.security.access_control import LastOwner
 import pytest
 from werkzeug.test import TestResponse
@@ -23,7 +24,7 @@ from cloud_registry.exceptions import (
     Conflict,
     problem,
 )
-from cloud_registry.utils import get_custom_config
+from cloud_registry.service_models.custom_config import CustomConfig
 from tests.conftest import ADMIN, APP_DIR, USER, make_headers
 
 BASE = "/ga4gh/registry/v1"
@@ -75,7 +76,7 @@ def _set_access_control(app: App, **kwargs: Any) -> None:
         kwargs: Options and their values.
     """
     with app.app.app_context():
-        config = get_custom_config().access_control
+        config = get_custom_config(CustomConfig).access_control
         for key, value in kwargs.items():
             setattr(config, key, value)
 
