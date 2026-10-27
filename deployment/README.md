@@ -60,8 +60,11 @@ Rendering fails, as the app would refuse to start, unless each deployment sets:
   (`config.security.access_control.group_mapping`), unless
   `config.security.access_control.require_admin` is `false` (a boolean, as
   the app parses it, e.g., `"no"`; rendering fails on other values); the
-  chart counts only group mappings, so set it to `false` if only rules of
-  `config.security.access_control.policies` grant the role;
+  chart counts only group mappings. Rules of
+  `config.security.access_control.policies` can grant the role only
+  without admin mode (`config.security.access_control.opt_in_roles: []`;
+  with it, the app refuses them on startup): then set `require_admin` to
+  `false` if only such rules grant the role;
 - the claim with the groups of users
   (`config.security.access_control.claim_groups`), if groups are mapped.
 
