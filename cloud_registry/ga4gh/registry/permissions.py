@@ -586,6 +586,8 @@ def _delete_roles(serviceId: str, subject: str, subject_type: SubjectType) -> No
 def _check_user_id(userId: str) -> None:
     """Check that a user identifier is not `groups`, nor starts with `groups/`.
 
+    Backslashes count as slashes, as in browsers (cf. the dot segments).
+
     `/services/{serviceId}/permissions/groups` is the path of the roles of
     groups without a group (cf. `putServiceGroupPermission()`), not of a
     user `groups`, so it is not found, like `.../permissions/groups/`, which
@@ -599,7 +601,7 @@ def _check_user_id(userId: str) -> None:
         cloud_registry.exceptions.NotFound: The user identifier is `groups`
             or starts with `groups/`.
     """
-    if userId.split("/", 1)[0] == "groups":
+    if userId.replace("\\", "/").split("/", 1)[0] == "groups":
         raise NotFound
 
 

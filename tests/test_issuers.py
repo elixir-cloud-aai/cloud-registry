@@ -28,7 +28,7 @@ TWO_ISSUERS: dict[str, Any] = {
 }
 
 
-def alice2() -> dict[str, str]:
+def _alice2() -> dict[str, str]:
     """Get request headers with an access token of Alice of `ISSUER2`.
 
     Returns:
@@ -66,8 +66,8 @@ def test_equal_subjects_different_users(two_issuers: FlaskClient) -> None:
     """Equal subjects of different issuers are different users."""
     client = two_issuers
     service_id = register(client, ALICE)
-    assert _update(client, service_id, alice2()) == 403
-    response = client.get(f"{BASE}/me", headers=alice2())
+    assert _update(client, service_id, _alice2()) == 403
+    response = client.get(f"{BASE}/me", headers=_alice2())
     assert response.status_code == 200
     me = response.get_json()
     assert (me["user_id"], me["services"]) == (ALICE2, [])
@@ -87,11 +87,11 @@ def test_namespaced_permissions(two_issuers: FlaskClient, encode: bool) -> None:
     response = client.put(url, json={"role": "maintainer"}, headers=owner)
     assert response.status_code == 200, response.get_json()
     assert response.get_json() == {"user_id": ALICE2, "role": "maintainer"}
-    assert _update(client, service_id, alice2()) == 200
+    assert _update(client, service_id, _alice2()) == 200
     listed = client.get(f"{BASE}/services/{service_id}/permissions", headers=owner)
     assert {"user_id": ALICE2, "role": "maintainer"} in listed.get_json()
     assert client.delete(url, headers=owner).status_code == 200
-    assert _update(client, service_id, alice2()) == 403
+    assert _update(client, service_id, _alice2()) == 403
 
 
 def test_group_permissions_routed(two_issuers: FlaskClient) -> None:
@@ -105,6 +105,36 @@ def test_group_permissions_routed(two_issuers: FlaskClient) -> None:
     )
     assert response.status_code == 200, response.get_json()
     assert response.get_json() == {"group": "team/a", "role": "maintainer"}
+
+
+@pytest.mark.parametrize("user", ["groups", "groups%5Cx", "groups/"])
+def test_user_groups_not_found(two_issuers: FlaskClient, user: str) -> None:
+    """User identifiers `groups` and with the segment `groups` are not found.
+
+    They are the paths of roles of groups, also with backslashes (encoded
+    slashes are decoded, so `groups%2Fx` is the group `x`).
+    """
+    client = two_issuers
+    service_id = register(client, ALICE)
+    url = f"{BASE}/services/{service_id}/permissions/{user}"
+    for method in (client.put, client.delete):
+        response = method(url, json={"role": "maintainer"}, headers=make_headers(ADMIN))
+        assert response.status_code == 404, (method, response.get_json())
+
+
+@pytest.mark.parametrize(
+    "user", [f"{ISSUER2}../x", quote(f"{ISSUER2}../x", safe=""), "a/./b", "a%5C..%5Cb"]
+)
+def test_namespaced_dot_segments(two_issuers: FlaskClient, user: str) -> None:
+    """User identifiers with dot segments are rejected, also with slashes."""
+    client = two_issuers
+    service_id = register(client, ALICE)
+    response = client.put(
+        f"{BASE}/services/{service_id}/permissions/{user}",
+        json={"role": "maintainer"},
+        headers=make_headers(ALICE),
+    )
+    assert response.status_code == 400, response.get_json()
 
 
 def test_service_types_by_issuer(
@@ -131,9 +161,9 @@ def test_service_types_by_issuer(
         return response.status_code
 
     assert add("first", make_headers(ALICE)) == 201
-    assert add("second", alice2()) == 201
+    assert add("second", _alice2()) == 201
     assert add("third", make_headers(ALICE)) == 409
-    assert add("third", alice2()) == 409
+    assert add("third", _alice2()) == 409
 
 
 def test_upgrade_bare_namespace(
@@ -144,7 +174,7 @@ def test_upgrade_bare_namespace(
     service_id = register(client, ALICE)
     client = _create_app(monkeypatch, tmp_path, TWO_ISSUERS)
     assert _update(client, service_id, make_headers(ALICE)) == 200
-    assert _update(client, service_id, alice2()) == 403
+    assert _update(client, service_id, _alice2()) == 403
 
 
 def test_upgrade_namespaced(
@@ -153,7 +183,7 @@ def test_upgrade_namespaced(
     """Adding an issuer with namespaced subjects needs the migration script.
 
     Without it, stored users of the first issuer lose their roles; with it
-    (`scripts/namespace_subjects.py`), they keep them, also their roles on
+    (`python -m cloud_registry.namespace_subjects`), they keep them, also their roles on
     services and the service types they added.
     """
     client = _create_app(monkeypatch, tmp_path)
@@ -169,4 +199,4 @@ def test_upgrade_namespaced(
     me = client.get(f"{BASE}/me", headers=make_headers(ALICE)).get_json()
     assert me["user_id"] == f"{ISSUER}|{ALICE}"
     assert {"service_id": service_id, "role": "owner"} in me["services"]
-    assert _update(client, service_id, alice2()) == 403
+    assert _update(client, service_id, _alice2()) == 403

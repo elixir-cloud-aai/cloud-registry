@@ -553,8 +553,12 @@ class TestChartOverlay:
             [{"issuer": "https://x.org/", "audience": []}],
             [{"issuer": "https://x.org/", "audience": [" "]}],
             [{"issuer": "https://x.org/", "audience": None}],
+            [
+                {"issuer": "https://x.org/", "audience": ["a"]},
+                {"issuer": "https://y.org/"},
+            ],
         ],
-        ids=["string", "unset", "empty", "blank", "null"],
+        ids=["string", "unset", "empty", "blank", "null", "last-unset"],
     )
     def test_issuer_audience_required(self, issuers: list[Any]) -> None:
         """Without a global audience, each issuer needs an audience of its own."""
@@ -568,6 +572,34 @@ class TestChartOverlay:
                 audience=None,
             )
         assert "config.security.auth.audience must" in exc.value.stderr
+
+    @pytest.mark.parametrize(
+        ("claims", "valid"),
+        [(["", ""], False), (["", None], True), ([None, None], True)],
+        ids=["all-replaced", "one-replaced", "global"],
+    )
+    def test_issuer_group_claim_replaced(
+        self, claims: list[str | None], valid: bool
+    ) -> None:
+        """Group claims of issuers replace the global one, as in the app."""
+        issuers: list[dict[str, Any]] = []
+        for index, claim in enumerate(claims):
+            issuer: dict[str, Any] = {"issuer": f"https://{index}.example.org/"}
+            if claim is not None:
+                issuer["claim_groups"] = claim
+            issuers.append(issuer)
+        args = (
+            "--set",
+            "hostName=example.org",
+            "--set-json",
+            f"config.security.auth.issuers={json.dumps(issuers)}",
+        )
+        if valid:
+            _render_overlay(*args, issuer=None)
+            return
+        with pytest.raises(subprocess.CalledProcessError) as exc:
+            _render_overlay(*args, issuer=None)
+        assert "config.security.access_control.claim_groups must" in exc.value.stderr
 
     @pytest.mark.parametrize(
         "claim",

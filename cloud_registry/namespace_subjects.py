@@ -34,6 +34,7 @@ import argparse
 from collections.abc import Sequence
 import logging
 import re
+import sys
 from typing import Any
 
 from flask import current_app
@@ -75,20 +76,33 @@ def check_namespace(namespace: str) -> None:
         namespace: Namespace of the issuer's subjects.
 
     Raises:
-        ValueError: The namespace is invalid (cf. FOCA's `IssuerConfig`),
-            or no trusted issuer has it (`security.auth.issuers`), e.g.,
-            as the config doesn't trust the new issuer yet, or keeps the
-            issuer's subjects bare.
+        ValueError: The namespace is empty or invalid (cf. FOCA's
+            `IssuerConfig`), no trusted issuer has it
+            (`security.auth.issuers`), e.g., as the config doesn't trust the
+            new issuer yet, or a trusted issuer keeps its subjects bare: the
+            bare subjects are then that issuer's, also those stored later.
     """
-    # FOCA's validation of namespaces (no separator, commas or line breaks)
+    if not namespace:
+        raise ValueError(
+            "The namespace must not be empty: subjects of issuers with the "
+            "namespace '' are kept bare, so there is nothing to namespace"
+        )
+    # Validated as FOCA validates namespaces of issuers (no separator, commas
+    # or line breaks); the issuer is a placeholder
     IssuerConfig(issuer="-", namespace=namespace)
     namespaces = get_config().security.auth.get_namespaces()
-    if not namespace or namespace not in namespaces.values():
+    if namespace not in namespaces.values():
         known = sorted(value for value in namespaces.values() if value)
         raise ValueError(
             f"No trusted issuer has the namespace {namespace!r}: the "
             f"namespaces of the config are {known}; trust several issuers "
             "('security.auth.issuers') first"
+        )
+    bare = sorted(issuer for issuer, value in namespaces.items() if value is None)
+    if bare:
+        raise ValueError(
+            f"The issuers {bare} keep their subjects bare (namespace ''), "
+            "so the bare subjects are theirs: nothing to namespace"
         )
 
 
@@ -216,7 +230,12 @@ def namespace_subjects(namespace: str, dry_run: bool = False) -> dict[str, int]:
             `check_namespace()`).
     """
     check_namespace(namespace)
-    rules, configured = _namespace_rules(namespace, dry_run)
+    try:
+        rules, configured = _namespace_rules(namespace, dry_run)
+    finally:
+        # running instances reload the rules, also after partial runs
+        if not dry_run:
+            current_app.config["casbin_adapter"].mark_changed()
     counts = {
         "rules": rules,
         "configured_rules": configured,
@@ -232,8 +251,6 @@ def namespace_subjects(namespace: str, dry_run: bool = False) -> dict[str, int]:
             namespace,
             NAMESPACE_SEPARATOR,
         )
-    if not dry_run:
-        current_app.config["casbin_adapter"].mark_changed()
     return counts
 
 
@@ -262,7 +279,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             counts = namespace_subjects(args.namespace, dry_run=args.dry_run)
         except ValueError as exc:
-            print(f"error: {exc}")
+            print(f"error: {exc}", file=sys.stderr)
             return 1
     verb = "To namespace" if args.dry_run else "Namespaced"
     print(", ".join(f"{verb} {key}: {value}" for key, value in counts.items()))

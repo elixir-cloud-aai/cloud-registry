@@ -121,20 +121,24 @@ issuers, as the base config trusts none; issuers are compared with the `iss`
 claim as written, so surrounding whitespace is refused, too. Issuers are
 URLs, or maps with the URL (`issuer`) and settings of their own (FOCA's
 `IssuerConfig`, which the app validates), whose group claims
-(`claim_groups`) count for group mappings
+(`claim_groups`) replace the global one for their tokens: as in the app,
+group mappings need a group claim of at least one issuer
 */ -}}
 {{- $issuersError := "config.security.auth.issuers must list the trusted token issuers (the iss claim of their tokens, e.g., https://login.example.org/oidc/, without surrounding whitespace; or maps of it, as issuer, and settings of the issuer): the app trusts none by default" -}}
 {{- if not (and (kindIs "slice" $issuers) $issuers) -}}
 {{- fail $issuersError -}}
 {{- end -}}
-{{- $issuerClaims := list -}}
+{{- $anyClaim := false -}}
 {{- range $issuer := $issuers -}}
+{{- $claim := $claimGroups -}}
 {{- if kindIs "map" $issuer -}}
-{{- $claim := get $issuer "claim_groups" -}}
-{{- if and (kindIs "string" $claim) $claim (eq $claim (trim $claim)) -}}
-{{- $issuerClaims = append $issuerClaims $claim -}}
+{{- if hasKey $issuer "claim_groups" -}}
+{{- $claim = get $issuer "claim_groups" -}}
 {{- end -}}
 {{- $issuer = get $issuer "issuer" -}}
+{{- end -}}
+{{- if and (kindIs "string" $claim) $claim (eq $claim (trim $claim)) -}}
+{{- $anyClaim = true -}}
 {{- end -}}
 {{- if not (and (kindIs "string" $issuer) (trim $issuer) (eq $issuer (trim $issuer))) -}}
 {{- fail $issuersError -}}
@@ -156,7 +160,7 @@ URLs, or maps with the URL (`issuer`) and settings of their own (FOCA's
 As the app on startup, refuse to render group mappings without the claim
 with the groups of users, as no mapping would apply
 */ -}}
-{{- if and $mapping (not $claimGroups) (not $issuerClaims) -}}
+{{- if and $mapping (not $anyClaim) -}}
 {{- fail "config.security.access_control.claim_groups must name the claim with the groups of users (e.g., groups), as groups are mapped to roles (group_mapping); also add it to config.security.auth.userinfo_claims if the identity provider releases it via user info only" -}}
 {{- end -}}
 {{- if and (eq $requireAdmin "true") (not (has "admin" (values $mapping))) -}}

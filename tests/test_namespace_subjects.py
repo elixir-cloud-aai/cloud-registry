@@ -149,13 +149,63 @@ def test_dry_run(client: FlaskClient) -> None:
 
 
 @pytest.mark.parametrize(
-    "namespace",
-    ["https://other.example.org/", "", "a|b", "a,b", "a\nb"],
+    ("namespace", "match"),
+    [
+        ("https://other.example.org/", "No trusted issuer"),
+        ("", "must not be empty"),
+        ("a|b", "namespace"),
+        ("a,b", "namespace"),
+        ("a\nb", "namespace"),
+    ],
 )
-def test_check_namespace_invalid(client: FlaskClient, namespace: str) -> None:
+def test_check_namespace_invalid(
+    client: FlaskClient, namespace: str, match: str
+) -> None:
     """Namespaces must be valid, and those of trusted issuers."""
-    with client.application.app_context(), pytest.raises(ValueError):
+    with client.application.app_context(), pytest.raises(ValueError, match=match):
         check_namespace(namespace)
+
+
+def test_check_namespace_bare_issuer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
+) -> None:
+    """Bare subjects of an issuer with the namespace '' are not namespaced.
+
+    They are that issuer's, so they must not be taken for another issuer's.
+    """
+    overlay = {
+        "security": {
+            "auth": {"issuers": [{"issuer": ISSUER, "namespace": ""}, ISSUER2]}
+        }
+    }
+    client = _create_app(monkeypatch, tmp_path, overlay)
+    with client.application.app_context(), pytest.raises(ValueError, match="bare"):
+        check_namespace(ISSUER2)
+
+
+def test_partial_run(client: FlaskClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Running instances reload the rules, also if a run fails."""
+
+    def fail(namespace: str, dry_run: bool) -> tuple[int, int]:
+        """Fail namespacing the rules.
+
+        Args:
+            namespace: Namespace of the issuer's subjects.
+            dry_run: Only count the subjects.
+
+        Raises:
+            RuntimeError: Always.
+        """
+        raise RuntimeError("interrupted")
+
+    monkeypatch.setattr("cloud_registry.namespace_subjects._namespace_rules", fail)
+    with client.application.app_context():
+        adapter = client.application.config["casbin_adapter"]
+        calls: list[None] = []
+        monkeypatch.setattr(adapter, "mark_changed", lambda: calls.append(None))
+        with pytest.raises(RuntimeError):
+            namespace_subjects(ISSUER)
+        assert calls == [None]
 
 
 def test_check_namespace_bare(
@@ -174,4 +224,4 @@ def test_main(client: FlaskClient, capsys: pytest.CaptureFixture[str]) -> None:
     assert main([ISSUER]) == 0
     assert "Namespaced rules: 2" in capsys.readouterr().out
     assert main(["https://other.example.org/"]) == 1
-    assert "error: No trusted issuer" in capsys.readouterr().out
+    assert "error: No trusted issuer" in capsys.readouterr().err
