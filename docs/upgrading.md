@@ -262,7 +262,10 @@ types they added and their display names) then no longer match them:
 
   The argument is the namespace of the issuer trusted so far (by default,
   the issuer). Its users lack their roles from the rollout until the
-  migration, so run it right after the rollout. Running app instances
+  migration, so run it right after the rollout, while users don't change
+  roles (e.g., announce a short maintenance window): roles revoked during
+  the migration may be restored by it, and requests that store display
+  names may fail (clients can retry them). Running app instances
   load the changed rules on their next request. Configured rules that name
   bare users (`security.access_control.policies`) are counted, but not
   changed: namespace them in the config. The migration can be run again

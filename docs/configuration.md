@@ -124,6 +124,9 @@ security:
             - registry-portal
 ```
 
+Namespaces must not start with `groups/`, the path of the roles of
+groups in the permissions API (the app refuses to start).
+
 Group claim values are not namespaced: groups of different issuers with
 the same name are the same group, also for the admin groups
 (`security.access_control.group_mapping`) and [roles of

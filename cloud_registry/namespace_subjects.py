@@ -55,16 +55,26 @@ logger = logging.getLogger(__name__)
 RULE_FIELDS = tuple(f"v{index}" for index in range(6))
 
 
-def _is_bare(subject: object) -> bool:
+def _is_bare(subject: str) -> bool:
     """Check whether a subject is stored bare, i.e., not namespaced.
 
+    Must be called in an app context. Subjects may contain the separator of
+    namespaces (e.g., `auth0|123`), so only those that start with a
+    namespace of the config and the separator are namespaced.
+
     Args:
-        subject: Stored subject; any value.
+        subject: Stored subject.
 
     Returns:
-        Whether the subject is a string without the separator of namespaces.
+        Whether the subject doesn't start with a namespace of a trusted
+        issuer and the separator.
     """
-    return isinstance(subject, str) and NAMESPACE_SEPARATOR not in subject
+    namespaces = get_config().security.auth.get_namespaces().values()
+    return not any(
+        subject.startswith(f"{namespace}{NAMESPACE_SEPARATOR}")
+        for namespace in namespaces
+        if namespace is not None
+    )
 
 
 def check_namespace(namespace: str) -> None:
@@ -132,15 +142,9 @@ def _namespace_rules(namespace: str, dry_run: bool) -> tuple[int, int]:
     """
     prefix = get_config().security.access_control.subject_prefix
     collection = _policy_collection()
-    users = {"$regex": f"^{re.escape(prefix)}[^{re.escape(NAMESPACE_SEPARATOR)}]*$"}
+    users = {"$regex": f"^{re.escape(prefix)}"}
     rewritten = configured = 0
     for rule in collection.find({"$or": [{field: users} for field in RULE_FIELDS]}):
-        if rule.get(CONFIGURED_FIELD):
-            configured += 1
-            continue
-        rewritten += 1
-        if dry_run:
-            continue
         changed = {
             field: f"{prefix}{namespace}{NAMESPACE_SEPARATOR}{value[len(prefix) :]}"
             for field in RULE_FIELDS
@@ -148,7 +152,16 @@ def _namespace_rules(namespace: str, dry_run: bool) -> tuple[int, int]:
             and value.startswith(prefix)
             and _is_bare(value[len(prefix) :])
         }
-        collection.update_one({"_id": rule["_id"]}, {"$set": changed})
+        if not changed:
+            continue
+        if rule.get(CONFIGURED_FIELD):
+            configured += 1
+            continue
+        rewritten += 1
+        if not dry_run:
+            # rules are unique by identifier only, so equal rules (e.g., of
+            # the namespaced user) are kept, which is harmless
+            collection.update_one({"_id": rule["_id"]}, {"$set": changed})
     return rewritten, configured
 
 

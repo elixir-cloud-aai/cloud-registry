@@ -133,6 +133,26 @@ def test_namespace_subjects(
         }
 
 
+def test_subjects_with_separator(client: FlaskClient) -> None:
+    """Bare subjects with the separator of namespaces are namespaced.
+
+    E.g., `auth0|123`; only subjects that start with a namespace of the
+    config and the separator are taken as namespaced.
+    """
+    with client.application.app_context():
+        get_collection("service_types").insert_one(
+            {"group": "a", "artifact": "e", "version": "1", CREATED_BY: "auth0|1"}
+        )
+        _policy_collection().insert_one(
+            {"ptype": "g2", "v0": "user:auth0|1", "v1": "owner", "v2": "/s/3"}
+        )
+        namespace_subjects(ISSUER)
+        stored = get_collection("service_types").find_one({"artifact": "e"})
+        assert stored is not None
+        assert stored[CREATED_BY] == f"{ISSUER}|auth0|1"
+        assert ("g2", f"user:{ISSUER}|auth0|1", "owner", "/s/3") in _rules()
+
+
 def test_dry_run(client: FlaskClient) -> None:
     """A dry run counts the subjects, without changes."""
     with client.application.app_context():

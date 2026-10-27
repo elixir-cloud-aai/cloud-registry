@@ -145,6 +145,26 @@ def test_namespaced_dot_segments(two_issuers: FlaskClient, user: str) -> None:
     assert response.status_code == 400, response.get_json()
 
 
+@pytest.mark.parametrize("namespace", ["groups", "groups/a", "groups\\a"])
+def test_groups_namespace_refused(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    namespace: str,
+) -> None:
+    """Namespaces with the first segment `groups` are refused on startup.
+
+    The identifiers of their users would be paths of roles of groups.
+    """
+    overlay = {
+        "security": {
+            "auth": {"issuers": [{"issuer": ISSUER, "namespace": namespace}, ISSUER2]}
+        }
+    }
+    with pytest.raises(ValueError, match="must not start with 'groups/'"):
+        _create_app(monkeypatch, tmp_path, overlay)
+
+
 def test_service_types_by_issuer(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
 ) -> None:
