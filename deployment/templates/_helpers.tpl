@@ -5,7 +5,8 @@ YAML; the templates are called with a dict of the root context (`root`) and
 these settings (`settings`). They follow the base config in the image
 (`cloud_registry/config.yaml`): its size limit of request bodies
 (`server.max_content_length`), its token issuers (so an audience is
-required), its database (`db.dbs`) and that of access control
+required, unless each issuer has one, cf. `cloud-registry.requireAudience`),
+its database (`db.dbs`) and that of access control
 (`security.access_control.db_name`). The generated config sets the public
 URL of the app (`server.public_url`) to `publicUrl`, or else from
 `hostName`, with HTTPS, as TLS is usually terminated by the ingress, the
@@ -18,7 +19,7 @@ whichever template Helm renders first.
 {{- include "cloud-registry.validate" . -}}
 valuesKey: cloudRegistry
 maxContentLength: 1048576
-requireAudience: true
+requireAudience: {{ include "cloud-registry.requireAudience" . }}
 mongodb:
   databases: [serviceStore]
   accessControlDatabase: serviceStore
@@ -117,13 +118,24 @@ Checked in the order of the app's checks: the issuers, the group claim and
 the groups mapped to roles. Mirrors FOCA's check on startup (access control
 needs trusted token issuers): refuse to render without a list of non-blank
 issuers, as the base config trusts none; issuers are compared with the `iss`
-claim as written, so surrounding whitespace is refused, too
+claim as written, so surrounding whitespace is refused, too. Issuers are
+URLs, or maps with the URL (`issuer`) and settings of their own (FOCA's
+`IssuerConfig`, which the app validates), whose group claims
+(`claim_groups`) count for group mappings
 */ -}}
-{{- $issuersError := "config.security.auth.issuers must list the trusted token issuers (the iss claim of their tokens, e.g., https://login.example.org/oidc/, without surrounding whitespace): the app trusts none by default" -}}
+{{- $issuersError := "config.security.auth.issuers must list the trusted token issuers (the iss claim of their tokens, e.g., https://login.example.org/oidc/, without surrounding whitespace; or maps of it, as issuer, and settings of the issuer): the app trusts none by default" -}}
 {{- if not (and (kindIs "slice" $issuers) $issuers) -}}
 {{- fail $issuersError -}}
 {{- end -}}
+{{- $issuerClaims := list -}}
 {{- range $issuer := $issuers -}}
+{{- if kindIs "map" $issuer -}}
+{{- $claim := get $issuer "claim_groups" -}}
+{{- if and (kindIs "string" $claim) $claim (eq $claim (trim $claim)) -}}
+{{- $issuerClaims = append $issuerClaims $claim -}}
+{{- end -}}
+{{- $issuer = get $issuer "issuer" -}}
+{{- end -}}
 {{- if not (and (kindIs "string" $issuer) (trim $issuer) (eq $issuer (trim $issuer))) -}}
 {{- fail $issuersError -}}
 {{- end -}}
@@ -144,13 +156,37 @@ claim as written, so surrounding whitespace is refused, too
 As the app on startup, refuse to render group mappings without the claim
 with the groups of users, as no mapping would apply
 */ -}}
-{{- if and $mapping (not $claimGroups) -}}
+{{- if and $mapping (not $claimGroups) (not $issuerClaims) -}}
 {{- fail "config.security.access_control.claim_groups must name the claim with the groups of users (e.g., groups), as groups are mapped to roles (group_mapping); also add it to config.security.auth.userinfo_claims if the identity provider releases it via user info only" -}}
 {{- end -}}
 {{- if and (eq $requireAdmin "true") (not (has "admin" (values $mapping))) -}}
 {{- fail "config.security.access_control.group_mapping must map a group to the role admin (e.g., the admin group of the identity provider), or set config.security.access_control.require_admin to false" -}}
 {{- end -}}
 {{- $_ := required "hostName must be set" .Values.hostName -}}
+{{- end -}}
+
+{{/*
+Whether an audience is required (`requireAudience` of the settings; renders
+"true" or "false"): unless each trusted issuer has an audience of its own
+(a map with a list of non-blank `audience`s), which replaces the global one
+(`security.auth.audience`) for its tokens, as in FOCA's `IssuerConfig`.
+*/}}
+{{- define "cloud-registry.requireAudience" -}}
+{{- $issuers := dig "security" "auth" "issuers" list (.Values.config | default dict) -}}
+{{- $own := and (kindIs "slice" $issuers) (gt (len $issuers) 0) -}}
+{{- range $issuer := (ternary $issuers (list) $own) -}}
+{{- $audience := and (kindIs "map" $issuer) (get $issuer "audience") -}}
+{{- if not (and (kindIs "slice" $audience) (gt (len $audience) 0)) -}}
+{{- $own = false -}}
+{{- else -}}
+{{- range $client := $audience -}}
+{{- if not (and (kindIs "string" $client) (trim $client)) -}}
+{{- $own = false -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- not $own -}}
 {{- end -}}
 
 {{/*
