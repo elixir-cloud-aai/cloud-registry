@@ -236,6 +236,41 @@ list must add the new rules `add-service-types` and `list-approvals` (see
 `config.yaml`), or users can't add types with `POST /services/types` or list
 [pending approvals](api.md#pending-approvals) with `GET /approvals`.
 
+## Several token issuers
+
+Trusting a second token issuer (see [Several token
+issuers](configuration.md#several-token-issuers)) namespaces the
+identifiers of users by issuer, also those of the issuer trusted so far,
+unless its subjects are kept bare. Stored identifiers of its users (their
+roles on services, roles granted via the permissions API, the service
+types they added and their display names) then no longer match them:
+
+- **Recommended:** keep the subjects of the issuer trusted so far bare
+  (`namespace: ""`), so that nothing needs to be migrated. Its users keep
+  their identifiers, and those of the new issuer are namespaced.
+- **Otherwise:** after the config change, namespace the stored identifiers
+  of the issuer trusted so far with the migration of the image, with the
+  app's new config (e.g., in a pod of the app, whose deployment name
+  depends on the release; `--dry-run` only counts them). The migration,
+  also with `--dry-run`, refuses to run while the config trusts a single
+  issuer, or keeps the subjects of an issuer bare:
+
+  ```bash
+  kubectl exec deploy/cloud-registry -- \
+    python -m cloud_registry.namespace_subjects https://login.example.org/oidc/
+  ```
+
+  The argument is the namespace of the issuer trusted so far (by default,
+  the issuer). Its users lack their roles from the rollout until the
+  migration, so run it right after the rollout, while users don't change
+  roles (e.g., announce a short maintenance window): roles revoked during
+  the migration may be restored by it, and requests that store display
+  names may fail (clients can retry them). Running app instances
+  load the changed rules on their next request. Configured rules that name
+  bare users (`security.access_control.policies`) are counted, but not
+  changed: namespace them in the config. The migration can be run again
+  (namespaced identifiers are kept).
+
 ## Stored services
 
 Services stored before the registry set the [timestamps](api.md#timestamps)

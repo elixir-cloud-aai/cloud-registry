@@ -12,6 +12,7 @@ from connexion import App
 from foca import Foca, get_config
 from foca.security.auth import require_no_service_clients
 
+from cloud_registry.ga4gh.registry.permissions import check_namespaces
 from cloud_registry.ga4gh.registry.rename import (
     resume_renames,
     resume_renames_periodically,
@@ -69,7 +70,9 @@ def create_app() -> App:
             invalid field).
         ValueError: The config is invalid, e.g., groups are mapped without
             a group claim, there are no admins (unless admins are optional,
-            `security.access_control.require_admin`), or the custom config
+            `security.access_control.require_admin`), the namespace of a
+            trusted issuer starts with `groups/` (cf. `check_namespaces()`),
+            or the custom config
             (`custom`) still sets the service info
             (`custom.endpoints.service_info`) or the size limit of request
             bodies (`custom.max_content_length`).
@@ -84,6 +87,7 @@ def create_app() -> App:
 
     with app.app.app_context():
         check_service_info_fields()
+        check_namespaces()
         # `null` would remove FOCA's size limit of request bodies, so that
         # bodies of any size are read before the access token is checked
         if get_config().server.max_content_length is None:
