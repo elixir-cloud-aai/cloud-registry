@@ -48,7 +48,8 @@ your own for scripts. The registry accepts tokens only:
   9068](https://www.rfc-editor.org/rfc/rfc9068) (`typ` header `at+jwt`);
   other tokens, such as ID tokens, are rejected;
 - of the issuers in `security.auth.issuers` (none by default: each
-  deployment sets its identity provider);
+  deployment sets its identity provider; see [Several token
+  issuers](configuration.md#several-token-issuers));
 - for the client IDs in `security.auth.audience` (the `aud` claim), which each
   deployment sets to the apps that call it (see
   [Configuration](configuration.md#deployment-configuration)); the Docker
@@ -174,7 +175,9 @@ in the same overlay, too.
   becomes its **owner**.
 - Owners can update (`PUT`) and delete (`DELETE`) their services, and grant
   other users the roles `owner` or `maintainer` on them, by their user
-  identifier (`sub` claim):
+  identifier (`sub` claim; `user_id` of `GET /me`, with [several token
+  issuers](configuration.md#several-token-issuers) namespaced by issuer, as
+  `<namespace>|<sub>`: encode it in URLs, slashes may also be kept):
 
   ```bash
   curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/<id>/permissions/<user-id>" \

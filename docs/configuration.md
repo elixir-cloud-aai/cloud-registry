@@ -24,11 +24,8 @@ chart's `config` value), otherwise the app refuses to start:
 - `security.auth.issuers`: the trusted token issuers (the `iss` claim of their
   tokens, e.g., `https://login.example.org/oidc/`); tokens of other issuers
   are rejected (see [Authentication](access-control.md#authentication)).
-  Usually one: roles are granted to users by their identifier (`sub`) and to
-  groups by their name, without the issuer, so only trust several issuers if
-  their identifiers and group names can't collide (FOCA warns on startup;
-  see FOCA's [access
-  control](https://foca.readthedocs.io/en/latest/access-control/#identity-and-group-claims));
+  Usually one; for several, see [Several token
+  issuers](#several-token-issuers);
 - `security.auth.audience`: the client IDs of the apps whose tokens are
   accepted (the `aud` claim, e.g., of the registry's front end), unless
   `security.auth.verify_audience` is `false`, which accepts tokens for any
@@ -91,6 +88,49 @@ reads](access-control.md#requiring-login-for-reads).
 FOCA's service clients (`security.auth.service_clients`,
 `security.auth.on_behalf_of_header`) are not supported; the app refuses to
 start with them (see [Access control](access-control.md#roles-on-services)).
+
+## Several token issuers
+
+Deployments can trust several token issuers, e.g., an institutional login
+besides a community one. Their users are then told apart by issuer: FOCA
+namespaces the identifiers of users (`sub`) by issuer, as
+`<namespace>|<sub>` (by default, the namespace is the issuer, e.g.,
+`https://login.example.org/oidc/|abc123`), so equal identifiers of
+different issuers are different users, also as owners and maintainers of
+services and as the users who added service types. `GET /me` returns the
+namespaced identifier (`user_id`), which owners use to grant roles (see
+[Roles on services](access-control.md#roles-on-services)).
+
+Issuers can be listed with settings of their own (FOCA's `IssuerConfig`),
+which replace the global ones for their tokens: `namespace`, `audience`,
+`claim_groups` and `userinfo_claims`, e.g.:
+
+```yaml
+security:
+    auth:
+        issuers:
+            # Trusted so far: keeps its users' identifiers bare, so that
+            # their stored roles stay valid
+            - issuer: https://login.example.org/oidc/
+              namespace: ""
+            # Added: its users are namespaced (`https://login.other.org/|<sub>`)
+            - issuer: https://login.other.org/
+              audience:
+                  - registry-portal-other
+              # Its groups don't count (e.g., for admins), as they could
+              # collide with those of the first issuer
+              claim_groups: ""
+        audience:
+            - registry-portal
+```
+
+Group claim values are not namespaced: groups of different issuers with
+the same name are the same group, also for the admin groups
+(`security.access_control.group_mapping`) and [roles of
+groups](access-control.md#roles-of-groups). Only take groups from issuers
+that can't issue each other's groups, e.g., by setting `claim_groups: ""`
+for the others. To add an issuer to a running deployment, see
+[Upgrading](upgrading.md#several-token-issuers).
 
 ## Local overrides
 
