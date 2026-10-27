@@ -2,12 +2,7 @@
 ## Pinned by digest, so that rebuilds (e.g., of a release) use the same base
 ## image; Dependabot updates the tag and digest together
 ## (`.github/dependabot.yml`)
-## TEMPORARY: FOCA's development image built from the commit that
-## `pyproject.toml` pins, replaced by the release image (0.18.0) before the
-## next release (`scripts/check_release_pins.py`); dated tags move with
-## later commits of the day, so only the digest identifies the image
-## FOCA commit: 4990e19367b52a3175f450011be65cd8122e0a49
-FROM elixircloud/foca:20261026-py3.13@sha256:3b9b058d83e91d43a5c94dcf2fa30930e35f1a98e105c4e6c688a23def9dc79a
+FROM elixircloud/foca:0.18.0-py3.13@sha256:dd8dd927d8d5e7ccb616d441c8db7a5e2c0b24c52a3329f484f6edac082b7a26
 
 ##### METADATA #####
 ## OCI annotations; images built from the FOCA image inherit its own, so all
