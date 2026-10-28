@@ -55,12 +55,9 @@ its settings and checks; change the config before upgrading:
    Overlays that restrict owners' roles of groups (e.g.,
    `owners-change-group-permissions: null`) must now also change
    `owners-change-permissions`, or owners can grant and revoke roles of
-   groups again: remove it, or, to keep owners' grants to users, redefine
-   it with `.../permissions/:user` (as in 0.5.0), which doesn't cover user
-   identifiers with slashes (see [Requiring login for
-   reads](access-control.md#requiring-login-for-reads)). The app warns on
-   startup if the rule of groups is changed or removed, but other rules
-   still let owners change roles of groups.
+   groups again: remove it, or redefine it for users only (see [Requiring
+   login for reads](access-control.md#requiring-login-for-reads), also for
+   the startup warning).
 
 Noticeable, but no action needed:
 

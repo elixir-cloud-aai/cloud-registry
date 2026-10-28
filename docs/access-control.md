@@ -165,16 +165,19 @@ in the same overlay, too:
   (`/ga4gh/registry/v1/services/:id/permissions/*`) also covers the roles
   of groups (`.../permissions/groups/<group>`), as user identifiers may
   contain slashes, so removing only `owners-change-group-permissions`
-  doesn't stop owners from granting and revoking roles of groups. The app
-  warns on startup if the rule of groups is changed or removed, but other
-  rules still let owners change roles of groups.
+  doesn't stop owners from granting and revoking roles of groups. If the
+  rule of groups is changed or removed, the app warns on startup of
+  configured rules that still let owners change roles of groups this way.
 - To let owners grant roles to users but not to groups, redefine
   `owners-change-permissions` with `.../permissions/:user` (as in 0.5.0),
   which doesn't match the roles of groups. It doesn't match user
-  identifiers with slashes either, i.e., the users of namespaced issuers
-  (with [several token issuers](configuration.md#several-token-issuers)):
-  with these, no rule covers all users but not groups, so owners can only
-  grant roles to both, or to neither.
+  identifiers with slashes either: with [several token
+  issuers](configuration.md#several-token-issuers), those of issuers whose
+  namespace contains slashes (by default, the issuer URL). Add a rule per
+  such namespace (e.g., `.../permissions/https:/*` for issuer URLs, which
+  doesn't match `groups/...`, as namespaces can't start with `groups/`), or
+  give new issuers namespaces without slashes (changing the namespace of an
+  issuer invalidates its users' stored roles).
 
 !!! danger "With great power comes great responsibility"
     Patches and rules in overlays can weaken or remove authentication and
