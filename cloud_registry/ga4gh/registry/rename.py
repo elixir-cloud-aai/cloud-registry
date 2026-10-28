@@ -34,6 +34,7 @@ import time
 from typing import Any
 from uuid import uuid4
 
+from flask import request
 from foca.security.access_control import (
     add_resource_role,
     list_roles,
@@ -43,7 +44,8 @@ from foca.security.access_control.foca_casbin_adapter.casbin_rule import (
     validate_rule_value,
 )
 from foca.utils.logging import escape_log_value
-from pymongo.errors import DuplicateKeyError
+import pymongo
+from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from cloud_registry.exceptions import CodedConflict, NotFound, ServiceBusy, problem
 from cloud_registry.ga4gh.registry.locks import (
@@ -71,6 +73,16 @@ logger = logging.getLogger(__name__)
 # Minimum time between checks for interrupted renames per worker, on
 # requests (cf. `resume_renames_periodically()`), in seconds
 RESUME_INTERVAL = 10.0
+# Time that requests wait for the database when they check for interrupted
+# renames, in seconds (instead of pymongo's server selection timeout of 30
+# seconds, e.g., while the database restarts)
+RESUME_CHECK_TIMEOUT = 2.0
+# Start of the endpoints of the registry's operations: Connexion names them
+# after their operation IDs (e.g., `cloud_registry.ga4gh.registry.server.
+# getServices` becomes `<blueprint>.cloud_registry_ga4gh_registry_server_
+# getServices`), unlike those of the Swagger UI, the spec, the service info
+# (FOCA's) and FOCA's admin API
+OPERATION_PREFIX = "cloud_registry_"
 # Time of the last check for interrupted renames in this worker (monotonic)
 _last_resume: float | None = None
 
@@ -307,8 +319,9 @@ def resume_renames() -> None:
     call). Stale locks of changes, and locks of new identifiers without a
     lock of their rename, are removed.
 
-    Called when the app starts and before requests (cf.
-    `resume_renames_periodically()`); must be called in an app context.
+    Called when the app starts and before requests of the registry's
+    operations (cf. `resume_renames_periodically()`); must be called in an
+    app context.
     """
     collection = get_collection(LOCKS)
     stale = {"started_at": {"$lte": stale_before()}}
@@ -338,14 +351,34 @@ def resume_renames_periodically() -> None:
 
     Called before each request (cf. `cloud_registry.app.create_app()`), so
     that interrupted renames are resumed soon after their locks are stale,
-    not only when the app starts.
+    not only when the app starts. Only requests of the registry's operations
+    check for them (cf. `OPERATION_PREFIX`), so that the Swagger UI (the
+    probe path of the chart and image), the spec, the service info and
+    FOCA's admin API don't need the database. Database errors are logged,
+    not raised, so that requests don't fail on them (they need the database
+    anyway, and report it); the next check is due after the interval. The
+    check for stale locks waits up to `RESUME_CHECK_TIMEOUT` seconds for the
+    database, unlike resuming renames, which takes several writes.
     """
     global _last_resume  # noqa: PLW0603 (per worker)
+    if not (request.endpoint or "").rpartition(".")[2].startswith(OPERATION_PREFIX):
+        return
     current = time.monotonic()
     if _last_resume is not None and current - _last_resume < RESUME_INTERVAL:
         return
     _last_resume = current
-    resume_renames()
+    try:
+        with pymongo.timeout(RESUME_CHECK_TIMEOUT):
+            stale = get_collection(LOCKS).count_documents(
+                {"started_at": {"$lte": stale_before()}}, limit=1
+            )
+        if stale:
+            resume_renames()
+    except PyMongoError as exc:
+        logger.warning(
+            "Interrupted renames not checked; tried again later: %s",
+            escape_log_value(exc),
+        )
 
 
 def _claim(lock: dict[str, Any]) -> str | None:

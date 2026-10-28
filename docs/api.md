@@ -206,8 +206,9 @@ changes wait for each other for up to about a second, then give up (`409
 Conflict`, code `service-busy`; try again). If a rename fails after the
 service moved (e.g., the app crashes), the service may lack roles, and both
 identifiers stay locked, until the rename is finished, a minute after it
-started: when the app next handles a request, or starts. Renames are logged
-with the admin.
+started: when the app next handles a request of the registry's API (not
+of the Swagger UI, the spec or the service info), or starts. Renames are
+logged with the admin.
 
 ## Timestamps
 

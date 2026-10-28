@@ -39,8 +39,8 @@ def create_app() -> App:
     app doesn't support them, requires a size limit of request bodies and
     that the service info serves the registration rules, adds missing keys
     of services, resumes interrupted renames of services (cf.
-    `resume_renames()`; also before requests, cf.
-    `resume_renames_periodically()`) and adds the types of registered
+    `resume_renames()`; also before requests of the registry's operations,
+    cf. `resume_renames_periodically()`) and adds the types of registered
     services that aren't stored (e.g., on upgrades), and warns of stored
     services with invalid URLs or URL schemes that are not allowed. FOCA
     validates the config, e.g., that
