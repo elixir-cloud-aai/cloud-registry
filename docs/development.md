@@ -372,9 +372,9 @@ too); accept those under `secrets:` in the same file. Dependabot updates the
 actions, including the pins of the shared actions; the Trivy version is the
 default of the shared action's `trivy-version` input, which Dependabot
 doesn't bump: change it in the shared action, then update the pins here.
-Images of commits on `dev` are signed and attested like release images, by the CI
-workflow. All of this needs no secrets beyond the Docker Hub ones: signing
-uses the workflows' OIDC tokens (permission `id-token: write`). Re-running
+Images of commits on `dev` are signed and attested like release images, by
+the CI workflow. All of this needs no secrets beyond the Docker Hub ones:
+signing uses the workflows' OIDC tokens (permission `id-token: write`). Re-running
 all jobs of the release workflow builds, scans, signs and tags a new image
 digest (the image build is not reproducible); an earlier digest that was
 published stays signed. Re-running only the failed jobs reuses the digest
