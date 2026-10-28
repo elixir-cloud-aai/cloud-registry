@@ -247,21 +247,35 @@ def _created_as(serviceId: str, creator: str) -> dict[str, Any]:
     return {"group": groups[0]}
 
 
-def _creator_may_grant(invitation: dict[str, Any]) -> bool:
+class CreatorNotOwner(NotFound):
+    """The creator of an invitation may no longer grant its role."""
+
+
+def _creator_may_grant(invitation: dict[str, Any], user_id: str) -> bool:
     """Check whether the creator of an invitation may still grant its role.
 
     Args:
         invitation: Stored invitation.
+        user_id: Identifier of the user who accepts it.
 
     Returns:
         Whether it was created by an admin, or the user or group whose owner
-        role allowed it is still owner of the service. Invitations stored
-        without `CREATED_AS` don't grant roles.
+        role allowed it is still owner of the service; for a group, and if
+        the creator accepts it, also whether they are still a member of the
+        group (their token tells). Invitations stored without `CREATED_AS`
+        don't grant roles.
     """
     created_as = invitation.get(CREATED_AS) or {}
     if created_as.get("admin") is True:
         return True
-    subjects = [("user", created_as.get("user")), ("group", created_as.get("group"))]
+    group = created_as.get("group")
+    if (
+        group is not None
+        and user_id == invitation["created_by"]
+        and group not in get_current_group_values()
+    ):
+        return False
+    subjects = [("user", created_as.get("user")), ("group", group)]
     return any(
         (role.subject_type, role.subject) in subjects and role.role == "owner"
         for role in list_roles(service_path(invitation["service_id"]))
@@ -447,8 +461,10 @@ def acceptInvitation(
             revoke roles of the user (cf. `is_manageable_user_id()`).
         cloud_registry.exceptions.NotFound: No open invitation has the token
             (unknown, revoked or expired), its service doesn't exist, or its
-            creator may no longer grant its role (cf. `_creator_may_grant()`;
-            the invitation is deleted).
+            creator may no longer grant its role (cf. `_creator_may_grant()`,
+            checked while the service is locked, so that renames, which
+            move roles before invitations, don't interfere; the invitation is
+            deleted).
         Exception: The role can't be granted (cf. `put_role()`), e.g.,
             `LastOwner`; the invitation is released.
     """
@@ -472,7 +488,20 @@ def acceptInvitation(
         raise NotFound
     service_id: str = invitation["service_id"]
     role: str = invitation["role"]
-    if not _creator_may_grant(invitation):
+
+    def check_creator() -> None:
+        """Refuse the grant if the creator may no longer grant the role.
+
+        Raises:
+            CreatorNotOwner: The creator may no longer grant the role (cf.
+                `_creator_may_grant()`).
+        """
+        if not _creator_may_grant(invitation, user_id):
+            raise CreatorNotOwner
+
+    try:
+        put_role(service_id, user_id, "user", role, check=check_creator)
+    except CreatorNotOwner:
         collection.delete_one({"_id": invitation["_id"]})
         logger.info(
             "Invitation '%s' to service '%s' deleted: its creator '%s' is no "
@@ -481,9 +510,7 @@ def acceptInvitation(
             escape_log_value(service_id),
             escape_log_value(invitation["created_by"]),
         )
-        raise NotFound
-    try:
-        put_role(service_id, user_id, "user", role)
+        raise
     except Exception:
         # usable again, unless deleted meanwhile (e.g., with the service)
         collection.update_one(

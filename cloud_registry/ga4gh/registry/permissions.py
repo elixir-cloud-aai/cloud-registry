@@ -491,7 +491,11 @@ def _describe(subject: str, subject_type: SubjectType) -> str:
 
 
 def put_role(
-    serviceId: str, subject: str, subject_type: SubjectType, role: str
+    serviceId: str,
+    subject: str,
+    subject_type: SubjectType,
+    role: str,
+    check: Callable[[], None] | None = None,
 ) -> None:
     """Grant a user or group a role on a service, replacing others.
 
@@ -506,6 +510,9 @@ def put_role(
         subject: User identifier or group.
         subject_type: Type of the subject.
         role: Role to grant.
+        check: Function called once the service is locked and found to
+            exist, before the role is granted, e.g., to check that the role
+            may still be granted; it raises to refuse the grant.
 
     Raises:
         cloud_registry.exceptions.BadRequest: The role can't be granted to
@@ -520,6 +527,8 @@ def put_role(
     with changing(serviceId):
         if not service_exists(serviceId):
             raise NotFound
+        if check is not None:
+            check()
         resource = service_path(serviceId)
         is_user = subject_type == "user"
         if is_user and all(

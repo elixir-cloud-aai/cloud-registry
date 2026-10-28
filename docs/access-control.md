@@ -303,12 +303,15 @@ curl -X POST "http://localhost:8080/ga4gh/registry/v1/invitations/accept" \
   the last owner of the service and the invitation is for `maintainer` (`409`,
   `last-owner`), the invitation stays open.
 - **Creators:** invitations only grant their role while their creator is an
-  owner of the service, as a user or through the group that made them owner
-  when they created it; otherwise they are deleted instead of accepted
-  (`404`), so that removed owners can't regain the role with invitations they
-  created before. Invitations of admins don't depend on their role, as the
-  registry can't check admin groups without the admin's token: when removing
-  an admin, revoke the open invitations they created.
+  owner of the service: as a user, or through the group that made them owner
+  when they created it, as long as that group is owner (and, if they accept
+  the invitation themselves, they are still a member of it). Otherwise, the
+  invitations are deleted instead of accepted (`404`), so that removed owners
+  can't regain the role with invitations they created before. Invitations of
+  admins don't depend on their role, as the registry can't check admin groups
+  without the admin's token: when removing an admin, delete the open
+  invitations they created (no endpoint lists them across services: query
+  the collection `invitations` by `created_by`).
 - **Identifiers:** users whose roles the permissions API couldn't revoke
   (identifiers that are `groups` or start with `groups/` or a slash, or with
   the segments `.` or `..`; see [Roles on services](#roles-on-services))

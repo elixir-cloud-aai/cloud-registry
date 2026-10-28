@@ -15,15 +15,18 @@ from urllib.parse import quote
 from connexion import App
 from flask.testing import FlaskClient
 from foca import get_custom_config
+from foca.security import auth
 from foca.security.access_control import list_roles
 import pytest
 from werkzeug.test import TestResponse
 
 from cloud_registry.ga4gh.registry import invitations as invitations_module
+from cloud_registry.ga4gh.registry import locks as locks_module
 from cloud_registry.ga4gh.registry.invitations import (
     TOKEN_BYTES,
     hash_token,
 )
+from cloud_registry.ga4gh.registry.locks import LOCKS
 from cloud_registry.ga4gh.registry.permissions import (
     INVITATIONS,
     USER_NAMES,
@@ -31,7 +34,7 @@ from cloud_registry.ga4gh.registry.permissions import (
 )
 from cloud_registry.service_models.custom_config import CustomConfig
 from cloud_registry.utils import get_collection, now
-from tests.conftest import ADMIN, NAMES, TEAM_GROUP
+from tests.conftest import ADMIN, GROUPS, NAMES, TEAM_GROUP
 from tests.test_access_control import (
     ALICE,
     BASE,
@@ -492,11 +495,12 @@ def test_release_keeps_other_acceptance(
     service_id = register(client)
     token = token_of(client, service_id)
 
-    def accepted_meanwhile(*args: Any) -> None:
+    def accepted_meanwhile(*args: Any, **kwargs: Any) -> None:
         """Let another user accept the invitation, then fail.
 
         Args:
             args: Arguments of `put_role()`; unused.
+            kwargs: Keyword arguments of `put_role()`; unused.
 
         Raises:
             RuntimeError: Always (a server error).
@@ -777,3 +781,68 @@ def test_names_removed_with_role(client: FlaskClient) -> None:
     (accepted,) = invitations(client, service_id)
     assert set(accepted["accepted"]) == {"user_id", "accepted_at"}
     assert invitations(client, other_id)[0]["accepted"]["name"] == NAMES[BOB]
+
+
+def test_group_creator_left_group(
+    app: App, client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Creators who left the owner group can't accept their invitations.
+
+    Others still can, as long as the group is owner.
+    """
+    service_id = register(client)
+    assert grant_group(client, service_id, TEAM_GROUP, "owner") == 200
+    own = invite(client, service_id, role="owner", user=ERIN).get_json()
+    other = invite(client, service_id, user=ERIN).get_json()
+    monkeypatch.setitem(GROUPS, ERIN, [])
+    # user info is cached per token
+    auth._userinfo_cache.clear()
+    assert accept(client, own["token"], user=ERIN).status_code == 404
+    assert accept(client, other["token"]).status_code == 200
+    assert [i["_id"] for i in stored(app)] == [other["id"]]
+
+
+def test_creator_checked_in_lock(
+    app: App, client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The creator is checked while the service is locked.
+
+    E.g., an acceptance during a rename (which moves the roles before the
+    invitations) waits for it, or fails without deleting the invitation.
+    """
+    service_id = register(client)
+    token = token_of(client, service_id)
+    calls: list[str] = []
+    original = invitations_module._creator_may_grant
+
+    def checked(invitation: dict[str, Any], user_id: str) -> bool:
+        """Record that the check runs inside the lock, then check.
+
+        Args:
+            invitation: Stored invitation.
+            user_id: Accepting user.
+
+        Returns:
+            Result of the original check.
+        """
+        with app.app.app_context():
+            locked = get_collection(LOCKS).count_documents(
+                {"service": service_id}, limit=1
+            )
+        calls.append("locked" if locked else "unlocked")
+        return original(invitation, user_id)
+
+    monkeypatch.setattr(invitations_module, "_creator_may_grant", checked)
+    make_lock(app, service_id, age=timedelta(0))
+    monkeypatch.setattr(locks_module, "LOCK_WAIT", 0)
+    monkeypatch.setattr(locks_module, "LOCK_ATTEMPTS", 1)
+    response = accept(client, token)
+    assert response.status_code == 409
+    assert response.get_json()["code"] == "service-busy"
+    assert calls == []
+    (document,) = stored(app)
+    assert "accepted" not in document
+    with app.app.app_context():
+        get_collection(LOCKS).delete_many({})
+    assert accept(client, token).status_code == 200
+    assert calls == ["locked"]
