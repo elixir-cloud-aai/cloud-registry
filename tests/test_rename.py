@@ -4,8 +4,10 @@ The app and its fixtures are set up in `tests/conftest.py`; the helpers for
 roles are those of `tests/test_access_control.py`.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import timedelta
+import re
 import time
 from typing import Any
 from urllib.parse import quote
@@ -14,7 +16,7 @@ from connexion import App
 from flask.testing import FlaskClient
 from foca.security.access_control import add_resource_role, list_roles
 import pymongo
-from pymongo.errors import ServerSelectionTimeoutError
+from pymongo.errors import AutoReconnect, ServerSelectionTimeoutError
 import pytest
 from werkzeug.test import TestResponse
 
@@ -914,10 +916,11 @@ def _unavailable(name: str) -> Any:
     raise ServerSelectionTimeoutError(f"no server for '{name}'")
 
 
-def resume_due(monkeypatch: pytest.MonkeyPatch) -> None:
+def _resume_due(monkeypatch: pytest.MonkeyPatch) -> None:
     """Let the next request resume renames (unlike `_fast_locks()`).
 
-    Call after the requests that set up the test, as they would resume.
+    Requests resume at most once per interval, so call this after the
+    requests that set up the test.
 
     Args:
         monkeypatch: Fixture to patch the interval and the last resume.
@@ -926,35 +929,68 @@ def resume_due(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(rename_module, "_last_resume", None)
 
 
+# Endpoints that aren't the registry's operations, by path (the Swagger UI,
+# the spec, FOCA's service info and admin API); all others are
+OTHER_PATHS = re.compile(
+    rf"^({re.escape(BASE)}/(ui/|openapi\.|service-info$)|/admin/|/static/)"
+)
+
+
+def test_operation_endpoints(app: App) -> None:
+    """All operations of the registry, and only those, resume renames."""
+    rules = list(app.app.url_map.iter_rules())
+    assert any(OTHER_PATHS.match(rule.rule) for rule in rules)
+    for rule in rules:
+        operation = rule.endpoint.rpartition(".")[2]
+        is_operation = operation.startswith(rename_module.OPERATION_PREFIX)
+        assert is_operation is not bool(OTHER_PATHS.match(rule.rule)), rule.rule
+
+
 @pytest.mark.parametrize(
     "path",
-    ["/ui/", "/openapi.json", "/openapi.yaml", "/service-info", "/unknown"],
-    ids=["ui", "spec-json", "spec-yaml", "service-info", "not-found"],
+    [
+        f"{BASE}/ui/",
+        f"{BASE}/openapi.json",
+        f"{BASE}/openapi.yaml",
+        f"{BASE}/service-info",
+        "/admin/access-control/permissions",
+        f"{BASE}/unknown",
+    ],
+    ids=["ui", "spec-json", "spec-yaml", "service-info", "admin-api", "not-found"],
 )
 def test_no_resume_before_other_requests(
     app: App, client: FlaskClient, monkeypatch: pytest.MonkeyPatch, path: str
 ) -> None:
-    """The UI, spec and service info don't need the database for renames."""
+    """The UI, spec, service info and admin API don't need the database."""
     make_lock(app, "SRV")
-    resume_due(monkeypatch)
+    _resume_due(monkeypatch)
     monkeypatch.setattr(rename_module, "get_collection", _unavailable)
-    assert client.get(f"{BASE}{path}").status_code < 500
+    assert client.get(path).status_code < 500
     assert rename_module._last_resume is None
 
 
+@pytest.mark.parametrize("fails", ["check", "resume"])
 def test_resume_before_requests_unavailable(
     app: App,
     client: FlaskClient,
     service_id: str,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
+    fails: str,
 ) -> None:
-    """Requests continue if renames can't be checked, which is tried again."""
+    """Requests continue if renames can't be resumed, which is tried again."""
     make_lock(app, service_id)
     move_service(app, service_id, NEW_ID)
-    resume_due(monkeypatch)
+    _resume_due(monkeypatch)
+
+    def fail_resume() -> None:
+        raise AutoReconnect("connection lost")
+
     with monkeypatch.context() as patch:
-        patch.setattr(rename_module, "get_collection", _unavailable)
+        if fails == "check":
+            patch.setattr(rename_module, "get_collection", _unavailable)
+        else:
+            patch.setattr(rename_module, "resume_renames", fail_resume)
         assert client.get(f"{BASE}/services").status_code == 200
     assert "Interrupted renames not checked; tried again later" in caplog.text
     assert len(locks(app)) == 2
@@ -964,20 +1000,34 @@ def test_resume_before_requests_unavailable(
 
 
 def test_resume_before_requests_timeout(
-    client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+    app: App, client: FlaskClient, service_id: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Requests check for interrupted renames with a short timeout."""
+    """Requests check for interrupted renames with a short timeout.
+
+    Not resuming them, which takes several writes.
+    """
+    make_lock(app, service_id)
     timeouts: list[float | None] = []
+    active: list[bool] = []
     original = pymongo.timeout
 
-    def spy(seconds: float | None) -> Any:
+    @contextmanager
+    def spy(seconds: float | None) -> Iterator[None]:
         timeouts.append(seconds)
-        return original(seconds)
+        active.append(True)
+        with original(seconds):
+            yield
+        active.pop()
 
+    resumed: list[bool] = []
     monkeypatch.setattr(pymongo, "timeout", spy)
-    resume_due(monkeypatch)
+    monkeypatch.setattr(
+        rename_module, "resume_renames", lambda: resumed.append(bool(active))
+    )
+    _resume_due(monkeypatch)
     assert client.get(f"{BASE}/services").status_code == 200
     assert timeouts == [rename_module.RESUME_CHECK_TIMEOUT]
+    assert resumed == [False]
 
 
 def test_no_resume_without_stale_locks(
@@ -985,7 +1035,7 @@ def test_no_resume_without_stale_locks(
 ) -> None:
     """Running renames (recent locks) aren't resumed before requests."""
     make_lock(app, service_id, age=timedelta(0))
-    resume_due(monkeypatch)
+    _resume_due(monkeypatch)
     resumed: list[None] = []
     monkeypatch.setattr(rename_module, "resume_renames", lambda: resumed.append(None))
     assert client.get(f"{BASE}/services").status_code == 200

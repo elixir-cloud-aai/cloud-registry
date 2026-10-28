@@ -52,7 +52,7 @@ from cloud_registry.ga4gh.registry.locks import (
     LOCKS,
     lock_exclusive,
     remove_stale_changes,
-    stale_before,
+    stale,
     unlock,
 )
 from cloud_registry.ga4gh.registry.permissions import (
@@ -324,8 +324,7 @@ def resume_renames() -> None:
     app context.
     """
     collection = get_collection(LOCKS)
-    stale = {"started_at": {"$lte": stale_before()}}
-    for lock in collection.find({"to": {"$exists": True}, **stale}):
+    for lock in collection.find({"to": {"$exists": True}, **stale()}):
         token = _claim(lock)
         if token is None:
             continue
@@ -338,7 +337,7 @@ def resume_renames() -> None:
                 escape_log_value(lock["_id"]),
                 escape_log_value(lock["to"]),
             )
-    for lock in collection.find({"from": {"$exists": True}, **stale}):
+    for lock in collection.find({"from": {"$exists": True}, **stale()}):
         if not collection.count_documents(
             {"_id": lock["from"], "to": lock["_id"]}, limit=1
         ):
@@ -351,14 +350,12 @@ def resume_renames_periodically() -> None:
 
     Called before each request (cf. `cloud_registry.app.create_app()`), so
     that interrupted renames are resumed soon after their locks are stale,
-    not only when the app starts. Only requests of the registry's operations
-    check for them (cf. `OPERATION_PREFIX`), so that the Swagger UI (the
-    probe path of the chart and image), the spec, the service info and
-    FOCA's admin API don't need the database. Database errors are logged,
-    not raised, so that requests don't fail on them (they need the database
-    anyway, and report it); the next check is due after the interval. The
-    check for stale locks waits up to `RESUME_CHECK_TIMEOUT` seconds for the
-    database, unlike resuming renames, which takes several writes.
+    not only when the app starts. Only before requests of the registry's
+    operations (cf. `OPERATION_PREFIX`), so that other requests (e.g., of
+    the probe path) don't need the database. Database errors are logged,
+    not raised, and tried again after the interval; the check for stale
+    locks waits for the database for up to `RESUME_CHECK_TIMEOUT` seconds
+    (resuming renames, which takes several writes, as long as they need).
     """
     global _last_resume  # noqa: PLW0603 (per worker)
     if not (request.endpoint or "").rpartition(".")[2].startswith(OPERATION_PREFIX):
@@ -369,10 +366,8 @@ def resume_renames_periodically() -> None:
     _last_resume = current
     try:
         with pymongo.timeout(RESUME_CHECK_TIMEOUT):
-            stale = get_collection(LOCKS).count_documents(
-                {"started_at": {"$lte": stale_before()}}, limit=1
-            )
-        if stale:
+            due = get_collection(LOCKS).count_documents(stale(), limit=1)
+        if due:
             resume_renames()
     except PyMongoError as exc:
         logger.warning(
