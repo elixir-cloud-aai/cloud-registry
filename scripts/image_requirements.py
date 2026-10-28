@@ -72,7 +72,7 @@ def image_requirements(requirements: str, installed: str) -> str:
     """
     kept = []
     for entry in entries(requirements):
-        requirement = entry[0].removesuffix("\\")
+        requirement = entry[0]
         if not FOCA_REFERENCE.match(requirement):
             kept.extend(entry)
             continue

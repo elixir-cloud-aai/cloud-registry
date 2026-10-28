@@ -58,12 +58,13 @@ suppress a false positive, add a comment with the reason to the line:
 ## Dependencies
 
 The dependencies are declared, with version ranges, in `pyproject.toml`
-(installs as a package and the development environment use these) and
+(which installs of the package, e.g., the development environment, use) and
 locked in `uv.lock`, with exact versions and hashes, by
 [uv](https://docs.astral.sh/uv/), which comes with the dev dependencies.
 The image build installs the locked runtime dependencies only
-(`uv export --frozen --no-dev --no-emit-project`, then `pip install
---require-hashes --only-binary :all: --no-deps`, see the `Dockerfile`), so
+(`uv export --frozen --no-dev --no-emit-project`, which leaves out the
+extras, then `pip install --require-hashes --only-binary :all: --no-deps`,
+see the `Dockerfile`), so
 two builds of the same commit get the same packages, and a new release of a
 dependency gets into the image only through a reviewed change of the lock.
 After adding, removing or changing a dependency in `pyproject.toml`, update

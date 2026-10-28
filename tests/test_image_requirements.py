@@ -55,20 +55,17 @@ def test_commit_pin(installed: str) -> None:
     )
 
 
-def test_commit_pin_continued() -> None:
-    """A pin of FOCA's commit is recognized when continued on the next line."""
-    requirements = f"{PIN} \\\n    # via cloud-registry\n" + GUNICORN
-    assert image_requirements.image_requirements(
-        requirements, "0.16.1.dev7+gdb6998cae"
-    ) == (GUNICORN)
-
-
 def test_release() -> None:
     """Locked FOCA releases are kept, with their hashes."""
     requirements = HEADER + CONNEXION + FOCA_RELEASE + GUNICORN
     assert image_requirements.image_requirements(requirements, "0.18.0") == (
         requirements
     )
+
+
+def test_empty() -> None:
+    """No requirements give no output."""
+    assert image_requirements.image_requirements("", "0.18.0") == ""
 
 
 def test_entries() -> None:

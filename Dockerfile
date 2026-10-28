@@ -26,7 +26,8 @@ LABEL org.opencontainers.image.vendor="ELIXIR On-Cloud"
 
 ## Install dependencies first, so that code changes do not reinstall them;
 ## the FOCA image runs as non-root user. Only the locked ones are installed:
-## the runtime dependencies (`project.dependencies` of `pyproject.toml`) and
+## the runtime dependencies (`project.dependencies` of `pyproject.toml`; the
+## export leaves out the extras, and `--no-dev` a `dev` dependency group) and
 ## all their own dependencies, at the exact versions of `uv.lock`, checked
 ## against its hashes, as wheels only, and without resolving anything else
 ## (`--no-deps`). `--frozen` takes the lock as is, unchecked against
