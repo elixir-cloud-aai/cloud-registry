@@ -9,7 +9,10 @@ hashes) and prints them without a direct reference to a FOCA commit
 reference has no hash. Instead, it fails unless the base image has FOCA of
 that commit, i.e., a FOCA version whose local part is `g<abbreviated
 commit>`, as set by setuptools-scm (e.g., `0.16.1.dev7+gdb6998cae`). The
-dependencies of FOCA stay locked and hashed.
+dependencies of FOCA stay locked and hashed. A locked FOCA release is kept,
+but the build fails unless the base image has exactly that release, so that
+the lock doesn't install another FOCA on top of it (e.g., revert an update
+of the base image): update the base image and the lock together.
 
 Usage: `python scripts/image_requirements.py <requirements>`, where
 `<requirements>` is the output of
@@ -29,6 +32,11 @@ FOCA_REFERENCE = re.compile(r"\s*foca\s*(\[[^\]]*\])?\s*@", re.IGNORECASE)
 FOCA_COMMIT = re.compile(
     r"\s*foca\s*@\s*git\+https://github\.com/elixir-cloud-aai/foca@(?P<sha>[0-9a-f]{40})\s*",
     re.IGNORECASE,
+)
+# A locked release of FOCA, as `uv export` writes it (hashes continued on the
+# next lines)
+FOCA_LOCKED = re.compile(
+    r"\s*foca\s*==\s*(?P<version>[^\s;\\]+)\s*\\?\s*", re.IGNORECASE
 )
 # The abbreviated commit in the local part of a version set by setuptools-scm
 SCM_COMMIT = re.compile(r"\+g(?P<sha>[0-9a-f]{7,40})(\.|$)")
@@ -68,12 +76,19 @@ def image_requirements(requirements: str, installed: str) -> str:
 
     Raises:
         ValueError: A direct reference of FOCA is not to a full commit SHA of
-            FOCA's repository, or the base image has FOCA of another commit.
+            FOCA's repository, or the base image has FOCA of another commit
+            or another release than the locked one.
     """
     kept = []
     for entry in entries(requirements):
         requirement = entry[0]
         if not FOCA_REFERENCE.match(requirement):
+            locked = FOCA_LOCKED.fullmatch(requirement)
+            if locked and locked["version"] != installed:
+                raise ValueError(
+                    f"The base image has FOCA {installed}, but "
+                    f"{locked['version']} is locked"
+                )
             kept.extend(entry)
             continue
         pin = FOCA_COMMIT.fullmatch(requirement)

@@ -63,6 +63,19 @@ def test_release() -> None:
     )
 
 
+@pytest.mark.parametrize("installed", ["0.18.1", "0.17.0", "0.18.0.dev1+gdb6998cae"])
+def test_release_other_version(installed: str) -> None:
+    """The build fails unless the base image has the locked FOCA release.
+
+    Otherwise, the image would get another FOCA than its base image has
+    (e.g., an update of the base image would be reverted by the lock).
+    """
+    with pytest.raises(
+        ValueError, match=f"has FOCA {re.escape(installed)}, but 0.18.0 is locked"
+    ):
+        image_requirements.image_requirements(FOCA_RELEASE, installed)
+
+
 def test_empty() -> None:
     """No requirements give no output."""
     assert image_requirements.image_requirements("", "0.18.0") == ""
@@ -111,7 +124,7 @@ def test_main(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`main()` prints the requirements, or the error."""
-    monkeypatch.setattr(importlib.metadata, "version", lambda name: "0.17.0")
+    monkeypatch.setattr(importlib.metadata, "version", lambda name: "0.18.0")
     requirements = tmp_path / "requirements.txt"
     requirements.write_text(FOCA_RELEASE + GUNICORN)
     assert image_requirements.main([str(requirements)]) == 0
@@ -119,7 +132,7 @@ def test_main(
     requirements.write_text(FOCA_COMMIT)
     assert image_requirements.main([str(requirements)]) == 1
     assert capsys.readouterr().err == (
-        f"error: The base image has FOCA 0.17.0, not of commit {SHA}\n"
+        f"error: The base image has FOCA 0.18.0, not of commit {SHA}\n"
     )
 
 

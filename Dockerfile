@@ -33,7 +33,8 @@ LABEL org.opencontainers.image.vendor="ELIXIR On-Cloud"
 ## (`--no-deps`). `--frozen` takes the lock as is, unchecked against
 ## `pyproject.toml` (CI's `uv lock --check` checks it). A direct reference to
 ## a FOCA commit (temporary) has no hash and is left out, as the image has no
-## Git: the build fails unless the base image has FOCA of that commit
+## Git: the build fails unless the base image has FOCA of that commit. It also
+## fails unless the base image has the locked FOCA release, if one is locked
 ## (`scripts/image_requirements.py`)
 USER root
 COPY pyproject.toml uv.lock scripts/image_requirements.py /tmp/src/

@@ -16,7 +16,9 @@ updates:
       - dependency-name: connexion
         update-types: ["version-update:semver-major"]
       # FOCA minors are bumped by hand, together with the base image (see the
-      # `docker` entry)
+      # `docker` entry). The image build fails unless the base image has the
+      # locked FOCA, so the pull requests of a FOCA patch from this entry and
+      # the `docker` entry must be merged together
       - dependency-name: foca
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
     groups:
@@ -48,8 +50,8 @@ updates:
     target-branch: dev
     ignore:
       # FOCA minors are bumped by hand, in the base image and the `foca`
-      # requirement in `pyproject.toml` together (a new base image alone would
-      # get the old FOCA reinstalled on top; see the `uv` entry)
+      # requirement in `pyproject.toml` and `uv.lock` together (the image build
+      # fails unless the base image has the locked FOCA; see the `uv` entry)
       - dependency-name: elixircloud/foca
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
     groups:

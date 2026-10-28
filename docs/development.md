@@ -78,7 +78,10 @@ uv lock --check  # what CI checks: the lock matches `pyproject.toml`
 
 Dependabot updates `pyproject.toml` and `uv.lock` together (`uv` entry of
 `.github/dependabot.yml`), and the image of uv that the `Dockerfile` uses
-(`docker` entry).
+(`docker` entry). The lock also pins FOCA, and the image build fails unless
+the base image has exactly the locked FOCA, so a FOCA update needs the base
+image and the lock together (for a patch, merge Dependabot's pull requests of
+both entries together).
 
 ## Documentation
 
