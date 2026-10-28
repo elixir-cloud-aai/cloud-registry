@@ -58,6 +58,15 @@ def stale_before() -> datetime:
     return now() - LOCK_TIMEOUT
 
 
+def stale() -> dict[str, Any]:
+    """Get the filter of stale locks (of renames and changes).
+
+    Returns:
+        Filter of locks that started at or before `stale_before()`.
+    """
+    return {"started_at": {"$lte": stale_before()}}
+
+
 @contextmanager
 def changing(service_id: str) -> Iterator[None]:
     """Hold a shared lock on a service while changing it.
@@ -136,6 +145,4 @@ def unlock(service_id: str, token: str) -> None:
 
 def remove_stale_changes() -> None:
     """Remove stale locks of changes (e.g., of crashed workers)."""
-    get_collection(LOCKS).delete_many(
-        {"service": {"$exists": True}, "started_at": {"$lte": stale_before()}}
-    )
+    get_collection(LOCKS).delete_many({"service": {"$exists": True}, **stale()})
