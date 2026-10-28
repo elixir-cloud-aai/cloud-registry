@@ -635,15 +635,14 @@ def warn_owner_rules() -> None:
     Deployments that change or remove the rule of owners' roles of groups
     (`OWNER_GROUP_RULE`) usually restrict them, but other rules may still
     allow them: `owners-change-permissions` (`/services/:id/permissions/*`)
-    also covers the roles of groups since 0.6.0. So, unless the rule is kept
-    as in the packaged base config (`BASE_CONFIG`, which deployments change
-    with overlays), warns of configured rules (named or a list) for owners or
-    any user (`*`) that allow `PUT` or `DELETE` on the roles of both users
-    (`EXAMPLE_USERS`) and groups (paths of the base rule with example
-    values), i.e., that
-    cover groups as a side effect; rules for groups only (e.g., the changed
-    rule itself) are the deployment's choice. Rules stored via FOCA's
-    permissions API are not checked.
+    also covers the roles of groups (unlike in 0.5.0). So, unless the rule
+    is kept as in the packaged base config (`BASE_CONFIG`, which deployments
+    change with overlays), warns of configured rules (named or a list) for
+    owners or any user (`*`) that allow `PUT` or `DELETE` on the roles of
+    both users (`EXAMPLE_USERS`) and groups (paths of the base rule with
+    example values), i.e., that cover groups as a side effect; rules for
+    groups only (e.g., the changed rule itself) are the deployment's choice.
+    Rules stored via FOCA's permissions API are not checked.
 
     Must be called in an app context.
     """

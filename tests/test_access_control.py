@@ -1845,7 +1845,7 @@ def test_owner_rules_warning(
     That is, if the rule of owners' roles of groups is changed or removed,
     but rules that cover the roles of users still allow owners to change
     those of groups (e.g., the rule of users' roles, which covers groups
-    since 0.6.0); not of rules for groups only, or for other roles.
+    unlike in 0.5.0); not of rules for groups only, or for other roles.
     """
     overlay = {"security": {"access_control": {"policies": policies}}}
     _create_app(monkeypatch, tmp_path, overlay)
