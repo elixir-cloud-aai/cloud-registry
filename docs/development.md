@@ -55,6 +55,30 @@ suppress a false positive, add a comment with the reason to the line:
 `# nosemgrep: <rule-id>`, `# ast-grep-ignore: <rule-id>` or
 `# gitleaks:allow`.
 
+## Dependencies
+
+The dependencies are declared, with version ranges, in `pyproject.toml`
+(installs as a package and the development environment use these) and
+locked in `uv.lock`, with exact versions and hashes, by
+[uv](https://docs.astral.sh/uv/), which comes with the dev dependencies.
+The image build installs the locked runtime dependencies only
+(`uv export --frozen --no-dev --no-emit-project`, then `pip install
+--require-hashes --only-binary :all: --no-deps`, see the `Dockerfile`), so
+two builds of the same commit get the same packages, and a new release of a
+dependency gets into the image only through a reviewed change of the lock.
+After adding, removing or changing a dependency in `pyproject.toml`, update
+the lock and commit both:
+
+```bash
+uv lock  # the versions that satisfy the new ranges, others are kept
+uv lock --upgrade-package <name>  # a newer version of one package
+uv lock --check  # what CI checks: the lock matches `pyproject.toml`
+```
+
+Dependabot updates `pyproject.toml` and `uv.lock` together (`uv` entry of
+`.github/dependabot.yml`), and the image of uv that the `Dockerfile` uses
+(`docker` entry).
+
 ## Documentation
 
 This documentation is built with [MkDocs](https://www.mkdocs.org/) and
@@ -227,7 +251,8 @@ development image of that commit as the base image (tagged by date, e.g.,
 later commits of that day; the `Dockerfile` records the commit as
 `## FOCA commit: <sha>`, which the tests check, and the image build doesn't
 reinstall FOCA, but fails unless the base image has FOCA of that commit,
-`scripts/image_requirements.py`).
+`scripts/image_requirements.py`; the lock has no hash for such a pin, so the
+image build leaves it out, while FOCA's dependencies stay locked).
 Meanwhile, add a Dependabot `ignore` of `elixircloud/foca` (all updates;
 remove it with the release pin), as updates of the dated tag's digest
 would change FOCA. Such pins are temporary: the release workflow fails

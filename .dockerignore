@@ -3,6 +3,8 @@
 !cloud_registry/
 !LICENSE
 !pyproject.toml
+# Locked requirements of the image (exported by uv in the image build)
+!uv.lock
 !README.md
 # Run by the image build to list the requirements to install
 !scripts/image_requirements.py

@@ -53,6 +53,11 @@ jobs:
         run: |
           pip install --upgrade pip==24.0
           pip install -e ".[dev]"
+      # The image build installs the locked dependencies (`Dockerfile`), so
+      # the lock must match `pyproject.toml` (run `uv lock` after changing
+      # dependencies); uv comes with the dev dependencies
+      - name: Check lock file
+        run: uv lock --check
       - name: Cache pre-commit hook environments
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
