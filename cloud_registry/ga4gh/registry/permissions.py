@@ -20,12 +20,16 @@ which deployments set) may do everything.
 from collections.abc import Callable
 from functools import wraps
 import logging
+from pathlib import Path
+import re
 from typing import Any
 from urllib.parse import quote
 
+from casbin.util import key_match2
 from flask import current_app, g, has_request_context, request
 from flask.globals import request_ctx
 from foca import get_config, get_custom_config
+from foca.config.config_parser import ConfigParser
 from foca.security.access_control import (
     SubjectType,
     get_available_opt_in_roles,
@@ -58,6 +62,13 @@ from cloud_registry.service_models.custom_config import CustomConfig
 from cloud_registry.utils import get_collection
 
 logger = logging.getLogger(__name__)
+# Base config of the app, with the default policies (cf. `warn_owner_rules()`)
+BASE_CONFIG = Path(__file__).parents[2] / "config.yaml"
+# Policy rule of owners' roles of groups on services (cf. `config.yaml`,
+# `warn_owner_rules()`)
+OWNER_GROUP_RULE = "owners-change-group-permissions"
+# Methods of changes of roles (cf. `warn_owner_rules()`)
+METHODS = ("PUT", "DELETE")
 
 
 def _bearer_token() -> str | None:
@@ -613,6 +624,49 @@ def check_namespaces() -> None:
                 "not start with 'groups/', the path of the roles of groups: "
                 "set another namespace ('security.auth.issuers')"
             )
+
+
+def warn_owner_rules() -> None:
+    """Warn if owners can change roles of groups although that rule is changed.
+
+    Deployments that change or remove the rule of owners' roles of groups
+    (`OWNER_GROUP_RULE`) usually restrict them, but other rules may still
+    allow them: `owners-change-permissions` (`/services/:id/permissions/*`)
+    also covers the roles of groups since 0.6.0. So, unless the rule is kept
+    as in the packaged base config (`BASE_CONFIG`, which deployments change
+    with overlays), warns if any rule for owners or any user (`*`) allows
+    `PUT` or `DELETE` on a path of the roles of a group (the path of the base
+    rule, with example values), whether the policies are named or a list.
+
+    Must be called in an app context.
+    """
+    base = ConfigParser.parse_yaml(BASE_CONFIG)["security"]["access_control"][
+        "policies"
+    ][OWNER_GROUP_RULE]
+    policies = get_config().security.access_control.policies or []
+    if base in policies:
+        return
+    path = base[2].replace(":id", "service").replace("*", "group")
+    allowing = sorted(
+        {
+            str(rule)
+            for rule in policies
+            if len(rule) >= 4
+            and rule[:2] in (["p", "owner"], ["p", "*"])
+            and key_match2(path, rule[2])
+            and any(re.fullmatch(f"(?:{rule[3]})", method) for method in METHODS)
+        }
+    )
+    if allowing:
+        logger.warning(
+            "The policy rule '%s' is changed or removed "
+            "('security.access_control.policies'), but owners can still grant "
+            "and revoke roles of groups (e.g., '%s') via: %s. Change these "
+            "rules, too (see 'From 0.5.0' in the upgrade guide).",
+            OWNER_GROUP_RULE,
+            path,
+            ", ".join(allowing),
+        )
 
 
 def _check_user_id(userId: str) -> None:
