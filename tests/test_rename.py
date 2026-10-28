@@ -4,8 +4,10 @@ The app and its fixtures are set up in `tests/conftest.py`; the helpers for
 roles are those of `tests/test_access_control.py`.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import timedelta
+import re
 import time
 from typing import Any
 from urllib.parse import quote
@@ -13,6 +15,8 @@ from urllib.parse import quote
 from connexion import App
 from flask.testing import FlaskClient
 from foca.security.access_control import add_resource_role, list_roles
+import pymongo
+from pymongo.errors import AutoReconnect, ServerSelectionTimeoutError
 import pytest
 from werkzeug.test import TestResponse
 
@@ -22,7 +26,7 @@ from cloud_registry.ga4gh.registry import rename as rename_module
 from cloud_registry.ga4gh.registry.permissions import USER_NAMES
 from cloud_registry.ga4gh.registry.service import VERIFIED
 from cloud_registry.utils import get_collection, now
-from tests.conftest import ADMIN, NAMES, TEAM_GROUP
+from tests.conftest import ADMIN, COLLECTION_CLASS, NAMES, TEAM_GROUP
 from tests.test_access_control import (
     ALICE,
     BASE,
@@ -898,3 +902,152 @@ def test_resume_before_requests(
     monkeypatch.setattr(rename_module, "_last_resume", None if last is None else last())
     assert client.get(f"{BASE}/services").status_code == 200
     assert (locks(app) == []) is resumed
+
+
+def _unavailable(name: str) -> Any:
+    """Fail like a database that can't be reached.
+
+    Args:
+        name: Name of the collection.
+
+    Raises:
+        pymongo.errors.ServerSelectionTimeoutError: Always.
+    """
+    raise ServerSelectionTimeoutError(f"no server for '{name}'")
+
+
+def _resume_due(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Let the next request resume renames (unlike `_fast_locks()`).
+
+    Requests resume at most once per interval, so call this after the
+    requests that set up the test.
+
+    Args:
+        monkeypatch: Fixture to patch the interval and the last resume.
+    """
+    monkeypatch.setattr(rename_module, "RESUME_INTERVAL", 10.0)
+    monkeypatch.setattr(rename_module, "_last_resume", None)
+
+
+# Endpoints that aren't the registry's operations, by path (the Swagger UI,
+# the spec, FOCA's service info and admin API); all others are
+OTHER_PATHS = re.compile(
+    rf"^({re.escape(BASE)}/(ui/|openapi\.|service-info$)|/admin/|/static/)"
+)
+
+
+def test_operation_endpoints(app: App) -> None:
+    """All operations of the registry, and only those, resume renames."""
+    rules = list(app.app.url_map.iter_rules())
+    assert any(OTHER_PATHS.match(rule.rule) for rule in rules)
+    for rule in rules:
+        operation = rule.endpoint.rpartition(".")[2]
+        is_operation = operation.startswith(rename_module.OPERATION_PREFIX)
+        assert is_operation is not bool(OTHER_PATHS.match(rule.rule)), rule.rule
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        f"{BASE}/ui/",
+        f"{BASE}/openapi.json",
+        f"{BASE}/openapi.yaml",
+        f"{BASE}/service-info",
+        "/admin/access-control/permissions",
+        f"{BASE}/unknown",
+    ],
+    ids=["ui", "spec-json", "spec-yaml", "service-info", "admin-api", "not-found"],
+)
+def test_no_resume_before_other_requests(
+    app: App, client: FlaskClient, monkeypatch: pytest.MonkeyPatch, path: str
+) -> None:
+    """The UI, spec, service info and admin API don't need the database."""
+    make_lock(app, "SRV")
+    _resume_due(monkeypatch)
+    monkeypatch.setattr(rename_module, "get_collection", _unavailable)
+    assert client.get(path).status_code < 500
+    assert rename_module._last_resume is None
+
+
+@pytest.mark.parametrize("fails", ["check", "resume"])
+def test_resume_before_requests_unavailable(
+    app: App,
+    client: FlaskClient,
+    service_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    fails: str,
+) -> None:
+    """Requests continue if renames can't be resumed, which is tried again."""
+    make_lock(app, service_id)
+    move_service(app, service_id, NEW_ID)
+    _resume_due(monkeypatch)
+
+    def fail_resume() -> None:
+        raise AutoReconnect("connection lost")
+
+    with monkeypatch.context() as patch:
+        if fails == "check":
+            patch.setattr(rename_module, "get_collection", _unavailable)
+        else:
+            patch.setattr(rename_module, "resume_renames", fail_resume)
+        assert client.get(f"{BASE}/services").status_code == 200
+    assert "Interrupted renames not checked; tried again later" in caplog.text
+    assert len(locks(app)) == 2
+    monkeypatch.setattr(rename_module, "_last_resume", time.monotonic() - 10.0)
+    assert client.get(f"{BASE}/services").status_code == 200
+    assert locks(app) == []
+
+
+def test_resume_before_requests_timeout(
+    app: App, client: FlaskClient, service_id: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Requests check for interrupted renames with a short timeout.
+
+    Not resuming them, which takes several writes.
+    """
+    make_lock(app, service_id)
+    timeouts: list[float | None] = []
+    active: list[bool] = []
+    original = pymongo.timeout
+
+    @contextmanager
+    def spy(seconds: float | None) -> Iterator[None]:
+        timeouts.append(seconds)
+        active.append(True)
+        with original(seconds):
+            yield
+        active.pop()
+
+    checked: list[bool] = []
+    count = COLLECTION_CLASS.count_documents
+
+    def count_spy(collection: Any, *args: Any, **kwargs: Any) -> int:
+        if collection.name == locks_module.LOCKS:
+            checked.append(bool(active))
+        return count(collection, *args, **kwargs)
+
+    resumed: list[bool] = []
+    monkeypatch.setattr(pymongo, "timeout", spy)
+    monkeypatch.setattr(COLLECTION_CLASS, "count_documents", count_spy)
+    monkeypatch.setattr(
+        rename_module, "resume_renames", lambda: resumed.append(bool(active))
+    )
+    _resume_due(monkeypatch)
+    assert client.get(f"{BASE}/services").status_code == 200
+    assert timeouts == [rename_module.RESUME_CHECK_TIMEOUT]
+    assert checked == [True]
+    assert resumed == [False]
+
+
+def test_no_resume_without_stale_locks(
+    app: App, client: FlaskClient, service_id: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Running renames (recent locks) aren't resumed before requests."""
+    make_lock(app, service_id, age=timedelta(0))
+    _resume_due(monkeypatch)
+    resumed: list[None] = []
+    monkeypatch.setattr(rename_module, "resume_renames", lambda: resumed.append(None))
+    assert client.get(f"{BASE}/services").status_code == 200
+    assert resumed == []
+    assert len(locks(app)) == 2

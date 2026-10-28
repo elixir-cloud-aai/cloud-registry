@@ -763,7 +763,8 @@ for the other changes.
 ## Probes
 
 - **App:** ready once it serves its Swagger UI (`/ga4gh/registry/v1/ui/`;
-  it needs neither authentication nor the database; set
+  it needs neither authentication nor the database: interrupted renames
+  are resumed only before requests of the registry's operations; set
   `cloudRegistry.probePath` if the config disables the Swagger UI), checked
   every 10 seconds, so `kubectl rollout status deploy/cloud-registry -n
   <namespace>` waits until it can serve requests; up to 5 minutes are

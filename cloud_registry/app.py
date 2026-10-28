@@ -42,8 +42,8 @@ def create_app() -> App:
     app doesn't support them, requires a size limit of request bodies and
     that the service info serves the registration rules of the app, adds
     missing keys of services, resumes interrupted renames of services (cf.
-    `resume_renames()`; also before requests, cf.
-    `resume_renames_periodically()`) and adds the types of registered
+    `resume_renames()`; also before requests of the registry's operations,
+    cf. `resume_renames_periodically()`) and adds the types of registered
     services that aren't stored (e.g., on upgrades). Warns of stored
     services with invalid URLs or URL schemes that are not allowed, and of
     rules that let owners change roles of groups although the rule for
