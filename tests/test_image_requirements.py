@@ -147,8 +147,8 @@ def test_main(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`main()` prints the requirements, or the error."""
-    monkeypatch.setattr(importlib.metadata, "version", lambda name: "0.18.0")
+    """`main()` prints the requirements, or the error, for FOCA's version."""
+    monkeypatch.setattr(importlib.metadata, "version", {"foca": "0.18.0"}.__getitem__)
     requirements = tmp_path / "requirements.txt"
     requirements.write_text(FOCA_RELEASE + GUNICORN)
     assert image_requirements.main([str(requirements)]) == 0
