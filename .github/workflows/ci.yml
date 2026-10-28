@@ -444,13 +444,12 @@ jobs:
   # build, for pushes exactly the digest pushed by `push` (`<image>@<digest>`;
   # public, so pulling it needs no login), in a job without credentials or
   # signing permissions, as the Trivy action resolves the Trivy binary from a
-  # mutable tag. The findings that have a fix are
-  # uploaded to code scanning (not for pull requests from forks, whose token
-  # cannot write them), and the job fails on critical and high
-  # vulnerabilities that have a fix. Accepted findings are listed, with a
-  # reason and an expiry date, in `.trivyignore.yaml`. The release workflow
-  # scans the release image the same way (`release.yml`), and `latest` is
-  # scanned weekly (`scan.yml`)
+  # mutable tag. The findings that have a fix are uploaded to code scanning
+  # (not for pull requests from forks, whose token cannot write them), and
+  # the job fails on critical and high vulnerabilities that have a fix.
+  # Accepted findings are listed, with a reason and an expiry date, in
+  # `.trivyignore.yaml`. The release workflow scans the release image the
+  # same way (`release.yml`), and `latest` is scanned weekly (`scan.yml`)
   scan:
     name: Scan image
     # For pull requests, `push` is skipped

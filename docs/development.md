@@ -368,10 +368,11 @@ accept a finding (e.g., if it doesn't affect the app), add it to
 `.trivyignore.yaml` with the affected package versions (`purls`), the reason
 (`statement`) and an expiry date (`expired_at`), after which the scans fail
 again. Trivy also scans for secrets (critical and high ones fail the scans
-too); accept those under `secrets:` in the same file. Dependabot
-updates the actions, including the pins of the shared actions; the Trivy
-version is the default of the shared action's `trivy-version` input. Images of
-commits on `dev` are signed and attested like release images, by the CI
+too); accept those under `secrets:` in the same file. Dependabot updates the
+actions, including the pins of the shared actions; the Trivy version is the
+default of the shared action's `trivy-version` input, which Dependabot
+doesn't bump: change it in the shared action, then update the pins here.
+Images of commits on `dev` are signed and attested like release images, by the CI
 workflow. All of this needs no secrets beyond the Docker Hub ones: signing
 uses the workflows' OIDC tokens (permission `id-token: write`). Re-running
 all jobs of the release workflow builds, scans, signs and tags a new image
