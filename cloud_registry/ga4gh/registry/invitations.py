@@ -162,11 +162,15 @@ def _accepted_filter() -> dict[str, Any]:
     return {ACCEPTED: {"$exists": True}, **_unexpired()}
 
 
-def _serve(invitation: dict[str, Any]) -> dict[str, Any]:
+def _serve(invitation: dict[str, Any], users: set[str] | None = None) -> dict[str, Any]:
     """Get an invitation as served.
 
     Args:
         invitation: Stored invitation.
+        users: Users with a role on the service; the name and email address
+            of users who accepted the invitation are only served while they
+            have one, also if removing them failed when the role was revoked
+            (cf. `_delete_roles()`). All users' if `None`.
 
     Returns:
         The invitation, without the hash of its token, with times as RFC 3339
@@ -186,6 +190,9 @@ def _serve(invitation: dict[str, Any]) -> dict[str, Any]:
             **accepted,
             "accepted_at": format_time(accepted["accepted_at"]),
         }
+        if users is not None and accepted["user_id"] not in users:
+            served[ACCEPTED].pop("name", None)
+            served[ACCEPTED].pop("email", None)
     return served
 
 
@@ -297,11 +304,13 @@ def postServiceInvitation(
     Returns:
         The invitation (cf. `_serve()`), with its token (`token`), only
         returned here; with status `201`. Or an error response: `409` if the
-        service has as many open invitations as allowed.
+        service has as many invitations that haven't expired, open or
+        accepted, as allowed (cf. `_check_limit()`).
 
     Raises:
         cloud_registry.exceptions.Forbidden: The user is no longer an owner
-            (cf. `_created_as()`).
+            (cf. `_created_as()`), also if the role was revoked while the
+            invitation was stored (it is deleted then).
         cloud_registry.exceptions.NotFound: The service doesn't exist, or was
             deleted meanwhile.
     """
@@ -333,10 +342,16 @@ def postServiceInvitation(
     }
     collection = get_collection(INVITATIONS)
     collection.insert_one(document)
-    # the service may have been deleted (with its invitations) meanwhile
-    if not service_exists(serviceId):
+    # the service may have been deleted (with its invitations), or the
+    # creator's role revoked, meanwhile
+    try:
+        if not service_exists(serviceId):
+            raise NotFound
+        if _created_as(serviceId, creator) != created_as:
+            raise Forbidden
+    except (NotFound, Forbidden):
         collection.delete_one({"_id": document["_id"]})
-        raise NotFound
+        raise
     logger.info(
         "Invitation '%s' to service '%s' as '%s' created by '%s'.",
         document["_id"],
@@ -369,7 +384,12 @@ def getServiceInvitations(serviceId: str, **kwargs: Any) -> list[dict[str, Any]]
         {"service_id": serviceId, **_unexpired()},
         sort=[("created_at", 1), ("_id", 1)],
     )
-    return [_serve(invitation) for invitation in invitations]
+    users = {
+        role.subject
+        for role in list_roles(service_path(serviceId))
+        if role.subject_type == "user"
+    }
+    return [_serve(invitation, users) for invitation in invitations]
 
 
 # DELETE /services/{serviceId}/invitations/{invitationId}

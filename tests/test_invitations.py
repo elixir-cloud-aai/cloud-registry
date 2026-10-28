@@ -16,7 +16,7 @@ from connexion import App
 from flask.testing import FlaskClient
 from foca import get_custom_config
 from foca.security import auth
-from foca.security.access_control import list_roles
+from foca.security.access_control import list_roles, remove_resource_role
 import pytest
 from werkzeug.test import TestResponse
 
@@ -461,6 +461,31 @@ def test_service_deleted_before_accept(app: App, client: FlaskClient) -> None:
         assert not get_collection(USER_NAMES).count_documents({"user_id": BOB})
 
 
+def test_create_racing_revoke(
+    app: App, client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Invitations stored while the creator's role is revoked are removed."""
+    service_id = register(client)
+    original = invitations_module._created_as
+    results = iter([None, {"user": "someone-else"}])
+
+    def created_as(serviceId: str, creator: str) -> dict[str, Any]:
+        """Check the creator, then report another basis on the second call.
+
+        Args:
+            serviceId: Service identifier.
+            creator: Creator.
+
+        Returns:
+            How the creator may create invitations, or another basis.
+        """
+        return next(results) or original(serviceId, creator)
+
+    monkeypatch.setattr(invitations_module, "_created_as", created_as)
+    assert invite(client, service_id).status_code == 403
+    assert stored(app) == []
+
+
 def test_create_racing_delete(
     app: App, client: FlaskClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -846,3 +871,17 @@ def test_creator_checked_in_lock(
         get_collection(LOCKS).delete_many({})
     assert accept(client, token).status_code == 200
     assert calls == ["locked"]
+
+
+def test_names_hidden_without_role(app: App, client: FlaskClient) -> None:
+    """Names of users without a role on the service are not served.
+
+    Also if removing them failed when the role was revoked.
+    """
+    service_id = register(client)
+    assert accept(client, token_of(client, service_id)).status_code == 200
+    with app.app.app_context():
+        remove_resource_role(BOB, "maintainer", f"{PATH}/{service_id}")
+    (accepted,) = invitations(client, service_id)
+    assert set(accepted["accepted"]) == {"user_id", "accepted_at"}
+    assert stored(app)[0]["accepted"]["name"] == NAMES[BOB]
