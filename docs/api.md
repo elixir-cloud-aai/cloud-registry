@@ -201,6 +201,13 @@ New identifiers that are registered (also the service's own) are rejected
 used in URLs (as for `PUT`, see [Registrations](#registrations); also
 slashes) or in roles (commas, line breaks), with `400 Bad Request`.
 
+Granting and revoking roles via the registry's permission endpoints
+(`/services/{serviceId}/permissions/...`) waits for renames, but via FOCA's
+permissions API (for admins: `/admin/access-control/permissions`) doesn't:
+change roles on services via the registry's endpoints, or not while the
+service is renamed (roles changed meanwhile may be lost, or left on the old
+identifier). Lists of roles read during a rename may be incomplete.
+
 Renames don't need MongoDB transactions (which need a replica set): while a
 service is renamed, both identifiers are locked (collection `service_locks`),
 so that the rename doesn't interleave with other changes of either service
@@ -209,8 +216,9 @@ changes wait for each other for up to about a second, then give up (`409
 Conflict`, code `service-busy`; try again). If a rename fails after the
 service moved (e.g., the app crashes), the service may lack roles, and both
 identifiers stay locked, until the rename is finished, a minute after it
-started: when the app next handles a request, or starts. Renames are logged
-with the admin.
+started: when the app next handles a request of the registry's operations
+(not of the Swagger UI, the spec, the service info or FOCA's admin API), or
+starts. Renames are logged with the admin.
 
 ## Timestamps
 

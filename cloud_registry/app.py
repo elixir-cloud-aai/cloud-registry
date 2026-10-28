@@ -12,7 +12,10 @@ from connexion import App
 from foca import Foca, get_config
 from foca.security.auth import require_no_service_clients
 
-from cloud_registry.ga4gh.registry.permissions import check_namespaces
+from cloud_registry.ga4gh.registry.permissions import (
+    check_namespaces,
+    warn_owner_rules,
+)
 from cloud_registry.ga4gh.registry.rename import (
     resume_renames,
     resume_renames_periodically,
@@ -37,17 +40,20 @@ def create_app() -> App:
 
     Refuses service clients (FOCA's `require_no_service_clients()`), as the
     app doesn't support them, requires a size limit of request bodies and
-    that the service info serves the registration rules, adds missing keys
-    of services, resumes interrupted renames of services (cf.
-    `resume_renames()`; also before requests, cf.
-    `resume_renames_periodically()`) and adds the types of registered
-    services that aren't stored (e.g., on upgrades), and warns of stored
-    services with invalid URLs or URL schemes that are not allowed. FOCA
-    validates the config, e.g., that
-    token issuers are trusted (needed for access control) with an audience,
-    the group settings and the service info (`service_info`), refuses to
-    start without admins (`security.access_control.require_admin`), warns of
-    placeholders in the service info, and limits the size of request bodies
+    that the service info serves the registration rules of the app, adds
+    missing keys of services, resumes interrupted renames of services (cf.
+    `resume_renames()`; also before requests of the registry's operations,
+    cf. `resume_renames_periodically()`) and adds the types of registered
+    services that aren't stored (e.g., on upgrades). Warns of stored
+    services with invalid URLs or URL schemes that are not allowed, and of
+    rules that let owners change roles of groups although the rule for
+    these is changed (cf. `warn_owner_rules()`).
+
+    FOCA validates the config, e.g., that token issuers are trusted (needed
+    for access control) with an audience, the group settings and the
+    service info (`service_info`), refuses to start without admins
+    (`security.access_control.require_admin`), warns of placeholders in the
+    service info, and limits the size of request bodies
     (`server.max_content_length`). Also requires the public URL of the app
     (`server.public_url`), for the `Location` header of new services.
 
@@ -88,6 +94,7 @@ def create_app() -> App:
     with app.app.app_context():
         check_service_info_fields()
         check_namespaces()
+        warn_owner_rules()
         # `null` would remove FOCA's size limit of request bodies, so that
         # bodies of any size are read before the access token is checked
         if get_config().server.max_content_length is None:
