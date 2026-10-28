@@ -17,6 +17,7 @@ from cloud_registry.exceptions import InternalServerError
 import cloud_registry.ga4gh.registry.service
 from cloud_registry.ga4gh.registry.service import (
     CREATED,
+    CREATED_BY,
     KEY,
     UPDATED,
     VERIFIED,
@@ -109,12 +110,14 @@ def _stored(data: dict[str, Any], id: str, created: bool = True) -> dict[str, An
         data: Service as registered.
         id: Identifier of the service.
         created: Whether the service was registered by the test (with
-            `createdAt`), not stored before without it.
+            `createdAt`, and counting for nobody), not stored before without
+            these.
 
     Returns:
-        The service with its identifier, key and timestamps (at `NOW`).
+        The service with its identifier, key, timestamps (at `NOW`) and the
+        user it counts for.
     """
-    timestamps = {CREATED: FORMATTED_NOW} if created else {}
+    timestamps = {CREATED: FORMATTED_NOW, CREATED_BY: None} if created else {}
     return {
         **data,
         **timestamps,

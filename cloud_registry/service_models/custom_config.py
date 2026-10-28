@@ -163,6 +163,9 @@ class AccessControlConfig(FOCABaseConfig):
             has a user other than an admin may have added, in every mode
             (`409` above); unlimited if `None`. Bounds the lists of types,
             and of pending types, that users can grow.
+        max_services_per_user: How many of the registered services a user
+            other than an admin may have registered (`409` above);
+            unlimited if `None`, admins only if `0`.
 
     Attributes:
         service_types: Who may add service types: `open` (the default), any
@@ -176,19 +179,25 @@ class AccessControlConfig(FOCABaseConfig):
             has a user other than an admin may have added, in every mode
             (`409` above); unlimited if `None`. Bounds the lists of types,
             and of pending types, that users can grow.
+        max_services_per_user: How many of the registered services a user
+            other than an admin may have registered (`409` above);
+            unlimited if `None`, admins only if `0`.
 
     Raises:
         pydantic.ValidationError: The class was instantianted with an illegal
             data type, `service_types` is not `open`, `controlled` or
-            `moderated`, or `max_unused_service_types` is negative.
+            `moderated`, or `max_unused_service_types` or
+            `max_services_per_user` is negative.
 
     Example:
         >>> AccessControlConfig(service_types='controlled')
-        AccessControlConfig(service_types='controlled', max_unused_service_types=10)
+        AccessControlConfig(service_types='controlled', max_unused_service_types=10, \
+max_services_per_user=50)
     """
 
     service_types: Literal["open", "controlled", "moderated"] = "open"
     max_unused_service_types: NonNegativeInt | None = 10
+    max_services_per_user: NonNegativeInt | None = 50
 
 
 class CustomConfig(FOCABaseConfig):
@@ -220,7 +229,8 @@ class CustomConfig(FOCABaseConfig):
         CustomConfig(endpoints=EndpointsConfig(services=ServicesConfig(id=IdCo\
 nfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', length=6), url_schemes=['\
 https'], environments=['prod', 'test', 'dev', 'staging'])), access_control=Acc\
-essControlConfig(service_types='open', max_unused_service_types=10))
+essControlConfig(service_types='open', max_unused_service_types=10, max_serv\
+ices_per_user=50))
     """
 
     endpoints: EndpointsConfig

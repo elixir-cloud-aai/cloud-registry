@@ -277,6 +277,40 @@ custom:
         max_unused_service_types: 5
 ```
 
+## Services per user
+
+Users other than admins may only have registered
+`custom.access_control.max_services_per_user` of the registered services
+(default: 50; `null` for no limit; `0` to let only admins register
+services): further registrations (`POST /services`) are rejected with `409
+Conflict` and the code `services-limit`, until the user deletes services (or
+admins do). Updates, renames, roles and accepted invitations never fail on
+the limit, and services registered by admins (in [admin
+mode](access-control.md#admin-mode)) count for nobody. A service counts for
+the user who registered it as long as it is registered, whatever its roles
+later: giving a service to other users or a group doesn't free a place. The
+limit holds also for concurrent registrations of a user. Clients read it
+from the service info (see [Registration rules](api.md#registration-rules)).
+
+The app stores who registered each service with the service (not served),
+and keeps a counter per user (collection `service_counts`). On startup, it
+adds the user to services registered before (the only user who is `owner`
+of the service; services with no or several such owners count for nobody),
+and corrects the counters (e.g., after a crash between storing a service and
+counting it). For example, in a config overlay (with the Helm chart, in
+`config`):
+
+```yaml
+custom:
+    access_control:
+        max_services_per_user: 20
+```
+
+The limit is per account, so users who can create accounts at will (e.g.,
+with an identity provider open to anyone) can still register more services;
+rate-limit write requests at the ingress as well (see [Rate
+limits](deployment.md#rate-limits)).
+
 ## Request size limit
 
 Request bodies are limited to `server.max_content_length` bytes (default:

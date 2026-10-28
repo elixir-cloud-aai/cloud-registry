@@ -26,6 +26,8 @@ DB_CONFIG: dict[str, Any] = {
         "service_types": {"indexes": [TYPE_INDEX_CONFIG]},
         # locks of services (cf. `cloud_registry.ga4gh.registry.locks`)
         "service_locks": {},
+        # services per user (cf. `cloud_registry.ga4gh.registry.service_limits`)
+        "service_counts": {},
     },
 }
 MONGO_CONFIG: dict[str, Any] = {

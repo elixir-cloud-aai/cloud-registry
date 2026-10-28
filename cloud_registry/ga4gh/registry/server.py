@@ -26,6 +26,7 @@ from cloud_registry.ga4gh.registry.permissions import (
     service_types_pending,
 )
 from cloud_registry.ga4gh.registry.service import (
+    CREATED_BY,
     PENDING_SERVICE,
     PROJECTION,
     DuplicateService,
@@ -33,6 +34,11 @@ from cloud_registry.ga4gh.registry.service import (
     RegisterService,
     check_strings,
     service_exists,
+)
+from cloud_registry.ga4gh.registry.service_limits import (
+    ServicesLimit,
+    release_service,
+    reserve_service,
 )
 from cloud_registry.ga4gh.registry.service_types import (
     PendingService,
@@ -152,7 +158,8 @@ def deleteService(serviceId: str, **kwargs: Any) -> str:
     deleted service if deleting it fails, and nobody can act on it in
     between; and again afterwards, as roles granted concurrently (after
     their request checked that the service exists) would be left otherwise.
-    Not while the service is renamed (cf. `changing()`).
+    Not while the service is renamed (cf. `changing()`). The service no
+    longer counts for the user who registered it (cf. `release_service()`).
 
     Args:
         serviceId: Identifier of service to be deleted.
@@ -167,9 +174,14 @@ def deleteService(serviceId: str, **kwargs: Any) -> str:
         if not service_exists(serviceId):
             raise NotFound
         remove_permissions(serviceId)
-        res = db_collection_service.delete_one({"id": serviceId})
-        if not res.deleted_count:
+        # with the identifier, as mongomock (tests) returns no document for
+        # empty projections
+        deleted = db_collection_service.find_one_and_delete(
+            {"id": serviceId}, {"_id": False, "id": True, CREATED_BY: True}
+        )
+        if deleted is None:
             raise NotFound
+        release_service(deleted.get(CREATED_BY))
         # a no-op unless a role was granted during the deletion (logged only
         # if roles are revoked)
         remove_permissions(serviceId)
@@ -238,7 +250,11 @@ def _register_service(
     admins may update pending services, other users only to an approved
     type; checked before the update, so an update may still pass if its
     type becomes pending meanwhile (e.g., the type of the stored service is
-    removed and added again).
+    removed and added again). New services count for the user who registers
+    them, unless they are an admin (cf.
+    `cloud_registry.ga4gh.registry.service_limits`): only `POST /services`
+    reserves one of the services they may register, as only admins may
+    create services with `PUT /services/{serviceId}`.
 
     Args:
         collection_path: Path of the service collection (`/services`, with the
@@ -252,8 +268,9 @@ def _register_service(
         as `Location`. Or an error response: `400` for invalid URLs or types
         the user may not add, `409` for a registered service with the same
         URL and API type, naming it only if the user may read it (cf.
-        `may_read_service()` and `visible_services()`), or for updates of
-        pending services by users other than admins.
+        `may_read_service()` and `visible_services()`), for updates of
+        pending services by users other than admins, or for users who
+        registered as many services as allowed.
 
     Raises:
         cloud_registry.exceptions.BadRequest: The owner role can't be stored
@@ -273,14 +290,21 @@ def _register_service(
         refused = _check_pending_update(service_id, service.data.get("type"))
         if refused is not None:
             return refused
+    if service_id is None and not is_admin():
+        service.created_by = get_current_subject()
     try:
         check_service_type(service.data.get("type"))
-        # pending types are only stored for valid services
+        # pending types are only stored for valid services within the limit
         service.validate()
-        store_pending_type(service.data.get("type"))
-        service.pending = is_pending(type_document(service.data.get("type")))
-        service.register_metadata()
-    except (InvalidService, UnusedTypesLimit) as exc:
+        reserve_service(service.created_by)
+        try:
+            store_pending_type(service.data.get("type"))
+            service.pending = is_pending(type_document(service.data.get("type")))
+            service.register_metadata()
+        except BaseException:
+            release_service(service.created_by)
+            raise
+    except (InvalidService, UnusedTypesLimit, ServicesLimit) as exc:
         logger.info(
             "Service not registered: %s",
             escape_log_value(shorten_detail(exc.description)),
@@ -407,10 +431,12 @@ def _may_see(serviceId: str) -> bool:
 def _unregister_service(service: RegisterService) -> None:
     """Delete a new service whose owner couldn't be stored.
 
-    Only admins could manage it otherwise. Roles stored for it are revoked.
+    Only admins could manage it otherwise. Roles stored for it are revoked,
+    and it no longer counts for the user who registered it.
 
     Args:
         service: Registered service.
     """
-    service.db_coll.delete_one({"id": service.data["id"]})
+    if service.db_coll.delete_one({"id": service.data["id"]}).deleted_count:
+        release_service(service.created_by)
     remove_permissions(service.data["id"])
