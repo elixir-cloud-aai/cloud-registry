@@ -11,6 +11,9 @@ from flask.testing import FlaskClient
 from foca.security.access_control.constants import CONFIGURED_FIELD
 import pytest
 
+from cloud_registry.ga4gh.registry.service import CREATED_BY as SERVICE_CREATOR
+from cloud_registry.ga4gh.registry.service import KEY
+from cloud_registry.ga4gh.registry.service_limits import COUNT, SERVICE_COUNTS
 from cloud_registry.ga4gh.registry.service_types import CREATED_BY
 from cloud_registry.namespace_subjects import (
     _policy_collection,
@@ -37,8 +40,12 @@ def client(
 
     Stored are: rules naming the bare user `alice` (a resource role, a role,
     and a configured rule), a rule of a namespaced user, service types added
-    by `alice` and by a namespaced user, and display names of `alice` (one
-    for a service of which the namespaced user already has a name).
+    by `alice` and by a namespaced user, services registered by `alice`, by
+    a namespaced user and by nobody (with keys, as if valid), with counters
+    of `alice` and of the namespaced `alice` (who registered one since the
+    config change), and
+    display names of `alice` (one for a service of which the namespaced user
+    already has a name).
     """
     client = _create_app(monkeypatch, tmp_path, NAMESPACED)
     with client.application.app_context():
@@ -61,6 +68,22 @@ def client(
                 {"group": "a", "artifact": "b", "version": "1", CREATED_BY: BARE},
                 {"group": "a", "artifact": "c", "version": "1", CREATED_BY: OTHER},
                 {"group": "a", "artifact": "d", "version": "1", CREATED_BY: None},
+            ]
+        )
+        get_collection("services").insert_many(
+            [
+                {"id": "S1", KEY: "S1", SERVICE_CREATOR: BARE},
+                {"id": "S2", KEY: "S2", SERVICE_CREATOR: BARE},
+                {"id": "S3", KEY: "S3", SERVICE_CREATOR: OTHER},
+                {"id": "S4", KEY: "S4", SERVICE_CREATOR: None},
+                {"id": "S5", KEY: "S5", SERVICE_CREATOR: NAMESPACED_ALICE},
+            ]
+        )
+        get_collection(SERVICE_COUNTS).insert_many(
+            [
+                {"_id": BARE, COUNT: 2},
+                {"_id": NAMESPACED_ALICE, COUNT: 1},
+                {"_id": OTHER, COUNT: 1},
             ]
         )
         get_collection("user_names").insert_many(
@@ -101,6 +124,7 @@ def test_namespace_subjects(
             "rules": 2,
             "configured_rules": 1,
             "service_types": 1,
+            "services": 2,
             "user_names": 2,
         }
         assert "configured policy rules" in caplog.text
@@ -115,6 +139,22 @@ def test_namespace_subjects(
             for service_type in get_collection("service_types").find()
         }
         assert creators == {"b": NAMESPACED_ALICE, "c": OTHER, "d": None}
+        services = {
+            service["id"]: service[SERVICE_CREATOR]
+            for service in get_collection("services").find()
+        }
+        assert services == {
+            "S1": NAMESPACED_ALICE,
+            "S2": NAMESPACED_ALICE,
+            "S3": OTHER,
+            "S4": None,
+            "S5": NAMESPACED_ALICE,
+        }
+        counters = {
+            counter["_id"]: counter[COUNT]
+            for counter in get_collection(SERVICE_COUNTS).find()
+        }
+        assert counters == {NAMESPACED_ALICE: 3, OTHER: 1}
         names = sorted(
             (name["service_id"], name["user_id"], name["name"])
             for name in get_collection("user_names").find()
@@ -129,6 +169,7 @@ def test_namespace_subjects(
             "rules": 0,
             "configured_rules": 1,
             "service_types": 0,
+            "services": 0,
             "user_names": 0,
         }
 
@@ -162,10 +203,13 @@ def test_dry_run(client: FlaskClient) -> None:
             "rules": 2,
             "configured_rules": 1,
             "service_types": 1,
+            "services": 2,
             "user_names": 2,
         }
         assert _rules() == before
         assert get_collection("user_names").count_documents({"user_id": BARE}) == 2
+        assert get_collection("services").count_documents({SERVICE_CREATOR: BARE}) == 2
+        assert get_collection(SERVICE_COUNTS).count_documents({"_id": BARE}) == 1
 
 
 @pytest.mark.parametrize(

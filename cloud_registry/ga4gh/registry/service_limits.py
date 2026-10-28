@@ -34,7 +34,6 @@ from flask import current_app
 from foca import get_custom_config
 from foca.security.access_control import list_resource_roles
 from foca.utils.logging import escape_log_value
-from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from cloud_registry.exceptions import CodedConflict
@@ -62,14 +61,18 @@ class ServicesLimit(CodedConflict):
         Args:
             limit: How many services a user may have registered.
         """
-        super().__init__(
-            f"You have registered {limit} services, as many as allowed; "
-            "delete services you no longer need, or ask an admin to register "
-            "further ones."
-        )
+        if limit == 0:
+            detail = "Only admins can register services; ask an admin to register it."
+        else:
+            detail = (
+                f"You have registered as many services as allowed ({limit}); "
+                "delete services you no longer need, or ask an admin to "
+                "register further ones."
+            )
+        super().__init__(detail)
 
 
-def reserve_service(user: str | None) -> bool:
+def reserve_service(user: str | None) -> None:
     """Reserve one of the services a user may register.
 
     Must be called before the service is stored, in an app context; release
@@ -81,40 +84,49 @@ def reserve_service(user: str | None) -> bool:
         user: User who registers the service; `None` for registrations that
             count for nobody (e.g., by admins in admin mode).
 
-    Returns:
-        Whether a service was reserved, i.e., the user is not `None`.
-
     Raises:
         ServicesLimit: The user has registered as many services as allowed
             (`custom.access_control.max_services_per_user`).
     """
     if user is None:
-        return False
+        return
     limit = get_custom_config(CustomConfig).access_control.max_services_per_user
     counts = get_collection(SERVICE_COUNTS)
     if limit is None:
         counts.update_one({"_id": user}, {"$inc": {COUNT: 1}}, upsert=True)
-        return True
-    if limit > 0:
-        try:
-            # inserts a counter if the user has none, and fails (duplicate
-            # key) if the user has one at the limit
-            counts.find_one_and_update(
-                {"_id": user, COUNT: {"$lt": limit}},
-                {"$inc": {COUNT: 1}},
-                upsert=True,
-                return_document=ReturnDocument.AFTER,
-            )
-        except DuplicateKeyError:
-            pass
-        else:
-            return True
+        return
+    if limit > 0 and _increment_below(user, limit):
+        return
     logger.info(
         "Service not registered: '%s' registered %d services.",
         escape_log_value(user),
         limit,
     )
     raise ServicesLimit(limit)
+
+
+def _increment_below(user: str, limit: int) -> bool:
+    """Increment the counter of a user, unless it is at the limit.
+
+    Args:
+        user: User identifier.
+        limit: Value the counter must be below; positive.
+
+    Returns:
+        Whether the counter was incremented.
+    """
+    counts = get_collection(SERVICE_COUNTS)
+    query = {"_id": user, COUNT: {"$lt": limit}}
+    try:
+        # inserts a counter if the user has none, and fails (duplicate key)
+        # if the user has one at the limit
+        counts.update_one(query, {"$inc": {COUNT: 1}}, upsert=True)
+    except DuplicateKeyError:
+        # or if a concurrent request inserted the counter, which MongoDB
+        # doesn't retry for filters other than by the key alone; the
+        # counter exists now
+        return counts.update_one(query, {"$inc": {COUNT: 1}}).modified_count > 0
+    return True
 
 
 def release_service(user: str | None) -> None:

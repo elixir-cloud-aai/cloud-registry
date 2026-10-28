@@ -314,8 +314,8 @@ Better yet, let the proxy in front redirect HTTP requests itself.
 
 ### Rate limits
 
-The app limits how many services each user registers (50 by default, set
-in `config`; see [Services per
+The app limits how many services each user registers (50 by default; set
+`config.custom.access_control.max_services_per_user`; see [Services per
 user](https://cloud-registry.readthedocs.io/en/latest/configuration/#services-per-user)),
 but not how often users write. Limit the request rate at the ingress, with
 the settings of the ingress controller (e.g., Traefik's `rateLimit`

@@ -29,7 +29,8 @@ user](configuration.md#services-per-user)): check how many services your
 users registered, and raise the limit, or set `null` to turn it off, in the
 same rollout if needed. Users who registered more keep their services, but
 can't register others until they are below the limit. After the upgrade,
-list them, e.g., with `mongosh` (see [MongoDB](deployment.md#mongodb)):
+list them, e.g., with `mongosh` (see [MongoDB](deployment.md#mongodb); with
+your limit instead of 50):
 
 ```javascript
 db.getSiblingDB("serviceStore").service_counts.find({count: {$gte: 50}})
@@ -293,7 +294,9 @@ issuers](configuration.md#several-token-issuers)) namespaces the
 identifiers of users by issuer, also those of the issuer trusted so far,
 unless its subjects are kept bare. Stored identifiers of its users (their
 roles on services, roles granted via the permissions API, the service
-types they added and their display names) then no longer match them:
+types they added, the services they registered (for the [limit of services
+per user](configuration.md#services-per-user)) and their display names) then
+no longer match them:
 
 - **Recommended:** keep the subjects of the issuer trusted so far bare
   (`namespace: ""`), so that nothing needs to be migrated. Its users keep

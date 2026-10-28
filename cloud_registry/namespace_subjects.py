@@ -14,6 +14,9 @@ form:
   config instead;
 - the users who added service types (`created_by` of `service_types`), for
   the limit of unused types and the visibility of pending types;
+- the users who registered services (`_createdBy` of `services`), and their
+  numbers of services (`service_counts`), for the limit of services per
+  user;
 - the users of the stored display names (`user_id` of `user_names`).
 
 Subjects that are already namespaced (with `|`) are kept, so the migration
@@ -46,6 +49,8 @@ from pymongo.collection import Collection
 from pymongo.errors import DuplicateKeyError
 
 from cloud_registry.app import create_app
+from cloud_registry.ga4gh.registry.service import CREATED_BY as SERVICE_CREATOR
+from cloud_registry.ga4gh.registry.service_limits import COUNT, SERVICE_COUNTS
 from cloud_registry.ga4gh.registry.service_types import CREATED_BY
 from cloud_registry.utils import get_collection
 
@@ -190,6 +195,60 @@ def _namespace_service_types(namespace: str, dry_run: bool) -> int:
     return count
 
 
+def _namespace_services(namespace: str, dry_run: bool) -> int:
+    """Namespace the users who registered services, and their counters.
+
+    The counters of bare users are added to those of the namespaced users
+    (e.g., who registered services since the config change), and deleted;
+    the app corrects counters on startup anyway (cf.
+    `cloud_registry.ga4gh.registry.service_limits`).
+
+    Args:
+        namespace: Namespace of the issuer's subjects.
+        dry_run: Only count the services.
+
+    Returns:
+        Number of services registered by bare users (rewritten, unless
+        `dry_run`).
+    """
+    services = get_collection("services")
+    count = 0
+    for service in services.find({SERVICE_CREATOR: {"$type": "string"}}):
+        subject = service[SERVICE_CREATOR]
+        if not _is_bare(subject):
+            continue
+        count += 1
+        if not dry_run:
+            services.update_one(
+                {"_id": service["_id"]},
+                {"$set": {SERVICE_CREATOR: _namespaced(namespace, subject)}},
+            )
+    counters = get_collection(SERVICE_COUNTS)
+    for counter in counters.find({"_id": {"$type": "string"}}):
+        if dry_run or not _is_bare(counter["_id"]):
+            continue
+        counters.update_one(
+            {"_id": _namespaced(namespace, counter["_id"])},
+            {"$inc": {COUNT: counter.get(COUNT, 0)}},
+            upsert=True,
+        )
+        counters.delete_one({"_id": counter["_id"]})
+    return count
+
+
+def _namespaced(namespace: str, subject: str) -> str:
+    """Get a subject in its namespaced form.
+
+    Args:
+        namespace: Namespace of the issuer's subjects.
+        subject: Bare subject.
+
+    Returns:
+        The subject, with the namespace and the separator before it.
+    """
+    return f"{namespace}{NAMESPACE_SEPARATOR}{subject}"
+
+
 def _namespace_user_names(namespace: str, dry_run: bool) -> int:
     """Namespace the users of the stored display names.
 
@@ -253,6 +312,7 @@ def namespace_subjects(namespace: str, dry_run: bool = False) -> dict[str, int]:
         "rules": rules,
         "configured_rules": configured,
         "service_types": _namespace_service_types(namespace, dry_run),
+        "services": _namespace_services(namespace, dry_run),
         "user_names": _namespace_user_names(namespace, dry_run),
     }
     if configured:

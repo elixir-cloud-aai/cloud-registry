@@ -35,6 +35,7 @@ from cloud_registry.ga4gh.registry.service_limits import (
     services_path_on_startup,
 )
 from cloud_registry.service_models.custom_config import CustomConfig
+from cloud_registry.utils import get_collection
 from tests.conftest import ADMIN, COLLECTION_CLASS, TEAM_GROUP
 from tests.mock_data import DB
 from tests.test_access_control import (
@@ -157,7 +158,7 @@ def test_limit_reached(
     first, second = register(client), register(client)
     response = _post(client)
     assert _limited(response)
-    assert "2 services" in response.get_json()["detail"]
+    assert "as many services as allowed (2)" in response.get_json()["detail"]
     assert _counts(mongo_client) == {ALICE: 2}
     service = {**_service(), "name": "New name"}
     response = client.put(
@@ -188,7 +189,9 @@ def test_limit_lowered(
 def test_admins_only(app: App, client: FlaskClient) -> None:
     """With a limit of `0`, only admins (in admin mode) register services."""
     _set_limit(app, 0)
-    assert _limited(_post(client))
+    response = _post(client)
+    assert _limited(response)
+    assert "Only admins" in response.get_json()["detail"]
     assert _limited(_post(client, ADMIN, admin_mode=False))
     assert _post(client, ADMIN).status_code == 201
 
@@ -446,24 +449,94 @@ def test_concurrent_reservations(app: App) -> None:
         """
         with app.app.app_context():
             try:
-                return reserve_service(ALICE)
+                reserve_service(ALICE)
             except service_limits.ServicesLimit:
                 return False
+            return True
 
     with ThreadPoolExecutor(max_workers=16) as pool:
         assert sum(pool.map(reserve, range(64))) == 7
 
 
+def test_first_reservations_concurrent(app: App) -> None:
+    """Concurrent first reservations of users all pass below the limit.
+
+    The counter is inserted by one of them; the others count on it.
+    """
+    if not os.environ.get("MONGODB_TEST_URI"):
+        pytest.skip("concurrent inserts of MongoDB")
+
+    def reserve(user: str) -> None:
+        """Reserve a place for a user.
+
+        Args:
+            user: User identifier.
+        """
+        with app.app.app_context():
+            reserve_service(user)
+
+    users = [f"user{index}" for index in range(40) for _ in range(8)]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(reserve, users))
+    with app.app.app_context():
+        counts = get_collection(SERVICE_COUNTS).find({})
+        assert {counter[COUNT] for counter in counts} == {8}
+
+
+def test_counter_inserted_meanwhile(
+    app: App,
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A counter inserted concurrently, before the first reservation, counts.
+
+    Incremented if below the limit; otherwise, the limit is reached.
+    """
+    _set_limit(app, 2)
+    update_one = COLLECTION_CLASS.update_one
+    inserted = [1]
+
+    def insert_first(self: Any, query: Any, *args: Any, **kwargs: Any) -> Any:
+        """Insert the counter concurrently, before the upsert.
+
+        Args:
+            self: Collection.
+            query: Filter.
+            *args: Further arguments.
+            **kwargs: Further keyword arguments.
+
+        Returns:
+            Result of the update.
+        """
+        if self.name == SERVICE_COUNTS and kwargs.get("upsert"):
+            self.insert_one({"_id": query["_id"], COUNT: inserted[0]})
+        return update_one(self, query, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(COLLECTION_CLASS, "update_one", insert_first)
+        with app.app.app_context():
+            reserve_service(ALICE)
+    assert _counts(mongo_client) == {ALICE: 2}
+    mongo_client[DB][SERVICE_COUNTS].delete_many({})
+    inserted[0] = 2
+    with monkeypatch.context() as patch:
+        patch.setattr(COLLECTION_CLASS, "update_one", insert_first)
+        with app.app.app_context(), pytest.raises(service_limits.ServicesLimit):
+            reserve_service(ALICE)
+    assert _counts(mongo_client) == {ALICE: 2}
+
+
 def test_release(app: App, mongo_client: MongoClient[dict[str, Any]]) -> None:
     """Releases never make counters negative; `None` counts for nobody."""
     with app.app.app_context():
-        assert reserve_service(None) is False
+        reserve_service(None)
         release_service(None)
         release_service(ALICE)
-        assert reserve_service(ALICE) is True
+        reserve_service(ALICE)
         release_service(ALICE)
         release_service(ALICE)
     assert _counts(mongo_client) == {ALICE: 0}
+    assert mongo_client[DB][SERVICE_COUNTS].count_documents({"_id": None}) == 0
 
 
 def test_limit_logged(

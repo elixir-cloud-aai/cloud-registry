@@ -289,7 +289,9 @@ the limit, and services registered by admins (in [admin
 mode](access-control.md#admin-mode)) count for nobody. A service counts for
 the user who registered it as long as it is registered, whatever its roles
 later: giving a service to other users or a group doesn't free a place. The
-limit holds also for concurrent registrations of a user. Clients read it
+limit holds also for concurrent registrations of a user (only
+registrations and deletions while an instance of the app starts may make a
+counter differ by one each, until the next start). Clients read it
 from the service info (see [Registration rules](api.md#registration-rules)).
 
 The app stores who registered each service with the service (not served),

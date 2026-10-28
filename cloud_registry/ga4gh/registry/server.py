@@ -301,7 +301,7 @@ def _register_service(
             store_pending_type(service.data.get("type"))
             service.pending = is_pending(type_document(service.data.get("type")))
             service.register_metadata()
-        except BaseException:
+        except Exception:
             release_service(service.created_by)
             raise
     except (InvalidService, UnusedTypesLimit, ServicesLimit) as exc:
