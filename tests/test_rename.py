@@ -26,7 +26,7 @@ from cloud_registry.ga4gh.registry import rename as rename_module
 from cloud_registry.ga4gh.registry.permissions import USER_NAMES
 from cloud_registry.ga4gh.registry.service import VERIFIED
 from cloud_registry.utils import get_collection, now
-from tests.conftest import ADMIN, NAMES, TEAM_GROUP
+from tests.conftest import ADMIN, COLLECTION_CLASS, NAMES, TEAM_GROUP
 from tests.test_access_control import (
     ALICE,
     BASE,
@@ -1019,14 +1019,24 @@ def test_resume_before_requests_timeout(
             yield
         active.pop()
 
+    checked: list[bool] = []
+    count = COLLECTION_CLASS.count_documents
+
+    def count_spy(collection: Any, *args: Any, **kwargs: Any) -> int:
+        if collection.name == locks_module.LOCKS:
+            checked.append(bool(active))
+        return count(collection, *args, **kwargs)
+
     resumed: list[bool] = []
     monkeypatch.setattr(pymongo, "timeout", spy)
+    monkeypatch.setattr(COLLECTION_CLASS, "count_documents", count_spy)
     monkeypatch.setattr(
         rename_module, "resume_renames", lambda: resumed.append(bool(active))
     )
     _resume_due(monkeypatch)
     assert client.get(f"{BASE}/services").status_code == 200
     assert timeouts == [rename_module.RESUME_CHECK_TIMEOUT]
+    assert checked == [True]
     assert resumed == [False]
 
 
