@@ -65,6 +65,11 @@ warn_unused_ignores = true
 module = ["connexion", "connexion.*"]
 ignore_missing_imports = true
 
+# PyCasbin (a dependency of FOCA) ships no type information
+[[tool.mypy.overrides]]
+module = ["casbin", "casbin.*"]
+ignore_missing_imports = true
+
 # Gunicorn ships no type information (used by the tests only)
 [[tool.mypy.overrides]]
 module = ["gunicorn", "gunicorn.*"]

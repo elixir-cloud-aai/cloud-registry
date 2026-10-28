@@ -159,7 +159,25 @@ registration was open keep theirs. So admins should review the roles on
 services when restricting reads (`GET /services/<id>/permissions`), and
 deployments that don't want owners to grant roles can restrict
 `owners-change-permissions` and `owners-change-group-permissions` by name
-in the same overlay, too.
+in the same overlay, too:
+
+- `owners-change-permissions`
+  (`/ga4gh/registry/v1/services/:id/permissions/*`) also covers the roles
+  of groups (`.../permissions/groups/<group>`), as user identifiers may
+  contain slashes, so removing only `owners-change-group-permissions`
+  doesn't stop owners from granting and revoking roles of groups. If the
+  rule of groups is changed or removed, the app warns on startup of
+  configured rules that still let owners change roles of groups this way.
+- To let owners grant roles to users but not to groups, redefine
+  `owners-change-permissions` with `.../permissions/:user` (as in 0.5.0),
+  which doesn't match the roles of groups. It doesn't match user
+  identifiers with slashes either: with [several token
+  issuers](configuration.md#several-token-issuers), those of issuers whose
+  namespace contains slashes (by default, the issuer URL). Add a rule per
+  such namespace (e.g., `.../permissions/https:/*` for issuer URLs, which
+  doesn't match `groups/...`, as namespaces can't start with `groups/`), or
+  give new issuers namespaces without slashes (changing the namespace of an
+  issuer invalidates its users' stored roles).
 
 !!! danger "With great power comes great responsibility"
     Patches and rules in overlays can weaken or remove authentication and
@@ -316,7 +334,10 @@ app warns on startup otherwise.
 
 To let admins act as admins on every request, as before 0.6.0, remove the
 opt-in in the deployment's config (`security.access_control.opt_in_roles:
-[]`).
+[]`). Deployments whose admins work in a web UI (e.g., cloud-registry-ui)
+keep the opt-in only once their UI sends the header (an admin mode switch);
+until then, set `opt_in_roles: []`, or admins can't act as admins in the
+UI.
 
 ## Current user
 

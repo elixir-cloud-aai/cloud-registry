@@ -1761,3 +1761,127 @@ def test_may_read_service_unrouted(client: FlaskClient, service_id: str) -> None
     """
     with client.application.test_request_context(f"{BASE}/services", method="POST"):
         assert not may_read_service(service_id)
+
+
+# Rules of owners' roles on services: of users as in 0.5.0 (`:user`), of users
+# for `PUT` only, and of groups as in the base config
+USERS_RULE_050 = [
+    "p",
+    "owner",
+    f"{BASE}/services/:id/permissions/:user",
+    "(PUT)|(DELETE)",
+]
+USERS_RULE_PUT = ["p", "owner", f"{BASE}/services/:id/permissions/*", "PUT"]
+GROUPS_RULE = [
+    "p",
+    "owner",
+    f"{BASE}/services/:id/permissions/groups/*",
+    "(PUT)|(DELETE)",
+]
+NO_GROUPS = {"owners-change-group-permissions": None}
+# Without the rule of groups, and the rule of users as in 0.5.0
+NO_GROUPS_050 = {**NO_GROUPS, "owners-change-permissions": USERS_RULE_050}
+# Other rules: owners may only list roles, maintainers and any user may change
+# them, owners may only grant roles to groups
+USERS_RULE_GET = ["p", "owner", f"{BASE}/services/:id/permissions/*", "GET"]
+MAINTAINERS_RULE = ["p", "maintainer", f"{BASE}/services/:id/permissions/*", "PUT"]
+ANYONE_RULE = ["p", "*", f"{BASE}/services/:id/permissions/*", "DELETE"]
+# Covers namespaced users (and groups), not bare ones
+NAMESPACED_RULE = ["p", "owner", f"{BASE}/services/:id/permissions/:ns/*", "PUT"]
+GROUPS_RULE_PUT = ["p", "owner", f"{BASE}/services/:id/permissions/groups/*", "PUT"]
+
+
+@pytest.mark.parametrize(
+    "policies, warned",
+    [
+        ({}, False),
+        (NO_GROUPS, True),
+        ({**NO_GROUPS, "owners-change-permissions": None}, False),
+        ({**NO_GROUPS, "owners-change-permissions": USERS_RULE_050}, False),
+        ({**NO_GROUPS, "owners-change-permissions": USERS_RULE_PUT}, True),
+        ({"owners-change-group-permissions": GROUPS_RULE}, False),
+        ({"owners-change-permissions": None}, False),
+        ([USERS_RULE_PUT], True),
+        ([USERS_RULE_050], False),
+        ({**NO_GROUPS, "owners-change-permissions": USERS_RULE_GET}, False),
+        ({**NO_GROUPS_050, "maintainers-change-permissions": MAINTAINERS_RULE}, False),
+        ({**NO_GROUPS_050, "anyone-changes-permissions": ANYONE_RULE}, True),
+        ({**NO_GROUPS_050, "owners-change-namespaced": NAMESPACED_RULE}, True),
+        (
+            {
+                "owners-change-permissions": USERS_RULE_050,
+                "owners-change-group-permissions": GROUPS_RULE_PUT,
+            },
+            False,
+        ),
+    ],
+    ids=[
+        "unchanged",
+        "groups-removed",
+        "both-removed",
+        "users-as-in-0.5.0",
+        "users-put-only",
+        "groups-same",
+        "users-removed",
+        "list-allowing-groups",
+        "list",
+        "users-get-only",
+        "maintainers",
+        "any-user",
+        "namespaced-users",
+        "groups-put-only",
+    ],
+)
+def test_owner_rules_warning(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    capsys: pytest.CaptureFixture[str],
+    policies: dict[str, Any] | list[list[str]],
+    warned: bool,
+) -> None:
+    """The app warns if owners can change roles of groups against overlays.
+
+    That is, if the rule of owners' roles of groups is changed or removed,
+    but rules that cover the roles of users still allow owners to change
+    those of groups (e.g., the rule of users' roles, which covers groups
+    since 0.6.0); not of rules for groups only, or for other roles.
+    """
+    overlay = {"security": {"access_control": {"policies": policies}}}
+    _create_app(monkeypatch, tmp_path, overlay)
+    # FOCA's log config writes to the console (cf. `test_create_app_checks()`)
+    warnings = [
+        line
+        for line in capsys.readouterr().err.splitlines()
+        if "owners-change-group-permissions' is changed" in line
+    ]
+    assert len(warnings) == int(warned)
+    if warned:
+        assert "WARNING" in warnings[0]
+        assert f"{BASE}/services/service/permissions/groups/group" in warnings[0]
+
+
+@pytest.mark.parametrize(
+    "policies, status",
+    [
+        (NO_GROUPS, 200),
+        ({**NO_GROUPS, "owners-change-permissions": USERS_RULE_050}, 403),
+    ],
+    ids=["groups-removed", "users-as-in-0.5.0"],
+)
+def test_owner_rules_groups(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    policies: dict[str, Any],
+    status: int,
+) -> None:
+    """Without the rule of groups' roles, the rule of users' still allows them.
+
+    Unless it is restricted to users as in 0.5.0 (`:user`), which misses user
+    identifiers with slashes.
+    """
+    overlay = {"security": {"access_control": {"policies": policies}}}
+    client = _create_app(monkeypatch, tmp_path, overlay)
+    service_id = register(client)
+    assert grant_group(client, service_id, TEAM_GROUP, "maintainer") == status
