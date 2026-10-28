@@ -613,6 +613,124 @@ paths:
           $ref: '#/components/responses/InternalServerError'
         default:
           $ref: '#/components/responses/Error'
+  "/services/{serviceId}/invitations":
+    post:
+      summary: Invite a user to a service.
+      description: |
+        Create an invitation to a service for a role (`owner` or
+        `maintainer`), to grant it to a user without knowing their user
+        identifier: send them a link with the token (`token`, only returned
+        here), which they accept (`POST /invitations/accept`) after logging
+        in. Clients should put the token in the URL fragment (e.g.,
+        `https://portal.example.org/invitations#<token>`), which browsers
+        don't send to servers. Invitations are single-use and expire after
+        the days that the deployment sets (`expires_at`; by default, 7),
+        also once accepted. A service has at most as many open invitations
+        as the deployment allows (by default, 20; `409` above, `code`:
+        `invitations-limit`). Only for owners of the service and admins.
+      operationId: postServiceInvitation
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.invitations
+      tags:
+        - cloud-registry
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+      requestBody:
+        description: Role to grant to the user who accepts the invitation.
+        required: true
+        content:
+          application/json:
+            schema:
+              x-body-name: invitation
+              $ref: '#/components/schemas/InvitationRegister'
+      responses:
+        '201':
+          description: The invitation was created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationCreated'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+    get:
+      summary: List the invitations to a service.
+      description: |
+        List the open and accepted invitations to a service that haven't
+        expired, oldest first, without their tokens; accepted ones with who
+        accepted them (`accepted`). Only for owners of the service and
+        admins.
+      operationId: getServiceInvitations
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.invitations
+      tags:
+        - cloud-registry
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+      responses:
+        '200':
+          description: Invitations to the service.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Invitation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+  "/services/{serviceId}/invitations/{invitationId}":
+    delete:
+      summary: Revoke an invitation to a service.
+      description: |
+        Revoke an open invitation to a service, so that it can't be
+        accepted. Accepted invitations can't be revoked (`409`, `code`:
+        `invitation-accepted`); revoke the role instead (`DELETE
+        /services/{serviceId}/permissions/{userId}`). Only for owners of
+        the service and admins.
+      operationId: deleteServiceInvitation
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.invitations
+      tags:
+        - cloud-registry
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+        - $ref: '#/components/parameters/InvitationId'
+      responses:
+        '200':
+          description: The invitation was revoked.
+          content:
+            application/json:
+              schema:
+                type: string
+                description: Identifier of the invitation.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
   "/services/{serviceId}/verification":
     get:
       summary: Get service verification.
@@ -801,6 +919,53 @@ paths:
           $ref: '#/components/responses/InternalServerError'
         default:
           $ref: '#/components/responses/Error'
+  /invitations/accept:
+    post:
+      summary: Accept an invitation to a service.
+      description: |
+        Accept an invitation to a service, which grants its role to the
+        current user, replacing any other role of the user on the service
+        (as `PUT /services/{serviceId}/permissions/{userId}`; the last owner
+        of a service can't be downgraded, `409`). The token goes in the
+        body, not in the URL, so that it doesn't end up in access logs.
+        Each invitation can be accepted once (`409`, `code`:
+        `invitation-accepted`); unknown, revoked and expired ones are not
+        found (`404`), as are invitations to deleted services. Stores the
+        user's display name for the service (as `GET /me`). For any
+        authenticated user.
+      operationId: acceptInvitation
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.invitations
+      tags:
+        - cloud-registry
+      requestBody:
+        description: Token of the invitation.
+        required: true
+        content:
+          application/json:
+            schema:
+              x-body-name: acceptance
+              $ref: '#/components/schemas/InvitationAccept'
+      responses:
+        '200':
+          description: The invitation was accepted, and its role granted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceRole'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
   /me:
     get:
       summary: Get the current user.
@@ -880,6 +1045,13 @@ components:
         # also between backslashes (WHATWG URLs)
         format: path
         pattern: '^(?!([\s\S]*[/\\])?\.\.?([/\\]|$))'
+    InvitationId:
+      name: invitationId
+      in: path
+      description: Identifier of the invitation (`id`).
+      required: true
+      schema:
+        type: string
   responses:
     ServiceCreated:
       description: The service was successfully registered.
@@ -981,7 +1153,14 @@ components:
                   /services/{serviceId}/verification`).
                 - `last-owner`: the subject is the last owner of the service
                   (`PUT` and `DELETE` of
-                  `/services/{serviceId}/permissions/...`).
+                  `/services/{serviceId}/permissions/...`, `POST
+                  /invitations/accept`).
+                - `invitations-limit`: the service has as many open
+                  invitations as allowed (`POST
+                  /services/{serviceId}/invitations`).
+                - `invitation-accepted`: the invitation was accepted already
+                  (`POST /invitations/accept`, `DELETE
+                  /services/{serviceId}/invitations/{invitationId}`).
                 - `service-id-taken`: a service with the new identifier is
                   registered (`POST /services/{serviceId}/rename`).
                 - `service-busy`: the service is being renamed (`PUT` and
@@ -1002,6 +1181,8 @@ components:
                 - service-type-in-use
                 - verification-mismatch
                 - last-owner
+                - invitations-limit
+                - invitation-accepted
                 - service-id-taken
                 - service-busy
                 - conflict
@@ -1237,6 +1418,135 @@ components:
           description: |
             Group the role was granted to, of which the user is a member;
             not set for roles granted to the user.
+    InvitationRegister:
+      description: Role to grant to the user who accepts an invitation.
+      type: object
+      required:
+        - role
+      additionalProperties: false
+      properties:
+        role:
+          $ref: '#/components/schemas/Role'
+    Invitation:
+      description: Invitation to a service.
+      type: object
+      required:
+        - id
+        - service_id
+        - role
+        - created_by
+        - created_at
+        - expires_at
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          description: Identifier of the invitation.
+        service_id:
+          type: string
+          description: Identifier of the service.
+        role:
+          $ref: '#/components/schemas/Role'
+        created_by:
+          type: string
+          description: Identifier of the user who created the invitation.
+        created_at:
+          type: string
+          format: date-time
+          description: When the invitation was created (RFC 3339 format, UTC).
+          example: '2026-10-28T12:34:56.789Z'
+        expires_at:
+          type: string
+          format: date-time
+          description: |
+            When the invitation expires (RFC 3339 format, UTC), whether
+            accepted or not; it is no longer listed then.
+          example: '2026-11-04T12:34:56.789Z'
+        accepted:
+          $ref: '#/components/schemas/InvitationAcceptance'
+    # The fields of `Invitation` and the token; not `allOf`, as both forbid
+    # other fields
+    InvitationCreated:
+      description: New invitation to a service, with its token.
+      type: object
+      required:
+        - id
+        - service_id
+        - role
+        - created_by
+        - created_at
+        - expires_at
+        - token
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          description: Identifier of the invitation.
+        service_id:
+          type: string
+          description: Identifier of the service.
+        role:
+          $ref: '#/components/schemas/Role'
+        created_by:
+          type: string
+          description: Identifier of the user who created the invitation.
+        created_at:
+          type: string
+          format: date-time
+          description: When the invitation was created (RFC 3339 format, UTC).
+          example: '2026-10-28T12:34:56.789Z'
+        expires_at:
+          type: string
+          format: date-time
+          description: |
+            When the invitation expires (RFC 3339 format, UTC), whether
+            accepted or not.
+          example: '2026-11-04T12:34:56.789Z'
+        token:
+          type: string
+          description: |
+            Token of the invitation, to send to the invited user (e.g., in
+            the fragment of a link); only returned when the invitation is
+            created, as the registry stores its hash only.
+    InvitationAcceptance:
+      description: |
+        Who accepted an invitation, and when; not set for open invitations.
+      type: object
+      required:
+        - user_id
+        - accepted_at
+      additionalProperties: false
+      properties:
+        user_id:
+          type: string
+          description: Identifier of the user who accepted the invitation.
+        name:
+          type: string
+          description: |
+            Display name of the user, if the identity provider released it.
+        email:
+          type: string
+          description: |
+            Email address of the user, if the identity provider released it
+            (e.g., if the deployment adds `email` to
+            `security.auth.userinfo_claims`).
+        accepted_at:
+          type: string
+          format: date-time
+          description: When the invitation was accepted (RFC 3339 format, UTC).
+          example: '2026-10-29T08:00:00.000Z'
+    InvitationAccept:
+      description: Token of an invitation to accept.
+      type: object
+      required:
+        - token
+      additionalProperties: false
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Token of the invitation (`token` of its creation).
     VerificationRegister:
       description: URL and API type of a service that an admin checked.
       type: object

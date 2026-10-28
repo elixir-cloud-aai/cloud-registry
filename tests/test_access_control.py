@@ -690,7 +690,7 @@ def test_owner_not_restored_on_deleted_service(
 def test_no_claims_without_token(app: App) -> None:
     """Without a validated token, there are no claims."""
     with app.app.test_request_context():
-        assert permissions_module._get_current_claims() == {}
+        assert permissions_module.get_current_claims() == {}
 
 
 @pytest.mark.parametrize(

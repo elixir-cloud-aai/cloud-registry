@@ -3,7 +3,7 @@
 Only admins may rename services: no policy in `config.yaml` allows the
 operation to other users. Everything stored under the old identifier moves to
 the new one: the service document (with its verification and `createdAt`),
-the roles on the service and the names of its users.
+the roles on the service, the names of its users and its invitations.
 
 MongoDB transactions need a replica set, which deployments (Docker Compose,
 Helm chart) don't run, so renames are ordered to be safe without them:
@@ -20,7 +20,8 @@ Helm chart) don't run, so renames are ordered to be safe without them:
    identifiers registered meanwhile (e.g., by `POST /services`); up to here,
    failures release the locks and leave the service as it was.
 4. The roles and names are copied to the new identifier, then removed from
-   the old one, and the locks released.
+   the old one, the invitations moved to the new one, and the locks
+   released.
 
 If step 4 fails (e.g., the app crashes, or the database is unavailable), the
 service may lack roles under its new identifier, and both identifiers stay
@@ -54,6 +55,7 @@ from cloud_registry.ga4gh.registry.locks import (
     unlock,
 )
 from cloud_registry.ga4gh.registry.permissions import (
+    INVITATIONS,
     USER_NAMES,
     current_user,
     remove_permissions,
@@ -257,11 +259,12 @@ def _start(source: str, target: str, tokens: tuple[str, str]) -> _Moved:
 
 
 def _move_roles(path: str, source: str, target: str) -> None:
-    """Move the roles and names of users on a service to a new identifier.
+    """Move the roles, names and invitations of a service to a new identifier.
 
-    Copied first, then removed from the old identifier, so that the steps can
-    be repeated if they fail. Roles that can't be granted (e.g., stored
-    before FOCA rejected such values) are not copied, with a warning.
+    Roles and names are copied first, then removed from the old identifier,
+    and invitations moved last, so that the steps can be repeated if they
+    fail. Roles that can't be granted (e.g., stored before FOCA rejected such
+    values) are not copied, with a warning.
 
     Args:
         path: Path of the services, under which roles are granted.
@@ -296,6 +299,9 @@ def _move_roles(path: str, source: str, target: str) -> None:
         )
     remove_resource(resource)
     names.delete_many({"service_id": source})
+    get_collection(INVITATIONS).update_many(
+        {"service_id": source}, {"$set": {"service_id": target}}
+    )
 
 
 def resume_renames() -> None:
@@ -402,9 +408,10 @@ def _finish(path: str, source: str, target: str, token: str) -> None:
     else:
         remove_resource(f"{path}/{source}")
         get_collection(USER_NAMES).delete_many({"service_id": source})
+        get_collection(INVITATIONS).delete_many({"service_id": source})
         logger.info(
             "Interrupted rename of service '%s' to '%s' ended: neither is "
-            "registered; roles on '%s' removed.",
+            "registered; roles and invitations of '%s' removed.",
             *names,
             names[0],
         )
