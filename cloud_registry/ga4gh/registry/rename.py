@@ -353,9 +353,9 @@ def resume_renames_periodically() -> None:
     not only when the app starts. Only before requests of the registry's
     operations (cf. `OPERATION_PREFIX`), so that other requests (e.g., of
     the probe path) don't need the database. Database errors are logged,
-    not raised, and tried again after the interval; the check for stale
-    locks waits for the database for up to `RESUME_CHECK_TIMEOUT` seconds
-    (resuming renames, which takes several writes, as long as they need).
+    not raised, and tried again after the interval. Only the check for
+    stale locks is limited to `RESUME_CHECK_TIMEOUT` seconds; resuming is
+    not, as it needs several writes.
     """
     global _last_resume  # noqa: PLW0603 (per worker)
     if not (request.endpoint or "").rpartition(".")[2].startswith(OPERATION_PREFIX):
