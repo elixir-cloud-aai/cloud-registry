@@ -130,6 +130,8 @@ dev = [
     # Used by the tests; builds use `build-system.requires`
     "setuptools-scm>=10.3",
     "types-PyYAML>=6.0.12",
+    # Locks the dependencies of the image (`uv lock`, checked in CI)
+    "uv>=0.13",
 ]
 # Documentation (`mkdocs.yml`), built by Read the Docs (`.readthedocs.yaml`)
 # and in CI. The packages that add warnings, which fail the strict build,

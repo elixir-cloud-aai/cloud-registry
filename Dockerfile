@@ -1,3 +1,9 @@
+##### TOOLS #####
+## uv, to export the locked requirements (`uv.lock`) for the image build;
+## mounted into the build step only, so that the image doesn't contain it.
+## Pinned by digest; Dependabot updates the tag and digest together
+FROM ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0 AS uv
+
 ##### BASE IMAGE #####
 ## Pinned by digest, so that rebuilds (e.g., of a release) use the same base
 ## image; Dependabot updates the tag and digest together
@@ -18,15 +24,26 @@ LABEL org.opencontainers.image.licenses="Apache-2.0"
 LABEL org.opencontainers.image.authors="ELIXIR On-Cloud <cloud-service@elixir-europe.org>"
 LABEL org.opencontainers.image.vendor="ELIXIR On-Cloud"
 
-## Install dependencies (`project.dependencies` of `pyproject.toml`) first,
-## so that code changes do not reinstall them; the FOCA image runs as non-root
-## user. A direct reference to a FOCA commit (temporary) is left out, as the
-## image has no Git: the build fails unless the base image has FOCA of that
-## commit (`scripts/image_requirements.py`)
+## Install dependencies first, so that code changes do not reinstall them;
+## the FOCA image runs as non-root user. Only the locked ones are installed:
+## the runtime dependencies (`project.dependencies` of `pyproject.toml`; the
+## export leaves out the extras, and `--no-dev` a `dev` dependency group) and
+## all their own dependencies, at the exact versions of `uv.lock`, checked
+## against its hashes, as wheels only, and without resolving anything else
+## (`--no-deps`). `--frozen` takes the lock as is, unchecked against
+## `pyproject.toml` (CI's `uv lock --check` checks it). A direct reference to
+## a FOCA commit (temporary) has no hash and is left out, as the image has no
+## Git: the build fails unless the base image has FOCA of that commit. It also
+## fails unless the base image has the locked FOCA release, if one is locked
+## (`scripts/image_requirements.py`)
 USER root
-COPY pyproject.toml scripts/image_requirements.py /tmp/src/
-RUN python /tmp/src/image_requirements.py /tmp/src/pyproject.toml > /tmp/src/requirements.txt \
-  && pip install --no-cache-dir -r /tmp/src/requirements.txt
+COPY pyproject.toml uv.lock scripts/image_requirements.py /tmp/src/
+RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
+  UV_NO_CACHE=1 uv export --frozen --no-dev --no-emit-project \
+    --project /tmp/src --output-file /tmp/src/locked.txt \
+  && python /tmp/src/image_requirements.py /tmp/src/locked.txt > /tmp/src/requirements.txt \
+  && pip install --no-cache-dir --require-hashes --only-binary :all: --no-deps \
+    -r /tmp/src/requirements.txt
 
 ## Install app (non-editable; the base config is installed with the package,
 ## and deployments override it via `FOCA_CONFIG_OVERLAY`)
