@@ -190,6 +190,9 @@ def check_read_token[T](func: Callable[..., T]) -> Callable[..., T]:
 
 # Collection with the display names of users with roles on services
 USER_NAMES = "user_names"
+# Collection with the invitations to services (cf.
+# `cloud_registry.ga4gh.registry.invitations`)
+INVITATIONS = "invitations"
 
 
 def _api_base_path() -> str:
@@ -208,7 +211,7 @@ def _api_base_path() -> str:
     return current_app.blueprints[request.blueprint].url_prefix or ""
 
 
-def _require_subject() -> str:
+def require_subject() -> str:
     """Get the subject of the current request, which must be authenticated.
 
     For operations that require authentication, so that their requests have
@@ -326,7 +329,7 @@ def service_types_pending() -> bool:
     return mode == "moderated" and not is_admin()
 
 
-def _get_current_claims() -> dict[str, Any]:
+def get_current_claims() -> dict[str, Any]:
     """Get the claims of the validated token of the current request.
 
     Returns:
@@ -365,7 +368,7 @@ def remember_current_user(service_ids: list[str]) -> None:
         service_ids: Identifiers of services the user has a role on.
     """
     user_id = get_current_subject()
-    name = _get_current_claims().get("name")
+    name = get_current_claims().get("name")
     if user_id is None or not isinstance(name, str) or not name.strip():
         return
     for service_id in service_ids:
@@ -404,7 +407,7 @@ def add_owner(serviceId: str) -> None:
         ValueError: The role can't be stored (e.g., for service identifiers
             with commas).
     """
-    _require_subject()
+    require_subject()
     add_resource_owner(service_path(serviceId))
     remember_current_user([serviceId])
 
@@ -423,7 +426,7 @@ def remove_owner(serviceId: str) -> None:
     Raises:
         Unauthorized: The current request has no subject.
     """
-    user_id = _require_subject()
+    user_id = require_subject()
     if remove_resource_role(
         subject=user_id, role="owner", resource=service_path(serviceId)
     ):
@@ -436,7 +439,7 @@ def remove_owner(serviceId: str) -> None:
 
 
 def remove_permissions(serviceId: str) -> None:
-    """Revoke all roles granted on a service.
+    """Revoke all roles granted on a service, and delete its invitations.
 
     Args:
         serviceId: Service identifier.
@@ -448,6 +451,7 @@ def remove_permissions(serviceId: str) -> None:
             current_user(),
         )
     _forget_names(serviceId)
+    get_collection(INVITATIONS).delete_many({"service_id": serviceId})
 
 
 # GET /services/{serviceId}/permissions
@@ -500,8 +504,14 @@ def _describe(subject: str, subject_type: SubjectType) -> str:
     return quoted if subject_type == "user" else f"group {quoted}"
 
 
-def _put_role(serviceId: str, subject: str, subject_type: SubjectType) -> None:
-    """Grant a user or group the role in the request body, replacing others.
+def put_role(
+    serviceId: str,
+    subject: str,
+    subject_type: SubjectType,
+    role: str,
+    check: Callable[[], None] | None = None,
+) -> None:
+    """Grant a user or group a role on a service, replacing others.
 
     See FOCA's `grant_role()`, which keeps the last owner, revokes the role
     again if the service was deleted meanwhile, and logs the change. On a
@@ -513,6 +523,10 @@ def _put_role(serviceId: str, subject: str, subject_type: SubjectType) -> None:
         serviceId: Service identifier.
         subject: User identifier or group.
         subject_type: Type of the subject.
+        role: Role to grant.
+        check: Function called once the service is locked and found to
+            exist, before the role is granted, e.g., to check that the role
+            may still be granted; it raises to refuse the grant.
 
     Raises:
         cloud_registry.exceptions.BadRequest: The role can't be granted to
@@ -524,10 +538,11 @@ def _put_role(serviceId: str, subject: str, subject_type: SubjectType) -> None:
         cloud_registry.exceptions.NotFound: The service doesn't exist, or
             was deleted meanwhile.
     """
-    role = request.json["role"]
     with changing(serviceId):
         if not service_exists(serviceId):
             raise NotFound
+        if check is not None:
+            check()
         resource = service_path(serviceId)
         is_user = subject_type == "user"
         if is_user and all(
@@ -595,6 +610,12 @@ def _delete_roles(serviceId: str, subject: str, subject_type: SubjectType) -> No
             raise NotFound
         if subject_type == "user":
             _forget_names(serviceId, subject)
+            # the user's name and email address in the invitations they
+            # accepted, as names are deleted with the role
+            get_collection(INVITATIONS).update_many(
+                {"service_id": serviceId, "accepted.user_id": subject},
+                {"$unset": {"accepted.name": "", "accepted.email": ""}},
+            )
 
 
 def _first_segment(path: str) -> str:
@@ -627,6 +648,26 @@ def check_namespaces() -> None:
                 "not start with 'groups/', the path of the roles of groups: "
                 "set another namespace ('security.auth.issuers')"
             )
+
+
+def is_manageable_user_id(userId: str) -> bool:
+    """Check whether roles of a user can be managed via the permissions API.
+
+    Args:
+        userId: User identifier.
+
+    Returns:
+        Whether `PUT` and `DELETE /services/{serviceId}/permissions/{userId}`
+        accept the identifier: it is not `groups` and doesn't start with
+        `groups/` (cf. `_check_user_id()`), doesn't start with a slash, and
+        has no segments `.` or `..` (backslashes count as slashes, as in
+        browsers; cf. the pattern of `userId` in
+        `cloud_registry/api/additions.openapi.yaml`).
+    """
+    path = userId.replace("\\", "/")
+    if path.startswith("/") or _first_segment(path) == "groups":
+        return False
+    return not any(segment in (".", "..") for segment in path.split("/"))
 
 
 def warn_owner_rules() -> None:
@@ -704,7 +745,7 @@ def _check_user_id(userId: str) -> None:
 def putServicePermission(serviceId: str, userId: str, **kwargs: Any) -> dict[str, Any]:
     """Grant a user a role on a service, replacing any other role.
 
-    See `_put_role()`.
+    See `put_role()`.
 
     Args:
         serviceId: Service identifier.
@@ -720,8 +761,9 @@ def putServicePermission(serviceId: str, userId: str, **kwargs: Any) -> dict[str
             (cf. `_check_user_id()`).
     """
     _check_user_id(userId)
-    _put_role(serviceId, userId, "user")
-    return {"user_id": userId, "role": request.json["role"]}
+    role = request.json["role"]
+    put_role(serviceId, userId, "user", role)
+    return {"user_id": userId, "role": role}
 
 
 # DELETE /services/{serviceId}/permissions/{userId}
@@ -752,7 +794,7 @@ def putServiceGroupPermission(
 ) -> dict[str, Any]:
     """Grant a group a role on a service, replacing any other role.
 
-    See `_put_role()`. Owners may only grant roles to groups they are members
+    See `put_role()`. Owners may only grant roles to groups they are members
     of (i.e., whose group claim contains it), as they could
     otherwise hand a service to any group; admins may grant roles to any group.
 
@@ -778,8 +820,9 @@ def putServiceGroupPermission(
             current_user(),
         )
         raise Forbidden
-    _put_role(serviceId, group, "group")
-    return {"group": group, "role": request.json["role"]}
+    role = request.json["role"]
+    put_role(serviceId, group, "group", role)
+    return {"group": group, "role": role}
 
 
 # DELETE /services/{serviceId}/permissions/groups/{group}
@@ -832,7 +875,7 @@ def getMe(**kwargs: Any) -> dict[str, Any]:
         Unauthorized: The request has no subject (the endpoint requires
             authentication, so it always has one).
     """
-    user_id = _require_subject()
+    user_id = require_subject()
     services = [
         {"service_id": role.id, "role": role.role}
         | ({"group": role.subject} if role.subject_type == "group" else {})

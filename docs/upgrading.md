@@ -6,6 +6,23 @@ steps on this page. Upgrades of Helm releases are described in
 [Deployment](deployment.md#upgrades). This page describes how to upgrade, and
 how existing setups and data are affected.
 
+## From 0.6.0
+
+Data is kept. Owners can invite users to their services by link (see
+[Invitations](access-control.md#invitations)):
+
+- The app stores invitations in the new collection `invitations`, whose
+  indexes it creates on startup (one of them a TTL index, with which MongoDB
+  deletes expired invitations).
+- The base config has three new rules (`owners-manage-invitations`,
+  `owners-revoke-invitations`, `accept-invitations` in
+  `security.access_control.policies`). Overlays that give the policies as a
+  list, rather than changing single rules by name, must add them, or the new
+  endpoints return `403 Forbidden`.
+- The new options `custom.access_control.invitations` (`expiry_days`,
+  `max_per_service`) have defaults (see
+  [Invitations](configuration.md#invitations)).
+
 ## From 0.5.0
 
 Data is kept. The app now builds on FOCA 0.18, which provides several of
