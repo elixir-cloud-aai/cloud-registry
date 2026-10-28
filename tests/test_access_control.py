@@ -1779,6 +1779,14 @@ GROUPS_RULE = [
     "(PUT)|(DELETE)",
 ]
 NO_GROUPS = {"owners-change-group-permissions": None}
+# Without the rule of groups, and the rule of users as in 0.5.0
+NO_GROUPS_050 = {**NO_GROUPS, "owners-change-permissions": USERS_RULE_050}
+# Other rules: owners may only list roles, maintainers and any user may change
+# them, owners may only grant roles to groups
+USERS_RULE_GET = ["p", "owner", f"{BASE}/services/:id/permissions/*", "GET"]
+MAINTAINERS_RULE = ["p", "maintainer", f"{BASE}/services/:id/permissions/*", "PUT"]
+ANYONE_RULE = ["p", "*", f"{BASE}/services/:id/permissions/*", "DELETE"]
+GROUPS_RULE_PUT = ["p", "owner", f"{BASE}/services/:id/permissions/groups/*", "PUT"]
 
 
 @pytest.mark.parametrize(
@@ -1793,6 +1801,16 @@ NO_GROUPS = {"owners-change-group-permissions": None}
         ({"owners-change-permissions": None}, False),
         ([USERS_RULE_PUT], True),
         ([USERS_RULE_050], False),
+        ({**NO_GROUPS, "owners-change-permissions": USERS_RULE_GET}, False),
+        ({**NO_GROUPS_050, "maintainers-change-permissions": MAINTAINERS_RULE}, False),
+        ({**NO_GROUPS_050, "anyone-changes-permissions": ANYONE_RULE}, True),
+        (
+            {
+                "owners-change-permissions": USERS_RULE_050,
+                "owners-change-group-permissions": GROUPS_RULE_PUT,
+            },
+            False,
+        ),
     ],
     ids=[
         "unchanged",
@@ -1804,6 +1822,10 @@ NO_GROUPS = {"owners-change-group-permissions": None}
         "users-removed",
         "list-allowing-groups",
         "list",
+        "users-get-only",
+        "maintainers",
+        "any-user",
+        "groups-put-only",
     ],
 )
 def test_owner_rules_warning(
@@ -1817,8 +1839,9 @@ def test_owner_rules_warning(
     """The app warns if owners can change roles of groups against overlays.
 
     That is, if the rule of owners' roles of groups is changed or removed,
-    but other rules still allow owners to change them (e.g., the rule of
-    users' roles, which covers groups since 0.6.0).
+    but rules that cover the roles of users still allow owners to change
+    those of groups (e.g., the rule of users' roles, which covers groups
+    since 0.6.0); not of rules for groups only, or for other roles.
     """
     overlay = {"security": {"access_control": {"policies": policies}}}
     _create_app(monkeypatch, tmp_path, overlay)

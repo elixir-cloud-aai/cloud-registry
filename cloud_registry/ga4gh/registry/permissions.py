@@ -634,9 +634,12 @@ def warn_owner_rules() -> None:
     allow them: `owners-change-permissions` (`/services/:id/permissions/*`)
     also covers the roles of groups since 0.6.0. So, unless the rule is kept
     as in the packaged base config (`BASE_CONFIG`, which deployments change
-    with overlays), warns if any rule for owners or any user (`*`) allows
-    `PUT` or `DELETE` on a path of the roles of a group (the path of the base
-    rule, with example values), whether the policies are named or a list.
+    with overlays), warns of configured rules (named or a list) for owners or
+    any user (`*`) that allow `PUT` or `DELETE` on the roles of both users
+    and groups (paths of the base rule with example values), i.e., that
+    cover groups as a side effect; rules for groups only (e.g., the changed
+    rule itself) are the deployment's choice. Rules stored via FOCA's
+    permissions API are not checked.
 
     Must be called in an app context.
     """
@@ -647,6 +650,7 @@ def warn_owner_rules() -> None:
     if base in policies:
         return
     path = base[2].replace(":id", "service").replace("*", "group")
+    user_path = path.replace("/groups/group", "/user")
     allowing = sorted(
         {
             str(rule)
@@ -654,6 +658,7 @@ def warn_owner_rules() -> None:
             if len(rule) >= 4
             and rule[:2] in (["p", "owner"], ["p", "*"])
             and key_match2(path, rule[2])
+            and key_match2(user_path, rule[2])
             and any(re.fullmatch(f"(?:{rule[3]})", method) for method in METHODS)
         }
     )
