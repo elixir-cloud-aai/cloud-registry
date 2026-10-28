@@ -40,10 +40,11 @@ reads](https://cloud-registry.readthedocs.io/en/latest/access-control/#requiring
 policies by name) need images built with FOCA 0.17: any release,
 or `dev` and `sha-<commit>` images of commits since the upgrade to FOCA 0.17.
 This chart version sets the public URL (`config.server.public_url`) and
-requires images built with FOCA 0.18 (app 0.6.0 or later, or `dev` and
-`sha-<commit>` images of commits since the upgrade to FOCA 0.18): older
-images refuse to start, as they reject `config.server.public_url`, which the
-chart always sets (and `config.security.access_control.require_admin`).
+requires images built with FOCA 0.18 (the app version of this chart or
+later, or `dev` and `sha-<commit>` images of commits since the upgrade to
+FOCA 0.18): older images refuse to start, as they reject
+`config.server.public_url`, which the chart always sets (and
+`config.security.access_control.require_admin`).
 
 The identity provider is deployment configuration, without defaults (see
 [Deployment
@@ -750,8 +751,8 @@ Data is kept. Rendering fails while removed keys are set:
 - `config.custom.access_control.require_admin`: set
   `config.security.access_control.require_admin` instead.
 
-This chart version requires images of app version 0.6.0 or later (built
-with FOCA 0.18). Commands that load `cloud_registry.gunicorn_config` must
+This chart version requires images of the same app version or later
+(built with FOCA 0.18). Commands that load `cloud_registry.gunicorn_config` must
 load FOCA's `foca.gunicorn_config` (same settings). Admins act as admins
 only in requests with the header `X-Request-Roles: admin` ([admin
 mode](https://cloud-registry.readthedocs.io/en/latest/access-control/#admin-mode));
