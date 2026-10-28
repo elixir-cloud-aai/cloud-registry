@@ -9,15 +9,25 @@ as `PUT /services/{serviceId}/permissions/{userId}` would (replacing their
 other role on the service). Owners list the invitations of a service, with
 who accepted them, and revoke open ones.
 
+Invitations only grant roles while their creators may: each stores how its
+creator was allowed to create it (`CREATED_AS`: as an admin, as an owner, or
+as a member of an owner group), and is deleted instead of accepted once that
+owner role is gone (e.g., revoked), so that removed owners can't regain the
+role with invitations they created before. Admins are trusted (their
+membership in admin groups can't be checked without their token). Users
+whose roles the permissions API couldn't revoke (cf.
+`is_manageable_user_id()`) can't accept invitations.
+
 Invitations are stored in their own collection (`INVITATIONS`), with the
 SHA-256 hash of their token, never the token itself, so that the stored
 invitations can't be accepted by those who read the database. They expire
 after `custom.access_control.invitations.expiry_days` (default: 7), also once
 accepted, and are then deleted by MongoDB (TTL index on `expires_at`; until
 then, reads skip them). A service has at most
-`custom.access_control.invitations.max_open_per_service` open invitations
-(neither accepted nor expired; default: 20); concurrent requests can exceed
-it by their number.
+`custom.access_control.invitations.max_per_service` invitations that
+haven't expired, open or accepted (default: 20), so that owners can't grow
+the collection (e.g., by accepting their own invitations); concurrent
+requests can exceed it by their number.
 
 Accepting is single-use: the invitation is claimed atomically (an update of
 an open, unexpired invitation), and released again if the role can't be
@@ -41,16 +51,29 @@ from uuid import uuid4
 
 from flask import Response
 from foca import get_custom_config
+from foca.security.access_control import (
+    get_current_group_values,
+    is_admin,
+    list_roles,
+)
 from foca.utils.logging import escape_log_value
 
-from cloud_registry.exceptions import CodedConflict, NotFound, problem
+from cloud_registry.exceptions import (
+    BadRequest,
+    CodedConflict,
+    Forbidden,
+    NotFound,
+    problem,
+)
 from cloud_registry.ga4gh.registry.permissions import (
     INVITATIONS,
     current_user,
     get_current_claims,
+    is_manageable_user_id,
     put_role,
     remember_current_user,
     require_subject,
+    service_path,
 )
 from cloud_registry.ga4gh.registry.service import service_exists
 from cloud_registry.service_models.custom_config import CustomConfig
@@ -60,6 +83,10 @@ logger = logging.getLogger(__name__)
 # Fields of stored invitations: the hash of the token, and the acceptance
 TOKEN_HASH = "token_hash"  # noqa: S105 (field name)
 ACCEPTED = "accepted"
+# Field of stored invitations: how the creator was allowed to create it,
+# `{"admin": True}`, `{"user": <user identifier>}` (owner) or `{"group":
+# <group>}` (member of an owner group); never served
+CREATED_AS = "created_as"
 # Bytes of randomness of tokens (cf. `secrets.token_urlsafe()`)
 TOKEN_BYTES = 32
 
@@ -78,7 +105,7 @@ class InvitationAccepted(CodedConflict):
 
 
 class InvitationsLimit(CodedConflict):
-    """A service has as many open invitations as allowed."""
+    """A service has as many invitations that haven't expired as allowed."""
 
     problem_code = "invitations-limit"
 
@@ -86,11 +113,12 @@ class InvitationsLimit(CodedConflict):
         """Create the exception, with a description of what to do.
 
         Args:
-            limit: How many open invitations a service may have.
+            limit: How many invitations that haven't expired a service may
+                have.
         """
         super().__init__(
-            f"The service has {limit} open invitations, as many as allowed; "
-            "revoke some, or wait until they are accepted or expire."
+            f"The service has {limit} invitations that haven't expired, as many "
+            "as allowed; revoke open ones, or wait until they expire."
         )
 
 
@@ -106,13 +134,32 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+def _unexpired() -> dict[str, Any]:
+    """Get the filter for invitations that haven't expired.
+
+    Returns:
+        Filter for invitations that haven't expired, open or accepted (expired
+        ones may be stored until MongoDB deletes them).
+    """
+    return {"expires_at": {"$gt": now()}}
+
+
 def _open_filter() -> dict[str, Any]:
     """Get the filter for open invitations.
 
     Returns:
         Filter for invitations that are neither accepted nor expired.
     """
-    return {ACCEPTED: {"$exists": False}, "expires_at": {"$gt": now()}}
+    return {ACCEPTED: {"$exists": False}, **_unexpired()}
+
+
+def _accepted_filter() -> dict[str, Any]:
+    """Get the filter for accepted invitations.
+
+    Returns:
+        Filter for invitations that were accepted and haven't expired.
+    """
+    return {ACCEPTED: {"$exists": True}, **_unexpired()}
 
 
 def _serve(invitation: dict[str, Any]) -> dict[str, Any]:
@@ -136,32 +183,89 @@ def _serve(invitation: dict[str, Any]) -> dict[str, Any]:
     accepted = invitation.get(ACCEPTED)
     if accepted is not None:
         served[ACCEPTED] = {
-            key: value for key, value in accepted.items() if key != "accepted_at"
-        } | {"accepted_at": format_time(accepted["accepted_at"])}
+            **accepted,
+            "accepted_at": format_time(accepted["accepted_at"]),
+        }
     return served
 
 
 def _check_limit(serviceId: str) -> None:
-    """Check that a service may have another open invitation.
+    """Check that a service may have another invitation.
+
+    Invitations count until they expire, also once accepted, so that owners
+    can't grow the collection by accepting their own invitations.
 
     Args:
         serviceId: Service identifier.
 
     Raises:
-        InvitationsLimit: The service has as many open invitations as allowed
-            (`custom.access_control.invitations.max_open_per_service`).
+        InvitationsLimit: The service has as many invitations that haven't
+            expired as allowed
+            (`custom.access_control.invitations.max_per_service`).
     """
-    limit = get_custom_config(
-        CustomConfig
-    ).access_control.invitations.max_open_per_service
+    limit = get_custom_config(CustomConfig).access_control.invitations.max_per_service
     if limit is None:
         return
-    query = {"service_id": serviceId, **_open_filter()}
+    query = {"service_id": serviceId, **_unexpired()}
     # a limit of 0 counts all documents
     if limit == 0 or (
         get_collection(INVITATIONS).count_documents(query, limit=limit) >= limit
     ):
         raise InvitationsLimit(limit)
+
+
+def _created_as(serviceId: str, creator: str) -> dict[str, Any]:
+    """Get how the current user may create invitations to a service.
+
+    Args:
+        serviceId: Service identifier.
+        creator: Identifier of the current user.
+
+    Returns:
+        How the user may create them (cf. `CREATED_AS`): as an admin, as an
+        owner, or as a member of an owner group (the first, by name).
+
+    Raises:
+        cloud_registry.exceptions.Forbidden: The user is neither an admin nor
+            an owner (e.g., the role was revoked after the request was
+            authorized).
+    """
+    if is_admin():
+        return {"admin": True}
+    owners = {
+        (role.subject_type, role.subject)
+        for role in list_roles(service_path(serviceId))
+        if role.role == "owner"
+    }
+    if ("user", creator) in owners:
+        return {"user": creator}
+    groups = sorted(
+        group for group in get_current_group_values() if ("group", group) in owners
+    )
+    if not groups:
+        raise Forbidden
+    return {"group": groups[0]}
+
+
+def _creator_may_grant(invitation: dict[str, Any]) -> bool:
+    """Check whether the creator of an invitation may still grant its role.
+
+    Args:
+        invitation: Stored invitation.
+
+    Returns:
+        Whether it was created by an admin, or the user or group whose owner
+        role allowed it is still owner of the service. Invitations stored
+        without `CREATED_AS` don't grant roles.
+    """
+    created_as = invitation.get(CREATED_AS) or {}
+    if created_as.get("admin") is True:
+        return True
+    subjects = [("user", created_as.get("user")), ("group", created_as.get("group"))]
+    return any(
+        (role.subject_type, role.subject) in subjects and role.role == "owner"
+        for role in list_roles(service_path(invitation["service_id"]))
+    )
 
 
 # POST /services/{serviceId}/invitations
@@ -182,12 +286,15 @@ def postServiceInvitation(
         service has as many open invitations as allowed.
 
     Raises:
+        cloud_registry.exceptions.Forbidden: The user is no longer an owner
+            (cf. `_created_as()`).
         cloud_registry.exceptions.NotFound: The service doesn't exist, or was
             deleted meanwhile.
     """
     creator = require_subject()
     if not service_exists(serviceId):
         raise NotFound
+    created_as = _created_as(serviceId, creator)
     try:
         _check_limit(serviceId)
     except InvitationsLimit as exc:
@@ -206,6 +313,7 @@ def postServiceInvitation(
         "service_id": serviceId,
         "role": invitation["role"],
         "created_by": creator,
+        CREATED_AS: created_as,
         "created_at": created_at,
         "expires_at": created_at + timedelta(days=expiry_days),
     }
@@ -244,7 +352,7 @@ def getServiceInvitations(serviceId: str, **kwargs: Any) -> list[dict[str, Any]]
     if not service_exists(serviceId):
         raise NotFound
     invitations = get_collection(INVITATIONS).find(
-        {"service_id": serviceId, "expires_at": {"$gt": now()}},
+        {"service_id": serviceId, **_unexpired()},
         sort=[("created_at", 1), ("_id", 1)],
     )
     return [_serve(invitation) for invitation in invitations]
@@ -279,10 +387,7 @@ def deleteServiceInvitation(
     query = {"_id": invitationId, "service_id": serviceId}
     result = collection.delete_one({**query, **_open_filter()})
     if not result.deleted_count:
-        if collection.count_documents(
-            {**query, ACCEPTED: {"$exists": True}, "expires_at": {"$gt": now()}},
-            limit=1,
-        ):
+        if collection.count_documents({**query, **_accepted_filter()}, limit=1):
             return problem(InvitationAccepted())
         raise NotFound
     logger.info(
@@ -315,7 +420,9 @@ def _acceptance(user_id: str) -> dict[str, Any]:
 
 
 # POST /invitations/accept
-def acceptInvitation(acceptance: dict[str, Any], **kwargs: Any) -> Any:
+def acceptInvitation(
+    acceptance: dict[str, Any], **kwargs: Any
+) -> dict[str, Any] | Response:
     """Accept an invitation, which grants its role to the current user.
 
     See `put_role()`, which grants the role (replacing the user's other role
@@ -336,12 +443,22 @@ def acceptInvitation(acceptance: dict[str, Any], **kwargs: Any) -> Any:
         already.
 
     Raises:
+        cloud_registry.exceptions.BadRequest: The permissions API couldn't
+            revoke roles of the user (cf. `is_manageable_user_id()`).
         cloud_registry.exceptions.NotFound: No open invitation has the token
-            (unknown, revoked or expired), or its service doesn't exist.
+            (unknown, revoked or expired), its service doesn't exist, or its
+            creator may no longer grant its role (cf. `_creator_may_grant()`;
+            the invitation is deleted).
         Exception: The role can't be granted (cf. `put_role()`), e.g.,
             `LastOwner`; the invitation is released.
     """
     user_id = require_subject()
+    if not is_manageable_user_id(user_id):
+        logger.info(
+            "Invitation not accepted: roles of '%s' can't be managed.",
+            current_user(),
+        )
+        raise BadRequest
     token_hash = hash_token(acceptance["token"])
     collection = get_collection(INVITATIONS)
     invitation = collection.find_one_and_update(
@@ -349,14 +466,22 @@ def acceptInvitation(acceptance: dict[str, Any], **kwargs: Any) -> Any:
         {"$set": {ACCEPTED: _acceptance(user_id)}},
     )
     if invitation is None:
-        accepted = {TOKEN_HASH: token_hash, ACCEPTED: {"$exists": True}}
-        if collection.count_documents(
-            {**accepted, "expires_at": {"$gt": now()}}, limit=1
-        ):
+        accepted = {TOKEN_HASH: token_hash, **_accepted_filter()}
+        if collection.count_documents(accepted, limit=1):
             return problem(InvitationAccepted())
         raise NotFound
     service_id: str = invitation["service_id"]
     role: str = invitation["role"]
+    if not _creator_may_grant(invitation):
+        collection.delete_one({"_id": invitation["_id"]})
+        logger.info(
+            "Invitation '%s' to service '%s' deleted: its creator '%s' is no "
+            "longer an owner.",
+            invitation["_id"],
+            escape_log_value(service_id),
+            escape_log_value(invitation["created_by"]),
+        )
+        raise NotFound
     try:
         put_role(service_id, user_id, "user", role)
     except Exception:

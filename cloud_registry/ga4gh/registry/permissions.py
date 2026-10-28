@@ -587,6 +587,12 @@ def _delete_roles(serviceId: str, subject: str, subject_type: SubjectType) -> No
             raise NotFound
         if subject_type == "user":
             _forget_names(serviceId, subject)
+            # the user's name and email address in the invitations they
+            # accepted, as names are deleted with the role
+            get_collection(INVITATIONS).update_many(
+                {"service_id": serviceId, "accepted.user_id": subject},
+                {"$unset": {"accepted.name": "", "accepted.email": ""}},
+            )
 
 
 def _first_segment(path: str) -> str:
@@ -619,6 +625,26 @@ def check_namespaces() -> None:
                 "not start with 'groups/', the path of the roles of groups: "
                 "set another namespace ('security.auth.issuers')"
             )
+
+
+def is_manageable_user_id(userId: str) -> bool:
+    """Check whether roles of a user can be managed via the permissions API.
+
+    Args:
+        userId: User identifier.
+
+    Returns:
+        Whether `PUT` and `DELETE /services/{serviceId}/permissions/{userId}`
+        accept the identifier: it is not `groups` and doesn't start with
+        `groups/` (cf. `_check_user_id()`), doesn't start with a slash, and
+        has no segments `.` or `..` (backslashes count as slashes, as in
+        browsers; cf. the pattern of `userId` in
+        `cloud_registry/api/additions.openapi.yaml`).
+    """
+    path = userId.replace("\\", "/")
+    if path.startswith("/") or _first_segment(path) == "groups":
+        return False
+    return not any(segment in (".", "..") for segment in path.split("/"))
 
 
 def _check_user_id(userId: str) -> None:
@@ -664,8 +690,9 @@ def putServicePermission(serviceId: str, userId: str, **kwargs: Any) -> dict[str
             (cf. `_check_user_id()`).
     """
     _check_user_id(userId)
-    put_role(serviceId, userId, "user", request.json["role"])
-    return {"user_id": userId, "role": request.json["role"]}
+    role = request.json["role"]
+    put_role(serviceId, userId, "user", role)
+    return {"user_id": userId, "role": role}
 
 
 # DELETE /services/{serviceId}/permissions/{userId}
@@ -722,8 +749,9 @@ def putServiceGroupPermission(
             current_user(),
         )
         raise Forbidden
-    put_role(serviceId, group, "group", request.json["role"])
-    return {"group": group, "role": request.json["role"]}
+    role = request.json["role"]
+    put_role(serviceId, group, "group", role)
+    return {"group": group, "role": role}
 
 
 # DELETE /services/{serviceId}/permissions/groups/{group}

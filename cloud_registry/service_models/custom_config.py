@@ -154,29 +154,29 @@ class InvitationsConfig(FOCABaseConfig):
     Args:
         expiry_days: Days after which invitations expire, whether accepted
             or not; expired ones are deleted.
-        max_open_per_service: How many open invitations (neither accepted
-            nor expired) a service may have (`409` above); unlimited if
+        max_per_service: How many invitations that haven't expired, open
+            or accepted, a service may have (`409` above); unlimited if
             `None`.
 
     Attributes:
         expiry_days: Days after which invitations expire, whether accepted
             or not; expired ones are deleted.
-        max_open_per_service: How many open invitations (neither accepted
-            nor expired) a service may have (`409` above); unlimited if
+        max_per_service: How many invitations that haven't expired, open
+            or accepted, a service may have (`409` above); unlimited if
             `None`.
 
     Raises:
         pydantic.ValidationError: The class was instantianted with an illegal
             data type, `expiry_days` is not positive, or
-            `max_open_per_service` is negative.
+            `max_per_service` is negative.
 
     Example:
         >>> InvitationsConfig(expiry_days=1)
-        InvitationsConfig(expiry_days=1, max_open_per_service=20)
+        InvitationsConfig(expiry_days=1, max_per_service=20)
     """
 
     expiry_days: PositiveInt = 7
-    max_open_per_service: NonNegativeInt | None = 20
+    max_per_service: NonNegativeInt | None = 20
 
 
 class AccessControlConfig(FOCABaseConfig):
@@ -218,7 +218,7 @@ class AccessControlConfig(FOCABaseConfig):
     Example:
         >>> AccessControlConfig(service_types='controlled')
         AccessControlConfig(service_types='controlled', max_unused_service_types=10, \
-invitations=InvitationsConfig(expiry_days=7, max_open_per_service=20))
+invitations=InvitationsConfig(expiry_days=7, max_per_service=20))
     """
 
     service_types: Literal["open", "controlled", "moderated"] = "open"
@@ -256,7 +256,7 @@ class CustomConfig(FOCABaseConfig):
 nfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', length=6), url_schemes=['\
 https'], environments=['prod', 'test', 'dev', 'staging'])), access_control=Acc\
 essControlConfig(service_types='open', max_unused_service_types=10, invitations=I\
-nvitationsConfig(expiry_days=7, max_open_per_service=20)))
+nvitationsConfig(expiry_days=7, max_per_service=20)))
     """
 
     endpoints: EndpointsConfig

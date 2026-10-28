@@ -361,12 +361,12 @@ custom:
         max_unused_service_types: 10
         # Invitations to services by link (`POST
         # /services/{serviceId}/invitations`): days after which they expire
-        # (and are deleted, also once accepted), and how many open ones a
-        # service may have (`409` above; `null` for no limit; see
-        # "Invitations" in `docs/access-control.md`)
+        # (and are deleted, also once accepted), and how many a service
+        # may have until they expire, open or accepted (`409` above; `null`
+        # for no limit; see "Invitations" in `docs/access-control.md`)
         invitations:
             expiry_days: 7
-            max_open_per_service: 20
+            max_per_service: 20
     endpoints:
         services:
             id:

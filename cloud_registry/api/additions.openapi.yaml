@@ -625,9 +625,12 @@ paths:
         `https://portal.example.org/invitations#<token>`), which browsers
         don't send to servers. Invitations are single-use and expire after
         the days that the deployment sets (`expires_at`; by default, 7),
-        also once accepted. A service has at most as many open invitations
-        as the deployment allows (by default, 20; `409` above, `code`:
-        `invitations-limit`). Only for owners of the service and admins.
+        also once accepted. A service has at most as many invitations that
+        haven't expired, open or accepted, as the deployment allows (by
+        default, 20; `409` above, `code`: `invitations-limit`). Invitations
+        only grant their role while their creator is an owner of the
+        service (or created them as an admin). Only for owners of the
+        service and admins.
       operationId: postServiceInvitation
       x-openapi-router-controller: cloud_registry.ga4gh.registry.invitations
       tags:
@@ -930,9 +933,14 @@ paths:
         body, not in the URL, so that it doesn't end up in access logs.
         Each invitation can be accepted once (`409`, `code`:
         `invitation-accepted`); unknown, revoked and expired ones are not
-        found (`404`), as are invitations to deleted services. Stores the
-        user's display name for the service (as `GET /me`). For any
-        authenticated user.
+        found (`404`), as are invitations to deleted services and those
+        whose creator is no longer an owner of the service (which are
+        deleted). Users whose roles the permissions API couldn't revoke
+        (identifiers that `userId` doesn't allow) can't accept invitations
+        (`400`). Stores the user's display name for the service (as `GET
+        /me`), and shows it and the email address, if the identity provider
+        releases them, to owners in the invitation until it expires or the
+        user's roles on the service are revoked. For any authenticated user.
       operationId: acceptInvitation
       x-openapi-router-controller: cloud_registry.ga4gh.registry.invitations
       tags:
@@ -1155,8 +1163,8 @@ components:
                   (`PUT` and `DELETE` of
                   `/services/{serviceId}/permissions/...`, `POST
                   /invitations/accept`).
-                - `invitations-limit`: the service has as many open
-                  invitations as allowed (`POST
+                - `invitations-limit`: the service has as many
+                  invitations that haven't expired as allowed (`POST
                   /services/{serviceId}/invitations`).
                 - `invitation-accepted`: the invitation was accepted already
                   (`POST /invitations/accept`, `DELETE

@@ -302,21 +302,34 @@ curl -X POST "http://localhost:8080/ga4gh/registry/v1/invitations/accept" \
   not found (`404`). If the role can't be granted, e.g., because the user is
   the last owner of the service and the invitation is for `maintainer` (`409`,
   `last-owner`), the invitation stays open.
+- **Creators:** invitations only grant their role while their creator is an
+  owner of the service, as a user or through the group that made them owner
+  when they created it; otherwise they are deleted instead of accepted
+  (`404`), so that removed owners can't regain the role with invitations they
+  created before. Invitations of admins don't depend on their role, as the
+  registry can't check admin groups without the admin's token: when removing
+  an admin, revoke the open invitations they created.
+- **Identifiers:** users whose roles the permissions API couldn't revoke
+  (identifiers that are `groups` or start with `groups/` or a slash, or with
+  the segments `.` or `..`; see [Roles on services](#roles-on-services))
+  can't accept invitations (`400 Bad Request`).
 - **Listing and revoking:** `GET /services/<id>/invitations` lists the open
   and accepted invitations that haven't expired, with who accepted them
   (`accepted`: user identifier, and the name and email address if the
   identity provider releases them, e.g., with `name` and `email` in
-  `security.auth.userinfo_claims`), and
+  `security.auth.userinfo_claims`; removed when the user's roles on the
+  service are revoked), and
   `DELETE /services/<id>/invitations/<invitation-id>` revokes an open one.
   Accepted invitations can't be revoked (`409`, `invitation-accepted`):
   revoke the role instead. Maintainers and other users can't create, list or
   revoke invitations (`403 Forbidden`).
 - **Limit:** a service has at most
-  `custom.access_control.invitations.max_open_per_service` open invitations
-  (default: 20; `null` for no limit), so that owners can't grow the
-  collection without bound; further ones are refused (`409`,
-  `invitations-limit`) until some are accepted, revoked or expire. Concurrent
-  requests can exceed the limit by their number.
+  `custom.access_control.invitations.max_per_service` invitations that
+  haven't expired, open or accepted (default: 20; `null` for no limit), so
+  that owners can't grow the collection without bound (e.g., by accepting
+  their own invitations); further ones are refused (`409`,
+  `invitations-limit`) until open ones are revoked or invitations expire.
+  Concurrent requests can exceed the limit by their number.
 - **Storage:** only the SHA-256 hash of the token is stored, so that those
   who read the database can't accept invitations. Invitations are deleted
   with their service, and move with it when an admin renames it.
@@ -333,7 +346,7 @@ custom:
     access_control:
         invitations:
             expiry_days: 2
-            max_open_per_service: 5
+            max_per_service: 5
 ```
 
 ## Admins

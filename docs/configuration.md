@@ -277,6 +277,22 @@ custom:
         max_unused_service_types: 5
 ```
 
+## Invitations
+
+`custom.access_control.invitations` sets how long [invitations to
+services](access-control.md#invitations) are valid (`expiry_days`, default:
+7) and how many that haven't expired a service may have (`max_per_service`,
+default: 20; `null` for no limit). For example, in a config overlay (with the
+Helm chart, in `config`):
+
+```yaml
+custom:
+    access_control:
+        invitations:
+            expiry_days: 2
+            max_per_service: 5
+```
+
 ## Request size limit
 
 Request bodies are limited to `server.max_content_length` bytes (default:

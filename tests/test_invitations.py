@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 import hashlib
 import os
 from typing import Any
+from urllib.parse import quote
 
 from connexion import App
 from flask.testing import FlaskClient
@@ -23,7 +24,11 @@ from cloud_registry.ga4gh.registry.invitations import (
     TOKEN_BYTES,
     hash_token,
 )
-from cloud_registry.ga4gh.registry.permissions import INVITATIONS, USER_NAMES
+from cloud_registry.ga4gh.registry.permissions import (
+    INVITATIONS,
+    USER_NAMES,
+    is_manageable_user_id,
+)
 from cloud_registry.service_models.custom_config import CustomConfig
 from cloud_registry.utils import get_collection, now
 from tests.conftest import ADMIN, NAMES, TEAM_GROUP
@@ -40,6 +45,7 @@ from tests.test_access_control import (
     permission_list,
     permissions,
     register,
+    revoke,
     update,
 )
 from tests.test_rename import NEW_ID, PATH, make_lock, move_service, rename, resume
@@ -351,6 +357,8 @@ def test_ttl_index(app: App, client: FlaskClient) -> None:
     ]
     unique = [index["key"] for index in indexes.values() if index.get("unique")]
     assert unique == [[("token_hash", 1)]]
+    keys = [index["key"] for index in indexes.values()]
+    assert [("service_id", 1), ("created_at", 1)] in keys
 
 
 def test_revoke(app: App, client: FlaskClient) -> None:
@@ -506,28 +514,34 @@ def test_release_keeps_other_acceptance(
 
 
 def test_limit(app: App, client: FlaskClient) -> None:
-    """Services have at most the configured number of open invitations.
+    """Services have at most the configured number of invitations.
 
-    Accepted, revoked and expired invitations don't count; `None` lifts the
-    limit.
+    Open and accepted invitations count until they expire, so that owners
+    can't grow the collection by accepting their own invitations; revoked
+    and expired ones don't count; `None` lifts the limit.
     """
-    set_invitations_config(app, max_open_per_service=2)
+    set_invitations_config(app, max_per_service=2)
     service_id = register(client)
     other_id = register(client)
-    first = token_of(client, service_id)
+    first = token_of(client, service_id, role="owner")
     token_of(client, service_id)
     response = invite(client, service_id)
     assert response.status_code == 409
     assert response.get_json()["code"] == "invitations-limit"
     assert invite(client, other_id).status_code == 201
-    assert accept(client, first).status_code == 200
+    assert accept(client, first, user=ALICE).status_code == 200
+    assert invite(client, service_id).status_code == 409
+    open_id = next(
+        i["id"] for i in invitations(client, service_id) if "accepted" not in i
+    )
+    assert revoke_invitation(client, service_id, open_id).status_code == 200
     assert invite(client, service_id).status_code == 201
     assert invite(client, service_id).status_code == 409
     expire(app)
     assert invite(client, service_id).status_code == 201
-    set_invitations_config(app, max_open_per_service=0)
+    set_invitations_config(app, max_per_service=0)
     assert invite(client, service_id).status_code == 409
-    set_invitations_config(app, max_open_per_service=None)
+    set_invitations_config(app, max_per_service=None)
     for _ in range(3):
         assert invite(client, service_id).status_code == 201
 
@@ -576,7 +590,7 @@ def test_limit_logged(
 ) -> None:
     """Invitations refused by the limit are logged."""
     caplog.set_level("INFO")
-    set_invitations_config(app, max_open_per_service=0)
+    set_invitations_config(app, max_per_service=0)
     service_id = register(client)
     assert invite(client, service_id).status_code == 409
     assert f"Invitation to service '{service_id}' not created" in caplog.text
@@ -594,8 +608,12 @@ def test_moved_with_rename(app: App, client: FlaskClient) -> None:
 
 
 def test_stale_removed_on_rename(app: App, client: FlaskClient) -> None:
-    """Invitations left on the new identifier of a rename are removed."""
+    """Invitations left on the new identifier of a rename are removed.
+
+    Those of the renamed service move there.
+    """
     service_id = register(client)
+    created = invite(client, service_id).get_json()
     with app.app.app_context():
         get_collection(INVITATIONS).insert_one(
             {
@@ -609,7 +627,9 @@ def test_stale_removed_on_rename(app: App, client: FlaskClient) -> None:
             }
         )
     assert rename(client, service_id).status_code == 200
-    assert stored(app) == []
+    assert [(i["_id"], i["service_id"]) for i in stored(app)] == [
+        (created["id"], NEW_ID)
+    ]
 
 
 def test_resume_moves_invitations(app: App, client: FlaskClient) -> None:
@@ -632,3 +652,128 @@ def test_resume_removes_invitations(app: App, client: FlaskClient) -> None:
         get_collection("services").delete_one({"id": NEW_ID})
     resume(app)
     assert stored(app) == []
+
+
+def test_revoked_owner_cannot_regain(app: App, client: FlaskClient) -> None:
+    """Invitations of owners who lost the role are deleted, not accepted.
+
+    Also those of owners downgraded to maintainer; others' stay valid.
+    """
+    service_id = register(client)
+    assert grant(client, service_id, CAROL, "owner") == 200
+    carols = invite(client, service_id, role="owner", user=CAROL).get_json()
+    alices = token_of(client, service_id)
+    assert revoke(client, service_id, CAROL) == 200
+    assert accept(client, carols["token"], user=CAROL).status_code == 404
+    assert [i["role"] for i in stored(app)] == ["maintainer"]
+    assert accept(client, alices).status_code == 200
+    assert permissions(client, service_id) == [(ALICE, "owner"), (BOB, "maintainer")]
+    assert grant(client, service_id, CAROL, "owner") == 200
+    token = invite(client, service_id, role="owner", user=CAROL).get_json()["token"]
+    assert grant(client, service_id, CAROL, "maintainer") == 200
+    assert accept(client, token, user=ERIN).status_code == 404
+
+
+def test_revoked_owner_logged(
+    client: FlaskClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Invitations deleted as their creator lost the role are logged."""
+    caplog.set_level("INFO")
+    service_id = register(client)
+    assert grant(client, service_id, CAROL, "owner") == 200
+    created = invite(client, service_id, user=CAROL).get_json()
+    assert revoke(client, service_id, CAROL) == 200
+    assert accept(client, created["token"]).status_code == 404
+    assert (
+        f"Invitation '{created['id']}' to service '{service_id}' deleted: its "
+        f"creator '{CAROL}' is no longer an owner." in caplog.text
+    )
+
+
+def test_group_owner_invitations(app: App, client: FlaskClient) -> None:
+    """Invitations of owners through a group hold while the group is owner."""
+    service_id = register(client)
+    assert grant_group(client, service_id, TEAM_GROUP, "owner") == 200
+    first = invite(client, service_id, user=ERIN).get_json()
+    second = invite(client, service_id, user=ERIN).get_json()
+    (document, _) = stored(app)
+    assert document["created_as"] == {"group": TEAM_GROUP}
+    assert "created_as" not in first
+    assert accept(client, first["token"]).status_code == 200
+    response = client.delete(
+        f"{BASE}/services/{service_id}/permissions/groups/{quote(TEAM_GROUP, safe='')}",
+        headers=headers(ALICE),
+    )
+    assert response.status_code == 200
+    assert accept(client, second["token"], user=CAROL).status_code == 404
+
+
+def test_admin_invitations(app: App, client: FlaskClient) -> None:
+    """Invitations of admins don't depend on a role on the service."""
+    service_id = register(client)
+    created = invite(client, service_id, role="owner", user=ADMIN).get_json()
+    assert stored(app)[0]["created_as"] == {"admin": True}
+    assert accept(client, created["token"]).status_code == 200
+    assert permissions(client, service_id) == [(ALICE, "owner"), (BOB, "owner")]
+    assert stored(app)[0]["created_as"] == {"admin": True}
+
+
+def test_owner_creator(app: App, client: FlaskClient) -> None:
+    """Invitations of owners record the user, also if a group is owner too."""
+    service_id = register(client)
+    assert grant_group(client, service_id, TEAM_GROUP, "owner") == 200
+    invite(client, service_id)
+    assert stored(app)[0]["created_as"] == {"user": ALICE}
+
+
+def test_creator_not_owner(
+    app: App, client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Creating fails if the creator lost the role after authorization."""
+    service_id = register(client)
+    monkeypatch.setattr(invitations_module, "list_roles", lambda _: [])
+    assert invite(client, service_id).status_code == 403
+    assert stored(app) == []
+
+
+def test_without_creator_basis(app: App, client: FlaskClient) -> None:
+    """Invitations stored without how they were created grant no role."""
+    service_id = register(client)
+    token = token_of(client, service_id)
+    with app.app.app_context():
+        get_collection(INVITATIONS).update_many({}, {"$unset": {"created_as": ""}})
+    assert accept(client, token).status_code == 404
+    assert stored(app) == []
+
+
+@pytest.mark.parametrize(
+    "user", ["groups", "groups/x", "/x", "\\x", "a/../b", "a\\..", ".", "groups\\x"]
+)
+def test_unmanageable_user(app: App, client: FlaskClient, user: str) -> None:
+    """Users whose roles the permissions API couldn't revoke can't accept."""
+    service_id = register(client)
+    token = token_of(client, service_id)
+    assert not is_manageable_user_id(user)
+    assert accept(client, token, user=user).status_code == 400
+    assert "accepted" not in stored(app)[0]
+
+
+@pytest.mark.parametrize(
+    "user", [BOB, "https://login.example.org/|x", "a/b", "a.b/..c"]
+)
+def test_manageable_user(user: str) -> None:
+    """Other identifiers, also with slashes and dots, are fine."""
+    assert is_manageable_user_id(user)
+
+
+def test_names_removed_with_role(client: FlaskClient) -> None:
+    """Names in accepted invitations are removed with the user's roles."""
+    service_id = register(client)
+    other_id = register(client)
+    for target in (service_id, other_id):
+        assert accept(client, token_of(client, target)).status_code == 200
+    assert invitations(client, service_id)[0]["accepted"]["name"] == NAMES[BOB]
+    assert revoke(client, service_id, BOB) == 200
+    (accepted,) = invitations(client, service_id)
+    assert set(accepted["accepted"]) == {"user_id", "accepted_at"}
+    assert invitations(client, other_id)[0]["accepted"]["name"] == NAMES[BOB]

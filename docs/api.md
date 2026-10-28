@@ -367,7 +367,7 @@ unlike `detail`, codes are stable, so clients branch on them (e.g., `{"title":
 | `service-type-in-use` | services have the service type, so it can't be removed |
 | `verification-mismatch` | the service has another URL or API type than the one checked (see [Verified services](#verified-services)) |
 | `last-owner` | the subject is the last owner of the service |
-| `invitations-limit` | the service has as many open invitations as allowed (see [Invitations](access-control.md#invitations)) |
+| `invitations-limit` | the service has as many invitations that haven't expired as allowed (see [Invitations](access-control.md#invitations)) |
 | `invitation-accepted` | the invitation was accepted already (see [Invitations](access-control.md#invitations)) |
 | `service-id-taken` | a service with the new identifier is registered (see [Renaming services](#renaming-services)) |
 | `service-busy` | the service, or the new identifier, is being renamed or changed (see [Renaming services](#renaming-services)) |
