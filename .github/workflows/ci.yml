@@ -439,11 +439,12 @@ jobs:
           provenance: mode=max
           labels: ${{ steps.meta.outputs.labels }}
           build-args: SETUPTOOLS_SCM_PRETEND_VERSION=${{ steps.version.outputs.version }}
-  # Scans the image with Trivy (`.github/actions/scan-image`): for pull
-  # requests a local build, for pushes exactly the digest pushed by `push`
-  # (`<image>@<digest>`; public, so pulling it needs no login), in a job
-  # without credentials or signing permissions, as the Trivy action resolves
-  # the Trivy binary from a mutable tag. The findings that have a fix are
+  # Scans the image with Trivy (shared action
+  # `elixir-cloud-aai/.github/actions/scan-image`): for pull requests a local
+  # build, for pushes exactly the digest pushed by `push` (`<image>@<digest>`;
+  # public, so pulling it needs no login), in a job without credentials or
+  # signing permissions, as the Trivy action resolves the Trivy binary from a
+  # mutable tag. The findings that have a fix are
   # uploaded to code scanning (not for pull requests from forks, whose token
   # cannot write them), and the job fails on critical and high
   # vulnerabilities that have a fix. Accepted findings are listed, with a
@@ -495,7 +496,7 @@ jobs:
           fi
           echo "image=${IMAGE_NAME}@${DIGEST}" >> "$GITHUB_OUTPUT"
       - name: Scan image
-        uses: ./.github/actions/scan-image
+        uses: elixir-cloud-aai/.github/actions/scan-image@10e83030dfeb3eb740ef7eccce50820d020264e6 # scan-image
         with:
           image: ${{ steps.image.outputs.image }}
           category: image
@@ -598,21 +599,11 @@ jobs:
     timeout-minutes: 5
     if: always()
     needs: [lint, test, chart, docs, readiness, smoke, push, scan, publish]
+    permissions: {}
     steps:
       - name: Check results of all jobs
-        env:
-          NEEDS: ${{ toJSON(needs) }}
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          failed="$(jq -r --arg event "${EVENT_NAME}" '
-            to_entries[]
-            | select(
-                .value.result == "success"
-                or (.value.result == "skipped" and $event == "pull_request"
-                    and (.key == "push" or .key == "publish"))
-                | not)
-            | "\(.key): \(.value.result)"' <<< "${NEEDS}")"
-          if [[ -n "${failed}" ]]; then
-            echo "::error::Jobs did not pass: ${failed//$'\n'/, }"
-            exit 1
-          fi
+        uses: elixir-cloud-aai/.github/actions/gate@10e83030dfeb3eb740ef7eccce50820d020264e6 # gate
+        with:
+          needs: ${{ toJSON(needs) }}
+          # `push` and `publish` are skipped on purpose on pull requests only
+          allow-skipped: ${{ github.event_name == 'pull_request' && 'push publish' || '' }}

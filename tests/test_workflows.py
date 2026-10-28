@@ -62,6 +62,25 @@ def test_gate_needs_all_jobs() -> None:
     assert sorted(gate["needs"]) == sorted(set(jobs) - {GATE})
 
 
+def test_shared_actions_pinned() -> None:
+    """The shared actions of `elixir-cloud-aai/.github` are pinned to commits.
+
+    The gate of `ci.yml` uses the shared `gate` action with the results of
+    all needed jobs, and no workflow uses a local copy of an action.
+    """
+    pinned = re.compile(r"elixir-cloud-aai/\.github/actions/[a-z-]+@[0-9a-f]{40}")
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        for job in _load(path)["jobs"].values():
+            for step in job.get("steps", []):
+                uses = step.get("uses", "")
+                assert not uses.startswith("./"), (path.name, uses)
+                if uses.startswith("elixir-cloud-aai/.github/"):
+                    assert pinned.fullmatch(uses), (path.name, uses)
+    (step,) = _load(WORKFLOWS / "ci.yml")["jobs"][GATE]["steps"]
+    assert step["uses"].startswith("elixir-cloud-aai/.github/actions/gate@")
+    assert step["with"]["needs"] == "${{ toJSON(needs) }}"
+
+
 def test_verification_signer_workflow() -> None:
     """The verification commands name the workflow that signed the release.
 
