@@ -148,6 +148,37 @@ JKLMNOPQRSTUVWXYZ0123456789', length=6), url_schemes=['https'], environments=[\
     services: ServicesConfig
 
 
+class InvitationsConfig(FOCABaseConfig):
+    """Model for invitations to services (`POST /services/{id}/invitations`).
+
+    Args:
+        expiry_days: Days after which invitations expire, whether accepted
+            or not; expired ones are deleted.
+        max_per_service: How many invitations that haven't expired, open
+            or accepted, a service may have (`409` above); unlimited if
+            `None`.
+
+    Attributes:
+        expiry_days: Days after which invitations expire, whether accepted
+            or not; expired ones are deleted.
+        max_per_service: How many invitations that haven't expired, open
+            or accepted, a service may have (`409` above); unlimited if
+            `None`.
+
+    Raises:
+        pydantic.ValidationError: The class was instantianted with an illegal
+            data type, `expiry_days` is not positive, or
+            `max_per_service` is negative.
+
+    Example:
+        >>> InvitationsConfig(expiry_days=1)
+        InvitationsConfig(expiry_days=1, max_per_service=20)
+    """
+
+    expiry_days: PositiveInt = 7
+    max_per_service: NonNegativeInt | None = 20
+
+
 class AccessControlConfig(FOCABaseConfig):
     """Model for access control settings of the app.
 
@@ -166,6 +197,7 @@ class AccessControlConfig(FOCABaseConfig):
         max_services_per_user: How many of the registered services a user
             other than an admin may have registered (`409` above);
             unlimited if `None`, admins only if `0`.
+        invitations: Invitations to services.
 
     Attributes:
         service_types: Who may add service types: `open` (the default), any
@@ -182,6 +214,7 @@ class AccessControlConfig(FOCABaseConfig):
         max_services_per_user: How many of the registered services a user
             other than an admin may have registered (`409` above);
             unlimited if `None`, admins only if `0`.
+        invitations: Invitations to services.
 
     Raises:
         pydantic.ValidationError: The class was instantianted with an illegal
@@ -192,12 +225,14 @@ class AccessControlConfig(FOCABaseConfig):
     Example:
         >>> AccessControlConfig(service_types='controlled')
         AccessControlConfig(service_types='controlled', max_unused_service_types=10, \
-max_services_per_user=50)
+max_services_per_user=50, invitations=InvitationsConfig(expiry_days=7, \
+max_per_service=20))
     """
 
     service_types: Literal["open", "controlled", "moderated"] = "open"
     max_unused_service_types: NonNegativeInt | None = 10
     max_services_per_user: NonNegativeInt | None = 50
+    invitations: InvitationsConfig = Field(default_factory=InvitationsConfig)
 
 
 class CustomConfig(FOCABaseConfig):
@@ -230,7 +265,8 @@ class CustomConfig(FOCABaseConfig):
 nfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', length=6), url_schemes=['\
 https'], environments=['prod', 'test', 'dev', 'staging'])), access_control=Acc\
 essControlConfig(service_types='open', max_unused_service_types=10, max_serv\
-ices_per_user=50))
+ices_per_user=50, invitations=InvitationsConfig(expiry_days=7, max_per_servi\
+ce=20)))
     """
 
     endpoints: EndpointsConfig

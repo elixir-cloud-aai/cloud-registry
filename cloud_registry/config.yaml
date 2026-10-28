@@ -129,6 +129,12 @@ security:
             owners-change-permissions: [p, owner, "/ga4gh/registry/v1/services/:id/permissions/*", "(PUT)|(DELETE)"]
             owners-change-group-permissions: [p, owner, "/ga4gh/registry/v1/services/:id/permissions/groups/*", "(PUT)|(DELETE)"]
             maintainers-update-services: [p, maintainer, "/ga4gh/registry/v1/services/:id", PUT]
+            # owners may invite users to their services by link, list the
+            # invitations and revoke open ones; any authenticated user may
+            # accept an invitation, which grants them its role
+            owners-manage-invitations: [p, owner, "/ga4gh/registry/v1/services/:id/invitations", "(GET)|(POST)"]
+            owners-revoke-invitations: [p, owner, "/ga4gh/registry/v1/services/:id/invitations/:invitation", DELETE]
+            accept-invitations: [p, "*", /ga4gh/registry/v1/invitations/accept, POST]
             # any authenticated user may add service types, unless only
             # admins may (`custom.access_control.service_types: controlled`,
             # checked by the app); keep this rule and set that option instead,
@@ -226,6 +232,23 @@ db:
                               user_id: 1
                           options:
                             'unique': True
+                # Invitations to services, by the hash of their token
+                # (unique), and by service, for listing them; expired ones
+                # are removed by MongoDB (TTL index, checked about every
+                # minute; reads skip them until then)
+                invitations:
+                    indexes:
+                        - keys:
+                              token_hash: 1
+                          options:
+                            'unique': True
+                        - keys:
+                              service_id: 1
+                              created_at: 1
+                        - keys:
+                              expires_at: 1
+                          options:
+                            'expireAfterSeconds': 0
                 # Locks of services, so that renames don't interleave with
                 # other changes: of renames by identifier (`_id`), of other
                 # changes by service (`service`); stale ones are removed or
@@ -349,6 +372,14 @@ custom:
         # let only admins register services (see "Services per user" in
         # `docs/configuration.md`)
         max_services_per_user: 50
+        # Invitations to services by link (`POST
+        # /services/{serviceId}/invitations`): days after which they expire
+        # (and are deleted, also once accepted), and how many a service
+        # may have until they expire, open or accepted (`409` above; `null`
+        # for no limit; see "Invitations" in `docs/access-control.md`)
+        invitations:
+            expiry_days: 7
+            max_per_service: 20
     endpoints:
         services:
             id:

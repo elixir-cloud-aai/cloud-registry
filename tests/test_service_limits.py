@@ -46,6 +46,7 @@ from tests.test_access_control import (
     headers,
     register,
 )
+from tests.test_invitations import accept, token_of
 
 # Numbers for the URLs of services registered here, which must be unique
 URLS = count()
@@ -267,6 +268,22 @@ def test_kept_whatever_roles(
     assert response.status_code == 200
     assert _counts(mongo_client) == {ALICE: 0}
     register(client)
+
+
+def test_invitations_not_limited(
+    app: App, client: FlaskClient, mongo_client: MongoClient[dict[str, Any]]
+) -> None:
+    """Users at the limit can still accept invitations as owner.
+
+    The service keeps counting for the user who registered it.
+    """
+    _set_limit(app, 1)
+    register(client, BOB)
+    service_id = register(client)
+    token = token_of(client, service_id, role="owner")
+    assert accept(client, token, user=BOB).status_code == 200
+    assert _creator(mongo_client, service_id) == ALICE
+    assert _counts(mongo_client) == {ALICE: 1, BOB: 1}
 
 
 def test_failed_registrations_released(

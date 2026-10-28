@@ -8,8 +8,23 @@ how existing setups and data are affected.
 
 ## From 0.6.0
 
-Data is kept. Users other than admins may now register at most 50 services
-each (`custom.access_control.max_services_per_user`; see [Services per
+Data is kept. Owners can invite users to their services by link (see
+[Invitations](access-control.md#invitations)):
+
+- The app stores invitations in the new collection `invitations`, whose
+  indexes it creates on startup (one of them a TTL index, with which MongoDB
+  deletes expired invitations).
+- The base config has three new rules (`owners-manage-invitations`,
+  `owners-revoke-invitations`, `accept-invitations` in
+  `security.access_control.policies`). Overlays that give the policies as a
+  list, rather than changing single rules by name, must add them, or the new
+  endpoints return `403 Forbidden`.
+- The new options `custom.access_control.invitations` (`expiry_days`,
+  `max_per_service`) have defaults (see
+  [Invitations](configuration.md#invitations)).
+
+Users other than admins may now register at most 50 services each
+(`custom.access_control.max_services_per_user`; see [Services per
 user](configuration.md#services-per-user)): check how many services your
 users registered, and raise the limit, or set `null` to turn it off, in the
 same rollout if needed. Users who registered more keep their services, but

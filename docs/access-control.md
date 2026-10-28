@@ -205,9 +205,10 @@ in the same overlay, too:
     -d '{"role": "maintainer"}'
   ```
 
-  `GET /services/<id>/permissions` lists the roles granted on a service
-  (with the users' names, once they have used the registry since being
-  granted the role; names are deleted with the role), and
+  Users who don't know their identifier can be [invited by
+  link](#invitations) instead. `GET /services/<id>/permissions` lists the
+  roles granted on a service (with the users' names, once they have used the
+  registry since being granted the role; names are deleted with the role), and
   `DELETE /services/<id>/permissions/<user-id>` revokes them. The last owner
   of a service can't be removed or downgraded (`409 Conflict`); delete the
   service instead. The role `maintainer` is only granted on services with an
@@ -287,6 +288,89 @@ issuers' discovery documents and keys are cached), or set
 every request with a token (and so also rejects revoked tokens), at the cost
 of a request to the identity provider each time (see FOCA's
 [authentication](https://foca.readthedocs.io/en/latest/authentication/)).
+
+## Invitations
+
+Owners (and admins) can also invite users by link, without knowing their user
+identifier: they create an invitation to a service for a role, send the link
+through any channel, and the invited user logs in and accepts it, which grants
+the role to their own identifier (replacing another role of theirs on the
+service, as `PUT /services/<id>/permissions/<user-id>` would). No email
+addresses are involved.
+
+```bash
+# owner: create an invitation; the response has its `token` (only here)
+curl -X POST "http://localhost:8080/ga4gh/registry/v1/services/<id>/invitations" \
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"role": "maintainer"}'
+# invited user: accept it
+curl -X POST "http://localhost:8080/ga4gh/registry/v1/invitations/accept" \
+  -H "Authorization: Bearer <token of the invited user>" \
+  -H "Content-Type: application/json" -d '{"token": "<invitation token>"}'
+```
+
+- **Links:** clients (e.g., a web portal) build the link, and should carry
+  the token in the URL fragment (e.g.,
+  `https://portal.example.org/invitations#<token>`), which browsers don't send
+  to servers; the token goes in the body of `POST /invitations/accept`, not in
+  a URL, so that it doesn't end up in access logs.
+- **Single use and expiry:** each invitation can be accepted once (`409
+  Conflict`, `code` `invitation-accepted`, also for the same user), and
+  expires after `custom.access_control.invitations.expiry_days` days (default:
+  7), also once accepted; MongoDB then deletes it (within about a minute).
+  Unknown, revoked and expired invitations, and those of deleted services, are
+  not found (`404`). If the role can't be granted, e.g., because the user is
+  the last owner of the service and the invitation is for `maintainer` (`409`,
+  `last-owner`), the invitation stays open.
+- **Creators:** invitations only grant their role while their creator is an
+  owner of the service: as a user, or through the group that made them owner
+  when they created it, as long as that group is owner (and, if they accept
+  the invitation themselves, they are still a member of it). Otherwise, the
+  invitations are deleted instead of accepted (`404`), so that removed owners
+  can't regain the role with invitations they created before. Invitations of
+  admins don't depend on their role, as the registry can't check admin groups
+  without the admin's token: when removing an admin, delete the open
+  invitations they created (no endpoint lists them across services: query
+  the collection `invitations` by `created_by`).
+- **Identifiers:** users whose roles the permissions API couldn't revoke
+  (identifiers that are `groups` or start with `groups/` or a slash, or with
+  the segments `.` or `..`; see [Roles on services](#roles-on-services))
+  can't accept invitations (`400 Bad Request`).
+- **Listing and revoking:** `GET /services/<id>/invitations` lists the open
+  and accepted invitations that haven't expired, with who accepted them
+  (`accepted`: user identifier, and the name and email address if the
+  identity provider releases them, e.g., with `name` and `email` in
+  `security.auth.userinfo_claims`; removed when the user's roles on the
+  service are revoked), and
+  `DELETE /services/<id>/invitations/<invitation-id>` revokes an open one.
+  Accepted invitations can't be revoked (`409`, `invitation-accepted`):
+  revoke the role instead. Maintainers and other users can't create, list or
+  revoke invitations (`403 Forbidden`).
+- **Limit:** a service has at most
+  `custom.access_control.invitations.max_per_service` invitations that
+  haven't expired, open or accepted (default: 20; `null` for no limit), so
+  that owners can't grow the collection without bound (e.g., by accepting
+  their own invitations); further ones are refused (`409`,
+  `invitations-limit`) until open ones are revoked or invitations expire.
+  Concurrent requests can exceed the limit by their number.
+- **Storage:** only the SHA-256 hash of the token is stored, so that those
+  who read the database can't accept invitations. Invitations are deleted
+  with their service, and move with it when an admin renames it.
+
+!!! warning
+    A forwarded link grants the role to whoever accepts it first. Expiry,
+    single use, and owners seeing who accepted (and being able to revoke the
+    role) limit this, as with invitations in other services.
+
+The options, e.g., in a config overlay (with the Helm chart, in `config`):
+
+```yaml
+custom:
+    access_control:
+        invitations:
+            expiry_days: 2
+            max_per_service: 5
+```
 
 ## Admins
 
