@@ -1158,8 +1158,11 @@ components:
         user_id:
           type: string
           description: |
-            Identifier of the user, i.e., the `sub` claim of their tokens; to
-            be granted roles, users give it to owners of services.
+            Identifier of the user: the `sub` claim of their tokens, or, if
+            the deployment trusts several token issuers, the claim
+            namespaced by issuer (`<namespace>|<sub>`). To be granted roles,
+            users give this exact value to owners of services; a bare `sub`
+            claim doesn't match if the identifier is namespaced.
         admin:
           type: boolean
           description: |

@@ -32,9 +32,10 @@ its settings and checks; change the config before upgrading:
    (header `X-Request-Roles: admin`; see [Admin
    mode](access-control.md#admin-mode)). Tell the maintainers of clients
    and scripts that need admin rights to send the header, or remove the
-   opt-in (`security.access_control.opt_in_roles: []`). In `GET /me`,
-   `admin` is now true only in admin mode; clients decide whether to offer
-   the switch by the new field `admin_available`. FOCA refuses
+   opt-in (`security.access_control.opt_in_roles: []`); for web UIs, see
+   [Admin mode](access-control.md#admin-mode). In `GET /me`, `admin` is
+   now true only in admin mode; clients decide whether to offer the switch
+   by the new field `admin_available`. FOCA refuses
    configured rules that grant the role `admin`
    (`security.access_control.policies`) on startup. Stored ones (e.g.,
    granted via the permissions API) still apply, without admin mode, and
@@ -46,6 +47,20 @@ its settings and checks; change the config before upgrading:
    hold from the start, stop them before the new pods serve requests
    (e.g., scale the app to 0 replicas, then upgrade), or revoke stored
    admin grants once the rollout has finished.
+5. **Owners' roles of groups:** the policy rule `owners-change-permissions`
+   now covers `/ga4gh/registry/v1/services/:id/permissions/*` (before:
+   `.../permissions/:user`), as user identifiers may contain slashes (with
+   [several token issuers](configuration.md#several-token-issuers)), so it
+   also covers the roles of groups (`.../permissions/groups/<group>`).
+   Overlays that restrict owners' roles of groups (e.g.,
+   `owners-change-group-permissions: null`) must now also change
+   `owners-change-permissions`, or owners can grant and revoke roles of
+   groups again: remove it, or, to keep owners' grants to users, redefine
+   it with `.../permissions/:user` (as in 0.5.0), which doesn't cover user
+   identifiers with slashes (see [Requiring login for
+   reads](access-control.md#requiring-login-for-reads)). The app warns on
+   startup if the rule of groups is changed or removed, but other rules
+   still let owners change roles of groups.
 
 Noticeable, but no action needed:
 
