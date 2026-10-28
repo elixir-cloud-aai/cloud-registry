@@ -1786,6 +1786,8 @@ NO_GROUPS_050 = {**NO_GROUPS, "owners-change-permissions": USERS_RULE_050}
 USERS_RULE_GET = ["p", "owner", f"{BASE}/services/:id/permissions/*", "GET"]
 MAINTAINERS_RULE = ["p", "maintainer", f"{BASE}/services/:id/permissions/*", "PUT"]
 ANYONE_RULE = ["p", "*", f"{BASE}/services/:id/permissions/*", "DELETE"]
+# Covers namespaced users (and groups), not bare ones
+NAMESPACED_RULE = ["p", "owner", f"{BASE}/services/:id/permissions/:ns/*", "PUT"]
 GROUPS_RULE_PUT = ["p", "owner", f"{BASE}/services/:id/permissions/groups/*", "PUT"]
 
 
@@ -1804,6 +1806,7 @@ GROUPS_RULE_PUT = ["p", "owner", f"{BASE}/services/:id/permissions/groups/*", "P
         ({**NO_GROUPS, "owners-change-permissions": USERS_RULE_GET}, False),
         ({**NO_GROUPS_050, "maintainers-change-permissions": MAINTAINERS_RULE}, False),
         ({**NO_GROUPS_050, "anyone-changes-permissions": ANYONE_RULE}, True),
+        ({**NO_GROUPS_050, "owners-change-namespaced": NAMESPACED_RULE}, True),
         (
             {
                 "owners-change-permissions": USERS_RULE_050,
@@ -1825,6 +1828,7 @@ GROUPS_RULE_PUT = ["p", "owner", f"{BASE}/services/:id/permissions/groups/*", "P
         "users-get-only",
         "maintainers",
         "any-user",
+        "namespaced-users",
         "groups-put-only",
     ],
 )

@@ -198,11 +198,12 @@ New identifiers that are registered (also the service's own) are rejected
 used in URLs (as for `PUT`, see [Registrations](#registrations); also
 slashes) or in roles (commas, line breaks), with `400 Bad Request`.
 
-The registry's permission endpoints (`/services/{serviceId}/permissions/...`)
-wait for renames, but FOCA's permissions API (for admins:
-`/admin/access-control/permissions`) doesn't: grant and revoke roles on
-services via the registry's endpoints, or not while the service is renamed
-(roles changed meanwhile may be lost, or left on the old identifier).
+Granting and revoking roles via the registry's permission endpoints
+(`/services/{serviceId}/permissions/...`) waits for renames, but via FOCA's
+permissions API (for admins: `/admin/access-control/permissions`) doesn't:
+change roles on services via the registry's endpoints, or not while the
+service is renamed (roles changed meanwhile may be lost, or left on the old
+identifier). Lists of roles read during a rename may be incomplete.
 
 Renames don't need MongoDB transactions (which need a replica set): while a
 service is renamed, both identifiers are locked (collection `service_locks`),

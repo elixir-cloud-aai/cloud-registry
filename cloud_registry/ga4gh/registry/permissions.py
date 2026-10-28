@@ -69,6 +69,9 @@ BASE_CONFIG = Path(__file__).parents[2] / "config.yaml"
 OWNER_GROUP_RULE = "owners-change-group-permissions"
 # Methods of changes of roles (cf. `warn_owner_rules()`)
 METHODS = ("PUT", "DELETE")
+# Example user identifiers, bare and namespaced by issuer (cf.
+# `warn_owner_rules()`)
+EXAMPLE_USERS = ("user", "namespace|user", "https://issuer.example.org/|user")
 
 
 def _bearer_token() -> str | None:
@@ -636,7 +639,8 @@ def warn_owner_rules() -> None:
     as in the packaged base config (`BASE_CONFIG`, which deployments change
     with overlays), warns of configured rules (named or a list) for owners or
     any user (`*`) that allow `PUT` or `DELETE` on the roles of both users
-    and groups (paths of the base rule with example values), i.e., that
+    (`EXAMPLE_USERS`) and groups (paths of the base rule with example
+    values), i.e., that
     cover groups as a side effect; rules for groups only (e.g., the changed
     rule itself) are the deployment's choice. Rules stored via FOCA's
     permissions API are not checked.
@@ -650,7 +654,7 @@ def warn_owner_rules() -> None:
     if base in policies:
         return
     path = base[2].replace(":id", "service").replace("*", "group")
-    user_path = path.replace("/groups/group", "/user")
+    user_paths = [path.replace("groups/group", user) for user in EXAMPLE_USERS]
     allowing = sorted(
         {
             str(rule)
@@ -658,7 +662,7 @@ def warn_owner_rules() -> None:
             if len(rule) >= 4
             and rule[:2] in (["p", "owner"], ["p", "*"])
             and key_match2(path, rule[2])
-            and key_match2(user_path, rule[2])
+            and any(key_match2(user_path, rule[2]) for user_path in user_paths)
             and any(re.fullmatch(f"(?:{rule[3]})", method) for method in METHODS)
         }
     )
