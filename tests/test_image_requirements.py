@@ -76,6 +76,30 @@ def test_release_other_version(installed: str) -> None:
         image_requirements.image_requirements(FOCA_RELEASE, installed)
 
 
+@pytest.mark.parametrize(
+    "requirement",
+    [
+        "foca==0.17.0 ; python_full_version >= '3.11' \\",
+        "FOCA[x]==0.17.0 \\",
+        "foca>=0.17.0 \\",
+    ],
+)
+def test_release_other_form(requirement: str) -> None:
+    """FOCA requirements other than a plain locked release are refused."""
+    with pytest.raises(ValueError, match="must be locked as"):
+        image_requirements.image_requirements(
+            f"{requirement}\n    --hash=sha256:dddd\n", "0.18.0"
+        )
+
+
+def test_other_package() -> None:
+    """Packages whose names start with `foca` aren't FOCA."""
+    requirements = "foca-plugins==0.1.0 \\\n    --hash=sha256:eeee\n"
+    assert image_requirements.image_requirements(requirements, "0.18.0") == (
+        requirements
+    )
+
+
 def test_empty() -> None:
     """No requirements give no output."""
     assert image_requirements.image_requirements("", "0.18.0") == ""

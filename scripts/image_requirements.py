@@ -33,10 +33,12 @@ FOCA_COMMIT = re.compile(
     r"\s*foca\s*@\s*git\+https://github\.com/elixir-cloud-aai/foca@(?P<sha>[0-9a-f]{40})\s*",
     re.IGNORECASE,
 )
-# A locked release of FOCA, as `uv export` writes it (hashes continued on the
+# Any requirement of FOCA (not of a package whose name starts with `foca`), and
+# a locked release of FOCA, as `uv export` writes it (hashes continued on the
 # next lines)
+FOCA = re.compile(r"\s*foca(?![A-Za-z0-9._-])", re.IGNORECASE)
 FOCA_LOCKED = re.compile(
-    r"\s*foca\s*==\s*(?P<version>[^\s;\\]+)\s*\\?\s*", re.IGNORECASE
+    r"\s*foca\s*==\s*(?P<version>[^\s;\\\[\]]+)\s*\\?\s*", re.IGNORECASE
 )
 # The abbreviated commit in the local part of a version set by setuptools-scm
 SCM_COMMIT = re.compile(r"\+g(?P<sha>[0-9a-f]{7,40})(\.|$)")
@@ -76,15 +78,24 @@ def image_requirements(requirements: str, installed: str) -> str:
 
     Raises:
         ValueError: A direct reference of FOCA is not to a full commit SHA of
-            FOCA's repository, or the base image has FOCA of another commit
-            or another release than the locked one.
+            FOCA's repository, another requirement of FOCA is not a plain
+            locked release (`foca==<version>`, e.g., with a marker), or the
+            base image has FOCA of another commit or another release than
+            the locked one (compared as written).
     """
     kept = []
     for entry in entries(requirements):
         requirement = entry[0]
+        if not FOCA.match(requirement):
+            kept.extend(entry)
+            continue
         if not FOCA_REFERENCE.match(requirement):
             locked = FOCA_LOCKED.fullmatch(requirement)
-            if locked and locked["version"] != installed:
+            if locked is None:
+                raise ValueError(
+                    f"FOCA must be locked as 'foca==<version>': '{requirement.strip()}'"
+                )
+            if locked["version"] != installed:
                 raise ValueError(
                     f"The base image has FOCA {installed}, but "
                     f"{locked['version']} is locked"
