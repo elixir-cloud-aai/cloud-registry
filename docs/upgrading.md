@@ -23,6 +23,28 @@ Data is kept. Owners can invite users to their services by link (see
   `max_per_service`) have defaults (see
   [Invitations](configuration.md#invitations)).
 
+Users other than admins may now register at most 50 services each
+(`custom.access_control.max_services_per_user`; see [Services per
+user](configuration.md#services-per-user)): check how many services your
+users registered, and raise the limit, or set `null` to turn it off, in the
+same rollout if needed. Users who registered more keep their services, but
+can't register others until they are below the limit. After the upgrade,
+list them, e.g., with `mongosh` (see [MongoDB](deployment.md#mongodb); with
+your limit instead of 50):
+
+```javascript
+db.getSiblingDB("serviceStore").service_counts.find({count: {$gte: 50}})
+```
+
+The app counts each service for the user who registered it, stored with the
+service from now on. On startup, it adds that user to the services stored
+before: the only user who is `owner` of the service (services with no or
+several such owners, e.g., owned by a group, count for nobody), and counts the
+services per user (new collection `service_counts`, and a new index of
+`services`). Restart the app once after the rollout (or upgrade with the app
+scaled to 0 replicas), so that services registered, updated or deleted by
+pods of 0.6.0 during the rollout are counted correctly.
+
 ## From 0.5.0
 
 Data is kept. The app now builds on FOCA 0.18, which provides several of
@@ -272,7 +294,9 @@ issuers](configuration.md#several-token-issuers)) namespaces the
 identifiers of users by issuer, also those of the issuer trusted so far,
 unless its subjects are kept bare. Stored identifiers of its users (their
 roles on services, roles granted via the permissions API, the service
-types they added and their display names) then no longer match them:
+types they added, the services they registered (for the [limit of services
+per user](configuration.md#services-per-user)) and their display names) then
+no longer match them:
 
 - **Recommended:** keep the subjects of the issuer trusted so far bare
   (`namespace: ""`), so that nothing needs to be migrated. Its users keep

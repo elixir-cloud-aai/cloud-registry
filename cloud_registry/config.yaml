@@ -198,6 +198,11 @@ db:
                               _pending: 1
                           options:
                             'sparse': True
+                        # Services by the user who registered them, for the
+                        # limit of services per user (internal field;
+                        # counted on startup)
+                        - keys:
+                              _createdBy: 1
                 # Service types (`GET /services/types`), unique as written
                 service_types:
                     indexes:
@@ -216,6 +221,9 @@ db:
                         # unused types per user
                         - keys:
                               created_by: 1
+                # Number of services each user registered (`count`), by user
+                # identifier (`_id`), for the limit of services per user
+                service_counts: {}
                 # Display names of users with roles on services, per service
                 user_names:
                     indexes:
@@ -359,6 +367,11 @@ custom:
         # admin may have added, in every mode (`409` above); `null` for no
         # limit (see "Service types" in `docs/configuration.md`)
         max_unused_service_types: 10
+        # How many of the registered services a user other than an admin
+        # may have registered (`409` above); `null` for no limit, `0` to
+        # let only admins register services (see "Services per user" in
+        # `docs/configuration.md`)
+        max_services_per_user: 50
         # Invitations to services by link (`POST
         # /services/{serviceId}/invitations`): days after which they expire
         # (and are deleted, also once accepted), and how many a service

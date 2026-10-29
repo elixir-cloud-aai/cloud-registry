@@ -537,7 +537,7 @@ def test_change_lock_released_on_failure(
         raise RuntimeError("failure")
 
     with monkeypatch.context() as patch:
-        fired = before_first_call(patch, "delete_one", "services", fail)
+        fired = before_first_call(patch, "find_one_and_delete", "services", fail)
         response = _send(client, _changes(service_id)[2])
     assert fired
     assert response.status_code == 500

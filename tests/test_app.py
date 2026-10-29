@@ -62,6 +62,7 @@ DEFAULT_RULES: dict[str, Any] = {
     "url_schemes": ["https"],
     "service_types": "open",
     "max_unused_service_types": 10,
+    "max_services_per_user": 50,
 }
 # Times of registrations and updates of services (cf. `_set_service_clock()`)
 TIME = datetime(2026, 10, 20, 12, 34, 56, 789000, tzinfo=UTC)
@@ -1249,8 +1250,9 @@ def test_registration_rules_configured(
 ) -> None:
     """The service info serves the registration rules of the config in effect.
 
-    Set in a config overlay; without a limit of unused types (`null`),
-    `max_unused_service_types` is left out.
+    Set in a config overlay; without limits of unused types and services
+    per user (`null`), `max_unused_service_types` and
+    `max_services_per_user` are left out.
     """
     overlay = yaml.safe_load(CONFIG_OVERLAY.read_text())
     overlay["custom"] = {
@@ -1260,6 +1262,7 @@ def test_registration_rules_configured(
         "access_control": {
             "service_types": "moderated",
             "max_unused_service_types": None,
+            "max_services_per_user": None,
         },
     }
     _set_overlay(monkeypatch, tmp_path, overlay)
@@ -1281,6 +1284,7 @@ def test_registration_rules_follow_config(app: App, client: FlaskClient) -> None
     custom = _custom_config(app)
     custom.access_control.service_types = "controlled"
     custom.access_control.max_unused_service_types = 0
+    custom.access_control.max_services_per_user = 0
     custom.endpoints.services.environments = ["production"]
     rules = client.get(f"{BASE}/service-info").get_json()["registration_rules"]
     assert rules == {
@@ -1288,6 +1292,7 @@ def test_registration_rules_follow_config(app: App, client: FlaskClient) -> None
         "environments": ["production"],
         "service_types": "controlled",
         "max_unused_service_types": 0,
+        "max_services_per_user": 0,
     }
 
 
@@ -1305,7 +1310,10 @@ def test_registration_rules_in_spec(client: FlaskClient) -> None:
     assert info["allOf"][0] == {"$ref": "#/components/schemas/Service"}
     rules = spec["components"]["schemas"]["RegistrationRules"]
     assert set(rules["properties"]) == set(DEFAULT_RULES)
-    assert set(rules["required"]) == set(DEFAULT_RULES) - {"max_unused_service_types"}
+    assert set(rules["required"]) == set(DEFAULT_RULES) - {
+        "max_unused_service_types",
+        "max_services_per_user",
+    }
 
 
 def test_registration_rules_validated(app: App, client: FlaskClient) -> None:

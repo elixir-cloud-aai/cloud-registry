@@ -190,7 +190,9 @@ in the same overlay, too:
 ## Roles on services
 
 - Any authenticated user can register a service (`POST /services`) and
-  becomes its **owner**.
+  becomes its **owner**; users other than admins only up to a limited
+  number of services (50 by default; see [Services per
+  user](configuration.md#services-per-user)).
 - Owners can update (`PUT`) and delete (`DELETE`) their services, and grant
   other users the roles `owner` or `maintainer` on them, by their user
   identifier (`sub` claim; `user_id` of `GET /me`, with [several token

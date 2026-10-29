@@ -27,6 +27,10 @@ from cloud_registry.ga4gh.registry.service import (
     warn_url_schemes,
 )
 from cloud_registry.ga4gh.registry.service_info import check_service_info_fields
+from cloud_registry.ga4gh.registry.service_limits import (
+    add_service_creators,
+    reconcile_service_counts,
+)
 from cloud_registry.ga4gh.registry.service_types import (
     add_service_types,
     sync_pending_services,
@@ -112,6 +116,8 @@ def create_app() -> App:
             )
         add_service_keys()
         resume_renames()
+        add_service_creators()
+        reconcile_service_counts()
         add_service_types()
         sync_pending_services()
         warn_invalid_urls()

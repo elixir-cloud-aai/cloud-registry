@@ -90,7 +90,8 @@ forms, `GET /service-info` serves them in `registration_rules`:
     "environments": ["prod", "test", "dev", "staging"],
     "url_schemes": ["https"],
     "service_types": "open",
-    "max_unused_service_types": 10
+    "max_unused_service_types": 10,
+    "max_services_per_user": 50
   }
 }
 ```
@@ -107,7 +108,11 @@ forms, `GET /service-info` serves them in `registration_rules`:
   than admins may have added (`409 Conflict` for further ones); `0` if they
   can't add types, and not set if there is no limit; concurrent requests of
   a user can exceed it by their number (see [Service
-  types](configuration.md#service-types)).
+  types](configuration.md#service-types));
+- `max_services_per_user`: how many of the registered services users other
+  than admins may have registered (`409 Conflict` for further ones); `0` if
+  only admins can register services, and not set if there is no limit (see
+  [Services per user](configuration.md#services-per-user)).
 
 The registry builds the rules from its config on each request, so they are
 always those it enforces; the rules for the current user (e.g., whether they
@@ -175,11 +180,14 @@ verifications (`PUT /services/{serviceId}/verification`) are limited in length
 Services stored before the checks of lengths were introduced may not pass
 them; see [Upgrading](upgrading.md#stored-services).
 
-The number of registrations per user is not limited, so deployments should
-limit request rates at the ingress (see [Rate
-limits](deployment.md#rate-limits)). Users other than admins may only have
-added a limited number of service types that no service has (`409 Conflict`
-for further ones; see [Service types](configuration.md#service-types)).
+Users other than admins may only have registered a limited number of the
+registered services (50 by default; `409 Conflict` with code `services-limit`
+for further ones; see [Services per user](configuration.md#services-per-user)),
+and added a limited number of service types that no service has (`409
+Conflict` for further ones; see [Service
+types](configuration.md#service-types)). Requests per user and time are not
+limited, so deployments should limit request rates at the ingress (see [Rate
+limits](deployment.md#rate-limits)).
 
 ## Renaming services
 
@@ -371,6 +379,7 @@ unlike `detail`, codes are stable, so clients branch on them (e.g., `{"title":
 | `duplicate-service` | a service with the same URL and API type is registered (see [Duplicate services](#duplicate-services)) |
 | `pending-service` | the service is [pending](#pending-approvals): only admins update it, and it can't be verified |
 | `unused-types-limit` | the user has added as many service types that no service has as allowed (see [Service types](configuration.md#service-types)) |
+| `services-limit` | the user has registered as many services as allowed (see [Services per user](configuration.md#services-per-user)) |
 | `service-type-registered` | the service type is registered, also if it is pending |
 | `service-type-in-use` | services have the service type, so it can't be removed |
 | `verification-mismatch` | the service has another URL or API type than the one checked (see [Verified services](#verified-services)) |
