@@ -1,14 +1,53 @@
 ##### TOOLS #####
 ## uv, to export the locked requirements (`uv.lock`) for the image build;
-## mounted into the build step only, so that the image doesn't contain it.
-## Pinned by digest; Dependabot updates the tag and digest together
+## mounted into the steps that export them only, so that the image doesn't
+## contain it. Pinned by digest; Dependabot updates the tag and digest
+## together
 FROM ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0 AS uv
 
 ##### BASE IMAGE #####
 ## Pinned by digest, so that rebuilds (e.g., of a release) use the same base
 ## image; Dependabot updates the tag and digest together
 ## (`.github/dependabot.yml`)
-FROM elixircloud/foca:0.18.0-py3.13@sha256:dd8dd927d8d5e7ccb616d441c8db7a5e2c0b24c52a3329f484f6edac082b7a26
+FROM elixircloud/foca:0.18.0-py3.13@sha256:dd8dd927d8d5e7ccb616d441c8db7a5e2c0b24c52a3329f484f6edac082b7a26 AS base
+
+##### BUILD #####
+## Build the app's wheel, in a stage of its own, so that the image doesn't
+## contain the build requirements. They (`build-system.requires` of
+## `pyproject.toml`) are locked in `uv.lock`, as the dependency group
+## `build-system`, and installed from there, as the runtime dependencies are
+## below: at the exact versions of the lock, checked against its hashes, as
+## wheels only, into a virtual environment of their own (with the pip of the
+## Python of the base image, `ensurepip`). The wheel is then built with them,
+## without an isolated build environment (which pip would fill with
+## downloads that aren't hash-checked), without an index and without
+## network, so that it downloads nothing; `--check-build-dependencies` fails
+## it unless they satisfy `build-system.requires`
+FROM base AS build
+USER root
+COPY pyproject.toml uv.lock /tmp/src/
+RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
+  UV_NO_CACHE=1 uv export --frozen --only-group build-system --no-emit-project \
+    --project /tmp/src --output-file /tmp/build-requirements.txt \
+  && python -m venv /tmp/build-env \
+  && /tmp/build-env/bin/pip install --no-cache-dir --require-hashes \
+    --only-binary :all: --no-deps -r /tmp/build-requirements.txt
+## (`README.md` is the package's long description; the license text is
+## installed with the package metadata, e.g.,
+## `site-packages/cloud_registry-<version>.dist-info/licenses/LICENSE`)
+## The build context has no Git metadata, so the version is passed as a build
+## argument (e.g., `--build-arg SETUPTOOLS_SCM_PRETEND_VERSION=1.2.3`, as the
+## workflows do); without it, the app reports version `0.0.0.dev0`
+COPY README.md LICENSE /tmp/src/
+COPY cloud_registry /tmp/src/cloud_registry
+ARG SETUPTOOLS_SCM_PRETEND_VERSION
+RUN --network=none \
+  /tmp/build-env/bin/pip wheel --no-cache-dir --no-index --no-deps \
+    --no-build-isolation --check-build-dependencies --wheel-dir /tmp/dist \
+    /tmp/src
+
+##### IMAGE #####
+FROM base
 
 ##### METADATA #####
 ## OCI annotations; images built from the FOCA image inherit its own, so all
@@ -45,18 +84,12 @@ RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
   && pip install --no-cache-dir --require-hashes --only-binary :all: --no-deps \
     -r /tmp/src/requirements.txt
 
-## Install app (non-editable; the base config is installed with the package,
-## and deployments override it via `FOCA_CONFIG_OVERLAY`)
-## (`README.md` is the package's long description; the license text is
-## installed with the package metadata, e.g.,
-## `site-packages/cloud_registry-<version>.dist-info/licenses/LICENSE`)
-## The build context has no Git metadata, so the version is passed as a build
-## argument (e.g., `--build-arg SETUPTOOLS_SCM_PRETEND_VERSION=1.2.3`, as the
-## workflows do); without it, the app reports version `0.0.0.dev0`
-COPY pyproject.toml README.md LICENSE /tmp/src/
-COPY cloud_registry /tmp/src/cloud_registry
-ARG SETUPTOOLS_SCM_PRETEND_VERSION
-RUN pip install --no-cache-dir --no-deps /tmp/src \
+## Install app from the wheel of the build stage (non-editable; the base
+## config is installed with the package, and deployments override it via
+## `FOCA_CONFIG_OVERLAY`), without its dependencies, installed above, and
+## without an index and without network, so that nothing is downloaded
+RUN --network=none --mount=from=build,source=/tmp/dist,target=/tmp/dist \
+  pip install --no-cache-dir --no-index --no-deps /tmp/dist/*.whl \
   && rm -rf /tmp/src
 USER 1000
 

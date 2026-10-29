@@ -67,6 +67,12 @@ extras, then `pip install --require-hashes --only-binary :all: --no-deps`,
 see the `Dockerfile`), so
 two builds of the same commit get the same packages, and a new release of a
 dependency gets into the image only through a reviewed change of the lock.
+The build requirements of the app (`build-system.requires`), with which the
+image build builds the app's wheel, are locked the same way, as the
+dependency group `build-system` (which lists the same requirements, checked
+by the tests), and installed from the lock with hash checks, too; the wheel
+is built without network, so the image build downloads nothing that isn't
+hash-checked.
 After adding, removing or changing a dependency in `pyproject.toml`, update
 the lock and commit both:
 
@@ -77,7 +83,7 @@ uv lock --check  # what CI checks: the lock matches `pyproject.toml`
 ```
 
 Dependabot updates `pyproject.toml` and `uv.lock` together (`uv` entry of
-`.github/dependabot.yml`), and the image of uv that the `Dockerfile` uses
+`.github/dependabot.yml`; the build requirements too, in the lock), and the image of uv that the `Dockerfile` uses
 (`docker` entry). The lock also pins FOCA, and the image build fails unless
 the base image has exactly the locked FOCA, so FOCA is updated by hand, in
 the base image and the lock together (`uv lock --upgrade-package foca`);
