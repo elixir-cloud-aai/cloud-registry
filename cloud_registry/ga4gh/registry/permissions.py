@@ -703,6 +703,7 @@ def warn_owner_rules() -> None:
     ][OWNER_GROUP_RULE]
     policies = get_config().security.access_control.policies or []
     path = base[2].replace(":id", "service").replace("*", "group")
+    # independent of the rule of groups, so also if it is kept
     _warn_invitation_rules(policies, path.split("/permissions/")[0])
     if base in policies:
         return

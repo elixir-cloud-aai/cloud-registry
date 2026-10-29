@@ -450,10 +450,11 @@ def _acceptance(user_id: str) -> dict[str, Any]:
     """
     claims = get_current_claims()
     acceptance: dict[str, Any] = {"user_id": user_id, "accepted_at": now()}
-    for claim in ("name", "email"):
+    claim_names = ["name"]
+    if claims.get("email_verified") is True:
+        claim_names.append("email")
+    for claim in claim_names:
         value = claims.get(claim)
-        if claim == "email" and claims.get("email_verified") is not True:
-            continue
         if isinstance(value, str) and value.strip():
             acceptance[claim] = value.strip()
     return acceptance

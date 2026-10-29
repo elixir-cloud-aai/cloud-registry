@@ -300,7 +300,9 @@ def _namespace_invitations(namespace: str, dry_run: bool) -> int:
         dry_run: Only count the invitations.
 
     Returns:
-        Number of invitations with bare users (rewritten, unless `dry_run`).
+        Number of invitations with bare users (rewritten, unless `dry_run`;
+        then without those that changed meanwhile, which another run
+        rewrites).
     """
     collection = get_collection(INVITATIONS)
     fields = ("created_by", f"{CREATED_AS}.user", f"{ACCEPTED}.user_id")
@@ -317,20 +319,22 @@ def _namespace_invitations(namespace: str, dry_run: bool) -> int:
                 bare[field] = value
         if not bare:
             continue
-        count += 1
-        if not dry_run:
-            # only while the values are as read, so that an acceptance
-            # released meanwhile isn't recreated without its time (rerun
-            # the migration for such changes)
-            collection.update_one(
-                {"_id": invitation["_id"], **bare},
-                {
-                    "$set": {
-                        field: _namespaced(namespace, value)
-                        for field, value in bare.items()
-                    }
-                },
-            )
+        if dry_run:
+            count += 1
+            continue
+        # only while the values are as read, so that an acceptance released
+        # meanwhile isn't recreated without its time; such invitations are
+        # not counted, and rewritten by another run
+        result = collection.update_one(
+            {"_id": invitation["_id"], **bare},
+            {
+                "$set": {
+                    field: _namespaced(namespace, value)
+                    for field, value in bare.items()
+                }
+            },
+        )
+        count += result.matched_count
     return count
 
 

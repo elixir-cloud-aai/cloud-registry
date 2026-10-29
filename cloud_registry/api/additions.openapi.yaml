@@ -945,8 +945,9 @@ paths:
         (identifiers that `userId` doesn't allow) can't accept invitations
         (`400`). Stores the user's display name for the service (as `GET
         /me`), and shows it and the verified email address, if the identity
-        provider releases them, to owners in the invitation until it expires or the
-        user's roles on the service are revoked. For any authenticated user.
+        provider releases them, to owners in the invitation until it expires
+        or the user's roles on the service are revoked. For any
+        authenticated user.
       operationId: acceptInvitation
       x-openapi-router-controller: cloud_registry.ga4gh.registry.invitations
       tags:
