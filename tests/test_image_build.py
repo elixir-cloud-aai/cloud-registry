@@ -76,15 +76,16 @@ def _runs() -> list[tuple[list[str], list[str]]]:
         The options of each instruction (e.g., `--network=none`), and its
         shell commands, one per command of a `&&` list.
     """
-    dockerfile = DOCKERFILE.read_text()
-    # Heredocs (`RUN <<EOF`) would hide their commands from the checks
-    assert not re.search(r"^RUN\s.*<<", dockerfile, flags=re.MULTILINE)
     lines = [
-        line for line in dockerfile.splitlines() if not line.lstrip().startswith("#")
+        line
+        for line in DOCKERFILE.read_text().splitlines()
+        if not line.lstrip().startswith("#")
     ]
     text = "\n".join(lines).replace("\\\n", " ")
     runs = []
     for run in re.findall(r"^RUN\s+(.+)$", text, flags=re.MULTILINE):
+        # Heredocs (`RUN <<EOF`) would hide their commands from the checks
+        assert "<<" not in run, run
         match = re.fullmatch(r"((?:--\S+\s+)*)(.*)", run)
         assert match, run
         options, commands = match.groups()
@@ -101,6 +102,24 @@ def _run_commands() -> list[str]:
         Commands, one per command of a `&&` list.
     """
     return [command for _, commands in _runs() for command in commands]
+
+
+def _pip_args(command: str) -> list[str] | None:
+    """Get the arguments of pip in a shell command.
+
+    Args:
+        command: Shell command (e.g., of a `RUN` instruction).
+
+    Returns:
+        The arguments after `pip` (`pip`, `pip3`, `pip3.13`, `<venv>/bin/pip`
+        or `python -m pip`), starting with the pip command (e.g., `install`),
+        or `None` if the command doesn't run pip.
+    """
+    args = shlex.split(command)
+    for i, arg in enumerate(args):
+        if re.fullmatch(r"pip(3(\.\d+)?)?", Path(arg).name):
+            return args[i + 1 :]
+    return None
 
 
 def test_build_group_matches_build_system() -> None:
@@ -137,16 +156,12 @@ def test_downloads_hash_checked() -> None:
     environment, which pip would fill with unchecked downloads.
     """
     commands = []
-    for args in map(shlex.split, _run_commands()):
-        # `pip`, `pip3`, `pip3.13`, `<venv>/bin/pip` or `python -m pip`
-        starts = [
-            i
-            for i, arg in enumerate(args)
-            if re.fullmatch(r"pip(3(\.\d+)?)?", Path(arg).name)
-        ]
-        if starts:
-            commands.append(args[starts[0] + 1 :])
+    for command in _run_commands():
+        pip_args = _pip_args(command)
+        if pip_args is not None:
+            commands.append(pip_args)
         # uv only exports the requirements
+        args = shlex.split(command)
         if "uv" in args:
             assert args[args.index("uv") + 1] == "export", args
     subcommands = [args[0] for args in commands]
@@ -178,7 +193,7 @@ def test_builds_offline() -> None:
     offline = [
         options
         for options, commands in _runs()
-        if any(re.search(r"\bpip\s.*--no-index\b", command) for command in commands)
+        if any("--no-index" in (_pip_args(command) or []) for command in commands)
     ]
     # At least the build and the install of the wheel
     assert offline
