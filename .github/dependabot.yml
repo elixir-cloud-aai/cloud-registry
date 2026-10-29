@@ -4,7 +4,8 @@ version: 2
 # releases); security updates always target the default branch, though
 updates:
   # Dependencies in `pyproject.toml` and the lock (`uv.lock`), updated
-  # together; the image build installs the locked ones (`Dockerfile`)
+  # together; the image build installs the locked ones (`Dockerfile`),
+  # including the build requirements (dependency group `build-system`)
   - package-ecosystem: uv
     directory: /
     schedule:

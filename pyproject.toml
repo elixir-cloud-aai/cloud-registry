@@ -1,6 +1,7 @@
 [build-system]
 # CI installs setuptools-scm with the same bound to compute the version of dev
-# images (`.github/workflows/ci.yml`)
+# images (`.github/workflows/ci.yml`); the dependency group `build-system`
+# lists the same requirements, which the image build installs from the lock
 requires = ["setuptools>=77", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
@@ -147,6 +148,14 @@ docs = [
     "mkdocstrings-python>=2.0.10,<3",
     "pymdown-extensions>=12.3,<13",
 ]
+
+[dependency-groups]
+# The build requirements of the app (the same as `build-system.requires`,
+# checked by the tests), locked in `uv.lock` with their hashes, so that the
+# image build installs them hash-checked instead of downloading them into an
+# isolated build environment (`Dockerfile`); Dependabot updates them with the
+# other locked packages
+build-system = ["setuptools>=77", "setuptools-scm>=8"]
 
 [project.readme]
 file = "README.md"
