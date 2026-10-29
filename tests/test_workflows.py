@@ -62,6 +62,41 @@ def test_gate_needs_all_jobs() -> None:
     assert sorted(gate["needs"]) == sorted(set(jobs) - {GATE})
 
 
+def test_shared_actions_pinned() -> None:
+    """The shared actions of `elixir-cloud-aai/.github` are pinned to a commit.
+
+    All pins name the same full commit SHA (bumped together), and no
+    workflow uses a local copy of an action. The pin comments (`# gate`,
+    `# scan-image`) are not checked, as YAML drops them.
+    """
+    pinned = re.compile(r"elixir-cloud-aai/\.github/actions/[a-z-]+@([0-9a-f]{40})")
+    shas: set[str] = set()
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        for job in _load(path)["jobs"].values():
+            for step in job.get("steps", []):
+                uses = step.get("uses", "")
+                assert not uses.startswith("./"), (path.name, uses)
+                if uses.startswith("elixir-cloud-aai/.github/"):
+                    match = pinned.fullmatch(uses)
+                    assert match, (path.name, uses)
+                    shas.add(match.group(1))
+    assert len(shas) == 1
+
+
+def test_gate_uses_shared_action() -> None:
+    """The gate of `ci.yml` uses the shared `gate` action.
+
+    It passes the results of all needed jobs and allows `push` and
+    `publish` to be skipped on pull requests only.
+    """
+    (step,) = _load(WORKFLOWS / "ci.yml")["jobs"][GATE]["steps"]
+    assert step["uses"].startswith("elixir-cloud-aai/.github/actions/gate@")
+    assert step["with"]["needs"] == "${{ toJSON(needs) }}"
+    assert step["with"]["allow-skipped"] == (
+        "${{ github.event_name == 'pull_request' && 'push publish' || '' }}"
+    )
+
+
 def test_verification_signer_workflow() -> None:
     """The verification commands name the workflow that signed the release.
 
