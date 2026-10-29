@@ -944,8 +944,8 @@ paths:
         deleted). Users whose roles the permissions API couldn't revoke
         (identifiers that `userId` doesn't allow) can't accept invitations
         (`400`). Stores the user's display name for the service (as `GET
-        /me`), and shows it and the email address, if the identity provider
-        releases them, to owners in the invitation until it expires or the
+        /me`), and shows it and the verified email address, if the identity
+        provider releases them, to owners in the invitation until it expires or the
         user's roles on the service are revoked. For any authenticated user.
       operationId: acceptInvitation
       x-openapi-router-controller: cloud_registry.ga4gh.registry.invitations
@@ -1550,17 +1550,20 @@ components:
       properties:
         user_id:
           type: string
-          description: Identifier of the user who accepted the invitation.
+          description: |
+            Identifier of the user who accepted the invitation; the only
+            reliable identification of the user.
         name:
           type: string
           description: |
-            Display name of the user, if the identity provider released it.
+            Display name of the user, if the identity provider released it;
+            for display only, as users may be able to choose it.
         email:
           type: string
           description: |
             Email address of the user, if the identity provider released it
-            (e.g., if the deployment adds `email` to
-            `security.auth.userinfo_claims`).
+            as verified (`email_verified`; e.g., if the deployment adds
+            `email` and `email_verified` to `security.auth.userinfo_claims`).
         accepted_at:
           type: string
           format: date-time
