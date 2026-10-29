@@ -302,7 +302,10 @@ def _register_service(
             service.pending = is_pending(type_document(service.data.get("type")))
             service.register_metadata()
         except Exception:
-            release_service(service.created_by)
+            # unless the service was stored (e.g., a read after the insert
+            # failed)
+            if not service.was_created:
+                release_service(service.created_by)
             raise
     except (InvalidService, UnusedTypesLimit, ServicesLimit) as exc:
         logger.info(

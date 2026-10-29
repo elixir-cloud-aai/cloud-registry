@@ -190,7 +190,7 @@ def _namespace_service_types(namespace: str, dry_run: bool) -> int:
         if not dry_run:
             collection.update_one(
                 {"_id": service_type["_id"]},
-                {"$set": {CREATED_BY: f"{namespace}{NAMESPACE_SEPARATOR}{subject}"}},
+                {"$set": {CREATED_BY: _namespaced(namespace, subject)}},
             )
     return count
 
@@ -224,15 +224,19 @@ def _namespace_services(namespace: str, dry_run: bool) -> int:
                 {"$set": {SERVICE_CREATOR: _namespaced(namespace, subject)}},
             )
     counters = get_collection(SERVICE_COUNTS)
-    for counter in counters.find({"_id": {"$type": "string"}}):
+    for counter in counters.find({"_id": {"$type": "string"}}, {"_id": True}):
         if dry_run or not _is_bare(counter["_id"]):
             continue
-        counters.update_one(
-            {"_id": _namespaced(namespace, counter["_id"])},
-            {"$inc": {COUNT: counter.get(COUNT, 0)}},
-            upsert=True,
-        )
-        counters.delete_one({"_id": counter["_id"]})
+        # deleted first, so that changes meanwhile (e.g., deletions of
+        # services) aren't lost; if the app stops in between, startup
+        # corrects the counter
+        moved = counters.find_one_and_delete({"_id": counter["_id"]})
+        if moved is not None:
+            counters.update_one(
+                {"_id": _namespaced(namespace, counter["_id"])},
+                {"$inc": {COUNT: moved.get(COUNT, 0)}},
+                upsert=True,
+            )
     return count
 
 
@@ -271,7 +275,7 @@ def _namespace_user_names(namespace: str, dry_run: bool) -> int:
         count += 1
         if dry_run:
             continue
-        user_id = f"{namespace}{NAMESPACE_SEPARATOR}{name['user_id']}"
+        user_id = _namespaced(namespace, name["user_id"])
         try:
             collection.update_one({"_id": name["_id"]}, {"$set": {"user_id": user_id}})
         except DuplicateKeyError:
@@ -293,7 +297,8 @@ def namespace_subjects(namespace: str, dry_run: bool = False) -> dict[str, int]:
 
     Returns:
         Numbers of stored policy rules (`rules`), service types
-        (`service_types`) and display names (`user_names`) of bare users
+        (`service_types`), services (`services`; their counters are moved,
+        but not counted) and display names (`user_names`) of bare users
         (rewritten, unless `dry_run`), and of configured rules with bare
         users (`configured_rules`; kept, cf. the module docs).
 

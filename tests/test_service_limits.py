@@ -335,6 +335,34 @@ def test_concurrent_duplicate_released(
     assert _counts(mongo_client) == {ALICE: 0, BOB: 1}
 
 
+def test_stored_not_released(
+    app: App,
+    client: FlaskClient,
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A service stored before an error keeps counting."""
+    register_metadata = server.RegisterService.register_metadata
+
+    def fail_after(self: server.RegisterService, *args: Any, **kwargs: Any) -> None:
+        """Store the service, then fail.
+
+        Args:
+            self: Registration.
+            *args: Further arguments.
+            **kwargs: Further keyword arguments.
+
+        Raises:
+            RuntimeError: Always.
+        """
+        register_metadata(self, *args, **kwargs)
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(server.RegisterService, "register_metadata", fail_after)
+    assert _post(client).status_code == 500
+    assert _counts(mongo_client) == {ALICE: 1}
+
+
 def test_unregistered_released(
     app: App,
     client: FlaskClient,
@@ -546,7 +574,7 @@ def test_limit_logged(
     _set_limit(app, 0)
     with caplog.at_level(logging.INFO):
         _post(client)
-    assert f"'{ALICE}' registered 0 services" in caplog.text
+    assert f"'{ALICE}' is at the limit of 0 services" in caplog.text
 
 
 @pytest.fixture

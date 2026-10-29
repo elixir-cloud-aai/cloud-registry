@@ -98,7 +98,7 @@ def reserve_service(user: str | None) -> None:
     if limit > 0 and _increment_below(user, limit):
         return
     logger.info(
-        "Service not registered: '%s' registered %d services.",
+        "Service not registered: '%s' is at the limit of %d services.",
         escape_log_value(user),
         limit,
     )

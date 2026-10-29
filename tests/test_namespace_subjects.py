@@ -43,9 +43,8 @@ def client(
     by `alice` and by a namespaced user, services registered by `alice`, by
     a namespaced user and by nobody (with keys, as if valid), with counters
     of `alice` and of the namespaced `alice` (who registered one since the
-    config change), and
-    display names of `alice` (one for a service of which the namespaced user
-    already has a name).
+    config change), and display names of `alice` (one for a service of which
+    the namespaced user already has a name).
     """
     client = _create_app(monkeypatch, tmp_path, NAMESPACED)
     with client.application.app_context():
