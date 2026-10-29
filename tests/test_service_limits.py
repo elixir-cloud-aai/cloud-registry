@@ -554,6 +554,41 @@ def test_counter_inserted_meanwhile(
     assert _counts(mongo_client) == {ALICE: 2}
 
 
+def test_unlimited_counter_inserted_meanwhile(
+    app: App,
+    mongo_client: MongoClient[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without a limit, a counter inserted concurrently is incremented."""
+    _set_limit(app, None)
+    update_one = COLLECTION_CLASS.update_one
+
+    def insert_first(self: Any, query: Any, *args: Any, **kwargs: Any) -> Any:
+        """Insert the counter concurrently, and fail as MongoDB may.
+
+        Args:
+            self: Collection.
+            query: Filter.
+            *args: Further arguments.
+            **kwargs: Further keyword arguments.
+
+        Returns:
+            Result of the update, without upsert.
+
+        Raises:
+            DuplicateKeyError: For the upsert.
+        """
+        if self.name == SERVICE_COUNTS and kwargs.get("upsert"):
+            self.insert_one({"_id": query["_id"], COUNT: 1})
+            raise DuplicateKeyError("duplicate")
+        return update_one(self, query, *args, **kwargs)
+
+    monkeypatch.setattr(COLLECTION_CLASS, "update_one", insert_first)
+    with app.app.app_context():
+        reserve_service(ALICE)
+    assert _counts(mongo_client) == {ALICE: 2}
+
+
 def test_release(app: App, mongo_client: MongoClient[dict[str, Any]]) -> None:
     """Releases never make counters negative; `None` counts for nobody."""
     with app.app.app_context():
@@ -631,11 +666,15 @@ def test_creators_added_concurrently(
     mongo_client: MongoClient[dict[str, Any]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Users added by a concurrent run (e.g., another worker) are kept."""
+    """Users added by a concurrent run (e.g., another worker) are kept.
+
+    Here, another run sets the user of alice's service while it is looked up;
+    the other services get theirs (the admin owns the service they registered).
+    """
     owner = service_limits._single_user_owner
 
-    def set_first(path: str) -> str | None:
-        """Let another run set the user first.
+    def set_meanwhile(path: str) -> str | None:
+        """Let another run set the user of alice's service meanwhile.
 
         Args:
             path: Path of the service.
@@ -643,15 +682,17 @@ def test_creators_added_concurrently(
         Returns:
             The only user owner.
         """
-        mongo_client[DB]["services"].update_many(
-            {CREATED_BY: {"$exists": False}}, {"$set": {CREATED_BY: "other"}}
-        )
+        if path.endswith(f"/{stored['alice']}"):
+            mongo_client[DB]["services"].update_one(
+                {"id": stored["alice"]}, {"$set": {CREATED_BY: "other"}}
+            )
         return owner(path)
 
-    monkeypatch.setattr(service_limits, "_single_user_owner", set_first)
+    monkeypatch.setattr(service_limits, "_single_user_owner", set_meanwhile)
     with app.app.app_context():
         add_service_creators()
-    assert {_creator(mongo_client, id) for id in stored.values()} == {"other"}
+    creators = {name: _creator(mongo_client, id) for name, id in stored.items()}
+    assert creators == {"alice": "other", "two": None, "group": None, "admin": ADMIN}
 
 
 def test_counters_reconciled(
@@ -735,13 +776,14 @@ def test_counters_inserted_meanwhile(
             DuplicateKeyError: For counters.
         """
         if self.name == SERVICE_COUNTS:
+            self.insert_one({"_id": ALICE, COUNT: 7})
             raise DuplicateKeyError("duplicate")
         return update_one(self, *args, **kwargs)
 
     monkeypatch.setattr(COLLECTION_CLASS, "update_one", duplicate)
     with app.app.app_context():
         reconcile_service_counts()
-    assert _counts(mongo_client) == {}
+    assert _counts(mongo_client) == {ALICE: 7}
 
 
 def test_reconciled_logged(

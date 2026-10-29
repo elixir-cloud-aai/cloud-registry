@@ -93,7 +93,11 @@ def reserve_service(user: str | None) -> None:
     limit = get_custom_config(CustomConfig).access_control.max_services_per_user
     counts = get_collection(SERVICE_COUNTS)
     if limit is None:
-        counts.update_one({"_id": user}, {"$inc": {COUNT: 1}}, upsert=True)
+        try:
+            counts.update_one({"_id": user}, {"$inc": {COUNT: 1}}, upsert=True)
+        except DuplicateKeyError:
+            # inserted concurrently (MongoDB usually retries such upserts)
+            counts.update_one({"_id": user}, {"$inc": {COUNT: 1}})
         return
     if limit > 0 and _increment_below(user, limit):
         return
