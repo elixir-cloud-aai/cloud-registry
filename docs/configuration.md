@@ -317,7 +317,7 @@ limits](deployment.md#rate-limits)).
 
 `custom.access_control.invitations` sets how long [invitations to
 services](access-control.md#invitations) are valid (`expiry_days`, default:
-7) and how many that haven't expired a service may have (`max_per_service`,
+7, at most 3650; the app refuses to start with larger values) and how many that haven't expired a service may have (`max_per_service`,
 default: 20; `null` for no limit). For example, in a config overlay (with the
 Helm chart, in `config`):
 
