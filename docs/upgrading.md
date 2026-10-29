@@ -340,8 +340,10 @@ they are accepted, as their creators seem to be no longer owners):
   The argument is the namespace of the issuer trusted so far (by default,
   the issuer). Its users lack their roles from the rollout until the
   migration, so run it right after the rollout, while users don't change
-  roles (e.g., announce a short maintenance window): roles revoked during
-  the migration may be restored by it, and requests that store display
+  roles or accept invitations (e.g., announce a short maintenance window):
+  roles revoked during the migration may be restored by it, invitations
+  accepted during it may be deleted or stay claimed although their role
+  wasn't granted (create new ones then), and requests that store display
   names may fail (clients can retry them). Running app instances
   load the changed rules on their next request. Configured rules that name
   bare users (`security.access_control.policies`) are counted, but not
