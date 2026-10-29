@@ -17,7 +17,10 @@ form:
 - the users who registered services (`_createdBy` of `services`), and their
   numbers of services (`service_counts`), for the limit of services per
   user;
-- the users of the stored display names (`user_id` of `user_names`).
+- the users of the stored display names (`user_id` of `user_names`);
+- the users who created invitations to services, as whom (`created_by`,
+  `created_as.user`), and who accepted them (`accepted.user_id` of
+  `invitations`), so that open invitations of owners stay valid.
 
 Subjects that are already namespaced (with `|`) are kept, so the migration
 can be run again, e.g., after an interrupted run. It then marks the stored
@@ -49,6 +52,8 @@ from pymongo.collection import Collection
 from pymongo.errors import DuplicateKeyError
 
 from cloud_registry.app import create_app
+from cloud_registry.ga4gh.registry.invitations import ACCEPTED, CREATED_AS
+from cloud_registry.ga4gh.registry.permissions import INVITATIONS
 from cloud_registry.ga4gh.registry.service import CREATED_BY as SERVICE_CREATOR
 from cloud_registry.ga4gh.registry.service_limits import COUNT, SERVICE_COUNTS
 from cloud_registry.ga4gh.registry.service_types import CREATED_BY
@@ -283,6 +288,52 @@ def _namespace_user_names(namespace: str, dry_run: bool) -> int:
     return count
 
 
+def _namespace_invitations(namespace: str, dry_run: bool) -> int:
+    """Namespace the users who created and accepted invitations.
+
+    Only the users are rewritten (`created_by`, `created_as.user`,
+    `accepted.user_id`), not groups (`created_as.group`); each field only if
+    it is bare, so that runs can be repeated.
+
+    Args:
+        namespace: Namespace of the issuer's subjects.
+        dry_run: Only count the invitations.
+
+    Returns:
+        Number of invitations with bare users (rewritten, unless `dry_run`).
+    """
+    collection = get_collection(INVITATIONS)
+    fields = ("created_by", f"{CREATED_AS}.user", f"{ACCEPTED}.user_id")
+    count = 0
+    for invitation in collection.find(
+        {"$or": [{field: {"$type": "string"}} for field in fields]}
+    ):
+        bare = {}
+        for field in fields:
+            value: Any = invitation
+            for key in field.split("."):
+                value = value.get(key) if isinstance(value, dict) else None
+            if isinstance(value, str) and _is_bare(value):
+                bare[field] = value
+        if not bare:
+            continue
+        count += 1
+        if not dry_run:
+            # only while the values are as read, so that an acceptance
+            # released meanwhile isn't recreated without its time (rerun
+            # the migration for such changes)
+            collection.update_one(
+                {"_id": invitation["_id"], **bare},
+                {
+                    "$set": {
+                        field: _namespaced(namespace, value)
+                        for field, value in bare.items()
+                    }
+                },
+            )
+    return count
+
+
 def namespace_subjects(namespace: str, dry_run: bool = False) -> dict[str, int]:
     """Namespace the stored subjects of an issuer.
 
@@ -298,7 +349,8 @@ def namespace_subjects(namespace: str, dry_run: bool = False) -> dict[str, int]:
     Returns:
         Numbers of stored policy rules (`rules`), service types
         (`service_types`), services (`services`; their counters are moved,
-        but not counted) and display names (`user_names`) of bare users
+        but not counted), display names (`user_names`) and invitations
+        (`invitations`) of bare users
         (rewritten, unless `dry_run`), and of configured rules with bare
         users (`configured_rules`; kept, cf. the module docs).
 
@@ -319,6 +371,7 @@ def namespace_subjects(namespace: str, dry_run: bool = False) -> dict[str, int]:
         "service_types": _namespace_service_types(namespace, dry_run),
         "services": _namespace_services(namespace, dry_run),
         "user_names": _namespace_user_names(namespace, dry_run),
+        "invitations": _namespace_invitations(namespace, dry_run),
     }
     if configured:
         logger.warning(
