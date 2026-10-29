@@ -6,6 +6,7 @@ import pytest
 from cloud_registry.service_models.custom_config import (
     AccessControlConfig,
     IdConfig,
+    InvitationsConfig,
     ServicesConfig,
 )
 
@@ -93,3 +94,15 @@ def test_services_config_invalid_url_schemes(schemes: object) -> None:
         ServicesConfig.model_validate(
             {"id": {"charset": "ABC123", "length": 6}, "url_schemes": schemes}
         )
+
+
+def test_invitations_expiry_days() -> None:
+    """Invitations expire after 1 to 3650 days (about ten years).
+
+    Larger values would overflow the expiry times of invitations.
+    """
+    assert InvitationsConfig(expiry_days=1).expiry_days == 1
+    assert InvitationsConfig(expiry_days=3650).expiry_days == 3650
+    for days in (0, 3651, 9999999):
+        with pytest.raises(ValidationError):
+            InvitationsConfig(expiry_days=days)
