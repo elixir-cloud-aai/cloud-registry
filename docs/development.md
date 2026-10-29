@@ -350,7 +350,7 @@ linked from packaged charts exist.
 The CI workflow builds the image of every pull request and scans it with
 [Trivy](https://trivy.dev/) (the shared action
 [`scan-image`](https://github.com/elixir-cloud-aai/.github/tree/main/actions/scan-image)
-of the organisation, pinned to a commit), and a weekly
+of the organisation, pinned to the commit of a release), and a weekly
 workflow (`scan.yml`) scans `latest`. For pushes to `dev` and for releases,
 the workflows push the image by digest, untagged, scan exactly that digest in
 a job without credentials or signing identity, and only if the scan passes
@@ -369,9 +369,11 @@ accept a finding (e.g., if it doesn't affect the app), add it to
 (`statement`) and an expiry date (`expired_at`), after which the scans fail
 again. Trivy also scans for secrets (critical and high ones fail the scans
 too); accept those under `secrets:` in the same file. Dependabot updates the
-actions, including the pins of the shared actions; the Trivy version is the
+actions, including the pins of the shared actions (`@<commit> # vX.Y.Z`), to
+new releases of `elixir-cloud-aai/.github`; the Trivy version is the
 default of the shared action's `trivy-version` input, which Dependabot
-doesn't bump: change it in the shared action, then update the pins here.
+doesn't bump here: change it in the shared action, whose release then
+reaches this repository as a Dependabot update of the pins.
 Images of commits on `dev` are signed and attested like release images, by
 the CI workflow. All of this needs no secrets beyond the Docker Hub ones:
 signing uses the workflows' OIDC tokens (permission `id-token: write`). Re-running

@@ -66,8 +66,8 @@ def test_shared_actions_pinned() -> None:
     """The shared actions of `elixir-cloud-aai/.github` are pinned to a commit.
 
     All pins name the same full commit SHA (bumped together), and no
-    workflow uses a local copy of an action. The pin comments (`# gate`,
-    `# scan-image`) are not checked, as YAML drops them.
+    workflow uses a local copy of an action. The pin comments (the release,
+    `# vX.Y.Z`) are not checked, as YAML drops them.
     """
     pinned = re.compile(r"elixir-cloud-aai/\.github/actions/[a-z-]+@([0-9a-f]{40})")
     shas: set[str] = set()
