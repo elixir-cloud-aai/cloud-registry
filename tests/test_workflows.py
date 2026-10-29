@@ -66,8 +66,8 @@ def test_shared_actions_pinned() -> None:
     """The shared actions of `elixir-cloud-aai/.github` are pinned to a commit.
 
     All pins name the same full commit SHA (bumped together), and no
-    workflow uses a local copy of an action. The pin comments (the release,
-    `# vX.Y.Z`) are not checked, as YAML drops them.
+    workflow uses a local copy of an action. The YAML drops comments, so the
+    test below checks the release comments (`# vX.Y.Z`) in the files' text.
     """
     pinned = re.compile(r"elixir-cloud-aai/\.github/actions/[a-z-]+@([0-9a-f]{40})")
     shas: set[str] = set()
@@ -81,6 +81,26 @@ def test_shared_actions_pinned() -> None:
                     assert match, (path.name, uses)
                     shas.add(match.group(1))
     assert len(shas) == 1
+
+
+def test_shared_actions_release_comments() -> None:
+    """Every pin of a shared action names its release in a comment.
+
+    Dependabot bumps a pin `@<sha> # vX.Y.Z` to new releases only if the
+    pinned commit carries a version tag, and updates the comment; all pins
+    name the same release. Whether the commit is the release's commit isn't
+    checked here (no network in the tests).
+    """
+    pin = re.compile(r"uses: elixir-cloud-aai/\.github/actions/[a-z-]+@\S+(.*)$")
+    comment = re.compile(r" # (v\d+\.\d+\.\d+)")
+    versions: set[str] = set()
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if match := pin.search(line):
+                version = comment.fullmatch(match.group(1))
+                assert version, (path.name, line.strip())
+                versions.add(version.group(1))
+    assert len(versions) == 1, versions
 
 
 def test_gate_uses_shared_action() -> None:
