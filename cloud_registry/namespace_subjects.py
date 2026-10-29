@@ -300,9 +300,9 @@ def _namespace_invitations(namespace: str, dry_run: bool) -> int:
         dry_run: Only count the invitations.
 
     Returns:
-        Number of invitations with bare users (rewritten, unless `dry_run`;
-        then without those that changed meanwhile, which another run
-        rewrites).
+        Number of invitations with bare users: all of them if `dry_run`,
+        otherwise those rewritten (not those changed meanwhile, which
+        another run rewrites).
     """
     collection = get_collection(INVITATIONS)
     fields = ("created_by", f"{CREATED_AS}.user", f"{ACCEPTED}.user_id")
