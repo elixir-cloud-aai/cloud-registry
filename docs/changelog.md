@@ -6,6 +6,7 @@ are published from the notes in `docs/releases/` where these exist, followed
 by GitHub's generated list of changes (see
 [Versioning and releases](development.md#versioning-and-releases)):
 
+- [1.0.0rc1](releases/1.0.0rc1.md)
 - [0.6.0](releases/0.6.0.md)
 - [0.5.0](releases/0.5.0.md)
 - [0.4.0](releases/0.4.0.md)
