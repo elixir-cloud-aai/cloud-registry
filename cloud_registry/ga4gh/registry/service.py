@@ -44,8 +44,19 @@ VERIFIED = "_verifiedAt"
 # is pending (cf. `cloud_registry.ga4gh.registry.service_types`), with an
 # index, so that reads filter by it; derived from the type, not served
 PENDING_SERVICE = "_pending"
+# Internal field with the user who registered the service, for the limit of
+# services per user (cf. `cloud_registry.ga4gh.registry.service_limits`);
+# `None` for services that count for nobody (e.g., registered by admins);
+# kept on updates and renames; not served
+CREATED_BY = "_createdBy"
 # Projection excluding internal fields
-PROJECTION = {"_id": False, KEY: False, VERIFIED: False, PENDING_SERVICE: False}
+PROJECTION = {
+    "_id": False,
+    KEY: False,
+    VERIFIED: False,
+    PENDING_SERVICE: False,
+    CREATED_BY: False,
+}
 # Fields with URLs of links, as paths of keys, with the schemes they allow
 # (cf. `foca.utils.urls.check_url_fields()`): contact URLs can be email
 # addresses (RFC 6068), as in the GA4GH service info specification
@@ -333,6 +344,9 @@ class RegisterService:
                 service was removed (cf. `_replace()`).
             pending: Whether the service is stored as pending (cf.
                 `PENDING_SERVICE`); set before `register_metadata()`.
+            created_by: User the service counts for if it is registered
+                (cf. `CREATED_BY`), `None` for nobody; set before
+                `register_metadata()`. Replaced services keep theirs.
             allow_create: Whether a service with the identifier may be
                 registered.
             id_charset: A string of allowed characters for generating service
@@ -353,6 +367,7 @@ class RegisterService:
         self.was_created = False
         self.verification_removed = False
         self.pending = False
+        self.created_by: str | None = None
         self.id_charset: str = endpoint_conf.services.id.charset
         self.id_length = int(endpoint_conf.services.id.length)
         self.url_schemes = frozenset(endpoint_conf.services.url_schemes)
@@ -389,10 +404,12 @@ class RegisterService:
             key: Key of the service (cf. `service_key()`).
 
         Returns:
-            The key, and the pending flag if the service is pending (cf.
+            The key, the user the service counts for (cf. `CREATED_BY`), and
+            the pending flag if the service is pending (cf.
             `PENDING_SERVICE`).
         """
-        return {KEY: key} | ({PENDING_SERVICE: True} if self.pending else {})
+        fields = {KEY: key, CREATED_BY: self.created_by}
+        return fields | ({PENDING_SERVICE: True} if self.pending else {})
 
     def register_metadata(self, retries: int = 9) -> None:
         """Register service.
@@ -514,6 +531,7 @@ class RegisterService:
                     KEY: True,
                     VERIFIED: True,
                     CREATED: True,
+                    CREATED_BY: True,
                 },
             )
             if stored is None and not self.allow_create:
@@ -526,9 +544,16 @@ class RegisterService:
                 replacement.setdefault(CREATED, timestamp)
             else:
                 # the fields as read; missing if they were (e.g., services
-                # without key, cf. `add_service_keys()`)
-                for field in ("url", KEY, VERIFIED, CREATED):
+                # without key, cf. `add_service_keys()`, or without the user
+                # they count for, cf. `add_service_creators()`)
+                for field in ("url", KEY, VERIFIED, CREATED, CREATED_BY):
                     query[field] = stored.get(field, {"$exists": False})
+                # the user the service counts for never changes (missing
+                # until added)
+                if CREATED_BY in stored:
+                    replacement[CREATED_BY] = stored[CREATED_BY]
+                else:
+                    del replacement[CREATED_BY]
                 # invalid ones (e.g., set by owners before timestamps were
                 # checked) are removed
                 created = stored.get(CREATED)

@@ -886,7 +886,7 @@ def test_roles_removed_before_delete(
         raise RuntimeError("database unavailable")
 
     with monkeypatch.context() as patch:
-        patch.setattr(COLLECTION_CLASS, "delete_one", fail)
+        patch.setattr(COLLECTION_CLASS, "find_one_and_delete", fail)
         assert delete(client, service_id, ALICE) == 500
     assert _roles(app, service_id) == []
     assert client.get(f"{BASE}/services/{service_id}").status_code == 200
@@ -957,7 +957,7 @@ def test_delete_racing_grant(
         )
 
     with monkeypatch.context() as patch:
-        fired = before_first_call(patch, "delete_one", "services", grant_role)
+        fired = before_first_call(patch, "find_one_and_delete", "services", grant_role)
         assert delete(client, service_id, ALICE) == 200
     assert fired
     assert _roles(app, service_id) == []

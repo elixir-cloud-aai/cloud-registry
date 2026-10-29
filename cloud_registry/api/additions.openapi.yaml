@@ -62,7 +62,13 @@ paths:
         (cf. `ExternalServiceRegister`), as do types that aren't registered
         if the user may not add types (see `POST /services/types`). New
         types count towards the user's limit of unused types (`409` if
-        reached; see `POST /services/types`). Services with a pending type
+        reached; see `POST /services/types`). Users other than admins may
+        only have registered a limited number of the registered services
+        (`409`, `code`: `services-limit`; deployments set it with
+        `custom.access_control.max_services_per_user`, 50 by default, see
+        `max_services_per_user` of `GET /service-info`); a service counts
+        for the user who registered it until it is deleted, whatever its
+        roles. Services with a pending type
         are pending (see `GET /approvals`). A service deleted during the
         request returns `404`.
       operationId: postService
@@ -1108,9 +1114,11 @@ components:
         Also returned, without `serviceId`, for updates of pending services
         by users other than admins (`PUT /services/{serviceId}`; see `GET
         /approvals`), and for new types of users who have added as many
-        unused types as allowed (see `POST /services/types`); `code` tells
-        these conflicts apart (`duplicate-service`, `pending-service`,
-        `unused-types-limit`), and for services that are being renamed
+        unused types as allowed (see `POST /services/types`), and for new
+        services of users who have registered as many services as allowed
+        (see `POST /services`); `code` tells these conflicts apart
+        (`duplicate-service`, `pending-service`, `unused-types-limit`,
+        `services-limit`), and for services that are being renamed
         (`service-busy`, `PUT /services/{serviceId}`).
       content:
         application/json:
@@ -1152,6 +1160,8 @@ components:
                   types that no service has as allowed (`POST
                   /services/types`, `POST /services`, `PUT
                   /services/{serviceId}`).
+                - `services-limit`: the user has registered as many services
+                  as allowed (`POST /services`).
                 - `service-type-registered`: the service type is registered,
                   also if it is pending (`POST /services/types`).
                 - `service-type-in-use`: services have the service type
@@ -1185,6 +1195,7 @@ components:
                 - duplicate-service
                 - pending-service
                 - unused-types-limit
+                - services-limit
                 - service-type-registered
                 - service-type-in-use
                 - verification-mismatch
@@ -1274,6 +1285,15 @@ components:
             (`custom.access_control.max_unused_service_types: null`).
             Concurrent requests of a user can exceed it by their number.
           example: 10
+        max_services_per_user:
+          type: integer
+          minimum: 0
+          description: |
+            How many of the registered services a user other than an admin
+            may have registered (`409` above; see `POST /services`); `0` if
+            only admins can register services. Not set if there is no limit
+            (`custom.access_control.max_services_per_user: null`).
+          example: 50
     ServiceRename:
       description: New identifier of a service.
       type: object

@@ -34,13 +34,15 @@ def test_registration_rules_defaults(unit_app: Flask) -> None:
             "url_schemes": ["https"],
             "service_types": "open",
             "max_unused_service_types": 10,
+            "max_services_per_user": 50,
         }
 
 
 def test_registration_rules_configured(unit_app: Flask) -> None:
     """The rules are those of the config in effect.
 
-    No limit of unused types (`null`) leaves out `max_unused_service_types`;
+    No limits of unused types and services per user (`null`) leave out
+    `max_unused_service_types` and `max_services_per_user`;
     an empty list of environments (any value) is served as it is.
     """
     with unit_app.app_context():
@@ -49,6 +51,7 @@ def test_registration_rules_configured(unit_app: Flask) -> None:
         custom.endpoints.services.url_schemes = ["http", "https"]
         custom.access_control.service_types = "moderated"
         custom.access_control.max_unused_service_types = None
+        custom.access_control.max_services_per_user = None
         assert registration_rules() == {
             "environments": [],
             "url_schemes": ["http", "https"],
@@ -56,6 +59,8 @@ def test_registration_rules_configured(unit_app: Flask) -> None:
         }
         custom.access_control.max_unused_service_types = 0
         assert registration_rules()["max_unused_service_types"] == 0
+        custom.access_control.max_services_per_user = 0
+        assert registration_rules()["max_services_per_user"] == 0
 
 
 def test_registration_rules_copied(unit_app: Flask) -> None:

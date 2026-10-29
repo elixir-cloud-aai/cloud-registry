@@ -9,8 +9,9 @@ They are built from the config in effect, so that clients (e.g., UIs) can
 read them instead of configuring them: the environments
 (`custom.endpoints.services.environments`) and service URL schemes
 (`url_schemes`) allowed, who may add service types
-(`custom.access_control.service_types`), and how many unused types users
-other than admins may have added (`max_unused_service_types`).
+(`custom.access_control.service_types`), how many unused types users
+other than admins may have added (`max_unused_service_types`), and how many
+services they may have registered (`max_services_per_user`).
 """
 
 from typing import Any
@@ -34,9 +35,12 @@ def registration_rules() -> dict[str, Any]:
         Environments allowed for services (`environments`; empty if any
         value is), schemes allowed in service URLs (`url_schemes`), who may
         add service types (`service_types`: `open`, `controlled` or
-        `moderated`), and how many types that no service has users other
+        `moderated`), how many types that no service has users other
         than admins may have added (`max_unused_service_types`; left out if
-        there is no limit; `0` if they can't add types). Lists are copies.
+        there is no limit; `0` if they can't add types), and how many
+        services they may have registered (`max_services_per_user`; left
+        out if there is no limit; `0` if they can't register services).
+        Lists are copies.
     """
     custom = get_custom_config(CustomConfig)
     services = custom.endpoints.services
@@ -49,6 +53,8 @@ def registration_rules() -> dict[str, Any]:
     # FOCA leaves out `None` values of the service info anyway
     if access_control.max_unused_service_types is not None:
         rules["max_unused_service_types"] = access_control.max_unused_service_types
+    if access_control.max_services_per_user is not None:
+        rules["max_services_per_user"] = access_control.max_services_per_user
     return rules
 
 
