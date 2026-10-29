@@ -442,11 +442,18 @@ def _acceptance(user_id: str) -> dict[str, Any]:
     Returns:
         User identifier, time, and the user's display name (`name`) and email
         address (`email`) if the identity provider releases them (cf.
-        `security.auth.userinfo_claims`), so that owners see who accepted.
+        `security.auth.userinfo_claims`), so that owners see who accepted;
+        the email address only if verified (`email_verified` is `true`), as
+        users may be able to set unverified ones to any address (e.g., that
+        of the invited user). Only the user identifier reliably identifies
+        the user: names are for display.
     """
     claims = get_current_claims()
     acceptance: dict[str, Any] = {"user_id": user_id, "accepted_at": now()}
-    for claim in ("name", "email"):
+    claim_names = ["name"]
+    if claims.get("email_verified") is True:
+        claim_names.append("email")
+    for claim in claim_names:
         value = claims.get(claim)
         if isinstance(value, str) and value.strip():
             acceptance[claim] = value.strip()

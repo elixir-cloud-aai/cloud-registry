@@ -1885,3 +1885,116 @@ def test_owner_rules_groups(
     client = _create_app(monkeypatch, tmp_path, overlay)
     service_id = register(client)
     assert grant_group(client, service_id, TEAM_GROUP, "maintainer") == status
+
+
+# Rules of invitations as in the base config, and the recipe of the docs that
+# stops owners from granting roles (cf. "Requiring login for reads" in
+# `docs/access-control.md`)
+INVITATIONS_RULE = [
+    "p",
+    "owner",
+    f"{BASE}/services/:id/invitations",
+    "(GET)|(POST)",
+]
+REVOKE_INVITATIONS_RULE = [
+    "p",
+    "owner",
+    f"{BASE}/services/:id/invitations/:invitation",
+    "DELETE",
+]
+NO_OWNER_GRANTS = {
+    "owners-change-permissions": None,
+    "owners-change-group-permissions": None,
+    "owners-manage-invitations": None,
+    "owners-revoke-invitations": None,
+}
+
+
+@pytest.mark.parametrize(
+    "policies, warned",
+    [
+        ({}, False),
+        ({"owners-change-permissions": None}, True),
+        ({**NO_GROUPS, "owners-change-permissions": None}, True),
+        ({"owners-change-permissions": USERS_RULE_GET}, True),
+        ({"owners-change-permissions": USERS_RULE_050}, False),
+        ({"owners-change-permissions": USERS_RULE_PUT}, False),
+        (NO_GROUPS, False),
+        (NO_OWNER_GRANTS, False),
+        (
+            {
+                "owners-change-permissions": None,
+                "owners-manage-invitations": [*INVITATIONS_RULE[:3], "GET"],
+            },
+            False,
+        ),
+        ([INVITATIONS_RULE, REVOKE_INVITATIONS_RULE], True),
+        ([USERS_RULE_PUT, INVITATIONS_RULE], False),
+        ([USERS_RULE_GET], False),
+    ],
+    ids=[
+        "unchanged",
+        "users-removed",
+        "both-removed",
+        "users-get-only",
+        "users-as-in-0.5.0",
+        "users-put-only",
+        "groups-removed",
+        "recipe",
+        "invitations-get-only",
+        "list-invitations-only",
+        "list-with-users",
+        "list-without-invitations",
+    ],
+)
+def test_invitation_rules_warning(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    capsys: pytest.CaptureFixture[str],
+    policies: dict[str, Any] | list[list[str]],
+    warned: bool,
+) -> None:
+    """The app warns if owners can create invitations but not grant roles.
+
+    That is, if configured rules let owners (or any user) create invitations
+    (`POST .../invitations`), which grant roles to users, but no rule lets
+    them grant roles to users (`PUT .../permissions/<user>`), e.g., as a
+    deployment of 0.6.0 removed `owners-change-permissions`, and the rules of
+    invitations are inherited from the base config.
+    """
+    overlay = {"security": {"access_control": {"policies": policies}}}
+    _create_app(monkeypatch, tmp_path, overlay)
+    warnings = [
+        line
+        for line in capsys.readouterr().err.splitlines()
+        if "owners can still grant roles to users by invitation" in line
+    ]
+    assert len(warnings) == int(warned)
+    if warned:
+        assert "WARNING" in warnings[0]
+        assert "owners-manage-invitations" in warnings[0]
+
+
+def test_invitation_rules_recipe(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
+) -> None:
+    """With the recipe of the docs, owners can't grant roles at all.
+
+    Neither via the roles on the service, nor by invitation.
+    """
+    overlay = {"security": {"access_control": {"policies": NO_OWNER_GRANTS}}}
+    client = _create_app(monkeypatch, tmp_path, overlay)
+    service_id = register(client)
+    response = client.put(
+        f"{BASE}/services/{service_id}/permissions/{BOB}",
+        json={"role": "owner"},
+        headers=headers(ALICE),
+    )
+    assert response.status_code == 403
+    response = client.post(
+        f"{BASE}/services/{service_id}/invitations",
+        json={"role": "owner"},
+        headers=headers(ALICE),
+    )
+    assert response.status_code == 403

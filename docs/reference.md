@@ -21,11 +21,21 @@ HTTP API, see [API](api.md) and the Swagger UI of a deployment.
 
 ::: cloud_registry.ga4gh.registry.service_info
 
+::: cloud_registry.ga4gh.registry.service_types
+
+::: cloud_registry.ga4gh.registry.rename
+
+::: cloud_registry.ga4gh.registry.locks
+
 ::: cloud_registry.ga4gh.registry.verification
 
 ## Access control
 
 ::: cloud_registry.ga4gh.registry.permissions
+
+::: cloud_registry.ga4gh.registry.invitations
+
+::: cloud_registry.ga4gh.registry.service_limits
 
 ## Migrations
 

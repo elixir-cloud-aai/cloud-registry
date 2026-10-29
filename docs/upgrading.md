@@ -19,8 +19,15 @@ Data is kept. Owners can invite users to their services by link (see
   `security.access_control.policies`). Overlays that give the policies as a
   list, rather than changing single rules by name, must add them, or the new
   endpoints return `403 Forbidden`.
-- The new options `custom.access_control.invitations` (`expiry_days`,
-  `max_per_service`) have defaults (see
+- Deployments that stopped owners from granting roles, by removing or
+  restricting `owners-change-permissions` by name (see [Requiring login for
+  reads](access-control.md#requiring-login-for-reads)), inherit the rules of
+  invitations, with which owners can grant `owner` and `maintainer` again:
+  set `owners-manage-invitations` and `owners-revoke-invitations` to `null`
+  in the same overlay. The app warns on startup if owners can create
+  invitations, but no rule lets them grant roles to users.
+- The new options `custom.access_control.invitations` (`expiry_days`, at
+  most 3650, and `max_per_service`) have defaults (see
   [Invitations](configuration.md#invitations)).
 
 Users other than admins may now register at most 50 services each
@@ -44,6 +51,21 @@ services per user (new collection `service_counts`, and a new index of
 `services`). Restart the app once after the rollout (or upgrade with the app
 scaled to 0 replicas), so that services registered, updated or deleted by
 pods of 0.6.0 during the rollout are counted correctly.
+
+Services that admins registered before the upgrade have the admin as their
+only owner, so they count for the admin, unlike those that admins register
+in admin mode from now on. The app can't tell admins apart on startup (they
+are admins through the groups in their tokens), so if an admin registered
+many services (e.g., imported them), make these count for nobody after the
+upgrade (with the admin's user identifier), and restart the app, so that it
+corrects the counters:
+
+```javascript
+db.getSiblingDB("serviceStore").services.updateMany(
+  {_createdBy: "<admin's user identifier>"},
+  {$set: {_createdBy: null}},
+)
+```
 
 ## From 0.5.0
 
@@ -295,8 +317,10 @@ identifiers of users by issuer, also those of the issuer trusted so far,
 unless its subjects are kept bare. Stored identifiers of its users (their
 roles on services, roles granted via the permissions API, the service
 types they added, the services they registered (for the [limit of services
-per user](configuration.md#services-per-user)) and their display names) then
-no longer match them:
+per user](configuration.md#services-per-user)), their display names, and the
+[invitations](access-control.md#invitations) they created or accepted) then
+no longer match them (e.g., open invitations of owners are deleted when
+they are accepted, as their creators seem to be no longer owners):
 
 - **Recommended:** keep the subjects of the issuer trusted so far bare
   (`namespace: ""`), so that nothing needs to be migrated. Its users keep
@@ -316,8 +340,10 @@ no longer match them:
   The argument is the namespace of the issuer trusted so far (by default,
   the issuer). Its users lack their roles from the rollout until the
   migration, so run it right after the rollout, while users don't change
-  roles (e.g., announce a short maintenance window): roles revoked during
-  the migration may be restored by it, and requests that store display
+  roles or accept invitations (e.g., announce a short maintenance window):
+  roles revoked during the migration may be restored by it, invitations
+  accepted during it may be deleted or stay claimed although their role
+  wasn't granted (create new ones then), and requests that store display
   names may fail (clients can retry them). Running app instances
   load the changed rules on their next request. Configured rules that name
   bare users (`security.access_control.policies`) are counted, but not

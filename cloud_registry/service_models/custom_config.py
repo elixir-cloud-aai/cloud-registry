@@ -148,34 +148,39 @@ JKLMNOPQRSTUVWXYZ0123456789', length=6), url_schemes=['https'], environments=[\
     services: ServicesConfig
 
 
+# Maximum days after which invitations expire (about ten years; larger values
+# can overflow the expiry times of invitations)
+MAX_EXPIRY_DAYS = 3650
+
+
 class InvitationsConfig(FOCABaseConfig):
     """Model for invitations to services (`POST /services/{id}/invitations`).
 
     Args:
         expiry_days: Days after which invitations expire, whether accepted
-            or not; expired ones are deleted.
+            or not (at most `MAX_EXPIRY_DAYS`); expired ones are deleted.
         max_per_service: How many invitations that haven't expired, open
             or accepted, a service may have (`409` above); unlimited if
             `None`.
 
     Attributes:
         expiry_days: Days after which invitations expire, whether accepted
-            or not; expired ones are deleted.
+            or not (at most `MAX_EXPIRY_DAYS`); expired ones are deleted.
         max_per_service: How many invitations that haven't expired, open
             or accepted, a service may have (`409` above); unlimited if
             `None`.
 
     Raises:
         pydantic.ValidationError: The class was instantianted with an illegal
-            data type, `expiry_days` is not positive, or
-            `max_per_service` is negative.
+            data type, `expiry_days` is not positive or larger than
+            `MAX_EXPIRY_DAYS`, or `max_per_service` is negative.
 
     Example:
         >>> InvitationsConfig(expiry_days=1)
         InvitationsConfig(expiry_days=1, max_per_service=20)
     """
 
-    expiry_days: PositiveInt = 7
+    expiry_days: Annotated[int, Field(gt=0, le=MAX_EXPIRY_DAYS)] = 7
     max_per_service: NonNegativeInt | None = 20
 
 

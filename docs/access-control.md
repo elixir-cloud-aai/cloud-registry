@@ -159,7 +159,20 @@ registration was open keep theirs. So admins should review the roles on
 services when restricting reads (`GET /services/<id>/permissions`), and
 deployments that don't want owners to grant roles can restrict
 `owners-change-permissions` and `owners-change-group-permissions` by name
-in the same overlay, too:
+in the same overlay, too. Owners also grant roles by
+[invitation](#invitations), so remove the rules of invitations as well
+(`accept-invitations` can stay: without owners' invitations, only those of
+admins remain to be accepted). To stop owners from granting roles at all:
+
+```yaml
+            owners-change-permissions: null
+            owners-change-group-permissions: null
+            owners-manage-invitations: null
+            owners-revoke-invitations: null
+```
+
+The app warns on startup if configured rules let owners create invitations
+while no rule lets them grant roles to users. More on the two rules of roles:
 
 - `owners-change-permissions`
   (`/ga4gh/registry/v1/services/:id/permissions/*`) also covers the roles
@@ -327,7 +340,12 @@ curl -X POST "http://localhost:8080/ga4gh/registry/v1/invitations/accept" \
   when they created it, as long as that group is owner (and, if they accept
   the invitation themselves, they are still a member of it). Otherwise, the
   invitations are deleted instead of accepted (`404`), so that removed owners
-  can't regain the role with invitations they created before. Invitations of
+  can't regain the role with invitations they created before. The group
+  stays owner when a member leaves it, though, so the invitations that member
+  created through it stay valid (only the member can't accept them
+  themselves): when a member leaves an owner group, the other owners should
+  revoke the member's open invitations (listed with their identifier in
+  `created_by`). Invitations of
   admins don't depend on their role, as the registry can't check admin groups
   without the admin's token: when removing an admin, delete the open
   invitations they created (no endpoint lists them across services: query
@@ -338,14 +356,19 @@ curl -X POST "http://localhost:8080/ga4gh/registry/v1/invitations/accept" \
   can't accept invitations (`400 Bad Request`).
 - **Listing and revoking:** `GET /services/<id>/invitations` lists the open
   and accepted invitations that haven't expired, with who accepted them
-  (`accepted`: user identifier, and the name and email address if the
-  identity provider releases them, e.g., with `name` and `email` in
-  `security.auth.userinfo_claims`; removed when the user's roles on the
-  service are revoked), and
+  (`accepted`: user identifier, and the name and verified email address if
+  the identity provider releases them, e.g., with `name`, `email` and
+  `email_verified` in `security.auth.userinfo_claims`; removed when the
+  user's roles on the service are revoked), and
   `DELETE /services/<id>/invitations/<invitation-id>` revokes an open one.
   Accepted invitations can't be revoked (`409`, `invitation-accepted`):
-  revoke the role instead. Maintainers and other users can't create, list or
-  revoke invitations (`403 Forbidden`).
+  revoke the role instead. Only the user identifier reliably identifies who
+  accepted: users may be able to choose their name, and email addresses are
+  only shown if the identity provider marks them as verified
+  (`email_verified: true`). Maintainers and other users can't create, list or
+  revoke invitations (`403 Forbidden`). Deployments that stop owners from
+  granting roles also remove the rules of owners' invitations (see
+  [Requiring login for reads](#requiring-login-for-reads)).
 - **Limit:** a service has at most
   `custom.access_control.invitations.max_per_service` invitations that
   haven't expired, open or accepted (default: 20; `null` for no limit), so

@@ -580,7 +580,11 @@ def test_email_and_name(app: App, monkeypatch: pytest.MonkeyPatch) -> None:
 
     Blank and non-string values are left out.
     """
-    claims: dict[str, Any] = {"name": " Bob ", "email": "bob@example.org"}
+    claims: dict[str, Any] = {
+        "name": " Bob ",
+        "email": "bob@example.org",
+        "email_verified": True,
+    }
     monkeypatch.setattr(invitations_module, "get_current_claims", lambda: claims)
     with app.app.app_context():
         acceptance = invitations_module._acceptance(BOB)
@@ -589,6 +593,25 @@ def test_email_and_name(app: App, monkeypatch: pytest.MonkeyPatch) -> None:
         claims.update(name=" ", email=1)
         acceptance = invitations_module._acceptance(BOB)
     assert set(acceptance) == {"user_id", "accepted_at"}
+
+
+@pytest.mark.parametrize("verified", [None, False, "true", 1])
+def test_email_unverified(
+    app: App, monkeypatch: pytest.MonkeyPatch, verified: object
+) -> None:
+    """Email addresses are only stored if verified (`email_verified: true`).
+
+    Users may be able to set unverified ones to any address, e.g., that of
+    the invited user; names are stored anyway, for display only.
+    """
+    claims: dict[str, Any] = {"name": "Bob", "email": "bob@example.org"}
+    if verified is not None:
+        claims["email_verified"] = verified
+    monkeypatch.setattr(invitations_module, "get_current_claims", lambda: claims)
+    with app.app.app_context():
+        acceptance = invitations_module._acceptance(BOB)
+    assert acceptance["name"] == "Bob"
+    assert "email" not in acceptance
 
 
 def test_logged(client: FlaskClient, caplog: pytest.LogCaptureFixture) -> None:

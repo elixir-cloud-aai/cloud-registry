@@ -15,7 +15,16 @@ type). Role changes are logged by FOCA's ownership helpers (logger
 `foca.security.access_control.ownership`), naming the service by its path,
 e.g., `Role 'maintainer' on '/ga4gh/registry/v1/services/ABC123' granted to
 user '<sub>' by user '<sub>' (previous roles: none)`; deletions and
-verifications by the app (loggers `cloud_registry.*`).
+verifications by the app (loggers `cloud_registry.*`). The app also logs
+who created, revoked and accepted [invitations](access-control.md#invitations)
+(by invitation and service identifier, never with tokens) and which ones it
+deleted because their creator was no longer an owner, as well as
+registrations refused by the [limit of services per
+user](configuration.md#services-per-user) and corrections of the counters on
+startup. A role granted by invitation appears in FOCA's log as granted by
+the user who accepted it: the app's log line of the acceptance names the
+invitation, whose creator the invitations of the service list
+(`created_by`).
 Changes via the [permissions API](#permissions-api) are not logged by
 the app itself: FOCA logs the requests (method, path and client address) and
 the identifiers of the added, updated or deleted policy rules, but not who

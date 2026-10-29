@@ -11,6 +11,13 @@ from flask.testing import FlaskClient
 from foca.security.access_control.constants import CONFIGURED_FIELD
 import pytest
 
+from cloud_registry import namespace_subjects as namespace_module
+from cloud_registry.ga4gh.registry.invitations import (
+    ACCEPTED,
+    CREATED_AS,
+    TOKEN_HASH,
+)
+from cloud_registry.ga4gh.registry.permissions import INVITATIONS
 from cloud_registry.ga4gh.registry.service import CREATED_BY as SERVICE_CREATOR
 from cloud_registry.ga4gh.registry.service import KEY
 from cloud_registry.ga4gh.registry.service_limits import COUNT, SERVICE_COUNTS
@@ -43,8 +50,10 @@ def client(
     by `alice` and by a namespaced user, services registered by `alice`, by
     a namespaced user and by nobody (with keys, as if valid), with counters
     of `alice` and of the namespaced `alice` (who registered one since the
-    config change), and display names of `alice` (one for a service of which
-    the namespaced user already has a name).
+    config change), display names of `alice` (one for a service of which
+    the namespaced user already has a name), and invitations created as or
+    accepted by `alice` (as owner, through a group, or by a namespaced user
+    or an admin).
     """
     client = _create_app(monkeypatch, tmp_path, NAMESPACED)
     with client.application.app_context():
@@ -92,6 +101,26 @@ def client(
                 {"service_id": "S2", "user_id": NAMESPACED_ALICE, "name": "Alice"},
             ]
         )
+        # unique hashes of tokens (indexed)
+        get_collection(INVITATIONS).insert_many(
+            {**invitation, TOKEN_HASH: invitation["_id"]}
+            for invitation in [
+                {"_id": "I1", "created_by": BARE, CREATED_AS: {"user": BARE}},
+                {
+                    "_id": "I2",
+                    "created_by": OTHER,
+                    CREATED_AS: {"group": "team"},
+                    ACCEPTED: {"user_id": BARE, "name": "Alice"},
+                },
+                {
+                    "_id": "I3",
+                    "created_by": NAMESPACED_ALICE,
+                    CREATED_AS: {"admin": True},
+                    ACCEPTED: {"user_id": OTHER},
+                },
+                {"_id": "I4", "created_by": BARE, CREATED_AS: {"group": "team"}},
+            ]
+        )
     return client
 
 
@@ -110,6 +139,25 @@ def _rules() -> list[tuple[Any, ...]]:
     )
 
 
+def _invitations() -> dict[str, tuple[Any, ...]]:
+    """Get the users of the stored invitations.
+
+    Must be called in an app context.
+
+    Returns:
+        Creator, how they created it, and who accepted it (if accepted), by
+        invitation identifier.
+    """
+    return {
+        invitation["_id"]: (
+            invitation["created_by"],
+            invitation[CREATED_AS],
+            invitation.get(ACCEPTED, {}).get("user_id"),
+        )
+        for invitation in get_collection(INVITATIONS).find()
+    }
+
+
 def test_namespace_subjects(
     client: FlaskClient, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -125,6 +173,7 @@ def test_namespace_subjects(
             "service_types": 1,
             "services": 2,
             "user_names": 2,
+            "invitations": 3,
         }
         assert "configured policy rules" in caplog.text
         assert _rules() == [
@@ -163,6 +212,12 @@ def test_namespace_subjects(
             ("S1", NAMESPACED_ALICE, "Alice"),
             ("S2", NAMESPACED_ALICE, "Alice"),
         ]
+        assert _invitations() == {
+            "I1": (NAMESPACED_ALICE, {"user": NAMESPACED_ALICE}, None),
+            "I2": (OTHER, {"group": "team"}, NAMESPACED_ALICE),
+            "I3": (NAMESPACED_ALICE, {"admin": True}, OTHER),
+            "I4": (NAMESPACED_ALICE, {"group": "team"}, None),
+        }
         counts = namespace_subjects(ISSUER)
         assert counts == {
             "rules": 0,
@@ -170,6 +225,7 @@ def test_namespace_subjects(
             "service_types": 0,
             "services": 0,
             "user_names": 0,
+            "invitations": 0,
         }
 
 
@@ -193,6 +249,72 @@ def test_subjects_with_separator(client: FlaskClient) -> None:
         assert ("g2", f"user:{ISSUER}|auth0|1", "owner", "/s/3") in _rules()
 
 
+def test_invitation_changed_meanwhile(
+    client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Invitations that change while they are rewritten are not counted.
+
+    They are left as they are (here: deleted, e.g., as revoked), so that,
+    e.g., released acceptances aren't recreated, and another run rewrites
+    them.
+    """
+    get_collection_of_app = namespace_module.get_collection
+
+    class ChangingCollection:
+        """Invitations, of which one is deleted after they are read."""
+
+        def __init__(self, collection: Any) -> None:
+            """Wrap the collection.
+
+            Args:
+                collection: Collection of the invitations.
+            """
+            self.collection = collection
+
+        def find(self, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+            """Read the invitations, then delete the first one.
+
+            Args:
+                *args: Positional arguments of `Collection.find()`.
+                **kwargs: Keyword arguments of `Collection.find()`.
+
+            Returns:
+                The invitations as read.
+            """
+            invitations = list(self.collection.find(*args, **kwargs))
+            self.collection.delete_one({"_id": "I1"})
+            return invitations
+
+        def update_one(self, *args: Any, **kwargs: Any) -> Any:
+            """Update an invitation.
+
+            Args:
+                *args: Positional arguments of `Collection.update_one()`.
+                **kwargs: Keyword arguments of `Collection.update_one()`.
+
+            Returns:
+                The result of the update.
+            """
+            return self.collection.update_one(*args, **kwargs)
+
+    def get_collection_changing(name: str) -> Any:
+        """Get a collection; that of invitations changes after reading.
+
+        Args:
+            name: Name of the collection.
+
+        Returns:
+            The collection.
+        """
+        collection = get_collection_of_app(name)
+        return ChangingCollection(collection) if name == INVITATIONS else collection
+
+    monkeypatch.setattr(namespace_module, "get_collection", get_collection_changing)
+    with client.application.app_context():
+        assert namespace_subjects(ISSUER)["invitations"] == 2
+        assert "I1" not in _invitations()
+
+
 def test_dry_run(client: FlaskClient) -> None:
     """A dry run counts the subjects, without changes."""
     with client.application.app_context():
@@ -204,11 +326,13 @@ def test_dry_run(client: FlaskClient) -> None:
             "service_types": 1,
             "services": 2,
             "user_names": 2,
+            "invitations": 3,
         }
         assert _rules() == before
         assert get_collection("user_names").count_documents({"user_id": BARE}) == 2
         assert get_collection("services").count_documents({SERVICE_CREATOR: BARE}) == 2
         assert get_collection(SERVICE_COUNTS).count_documents({"_id": BARE}) == 1
+        assert _invitations()["I1"] == (BARE, {"user": BARE}, None)
 
 
 @pytest.mark.parametrize(
