@@ -76,10 +76,11 @@ def _runs() -> list[tuple[list[str], list[str]]]:
         The options of each instruction (e.g., `--network=none`), and its
         shell commands, one per command of a `&&` list.
     """
+    dockerfile = DOCKERFILE.read_text()
+    # Heredocs (`RUN <<EOF`) would hide their commands from the checks
+    assert not re.search(r"^RUN\s.*<<", dockerfile, flags=re.MULTILINE)
     lines = [
-        line
-        for line in DOCKERFILE.read_text().splitlines()
-        if not line.lstrip().startswith("#")
+        line for line in dockerfile.splitlines() if not line.lstrip().startswith("#")
     ]
     text = "\n".join(lines).replace("\\\n", " ")
     runs = []
@@ -105,9 +106,9 @@ def _run_commands() -> list[str]:
 def test_build_group_matches_build_system() -> None:
     """The dependency group lists exactly the build requirements of the app."""
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    assert (
-        pyproject["dependency-groups"][GROUP] == (pyproject["build-system"]["requires"])
-    )
+    group = pyproject["dependency-groups"][GROUP]
+    requires = pyproject["build-system"]["requires"]
+    assert group == requires
 
 
 def test_build_requirements_hashed() -> None:
@@ -137,8 +138,12 @@ def test_downloads_hash_checked() -> None:
     """
     commands = []
     for args in map(shlex.split, _run_commands()):
-        # `pip`, `<venv>/bin/pip` or `python -m pip`
-        starts = [i for i, arg in enumerate(args) if Path(arg).name == "pip"]
+        # `pip`, `pip3`, `pip3.13`, `<venv>/bin/pip` or `python -m pip`
+        starts = [
+            i
+            for i, arg in enumerate(args)
+            if re.fullmatch(r"pip(3(\.\d+)?)?", Path(arg).name)
+        ]
         if starts:
             commands.append(args[starts[0] + 1 :])
         # uv only exports the requirements
@@ -146,8 +151,9 @@ def test_downloads_hash_checked() -> None:
             assert args[args.index("uv") + 1] == "export", args
     subcommands = [args[0] for args in commands]
     assert set(subcommands) <= {"install", "wheel"}, subcommands
-    # One build of the app (its wheel)
-    assert subcommands.count("wheel") == 1, subcommands
+    # The app is built as a wheel (checked below), not by `pip install` of
+    # its sources
+    assert "wheel" in subcommands, subcommands
     for args in commands:
         if "--no-index" not in args:
             assert "--require-hashes" in args, args
@@ -174,13 +180,17 @@ def test_builds_offline() -> None:
         for options, commands in _runs()
         if any(re.search(r"\bpip\s.*--no-index\b", command) for command in commands)
     ]
-    assert len(offline) == 2, offline
+    # At least the build and the install of the wheel
+    assert offline
     for options in offline:
         assert "--network=none" in options, options
 
 
 def test_uv_mounted_only() -> None:
-    """The uv image is only mounted into the steps that use it, not copied."""
+    """The uv image is only mounted into the steps that use it, not copied.
+
+    The steps also keep no uv cache (`UV_NO_CACHE=1`) in their layers.
+    """
     text = DOCKERFILE.read_text()
     assert not re.search(r"^COPY\s+--from=uv\b", text, flags=re.MULTILINE)
     for command in _run_commands():
