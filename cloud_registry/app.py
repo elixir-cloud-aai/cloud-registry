@@ -51,7 +51,8 @@ def create_app() -> App:
     services that aren't stored (e.g., on upgrades). Warns of stored
     services with invalid URLs or URL schemes that are not allowed, and of
     rules that let owners change roles of groups although the rule for
-    these is changed (cf. `warn_owner_rules()`).
+    these is changed, or grant roles by invitation although no rule lets
+    them grant roles to users (cf. `warn_owner_rules()`).
 
     FOCA validates the config, e.g., that token issuers are trusted (needed
     for access control) with an audience, the group settings and the

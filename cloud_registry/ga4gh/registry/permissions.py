@@ -67,6 +67,9 @@ BASE_CONFIG = Path(__file__).parents[2] / "config.yaml"
 # Policy rule of owners' roles of groups on services (cf. `config.yaml`,
 # `warn_owner_rules()`)
 OWNER_GROUP_RULE = "owners-change-group-permissions"
+# Policy rules of owners' invitations to services (cf. `config.yaml`,
+# `warn_owner_rules()`)
+INVITATION_RULES = ("owners-manage-invitations", "owners-revoke-invitations")
 # Methods of changes of roles (cf. `warn_owner_rules()`)
 METHODS = ("PUT", "DELETE")
 # Example user identifiers, bare and namespaced by issuer (cf.
@@ -685,25 +688,31 @@ def warn_owner_rules() -> None:
     groups only (e.g., the changed rule itself) are the deployment's choice.
     Rules stored via FOCA's permissions API are not checked.
 
+    Also warns if configured rules let owners (or any user) create
+    invitations (`POST /services/:id/invitations`), which grant roles to
+    users, but no rule lets them grant roles to users (`PUT` on the roles of
+    any of `EXAMPLE_USERS`), e.g., as a deployment of 0.6.0 removed
+    `owners-change-permissions` to stop owners from granting roles, and
+    inherits the rules of invitations (`INVITATION_RULES`) from the base
+    config.
+
     Must be called in an app context.
     """
     base = ConfigParser.parse_yaml(BASE_CONFIG)["security"]["access_control"][
         "policies"
     ][OWNER_GROUP_RULE]
     policies = get_config().security.access_control.policies or []
+    path = base[2].replace(":id", "service").replace("*", "group")
+    _warn_invitation_rules(policies, path.split("/permissions/")[0])
     if base in policies:
         return
-    path = base[2].replace(":id", "service").replace("*", "group")
     user_paths = [path.replace("groups/group", user) for user in EXAMPLE_USERS]
     allowing = sorted(
         {
             str(rule)
-            for rule in policies
-            if len(rule) >= 4
-            and rule[:2] in (["p", "owner"], ["p", "*"])
-            and key_match2(path, rule[2])
-            and any(key_match2(user_path, rule[2]) for user_path in user_paths)
-            and any(re.fullmatch(f"(?:{rule[3]})", method) for method in METHODS)
+            for method in METHODS
+            for rule in _owner_rules(policies, path, method)
+            if any(key_match2(user_path, rule[2]) for user_path in user_paths)
         }
     )
     if allowing:
@@ -716,6 +725,55 @@ def warn_owner_rules() -> None:
             path,
             ", ".join(allowing),
         )
+
+
+def _owner_rules(policies: list[list[str]], path: str, method: str) -> list[list[str]]:
+    """Get the configured rules that let owners use a method on a path.
+
+    Args:
+        policies: Configured policy rules.
+        path: Request path.
+        method: Request method.
+
+    Returns:
+        The rules for owners or any user (`*`) that allow the method on the
+        path.
+    """
+    return [
+        rule
+        for rule in policies
+        if len(rule) >= 4
+        and rule[:2] in (["p", "owner"], ["p", "*"])
+        and key_match2(path, rule[2])
+        and re.fullmatch(f"(?:{rule[3]})", method)
+    ]
+
+
+def _warn_invitation_rules(policies: list[list[str]], service: str) -> None:
+    """Warn if owners can create invitations, but not grant roles to users.
+
+    Cf. `warn_owner_rules()`.
+
+    Args:
+        policies: Configured policy rules.
+        service: Path of an example service.
+    """
+    inviting = sorted(
+        {str(rule) for rule in _owner_rules(policies, f"{service}/invitations", "POST")}
+    )
+    if not inviting or any(
+        _owner_rules(policies, f"{service}/permissions/{user}", "PUT")
+        for user in EXAMPLE_USERS
+    ):
+        return
+    logger.warning(
+        "No policy rule lets owners grant roles to users "
+        "('security.access_control.policies'), but owners can still grant "
+        "roles to users by invitation via: %s. Remove these rules, too "
+        "(e.g., set %s to null; see 'From 0.6.0' in the upgrade guide).",
+        ", ".join(inviting),
+        " and ".join(f"'{name}'" for name in INVITATION_RULES),
+    )
 
 
 def _check_user_id(userId: str) -> None:
