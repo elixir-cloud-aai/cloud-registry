@@ -74,7 +74,8 @@ def _runs() -> list[tuple[list[str], list[str]]]:
 
     Returns:
         The options of each instruction (e.g., `--network=none`), and its
-        shell commands, one per command of a `&&` list.
+        shell commands, one per command of a list or pipeline (separated by
+        `&&`, `||`, `;` or `|`).
     """
     lines = [
         line
@@ -90,7 +91,7 @@ def _runs() -> list[tuple[list[str], list[str]]]:
         assert match, run
         options, commands = match.groups()
         runs.append(
-            (options.split(), [command.strip() for command in commands.split("&&")])
+            (options.split(), [c.strip() for c in re.split(r"&&|\|\||;|\|", commands)])
         )
     return runs
 
@@ -99,7 +100,7 @@ def _run_commands() -> list[str]:
     """Get the shell commands of the `RUN` instructions of the Dockerfile.
 
     Returns:
-        Commands, one per command of a `&&` list.
+        Commands, one per command of a list or pipeline.
     """
     return [command for _, commands in _runs() for command in commands]
 
