@@ -210,8 +210,9 @@ def test_release_chart_check_runs(
 ) -> None:
     """The chart check of `publish` passes only for the chart of `prepare`.
 
-    The step's script runs as GitHub runs it (`bash -e -o pipefail`) in a
-    directory whose `dist/` holds the downloaded artifact. It needs `bash`
+    The step's script runs with the options of GitHub's default shell for
+    steps without `shell:` (`bash -e`, no `pipefail`) in a directory whose
+    `dist/` holds the downloaded artifact. It needs `bash`
     and GNU `sha256sum`, as on the GitHub runners.
 
     Args:
@@ -239,7 +240,7 @@ def test_release_chart_check_runs(
     if extra:
         (dist / extra).write_bytes(b"extra")
     result = subprocess.run(  # noqa: S603 (fixed arguments, no shell)
-        [bash, "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", script],
+        [bash, "--noprofile", "--norc", "-e", "-c", script],
         capture_output=True,
         text=True,
         cwd=tmp_path,
