@@ -1,4 +1,4 @@
-"""Tests for the names and the gate of the GitHub Actions workflows."""
+"""Tests for the GitHub Actions workflows (names, gate, release checks)."""
 
 import hashlib
 import importlib.util
@@ -19,6 +19,8 @@ GATE = "passed"
 # The last release signed by the release workflow before its file was renamed
 # from `release.yaml` to `release.yml`
 LAST_RELEASE_YAML = Version("0.4.0")
+# A chart file name as the release workflow packages it
+CHART = "cloud-registry-1.0.0-rc1.tgz"
 
 # `scripts/` is not a package, so the script is loaded from its file
 _spec = importlib.util.spec_from_file_location(
@@ -152,28 +154,22 @@ def test_release_chart_checked() -> None:
     `publish` downloads the chart artifact, which any job of the run could
     replace, so it checks that `dist/` holds exactly the file that `prepare`
     packaged (its name and SHA-256, as outputs of `prepare`) before the chart
-    is attested, signed and released.
+    is attested, signed and released. The wiring and order of the steps are
+    checked here, the script itself by `test_release_chart_check_runs`.
     """
     release = _load(WORKFLOWS / "release.yml")["jobs"]
     prepare = release["prepare"]
     assert prepare["outputs"]["chart_file"] == "${{ steps.chart.outputs.file }}"
     assert prepare["outputs"]["chart_sha256"] == "${{ steps.chart.outputs.sha256 }}"
     packaging = {step["name"]: step for step in prepare["steps"]}
-    package = packaging["Package chart"]
-    assert package["id"] == "chart"
-    assert 'echo "file=${package#dist/}" >> "${GITHUB_OUTPUT}"' in package["run"]
-    assert 'sha256sum "${package}"' in package["run"]
+    assert packaging["Package chart"]["id"] == "chart"
     # Re-runs of all jobs replace the chart, so its checksum is the new one
     assert packaging["Upload chart"]["with"]["overwrite"] is True
     steps = {step["name"]: step for step in release["publish"]["steps"]}
     check = steps["Check chart"]
     assert check["env"]["FILE"] == "${{ needs.prepare.outputs.chart_file }}"
     assert check["env"]["SHA256"] == "${{ needs.prepare.outputs.chart_sha256 }}"
-    assert r'[[ ! "${FILE}" =~ ^cloud-registry-[0-9A-Za-z.+-]+\.tgz$ ]]' in check["run"]
-    assert '[[ ! "${SHA256}" =~ ^[0-9a-f]{64}$ ]]' in check["run"]
-    assert '"${#files[@]}" -ne 1' in check["run"]
-    assert '"${files[0]}" != "dist/${FILE}"' in check["run"]
-    assert "sha256sum --check --strict" in check["run"]
+    # What the script accepts is tested by `test_release_chart_check_runs`
     # Only the checked file is attested and signed
     chart = "dist/${{ needs.prepare.outputs.chart_file }}"
     assert steps["Attest chart provenance"]["with"]["subject-path"] == chart
@@ -184,9 +180,6 @@ def test_release_chart_checked() -> None:
     assert names.index("Check chart") < names.index("Attest chart provenance")
     assert names.index("Check chart") < names.index("Sign chart")
     assert names.index("Sign chart") < names.index("Create release")
-
-
-CHART = "cloud-registry-1.0.0-rc1.tgz"
 
 
 @pytest.mark.parametrize(
@@ -215,7 +208,8 @@ def test_release_chart_check_runs(
     """The chart check of `publish` passes only for the chart of `prepare`.
 
     The step's script runs as GitHub runs it (`bash -e -o pipefail`) in a
-    directory whose `dist/` holds the downloaded artifact.
+    directory whose `dist/` holds the downloaded artifact. It needs `bash`
+    and GNU `sha256sum`, as on the GitHub runners.
 
     Args:
         tmp_path: The working directory of the step.

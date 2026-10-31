@@ -227,9 +227,9 @@ it attests the build provenance of the scanned digest and signs it (see
 tags exactly that image `X.Y.Z` (and `latest`, if it is the highest stable
 release on `main`), checks that the chart it downloads is the one it
 packaged (a single file with the name and SHA-256 recorded when packaging),
-attests and signs the chart, and creates a GitHub
-release with the chart (`.tgz`), its Sigstore bundle (`.tgz.sigstore.json`)
-and the release notes (see below). Releases are immutable (see the repository
+attests and signs the chart, and creates a GitHub release with the chart
+(`.tgz`), its Sigstore bundle (`.tgz.sigstore.json`) and the release notes
+(see below). Releases are immutable (see the repository
 settings below): once published, their assets can't be added, replaced or
 deleted. The workflow therefore creates the release as a draft, uploads
 the assets and publishes it last. A re-run finishes a draft left by an

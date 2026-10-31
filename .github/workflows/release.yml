@@ -373,12 +373,11 @@ jobs:
         with:
           name: chart
           path: dist/
-      # The artifact is the chart that `prepare` packaged, not one that
-      # replaced it between `prepare` and `publish` (any job of the run can
-      # overwrite artifacts with the run's token), before it is attested,
-      # signed and released: a single file, with the name and checksum of
-      # `prepare`, and nothing else (hidden files included: the attestation
-      # would match them)
+      # Any job of the run can overwrite artifacts with the run's token, so
+      # before the chart is attested, signed and released, the artifact must
+      # be exactly the chart that `prepare` packaged: a single file with the
+      # name and checksum of `prepare`. Hidden files count too, so that
+      # nothing else is in `dist/` (globs of actions match hidden files).
       - name: Check chart
         env:
           FILE: ${{ needs.prepare.outputs.chart_file }}
