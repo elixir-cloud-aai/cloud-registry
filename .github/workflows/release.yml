@@ -347,6 +347,37 @@ jobs:
               echo "::error::Invalid image digest '${DIGEST}'"
               exit 1
           fi
+      - name: Download chart
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: chart
+          path: dist/
+      # Any job of the run can overwrite artifacts with the run's token, so
+      # the artifact must be exactly the chart that `prepare` packaged: a
+      # single file with the name and checksum of `prepare`. Hidden files
+      # count too, so that nothing else is in `dist/` (globs of actions match
+      # hidden files). Checked first, so that a rejected chart leaves nothing
+      # attested or signed, the image included
+      - name: Check chart
+        env:
+          FILE: ${{ needs.prepare.outputs.chart_file }}
+          SHA256: ${{ needs.prepare.outputs.chart_sha256 }}
+        run: |
+          if [[ ! "${FILE}" =~ ^cloud-registry-[0-9A-Za-z.+-]+\.tgz$ ]]; then
+              echo "::error::Invalid chart file name '${FILE}'"
+              exit 1
+          fi
+          if [[ ! "${SHA256}" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "::error::Invalid chart checksum '${SHA256}'"
+              exit 1
+          fi
+          shopt -s nullglob dotglob
+          files=(dist/*)
+          if [[ "${#files[@]}" -ne 1 || "${files[0]}" != "dist/${FILE}" ]]; then
+              echo "::error::Expected one chart in dist/, found: ${files[*]}"
+              exit 1
+          fi
+          echo "${SHA256}  ${files[0]}" | sha256sum --check --strict
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to Docker Hub
@@ -368,36 +399,6 @@ jobs:
       # The signature covers the digest, and so every tag of it
       - name: Sign image
         run: cosign sign --yes "${IMAGE_NAME}@${DIGEST}"
-      - name: Download chart
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: chart
-          path: dist/
-      # Any job of the run can overwrite artifacts with the run's token, so
-      # before the chart is attested, signed and released, the artifact must
-      # be exactly the chart that `prepare` packaged: a single file with the
-      # name and checksum of `prepare`. Hidden files count too, so that
-      # nothing else is in `dist/` (globs of actions match hidden files).
-      - name: Check chart
-        env:
-          FILE: ${{ needs.prepare.outputs.chart_file }}
-          SHA256: ${{ needs.prepare.outputs.chart_sha256 }}
-        run: |
-          if [[ ! "${FILE}" =~ ^cloud-registry-[0-9A-Za-z.+-]+\.tgz$ ]]; then
-              echo "::error::Invalid chart file name '${FILE}'"
-              exit 1
-          fi
-          if [[ ! "${SHA256}" =~ ^[0-9a-f]{64}$ ]]; then
-              echo "::error::Invalid chart checksum '${SHA256}'"
-              exit 1
-          fi
-          shopt -s nullglob dotglob
-          files=(dist/*)
-          if [[ "${#files[@]}" -ne 1 || "${files[0]}" != "dist/${FILE}" ]]; then
-              echo "::error::Expected one chart in dist/, found: ${files[*]}"
-              exit 1
-          fi
-          echo "${SHA256}  ${files[0]}" | sha256sum --check --strict
       # Decided last, from freshly fetched tags (the repository is public, so
       # no credentials are needed), so that neither a re-run of an older
       # release nor a concurrent release moves `latest` back

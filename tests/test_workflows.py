@@ -177,6 +177,9 @@ def test_release_chart_checked() -> None:
     assert "*" not in steps["Sign chart"]["run"]
     names = list(steps)
     assert names.index("Download chart") < names.index("Check chart")
+    # A rejected chart leaves the image unattested and unsigned too
+    assert names.index("Check chart") < names.index("Attest build provenance")
+    assert names.index("Check chart") < names.index("Sign image")
     assert names.index("Check chart") < names.index("Attest chart provenance")
     assert names.index("Check chart") < names.index("Sign chart")
     assert names.index("Sign chart") < names.index("Create release")
