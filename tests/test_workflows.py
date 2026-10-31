@@ -1,11 +1,16 @@
 """Tests for the names and the gate of the GitHub Actions workflows."""
 
+import hashlib
 import importlib.util
+import os
 from pathlib import Path
 import re
+import shutil
+import subprocess
 from typing import Any
 
 from packaging.version import Version
+import pytest
 import yaml
 
 ROOT = Path(__file__).parents[1]
@@ -169,8 +174,79 @@ def test_release_chart_checked() -> None:
     assert '"${#files[@]}" -ne 1' in check["run"]
     assert '"${files[0]}" != "dist/${FILE}"' in check["run"]
     assert "sha256sum --check --strict" in check["run"]
+    # Only the checked file is attested and signed
+    chart = "dist/${{ needs.prepare.outputs.chart_file }}"
+    assert steps["Attest chart provenance"]["with"]["subject-path"] == chart
+    assert steps["Sign chart"]["env"]["CHART"] == chart
+    assert "*" not in steps["Sign chart"]["run"]
     names = list(steps)
     assert names.index("Download chart") < names.index("Check chart")
     assert names.index("Check chart") < names.index("Attest chart provenance")
     assert names.index("Check chart") < names.index("Sign chart")
     assert names.index("Sign chart") < names.index("Create release")
+
+
+CHART = "cloud-registry-1.0.0-rc1.tgz"
+
+
+@pytest.mark.parametrize(
+    ("extra", "rename", "tamper", "file", "sha256", "passes"),
+    [
+        pytest.param(None, None, False, CHART, None, True, id="good"),
+        pytest.param(None, None, True, CHART, None, False, id="wrong-hash"),
+        pytest.param("other.tgz", None, False, CHART, None, False, id="extra"),
+        pytest.param(".hidden.tgz", None, False, CHART, None, False, id="hidden"),
+        pytest.param(
+            None, "cloud-registry-9.9.9.tgz", False, CHART, None, False, id="renamed"
+        ),
+        pytest.param(None, None, False, "../x.tgz", None, False, id="bad-name"),
+        pytest.param(None, None, False, CHART, "abc", False, id="bad-hash"),
+    ],
+)
+def test_release_chart_check_runs(
+    tmp_path: Path,
+    extra: str | None,
+    rename: str | None,
+    tamper: bool,
+    file: str,
+    sha256: str | None,
+    passes: bool,
+) -> None:
+    """The chart check of `publish` passes only for the chart of `prepare`.
+
+    The step's script runs as GitHub runs it (`bash -e -o pipefail`) in a
+    directory whose `dist/` holds the downloaded artifact.
+
+    Args:
+        tmp_path: The working directory of the step.
+        extra: A file added to the artifact, if any.
+        rename: The name the chart is renamed to in the artifact, if any.
+        tamper: Whether the chart's content is changed after packaging.
+        file: The chart file name output by `prepare`.
+        sha256: The checksum output by `prepare` (that of the chart if None).
+        passes: Whether the check passes.
+    """
+    bash = shutil.which("bash")
+    assert bash
+    steps = _load(WORKFLOWS / "release.yml")["jobs"]["publish"]["steps"]
+    script = {step["name"]: step for step in steps}["Check chart"]["run"]
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    chart = dist / CHART
+    chart.write_bytes(b"chart")
+    digest = hashlib.sha256(chart.read_bytes()).hexdigest()
+    if tamper:
+        chart.write_bytes(b"other chart")
+    if rename:
+        chart.rename(dist / rename)
+    if extra:
+        (dist / extra).write_bytes(b"extra")
+    result = subprocess.run(  # noqa: S603 (fixed arguments, no shell)
+        [bash, "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", script],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        env={**os.environ, "FILE": file, "SHA256": sha256 or digest},
+        check=False,
+    )
+    assert (result.returncode == 0) == passes, result.stdout + result.stderr

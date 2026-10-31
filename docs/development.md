@@ -388,7 +388,9 @@ signing uses the workflows' OIDC tokens (permission `id-token: write`). Re-runni
 all jobs of the release workflow builds, scans, signs and tags a new image
 digest (the image build is not reproducible); an earlier digest that was
 published stays signed. Re-running only the failed jobs reuses the digest
-already pushed.
+already pushed. Re-running all jobs also packages the chart again and
+replaces the chart artifact; the release checks the new chart against its new
+SHA-256.
 
 The CI workflow (which tests the chart) and the release workflow (which
 packages it) install the same Helm version (`version:` of `azure/setup-helm`

@@ -1,22 +1,24 @@
 # Release when a version tag (`vX.Y.Z`, or `vX.Y.ZaN`, `vX.Y.ZbN`,
 # `vX.Y.ZrcN` for pre-releases) is pushed: check the tag and that CI passed
-# for its commit, package the Helm chart, build and push the Docker image
-# (with SBOM and provenance attestations) by digest, untagged, and check it
-# (`push`), scan exactly that digest for vulnerabilities in a job of its own,
-# without the release credentials and signing identity (`scan`), and only
-# then attest its build provenance, sign it (Sigstore keyless signing) and
-# tag it, and create the GitHub release with the chart attached, also
-# attested and signed (`publish`; see "Verifying images and charts" in
-# `docs/operations.md`). `push` and `publish` each need approval in the
-# `release` environment. Re-running all jobs builds, scans, signs and tags a
-# new digest; re-running failed jobs reuses the digest already pushed (and
-# scans it again if the scan failed). The tag is the only source of the
-# version: it is passed to the image build (the Docker build gets no Git
-# metadata) and set as the chart's `version` and `appVersion`. Release notes
-# are the curated `docs/releases/<version>.md` followed by GitHub's generated
-# notes if the former exists (the run fails if it contains `TODO` or is not
-# in the agreed format, see `scripts/release_notes.py`), otherwise the
-# generated notes alone; add curated notes to the `nav` of `mkdocs.yml` too
+# for its commit, package the Helm chart (recording its file name and
+# SHA-256), build and push the Docker image (with SBOM and provenance
+# attestations) by digest, untagged, and check it (`push`), scan exactly that
+# digest for vulnerabilities in a job of its own, without the release
+# credentials and signing identity (`scan`), and only then attest its build
+# provenance, sign it (Sigstore keyless signing) and tag it, and create the
+# GitHub release with the chart attached, checked against its recorded name
+# and SHA-256, also attested and signed (`publish`; see "Verifying images and
+# charts" in `docs/operations.md`). `push` and `publish` each need approval
+# in the `release` environment. Re-running all jobs builds, scans, signs and
+# tags a new digest (and packages the chart again); re-running failed jobs
+# reuses the digest already pushed (and scans it again if the scan failed).
+# The tag is the only source of the version: it is passed to the image build
+# (the Docker build gets no Git metadata) and set as the chart's `version`
+# and `appVersion`. Release notes are the curated
+# `docs/releases/<version>.md` followed by GitHub's generated notes if the
+# former exists (the run fails if it contains `TODO` or is not in the agreed
+# format, see `scripts/release_notes.py`), otherwise the generated notes
+# alone; add curated notes to the `nav` of `mkdocs.yml` too
 # (the docs build fails otherwise).
 # Publishing runs in the `release` environment (required reviewer, Docker
 # Hub secrets). Release tags are immutable (tag ruleset). See "Versioning
@@ -375,7 +377,8 @@ jobs:
       # replaced it between `prepare` and `publish` (any job of the run can
       # overwrite artifacts with the run's token), before it is attested,
       # signed and released: a single file, with the name and checksum of
-      # `prepare`
+      # `prepare`, and nothing else (hidden files included: the attestation
+      # would match them)
       - name: Check chart
         env:
           FILE: ${{ needs.prepare.outputs.chart_file }}
@@ -389,7 +392,7 @@ jobs:
               echo "::error::Invalid chart checksum '${SHA256}'"
               exit 1
           fi
-          shopt -s nullglob
+          shopt -s nullglob dotglob
           files=(dist/*)
           if [[ "${#files[@]}" -ne 1 || "${files[0]}" != "dist/${FILE}" ]]; then
               echo "::error::Expected one chart in dist/, found: ${files[*]}"
@@ -434,12 +437,11 @@ jobs:
       - name: Attest chart provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: dist/*.tgz
+          subject-path: dist/${{ needs.prepare.outputs.chart_file }}
       - name: Sign chart
-        run: |
-          for chart in dist/*.tgz; do
-              cosign sign-blob --yes --bundle "${chart}.sigstore.json" "${chart}"
-          done
+        env:
+          CHART: dist/${{ needs.prepare.outputs.chart_file }}
+        run: cosign sign-blob --yes --bundle "${CHART}.sigstore.json" "${CHART}"
       # GitHub's generated notes list the merged pull requests since the
       # previous release in the history of the release commit (see
       # `scripts/release_version.py`), or since the start for the first
