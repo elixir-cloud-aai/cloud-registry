@@ -58,6 +58,8 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       prerelease: ${{ steps.version.outputs.prerelease }}
       sha: ${{ steps.version.outputs.sha }}
+      chart_file: ${{ steps.chart.outputs.file }}
+      chart_sha256: ${{ steps.chart.outputs.sha256 }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -162,6 +164,7 @@ jobs:
       # `scripts/chart_readme.py`; fails if any link to a version that moves
       # is left)
       - name: Package chart
+        id: chart
         env:
           VERSION: ${{ steps.version.outputs.version }}
           CHART_VERSION: ${{ steps.version.outputs.chart_version }}
@@ -190,12 +193,17 @@ jobs:
           [[ "${library}" == "$(yq '.dependencies[0].version' deployment/Chart.lock)" ]]
           [[ "$(tar -xzOf "${package}" cloud-registry/values.yaml | yq .cloudRegistry.image)" \
               == "${image}" ]]
+          # For `publish` to check the downloaded chart against
+          echo "file=${package#dist/}" >> "${GITHUB_OUTPUT}"
+          echo "sha256=$(sha256sum "${package}" | cut -d ' ' -f 1)" >> "${GITHUB_OUTPUT}"
       - name: Upload chart
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: chart
           path: dist/
           if-no-files-found: error
+          # Re-runs of all jobs replace the chart of the earlier attempt
+          overwrite: true
 
   # Builds the image of the release commit once and pushes it by digest only
   # (untagged, with SBOM and provenance attestations), for `scan` to scan and
@@ -363,6 +371,31 @@ jobs:
         with:
           name: chart
           path: dist/
+      # The artifact is the chart that `prepare` packaged, not one that
+      # replaced it between `prepare` and `publish` (any job of the run can
+      # overwrite artifacts with the run's token), before it is attested,
+      # signed and released: a single file, with the name and checksum of
+      # `prepare`
+      - name: Check chart
+        env:
+          FILE: ${{ needs.prepare.outputs.chart_file }}
+          SHA256: ${{ needs.prepare.outputs.chart_sha256 }}
+        run: |
+          if [[ ! "${FILE}" =~ ^cloud-registry-[0-9A-Za-z.+-]+\.tgz$ ]]; then
+              echo "::error::Invalid chart file name '${FILE}'"
+              exit 1
+          fi
+          if [[ ! "${SHA256}" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "::error::Invalid chart checksum '${SHA256}'"
+              exit 1
+          fi
+          shopt -s nullglob
+          files=(dist/*)
+          if [[ "${#files[@]}" -ne 1 || "${files[0]}" != "dist/${FILE}" ]]; then
+              echo "::error::Expected one chart in dist/, found: ${files[*]}"
+              exit 1
+          fi
+          echo "${SHA256}  ${files[0]}" | sha256sum --check --strict
       # Decided last, from freshly fetched tags (the repository is public, so
       # no credentials are needed), so that neither a re-run of an older
       # release nor a concurrent release moves `latest` back

@@ -139,3 +139,38 @@ def test_verification_signer_workflow() -> None:
     else:
         assert set(signers) == {"release.yml"}
         assert "0.4.0 was signed by `release.yaml`" in " ".join(text.split())
+
+
+def test_release_chart_checked() -> None:
+    """The release workflow checks the chart before attesting and signing it.
+
+    `publish` downloads the chart artifact, which any job of the run could
+    replace, so it checks that `dist/` holds exactly the file that `prepare`
+    packaged (its name and SHA-256, as outputs of `prepare`) before the chart
+    is attested, signed and released.
+    """
+    release = _load(WORKFLOWS / "release.yml")["jobs"]
+    prepare = release["prepare"]
+    assert prepare["outputs"]["chart_file"] == "${{ steps.chart.outputs.file }}"
+    assert prepare["outputs"]["chart_sha256"] == "${{ steps.chart.outputs.sha256 }}"
+    packaging = {step["name"]: step for step in prepare["steps"]}
+    package = packaging["Package chart"]
+    assert package["id"] == "chart"
+    assert 'echo "file=${package#dist/}" >> "${GITHUB_OUTPUT}"' in package["run"]
+    assert 'sha256sum "${package}"' in package["run"]
+    # Re-runs of all jobs replace the chart, so its checksum is the new one
+    assert packaging["Upload chart"]["with"]["overwrite"] is True
+    steps = {step["name"]: step for step in release["publish"]["steps"]}
+    check = steps["Check chart"]
+    assert check["env"]["FILE"] == "${{ needs.prepare.outputs.chart_file }}"
+    assert check["env"]["SHA256"] == "${{ needs.prepare.outputs.chart_sha256 }}"
+    assert r'[[ ! "${FILE}" =~ ^cloud-registry-[0-9A-Za-z.+-]+\.tgz$ ]]' in check["run"]
+    assert '[[ ! "${SHA256}" =~ ^[0-9a-f]{64}$ ]]' in check["run"]
+    assert '"${#files[@]}" -ne 1' in check["run"]
+    assert '"${files[0]}" != "dist/${FILE}"' in check["run"]
+    assert "sha256sum --check --strict" in check["run"]
+    names = list(steps)
+    assert names.index("Download chart") < names.index("Check chart")
+    assert names.index("Check chart") < names.index("Attest chart provenance")
+    assert names.index("Check chart") < names.index("Sign chart")
+    assert names.index("Sign chart") < names.index("Create release")
