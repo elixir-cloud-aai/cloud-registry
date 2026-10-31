@@ -222,7 +222,9 @@ the image and pushes it by digest (untagged, with SBOM and provenance
 attestations) and checks that the app reports the release version; it then
 scans exactly that digest for vulnerabilities, in a job without credentials.
 After a second approval in the `release` environment (once the scan passed),
-it attests the build provenance of the scanned digest and signs it (see
+it checks that the chart it downloads is the one it packaged (a single file
+with the name and SHA-256 recorded when packaging), attests the build
+provenance of the scanned digest and signs it (see
 [Verifying images and charts](operations.md#verifying-images-and-charts)),
 tags exactly that image `X.Y.Z` (and `latest`, if it is the highest stable
 release on `main`), attests and signs the chart, and creates a GitHub
@@ -386,7 +388,9 @@ signing uses the workflows' OIDC tokens (permission `id-token: write`). Re-runni
 all jobs of the release workflow builds, scans, signs and tags a new image
 digest (the image build is not reproducible); an earlier digest that was
 published stays signed. Re-running only the failed jobs reuses the digest
-already pushed.
+already pushed. Re-running all jobs also packages the chart again and
+replaces the chart artifact; the release checks the new chart against its new
+SHA-256.
 
 The CI workflow (which tests the chart) and the release workflow (which
 packages it) install the same Helm version (`version:` of `azure/setup-helm`
