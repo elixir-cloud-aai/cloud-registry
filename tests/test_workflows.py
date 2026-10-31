@@ -20,7 +20,7 @@ GATE = "passed"
 # from `release.yaml` to `release.yml`
 LAST_RELEASE_YAML = Version("0.4.0")
 # A chart file name as the release workflow packages it
-CHART = "cloud-registry-1.0.0-rc1.tgz"
+CHART = "cloud-registry-1.2.3.tgz"
 
 # `scripts/` is not a package, so the script is loaded from its file
 _spec = importlib.util.spec_from_file_location(
