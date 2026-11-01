@@ -76,7 +76,7 @@ semantics differ, so that clients can rely on the registry's data:
 ## Registration rules
 
 Registrations must follow rules that each deployment configures. So that
-clients (e.g., UIs, the [ELIXIR Cloud
+clients (e.g., UIs, the [Cloud
 Components](https://github.com/elixir-cloud-aai/cloud-components)) can check
 registrations as the registry does, e.g., offer only the allowed values in
 forms, `GET /service-info` serves them in `registration_rules`:
