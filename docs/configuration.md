@@ -275,7 +275,7 @@ overlay (with the Helm chart, in `config`):
 ```yaml
 custom:
     access_control:
-        service_types: controlled
+        service_types: moderated
         max_unused_service_types: 5
 ```
 

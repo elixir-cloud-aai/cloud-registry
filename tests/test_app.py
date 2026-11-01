@@ -2295,17 +2295,33 @@ def test_validation_error_detail(
     assert detail in response.get_json()["detail"]
 
 
-@pytest.mark.parametrize("path", ["/services", "/service-info"])
+@pytest.mark.parametrize(
+    "method, path, status",
+    [
+        ("get", "/services", 200),
+        ("get", "/service-info", 200),
+        ("post", "/services/types", 201),
+    ],
+)
 def test_extra_query_parameters_without_parameters(
-    client: FlaskClient, path: str
+    client: FlaskClient,
+    admin_headers: dict[str, str],
+    method: str,
+    path: str,
+    status: int,
 ) -> None:
     """Operations without parameters ignore query parameters.
 
-    Connexion only checks the query parameters of operations with
-    parameters (cf. `extra_parameter` of `test_validation_error_detail()`),
-    as `docs/api.md` (Errors) says.
+    Connexion only checks the query parameters of operations with path,
+    query or header parameters (cf. `extra_parameter` of
+    `test_validation_error_detail()`), not request bodies, as `docs/api.md`
+    (Errors) says.
     """
-    assert client.get(f"{BASE}{path}?x=1").status_code == 200
+    body = SERVICE["type"] if method == "post" else None
+    response = client.open(
+        f"{BASE}{path}?x=1", method=method, headers=admin_headers, json=body
+    )
+    assert response.status_code == status, response.get_json()
 
 
 def test_validation_error_detail_large_body(
