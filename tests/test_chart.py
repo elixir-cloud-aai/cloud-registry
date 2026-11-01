@@ -41,6 +41,8 @@ APP_POLICY = (
     "--set-json",
     f"cloudRegistry.networkPolicy.ingressFrom={json.dumps(INGRESS_PEERS)}",
 )
+# Two replicas of the app (with a PodDisruptionBudget)
+REPLICAS = ("--set", "cloudRegistry.replicas=2")
 # The cluster serves OpenShift Routes
 ROUTE_API = ("--api-versions", "route.openshift.io/v1")
 INIT_SCRIPT = f"{MONGODB}-init-script"
@@ -427,8 +429,9 @@ def test_auth_requires_secret(args: tuple[str, ...]) -> None:
 )
 def test_names(release: str, app: str) -> None:
     """Resource names are derived from the release name."""
-    # The app's NetworkPolicy is opt-in, so it is enabled to cover all kinds
-    docs = _render(*APP_POLICY, release=release)
+    # The app's NetworkPolicy is opt-in, and the PodDisruptionBudget needs
+    # several replicas, so both are enabled to cover all kinds
+    docs = _render(*APP_POLICY, *REPLICAS, release=release)
     mongodb = f"{app}-mongodb"
     assert set(docs) == {
         ("ConfigMap", f"{app}-config"),
@@ -439,9 +442,41 @@ def test_names(release: str, app: str) -> None:
         ("NetworkPolicy", app),
         ("NetworkPolicy", mongodb),
         ("PersistentVolumeClaim", mongodb),
+        ("PodDisruptionBudget", app),
         ("Service", app),
         ("Service", mongodb),
     }
+
+
+def test_single_replica_by_default() -> None:
+    """The app has one pod by default, without a PodDisruptionBudget."""
+    docs = _render()
+    assert docs[("Deployment", APP)]["spec"]["replicas"] == 1
+    assert ("PodDisruptionBudget", APP) not in docs
+
+
+def test_replicas() -> None:
+    """Several pods get a PodDisruptionBudget evicting one at a time."""
+    docs = _render(*REPLICAS)
+    deployment = docs[("Deployment", APP)]
+    assert deployment["spec"]["replicas"] == 2
+    assert docs[("PodDisruptionBudget", APP)]["spec"] == {
+        "maxUnavailable": 1,
+        "selector": deployment["spec"]["selector"],
+    }
+
+
+def test_pod_disruption_budget_settings() -> None:
+    """The budget's values take effect, and can disable it."""
+    budget = _render(
+        *REPLICAS, "--set", "cloudRegistry.podDisruptionBudget.minAvailable=50%"
+    )[("PodDisruptionBudget", APP)]["spec"]
+    assert budget["minAvailable"] == "50%"
+    assert "maxUnavailable" not in budget
+    docs = _render(
+        *REPLICAS, "--set", "cloudRegistry.podDisruptionBudget.enabled=false"
+    )
+    assert ("PodDisruptionBudget", APP) not in docs
 
 
 def test_mongodb_persistence() -> None:

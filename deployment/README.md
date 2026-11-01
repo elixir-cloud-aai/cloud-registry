@@ -4,7 +4,7 @@ The chart deploys the app and a MongoDB database on Kubernetes (and
 OpenShift). It is a thin chart over FOCA's library chart `foca-common` (the
 version in `Chart.yaml`), which renders all resources from the values
 described here and in `values.yaml` (see the [library chart's
-documentation](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/helm-chart.md)).
+documentation](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.3.0/docs/helm-chart.md)).
 The chart attached to a release includes the library chart; the chart in the
 repository downloads it with `helm dependency build` (see
 [Installation](#installation)).
@@ -244,7 +244,7 @@ examples to add to the values. ingress-nginx is retired (it gets no releases
 or security fixes after March 2026): prefer the Gateway API, or another
 ingress controller (e.g., Traefik). FOCA's library chart documentation has
 the values for common setups ([Exposing the
-app](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/helm-chart.md#exposing-the-app):
+app](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.3.0/docs/helm-chart.md#exposing-the-app):
 Gateway API, ingress-nginx, Traefik, OpenShift and cloud load balancers),
 including how to migrate from ingress-nginx to the Gateway API without
 downtime.
@@ -281,7 +281,7 @@ cloudRegistry:
 Other ingress controllers ignore the annotation; for their limits (e.g.,
 Traefik's `buffering` middleware, Envoy Gateway's `BackendTrafficPolicy`),
 see [Exposing the
-app](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/helm-chart.md#exposing-the-app).
+app](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.3.0/docs/helm-chart.md#exposing-the-app).
 OpenShift Routes don't limit request bodies; only the app's limit applies
 there.
 
@@ -372,7 +372,7 @@ The Gateway's listeners must allow routes from the release's namespace, and
 redirected. The Gateway API has no standard settings for body sizes and
 rate limits: use the policies of the implementation, or filters that the
 HTTPRoute refers to (`httpRoute.filters`); see [Gateway
-API](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/helm-chart.md#gateway-api)
+API](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.3.0/docs/helm-chart.md#gateway-api)
 in FOCA's documentation for examples, e.g., for Envoy Gateway, and for the
 NetworkPolicy peers of the Gateway's proxies. Helm's notes after installing
 show how to check that the route was accepted.
@@ -463,7 +463,7 @@ allow rules) before relying on these restrictions.
   `kubernetes.io/metadata.name` (set on all namespaces from Kubernetes 1.21;
   label them on older clusters). Pick the peers of your setup (see
   [NetworkPolicy
-  peers](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/helm-chart.md#networkpolicy-peers)
+  peers](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.3.0/docs/helm-chart.md#networkpolicy-peers)
   in FOCA's documentation for those of common ingress controllers, Gateway
   implementations and OpenShift), and add any other clients in the cluster
   that call the app's Service directly, e.g., for Traefik on k3s:
@@ -554,6 +554,55 @@ through a proxy that buffers requests (ingress-nginx does by default), so
 that slow clients can't tie them up. OpenShift Routes (HAProxy) don't buffer
 request bodies by default, so there, slow uploads hold Gunicorn threads until
 they complete.
+
+## Replicas
+
+`cloudRegistry.replicas` (1 by default) sets the number of the app's pods.
+With two or more, the registry stays available while a pod is restarted,
+evicted or replaced, e.g., on node drains, crashes and upgrades (rolling
+updates start a new pod before they remove an old one):
+
+```yaml
+cloudRegistry:
+  replicas: 2
+```
+
+With more than one replica, the chart adds a PodDisruptionBudget, so that
+node drains evict one pod at a time (`cloudRegistry.podDisruptionBudget`:
+`maxUnavailable`, 1 if neither it nor `minAvailable` is set, or
+`minAvailable`, each a number or a percentage; `enabled: false` for none).
+The scheduler spreads the pods across nodes where it can; check with
+`kubectl get pods -n <namespace> -o wide`. See [Several
+replicas](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.3.0/docs/helm-chart.md#several-replicas)
+in the library chart's documentation.
+
+The app is correct with several replicas, as it already runs as several
+instances (one per Gunicorn worker, and old and new pods side by side
+during rolling updates): services, roles, invitations, locks of renames and
+the counters of services per user are kept in MongoDB, and each instance
+applies roles granted or revoked by any other before its next request. Keep
+in mind:
+
+- The startup checks and corrections (e.g., of the counters of services
+  per user) run in each worker of each pod; a registration or deletion
+  while a pod starts may leave a user's counter off by one until the next
+  start (see [Services per
+  user](https://cloud-registry.readthedocs.io/en/latest/configuration/#services-per-user)).
+- Locks of renames and changes are stale after a minute, judged by each
+  pod's clock, so the nodes' clocks must be synchronized (e.g., via NTP, as
+  usual).
+- Each worker process of each pod keeps all rules of access control and
+  its own caches (e.g., of userinfo responses) in memory, so memory use
+  grows with the replicas.
+- Rules changed in the database directly (e.g., with `mongosh`) need a
+  restart of all pods (`kubectl rollout restart deploy/cloud-registry -n
+  <namespace>`).
+- The bundled MongoDB has one pod: while it is replaced (e.g., on a drain
+  of its node), the registry can't reach its database, whatever the number
+  of app replicas; use an external, replicated MongoDB to avoid that (see
+  [External MongoDB](#external-mongodb)).
+- Upgrades that need the app stopped (see below) scale it to 0; `helm
+  upgrade` then restores `cloudRegistry.replicas`.
 
 ## Upgrades
 
@@ -681,6 +730,10 @@ Deployment is called after `cloud_registry.appName`, by default
      --authenticationDatabase admin' < serviceStore.archive
    kubectl scale deploy/cloud-registry -n <namespace> --replicas=1
    ```
+
+   With several replicas (see [Replicas](#replicas)), scale to
+   `cloudRegistry.replicas` instead, or run `helm upgrade` with the values
+   file, which restores it.
 
 Once the new release works, delete a retained volume
 (`kubectl delete pv <name>`) and the local dump.
@@ -961,7 +1014,7 @@ then change these settings, or annotate the claim first (`kubectl annotate
 pvc <app>-mongodb helm.sh/resource-policy=keep -n <namespace>`; this
 protects the claim on upgrades only, not on `helm uninstall`, which reads
 the release's manifests); see [MongoDB
-persistence](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/migration-0.17.md#mongodb-persistence)
+persistence](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.3.0/docs/migration-0.17.md#mongodb-persistence)
 in FOCA's documentation. A rollback to a revision without the annotation
 removes it from the claim again.
 
