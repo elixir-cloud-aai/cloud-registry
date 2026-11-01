@@ -3,6 +3,7 @@
 from copy import deepcopy
 from datetime import UTC, datetime
 import logging
+from pathlib import Path
 from typing import Any, NoReturn
 
 from flask import Flask
@@ -12,6 +13,7 @@ from pymongo.cursor import Cursor
 from pymongo.errors import DuplicateKeyError
 from pymongo.results import UpdateResult
 import pytest
+import yaml
 
 from cloud_registry.exceptions import InternalServerError
 import cloud_registry.ga4gh.registry.service
@@ -19,6 +21,7 @@ from cloud_registry.ga4gh.registry.service import (
     CREATED,
     CREATED_BY,
     KEY,
+    ORGANIZATION_FIELDS,
     UPDATED,
     VERIFIED,
     DuplicateService,
@@ -32,9 +35,11 @@ from cloud_registry.ga4gh.registry.service import (
     service_key,
     warn_environments,
     warn_invalid_urls,
+    warn_organization_fields,
     warn_url_schemes,
 )
 from cloud_registry.service_models.custom_config import CustomConfig
+from tests.conftest import APP_DIR
 from tests.mock_data import (
     MOCK_ID,
     MOCK_ID_ONE_CHAR,
@@ -49,6 +54,8 @@ FORMATTED_NOW = "2026-10-22T09:30:15.250Z"
 IMPORTED = "2019-06-04T12:58:19Z"
 # Timestamps sent with a service
 SENT = {CREATED: IMPORTED, UPDATED: IMPORTED}
+# Specification of the registry's additions to the GA4GH API
+SPEC = Path(APP_DIR, "api", "additions.openapi.yaml")
 
 
 @pytest.fixture(autouse=True)
@@ -1025,6 +1032,72 @@ class TestWarnInvalidUrls:
         with unit_app.app_context(), caplog.at_level(logging.WARNING):
             warn_invalid_urls()
         assert not caplog.records
+
+
+class TestWarnOrganizationFields:
+    """Tests for warning of stored services with extra organization fields."""
+
+    def test_warned(
+        self,
+        unit_app: Flask,
+        services: Collection[dict[str, Any]],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Services with organization fields other than name and URL are named.
+
+        E.g., registered before extra fields were rejected; services with
+        only these fields (or some of them), or without an organization
+        object (e.g., with an array of objects, which MongoDB's `$type:
+        object` also matches), are not named.
+        """
+        organization = {"name": "Org", "url": "https://example.org"}
+        for id, value in [
+            ("BLOB", {**organization, "blob": "x"}),
+            ("NESTED", {"name": "Org", "a": {"b": [1]}}),
+            ("VALID", organization),
+            ("PARTIAL", {"name": "Org"}),
+            ("STRING", "organization"),
+            ("ARRAY", [{**organization, "blob": "x"}]),
+        ]:
+            services.insert_one({**MOCK_SERVICE, "id": id, "organization": value})
+        without = {k: v for k, v in MOCK_SERVICE.items() if k != "organization"}
+        services.insert_one({**without, "id": "NONE"})
+        with unit_app.app_context(), caplog.at_level(logging.WARNING):
+            warn_organization_fields()
+        assert len(caplog.records) == 1
+        message = caplog.records[0].getMessage()
+        assert message.endswith("'BLOB', 'NESTED'")
+        assert "organization" in message
+
+    def test_none(
+        self,
+        unit_app: Flask,
+        services: Collection[dict[str, Any]],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Without such services, nothing is logged."""
+        services.insert_one(
+            {
+                **MOCK_SERVICE,
+                "id": MOCK_ID,
+                "organization": {"name": "Org", "url": "https://example.org"},
+            }
+        )
+        with unit_app.app_context(), caplog.at_level(logging.WARNING):
+            warn_organization_fields()
+        assert not caplog.records
+
+
+def test_organization_fields_of_schema() -> None:
+    """The organization fields allowed are those of the registration schema.
+
+    So that the startup warning names no services that pass the schema.
+    """
+    spec = yaml.safe_load(SPEC.read_text())
+    schema = spec["components"]["schemas"]["ExternalServiceRegister"]
+    organization = schema["properties"]["organization"]
+    assert organization["additionalProperties"] is False
+    assert organization["properties"].keys() == ORGANIZATION_FIELDS
 
 
 class TestVerificationReset:
