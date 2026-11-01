@@ -466,17 +466,61 @@ def test_replicas() -> None:
     }
 
 
-def test_pod_disruption_budget_settings() -> None:
-    """The budget's values take effect, and can disable it."""
-    budget = _render(
-        *REPLICAS, "--set", "cloudRegistry.podDisruptionBudget.minAvailable=50%"
-    )[("PodDisruptionBudget", APP)]["spec"]
-    assert budget["minAvailable"] == "50%"
-    assert "maxUnavailable" not in budget
+@pytest.mark.parametrize(
+    ("args", "bounds"),
+    [
+        (
+            ("--set", "cloudRegistry.podDisruptionBudget.minAvailable=50%"),
+            {"minAvailable": "50%"},
+        ),
+        (
+            ("--set", "cloudRegistry.podDisruptionBudget.minAvailable=1"),
+            {"minAvailable": 1},
+        ),
+        (
+            ("--set", "cloudRegistry.podDisruptionBudget.maxUnavailable=2"),
+            {"maxUnavailable": 2},
+        ),
+    ],
+)
+def test_pod_disruption_budget_bounds(
+    args: tuple[str, ...], bounds: dict[str, Any]
+) -> None:
+    """`minAvailable` or `maxUnavailable` set the budget."""
+    budget = _render(*REPLICAS, *args)[("PodDisruptionBudget", APP)]["spec"]
+    assert {key: value for key, value in budget.items() if key != "selector"} == bounds
+
+
+def test_pod_disruption_budget_disabled() -> None:
+    """No PodDisruptionBudget if disabled, also with several pods."""
     docs = _render(
         *REPLICAS, "--set", "cloudRegistry.podDisruptionBudget.enabled=false"
     )
+    assert docs[("Deployment", APP)]["spec"]["replicas"] == 2
     assert ("PodDisruptionBudget", APP) not in docs
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ("--set", "cloudRegistry.replicas=0"),
+        ("--set", "cloudRegistry.replicas=1.5"),
+        ("--set", "cloudRegistry.podDisruptionBudget.minAvailable=150%"),
+        ("--set", "cloudRegistry.podDisruptionBudget.maxUnavailable=abc"),
+        (
+            "--set",
+            "cloudRegistry.podDisruptionBudget.minAvailable=1",
+            "--set",
+            "cloudRegistry.podDisruptionBudget.maxUnavailable=1",
+        ),
+    ],
+)
+def test_replicas_invalid(args: tuple[str, ...]) -> None:
+    """The schema rejects invalid replicas and budgets."""
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        _render(*REPLICAS, *args)
+    assert "cloudRegistry" in exc.value.stderr
+    assert "schema" in exc.value.stderr
 
 
 def test_mongodb_persistence() -> None:
