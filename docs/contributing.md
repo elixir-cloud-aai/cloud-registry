@@ -140,7 +140,8 @@ checked in reviews.
   tools are in `pyproject.toml`; runtime dependencies in
   `project.dependencies`, those for development and the documentation in the
   extras `dev` and `docs`. `uv.lock` locks them all, at exact versions and
-  with hashes; the image installs the locked runtime dependencies only. After
+  with hashes; the image installs the locked runtime dependencies only, and
+  CI's checks run on the locked versions of all of them. After
   changing dependencies, run `uv lock` and commit `uv.lock` with the change
   (see [Dependencies](development.md#dependencies)). Don't add `setup.py` or
   requirements files.

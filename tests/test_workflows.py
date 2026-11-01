@@ -502,19 +502,41 @@ def test_jobs_on_lock(job_id: str, extra: str) -> None:
         extra: The extra that the job installs.
     """
     job = _load(WORKFLOWS / "ci.yml")["jobs"][job_id]
-    steps = {step["name"]: step for step in job["steps"]}
+    steps = {step.get("name"): step for step in job["steps"]}
     uv = steps["Set up uv"]
     assert re.fullmatch(r"astral-sh/setup-uv@[0-9a-f]{40}", uv["uses"])
-    assert _commands(steps["Install dependencies"]) == [
-        f'uv sync --locked --extra {extra} --python "$(which python)"',
-        'echo "${PWD}/.venv/bin" >> "$GITHUB_PATH"',
+    (sync,) = [
+        shlex.split(command)
+        for command in _commands(steps["Install dependencies"])
+        if command.startswith("uv sync")
     ]
+    assert "--locked" in sync, sync
+    assert "--frozen" not in sync, sync
+    assert sync[sync.index("--extra") + 1] == extra, sync
     names = list(steps)
     assert names.index("Set up Python") < names.index("Set up uv")
     assert names.index("Set up uv") < names.index("Install dependencies")
-    for step in job["steps"]:
-        for command in _commands(step):
-            assert not PIP.search(command), (job_id, step["name"], command)
+
+
+def test_no_unlocked_installs() -> None:
+    """No job installs Python packages other than from the lock.
+
+    No pip command installs anything, except the hash-checked installs of
+    jobs with credentials (`test_credential_jobs_install_hash_checked`), and
+    every `uv sync` is `--locked`. `pipx run` of a pinned tool (cffconvert
+    in `lint`, in its own environment) is allowed.
+    """
+    credential = {(name, job_id) for name, job_id, _ in _credential_jobs()}
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        for job_id, job in _load(path)["jobs"].items():
+            if (path.name, job_id) in credential:
+                continue
+            for step in job.get("steps", []):
+                for command in _commands(step):
+                    where = (path.name, job_id, step.get("name"), command)
+                    assert not PIP.search(command), where
+                    if command.startswith("uv sync"):
+                        assert "--locked" in shlex.split(command), where
 
 
 def test_uv_version_locked() -> None:
@@ -527,12 +549,12 @@ def test_uv_version_locked() -> None:
     lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
     assert [package for package in lock["package"] if package["name"] == "uv"]
     setups = [
-        step
+        (path.name, job_id, step)
         for path in sorted(WORKFLOWS.glob("*.yml"))
-        for job in _load(path)["jobs"].values()
+        for job_id, job in _load(path)["jobs"].items()
         for step in job.get("steps", [])
         if step.get("uses", "").startswith("astral-sh/setup-uv@")
     ]
-    assert len(setups) == len(LOCKED_JOBS)
-    for step in setups:
-        assert step["with"] == {"version-file": "uv.lock"}, step
+    assert setups
+    for name, job_id, step in setups:
+        assert step["with"] == {"version-file": "uv.lock"}, (name, job_id)

@@ -12,7 +12,7 @@ checks that CI runs:
 
 ```bash
 uv sync --locked --extra dev  # the app, with the dev dependencies, in `.venv`
-source .venv/bin/activate
+source .venv/bin/activate  # or `activate.fish` etc.; or prefix commands with `uv run`
 pre-commit install  # run the checks on every commit
 pre-commit run --all-files  # ruff, mypy, semgrep, ast-grep, actionlint
 pre-commit run --all-files --hook-stage manual gitleaks-all  # secrets
@@ -72,7 +72,10 @@ pins the version of uv that CI uses). CI's lint, test, chart and docs jobs
 install the locked versions, checked against their hashes
 (`uv sync --locked`, with uv of a pinned `astral-sh/setup-uv`, at the
 version of the lock), so that Dependabot's pull requests, which change only
-the lock, are tested on the versions they lock.
+the lock, are tested on the versions they lock. The app itself is installed
+editable there, built with build requirements from the package index (not
+the lock), as `pip install -e` does; those jobs hold no publishing
+credentials.
 The image build installs the locked runtime dependencies only
 (`uv export --frozen --no-dev --no-emit-project`, which leaves out the
 extras, then `pip install --require-hashes --only-binary :all: --no-deps`,
@@ -118,8 +121,9 @@ and in CI; warnings, e.g., of broken links, fail the build. The [API
 reference](reference.md) is generated from the docstrings with
 [mkdocstrings](https://mkdocstrings.github.io/). To build it locally, or serve
 it with live reloading, in the dev environment set up as above, with the
-locked docs dependencies too (as CI does; Read the Docs installs the `docs`
-extra with pip, from the ranges of `pyproject.toml`):
+locked docs dependencies too (as CI does; `uv sync` removes the extras
+that it isn't given, so `dev` stays in the command; Read the Docs installs
+the `docs` extra with pip, from the ranges of `pyproject.toml`):
 
 ```bash
 uv sync --locked --extra dev --extra docs
