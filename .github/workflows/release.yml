@@ -176,10 +176,11 @@ jobs:
           helm lint deployment --strict -f deployment/ci/test-values.yaml
           chart="$(mktemp -d)/cloud-registry"
           cp -R deployment "${chart}"
-          # The default image is the published one, also in forks that
-          # publish to another organization (`DOCKERHUB_ORG`); `values.yaml`
-          # is rewritten (by yq) only then
-          image="${IMAGE_NAME#docker.io/}"
+          # The default image is the published one, fully qualified as in
+          # `values.yaml`, also in forks that publish to another
+          # organization (`DOCKERHUB_ORG`); `values.yaml` is rewritten (by
+          # yq) only then
+          image="${IMAGE_NAME}"
           if [[ "$(yq .cloudRegistry.image "${chart}/values.yaml")" != "${image}" ]]; then
               IMAGE="${image}" yq -i '.cloudRegistry.image = strenv(IMAGE)' "${chart}/values.yaml"
           fi
