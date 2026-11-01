@@ -24,6 +24,7 @@ from cloud_registry.ga4gh.registry.service import (
     add_service_keys,
     warn_environments,
     warn_invalid_urls,
+    warn_organization_fields,
     warn_url_schemes,
 )
 from cloud_registry.ga4gh.registry.service_info import check_service_info_fields
@@ -124,6 +125,7 @@ def create_app() -> App:
         warn_invalid_urls()
         warn_url_schemes()
         warn_environments()
+        warn_organization_fields()
     return app
 
 
