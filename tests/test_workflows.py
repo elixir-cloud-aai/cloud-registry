@@ -257,18 +257,31 @@ def _credential_jobs() -> list[tuple[str, str, dict[str, Any]]]:
     """List the jobs that hold publishing credentials.
 
     These are the jobs of all workflows that run in an environment
-    (`environment:`, which holds the Docker Hub secrets) or use a Docker Hub
-    secret directly.
+    (`environment:`, which holds the Docker Hub secrets), use a Docker Hub
+    secret directly, or may sign or write (`id-token`, `contents`,
+    `packages` or `attestations` permission `write`). No workflow passes a
+    secret to all its jobs (workflow-level `env:`).
 
     Returns:
         The workflow file name, job ID and job of each such job.
     """
-    return [
-        (path.name, job_id, job)
-        for path in sorted(WORKFLOWS.glob("*.yml"))
-        for job_id, job in _load(path)["jobs"].items()
-        if "environment" in job or "secrets.DOCKERHUB" in yaml.safe_dump(job)
-    ]
+    jobs = []
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        workflow = _load(path)
+        assert "secrets." not in yaml.safe_dump(workflow.get("env", {})), path
+        for job_id, job in workflow["jobs"].items():
+            permissions = job.get("permissions", {})
+            writes = isinstance(permissions, dict) and any(
+                permissions.get(scope) == "write"
+                for scope in ("id-token", "contents", "packages", "attestations")
+            )
+            if (
+                "environment" in job
+                or "secrets.DOCKERHUB" in yaml.safe_dump(job)
+                or writes
+            ):
+                jobs.append((path.name, job_id, job))
+    return jobs
 
 
 def _commands(step: dict[str, Any]) -> list[str]:
@@ -278,18 +291,28 @@ def _commands(step: dict[str, Any]) -> list[str]:
         step: A step of a job.
 
     Returns:
-        The lines of the step's `run` script, with continuation lines joined
-        and whitespace normalised.
+        The commands of the step's `run` script: its lines, with
+        continuation lines joined, split at `;`, `&&`, `||` and `|`, with
+        whitespace normalised.
     """
     lines = step.get("run", "").replace("\\\n", " ").splitlines()
-    return [" ".join(line.split()) for line in lines if line.strip()]
+    return [
+        " ".join(command.split())
+        for line in lines
+        for command in re.split(r"&&|\|\||;|\|", line)
+        if command.strip()
+    ]
 
 
-# pip (also `pip3`, `pip3.13`, `"<venv>/bin/pip"`) commands that install or
-# build packages; the latter runs their build backends
-PIP = re.compile(r"\bpip[0-9.]*[\"']?\s+(install|wheel|download)\b")
-# Other installers
-INSTALLERS = re.compile(r"\b(pipx|easy_install|uvx|uv\s+(pip|tool|sync|run|add))\b")
+# pip (also `pip3`, `pip3.13`, `"<venv>/bin/pip"`, with global options)
+# commands that install or build packages; the latter runs their build
+# backends
+PIP = re.compile(r"\bpip[0-9.]*[\"']?(\s+-\S+)*\s+(install|wheel|download)\b")
+# Other installers, and builds that install build requirements
+INSTALLERS = re.compile(
+    r"\b(pipx|easy_install|uvx|pip-sync|poetry|pdm|hatch"
+    r"|uv\s+(pip|tool|sync|run|add|build|venv)|python[0-9.]*\s+-m\s+build)\b"
+)
 
 
 def test_credential_jobs_found() -> None:
@@ -311,6 +334,12 @@ def test_credential_jobs_found() -> None:
         pytest.param('"${VENV}/bin/pip" install foo', True, id="venv"),
         pytest.param("python -m pip wheel .", True, id="wheel"),
         pytest.param("pip download foo", True, id="download"),
+        pytest.param("pip -q install foo", True, id="global-option"),
+        pytest.param(
+            "python -m pip --disable-pip-version-check install foo",
+            True,
+            id="global-options",
+        ),
         pytest.param("pip list", False, id="list"),
         pytest.param("echo pipeline install", False, id="other-word"),
     ],
@@ -323,6 +352,30 @@ def test_pip_pattern(command: str, found: bool) -> None:
         found: Whether the pattern finds it.
     """
     assert bool(PIP.search(command)) == found
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["pipx run foo", "uv sync", "uv build", "python -m build", "poetry install"],
+)
+def test_installers_pattern(command: str) -> None:
+    """The pattern finds other installers and builds.
+
+    Args:
+        command: A command.
+    """
+    assert INSTALLERS.search(command)
+
+
+def test_commands_split() -> None:
+    """Commands chained on one line are checked one by one."""
+    step = {"run": "pip install -r r.txt && pip install foo; echo a | tee b\n"}
+    assert _commands(step) == [
+        "pip install -r r.txt",
+        "pip install foo",
+        "echo a",
+        "tee b",
+    ]
 
 
 def test_credential_jobs_install_hash_checked() -> None:
@@ -341,9 +394,14 @@ def test_credential_jobs_install_hash_checked() -> None:
                 where = (name, job_id, step.get("name"), command)
                 assert not INSTALLERS.search(command), where
                 if match := PIP.search(command):
-                    assert match.group(1) == "install", where
+                    assert match.group(2) == "install", where
                     options = shlex.split(command[match.end() :])
-                    for option in ("--require-hashes", "--no-deps", "-r"):
+                    for option in (
+                        "--require-hashes",
+                        "--no-deps",
+                        "-r",
+                        "--only-binary",
+                    ):
                         assert option in options, where
                     binary = options.index("--only-binary")
                     assert options[binary + 1] == ":all:", where
@@ -376,6 +434,9 @@ def test_dev_version_from_locked_build_requirements() -> None:
     assert '"${uv_image}" export --frozen --only-group build-system' in script
     assert "--no-emit-project" in script
     assert "--network none" in script
+    # pip installs exactly the exported requirements
+    assert '--project /src > "${requirements}"' in script
+    assert '--no-deps -r "${requirements}"' in script
     assert re.search(r"build-env/bin/python\"? -m setuptools_scm", script)
 
 

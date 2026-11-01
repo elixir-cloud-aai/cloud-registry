@@ -75,8 +75,8 @@ downloads nothing that isn't hash-checked. CI derives the version of dev
 images with them, installed the same way (exported by the uv image of the
 `Dockerfile`, pinned by digest), so that no job that holds publishing
 credentials installs a package without hash checks (the tests check
-this). Keep the group and `build-system.requires` the same (the
-tests fail if they differ).
+this). Keep the group and `build-system.requires` the same (the tests
+fail if they differ).
 After adding, removing or changing a dependency in `pyproject.toml`, update
 the lock and commit both:
 

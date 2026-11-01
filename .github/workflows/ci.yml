@@ -411,7 +411,9 @@ jobs:
       # `Dockerfile` (pinned by digest, so that the uv binary is verified;
       # without network, as `--frozen` reads the lock only), then installed
       # at the exact versions of the lock, checked against its hashes, as
-      # wheels only, into a virtual environment of their own
+      # wheels only, into a virtual environment of their own (with the pip
+      # of the runner's Python, `ensurepip`, as the image build uses the
+      # pip of the base image)
       - name: Derive version
         id: version
         run: |
