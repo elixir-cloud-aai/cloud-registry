@@ -248,7 +248,8 @@ def _pattern(pattern: str) -> re.Pattern[str]:
             rest = rest[1:]
         elif rest[0] == "[":
             end = rest.index("]")
-            regex += f"[{re.escape(rest[1:end])}]"
+            # as in Docker, copied unchanged (e.g., ranges)
+            regex += rest[: end + 1]
             rest = rest[end + 1 :]
         else:
             regex += re.escape(rest[0])
