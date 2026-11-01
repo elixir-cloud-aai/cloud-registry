@@ -177,8 +177,11 @@ verifications (`PUT /services/{serviceId}/verification`) are limited in length
 | `description` | 4096 |
 | `version`, `environment`, `type.group`, `type.artifact`, `type.version` | 256 |
 
-Services stored before the checks of lengths were introduced may not pass
-them; see [Upgrading](upgrading.md#stored-services).
+Organizations (`organization`) may only have a `name` and a `url`; other
+fields are rejected (`400 Bad Request`), so that their size is limited too.
+
+Services stored before the checks of lengths and of organization fields were
+introduced may not pass them; see [Upgrading](upgrading.md#stored-services).
 
 Users other than admins may only have registered a limited number of the
 registered services (50 by default; `409 Conflict` with code `services-limit`

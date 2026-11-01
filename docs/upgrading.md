@@ -67,6 +67,13 @@ db.getSiblingDB("serviceStore").services.updateMany(
 )
 ```
 
+Registrations and updates (`POST /services`, `PUT /services/{serviceId}`)
+with organization fields other than `name` and `url` are now rejected (`400
+Bad Request`; see [Registrations](api.md#registrations)). Clients that send
+further fields in `organization` must drop them. Services stored with such
+fields are still served; the app warns of them on startup (see [Stored
+services](#stored-services)).
+
 ## From 0.5.0
 
 Data is kept. The app now builds on FOCA 0.18, which provides several of
@@ -370,6 +377,20 @@ allowed value (or without `environment`). Allow their values in
 Services stored before the [length limits](api.md#registrations) were
 introduced may have longer values; they can't be updated unchanged, only
 with the values shortened.
+
+Services stored before organization fields other than `name` and `url` were
+[rejected](api.md#registrations) may have further fields in `organization`,
+of any size; they are still served, but can only be updated without them. The
+app warns of them on startup, naming them. Have their owners (or admins)
+update them via the API (`PUT /services/{serviceId}`), or remove the fields
+in the database, e.g., with `mongosh` (see [MongoDB](deployment.md#mongodb)):
+
+```javascript
+db.getSiblingDB("serviceStore").services.updateOne(
+  {id: "<id>"},
+  [{$set: {organization: {name: "$organization.name", url: "$organization.url"}}}],
+)
+```
 
 Services stored before the check of [duplicate
 services](api.md#duplicate-services) get their key on startup; only services

@@ -32,6 +32,7 @@ from cloud_registry.ga4gh.registry.service import (
     service_key,
     warn_environments,
     warn_invalid_urls,
+    warn_organization_fields,
     warn_url_schemes,
 )
 from cloud_registry.service_models.custom_config import CustomConfig
@@ -1024,6 +1025,58 @@ class TestWarnInvalidUrls:
         services.insert_one({**MOCK_SERVICE, "id": MOCK_ID, KEY: MOCK_ID})
         with unit_app.app_context(), caplog.at_level(logging.WARNING):
             warn_invalid_urls()
+        assert not caplog.records
+
+
+class TestWarnOrganizationFields:
+    """Tests for warning of stored services with extra organization fields."""
+
+    def test_warned(
+        self,
+        unit_app: Flask,
+        services: Collection[dict[str, Any]],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Services with organization fields other than name and URL are named.
+
+        E.g., registered before extra fields were rejected; services with
+        only these fields (or some of them), or without an organization
+        object, are not named.
+        """
+        organization = {"name": "Org", "url": "https://example.org"}
+        for id, value in [
+            ("BLOB", {**organization, "blob": "x"}),
+            ("NESTED", {"name": "Org", "a": {"b": [1]}}),
+            ("VALID", organization),
+            ("PARTIAL", {"name": "Org"}),
+            ("STRING", "organization"),
+        ]:
+            services.insert_one({**MOCK_SERVICE, "id": id, "organization": value})
+        without = {k: v for k, v in MOCK_SERVICE.items() if k != "organization"}
+        services.insert_one({**without, "id": "NONE"})
+        with unit_app.app_context(), caplog.at_level(logging.WARNING):
+            warn_organization_fields()
+        assert len(caplog.records) == 1
+        message = caplog.records[0].getMessage()
+        assert message.endswith("'BLOB', 'NESTED'")
+        assert "organization" in message
+
+    def test_none(
+        self,
+        unit_app: Flask,
+        services: Collection[dict[str, Any]],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Without such services, nothing is logged."""
+        services.insert_one(
+            {
+                **MOCK_SERVICE,
+                "id": MOCK_ID,
+                "organization": {"name": "Org", "url": "https://example.org"},
+            }
+        )
+        with unit_app.app_context(), caplog.at_level(logging.WARNING):
+            warn_organization_fields()
         assert not caplog.records
 
 
