@@ -777,8 +777,11 @@ for all changes; for Helm releases:
   `config.custom.access_control.max_services_per_user` (or set it to `null`
   for no limit) in the same upgrade if needed (see [Services per
   user](https://cloud-registry.readthedocs.io/en/latest/configuration/#services-per-user)).
-  After the upgrade, list the users at or above the limit (with your limit
-  instead of 50; credentials as in [Version](#version)):
+  The app counts the services on its first start, so list the users at or
+  above the limit after the upgrade (with your limit instead of 50); to see
+  the counts before the limit applies, upgrade with the limit set to `null`
+  first and set it in a later upgrade. Without authentication, omit `-u`,
+  `-p` and `--authenticationDatabase` (as in [Version](#version)):
 
   ```bash
   kubectl exec deploy/cloud-registry-mongodb -n <namespace> -- sh -c 'mongosh serviceStore --quiet \
@@ -806,7 +809,11 @@ for all changes; for Helm releases:
 
 Restart the app once after the rollout, so that services registered,
 updated or deleted by pods of 0.6.0 during the rollout are counted correctly
-(or upgrade with the app scaled to 0 replicas, as for 0.4.0 above):
+(or upgrade with the app scaled to 0 replicas, as for 0.4.0 above). Pods of
+0.6.0 don't apply the limit, so users may register more services through
+them during the rollout; they keep these, but can't register others until
+they are below the limit. The commands are for the release
+`cloud-registry`, as in the sections above:
 
 ```bash
 kubectl rollout restart deployment/cloud-registry -n <namespace>
