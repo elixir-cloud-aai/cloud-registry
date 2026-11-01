@@ -8,6 +8,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import tomllib
 from typing import Any
 
 from packaging.version import Version
@@ -481,3 +482,57 @@ def test_dev_version_uv_image() -> None:
     assert match
     assert re.fullmatch(r"ghcr\.io/astral-sh/uv:[^@]+@sha256:[0-9a-f]{64}", match[1])
     assert result.stdout == match[1] + "\n"
+
+
+# The jobs of `ci.yml` that install the app's dependencies, with their extra
+LOCKED_JOBS = {"lint": "dev", "test": "dev", "chart": "dev", "docs": "docs"}
+
+
+@pytest.mark.parametrize(("job_id", "extra"), LOCKED_JOBS.items())
+def test_jobs_on_lock(job_id: str, extra: str) -> None:
+    """The jobs that install the app's dependencies install the locked ones.
+
+    They run on the versions of `uv.lock`, as the image does, so that pull
+    requests that change only the lock (e.g., Dependabot's) are tested on
+    it, with uv of a pinned `astral-sh/setup-uv`; no pip command installs
+    anything.
+
+    Args:
+        job_id: The ID of the job.
+        extra: The extra that the job installs.
+    """
+    job = _load(WORKFLOWS / "ci.yml")["jobs"][job_id]
+    steps = {step["name"]: step for step in job["steps"]}
+    uv = steps["Set up uv"]
+    assert re.fullmatch(r"astral-sh/setup-uv@[0-9a-f]{40}", uv["uses"])
+    assert _commands(steps["Install dependencies"]) == [
+        f'uv sync --locked --extra {extra} --python "$(which python)"',
+        'echo "${PWD}/.venv/bin" >> "$GITHUB_PATH"',
+    ]
+    names = list(steps)
+    assert names.index("Set up Python") < names.index("Set up uv")
+    assert names.index("Set up uv") < names.index("Install dependencies")
+    for step in job["steps"]:
+        for command in _commands(step):
+            assert not PIP.search(command), (job_id, step["name"], command)
+
+
+def test_uv_version_locked() -> None:
+    """Every `astral-sh/setup-uv` step installs the uv locked in `uv.lock`.
+
+    The action reads the version from the lock (`version-file`), where uv is
+    a dev dependency; it fails if the lock has none. Dependabot bumps it
+    with the other locked packages.
+    """
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    assert [package for package in lock["package"] if package["name"] == "uv"]
+    setups = [
+        step
+        for path in sorted(WORKFLOWS.glob("*.yml"))
+        for job in _load(path)["jobs"].values()
+        for step in job.get("steps", [])
+        if step.get("uses", "").startswith("astral-sh/setup-uv@")
+    ]
+    assert len(setups) == len(LOCKED_JOBS)
+    for step in setups:
+        assert step["with"] == {"version-file": "uv.lock"}, step
