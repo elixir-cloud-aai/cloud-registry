@@ -221,8 +221,8 @@ def _pattern(pattern: str) -> re.Pattern[str]:
 
     As Docker matches them: `**` matches any number of directories (also
     none), `*` and `?` match within one path segment, and a pattern that
-    matches a directory also matches everything in it. Character classes
-    (`[...]`) are not supported (`.dockerignore` has none).
+    matches a directory also matches everything in it, and character
+    classes (`[...]`) match one character of a path segment.
 
     Args:
         pattern: Pattern, without a leading `!`.
@@ -246,6 +246,10 @@ def _pattern(pattern: str) -> re.Pattern[str]:
         elif rest[0] == "?":
             regex += "[^/]"
             rest = rest[1:]
+        elif rest[0] == "[":
+            end = rest.index("]")
+            regex += f"[{re.escape(rest[1:end])}]"
+            rest = rest[end + 1 :]
         else:
             regex += re.escape(rest[0])
             rest = rest[1:]
@@ -288,25 +292,31 @@ def test_context_files() -> None:
         "tests/test_app.py",
         "docs/index.md",
         "cloud_registry/__pycache__/app.cpython-313.pyc",
+        "cloud_registry/app.pyc",
         "cloud_registry/ga4gh/registry/__pycache__/service.cpython-313.pyc",
     ]:
         assert not _in_context(path), path
 
 
 def test_context_without_env_files() -> None:
-    """Local `.env` files are not sent to the build, except examples.
+    """Local `.env` files are not sent to the build.
 
     Also not in the included paths (e.g., `cloud_registry/`), whose files
-    the build copies into a layer of its build stage.
+    the build copies into a layer of its build stage; nor files whose names
+    start with `.env` (e.g., `.envrc` of direnv), or directories named so.
+    Files that only contain `.env` in their names are kept.
     """
     for path in [
         ".env",
         ".env.local",
+        ".env.example",
         "cloud_registry/.env",
         "cloud_registry/.env.production",
+        "cloud_registry/.env-prod",
+        "cloud_registry/.envrc",
+        "cloud_registry/.env/settings",
         "cloud_registry/ga4gh/registry/.env",
         "scripts/.env",
     ]:
         assert not _in_context(path), path
-    for path in [".env.example", "cloud_registry/.env.example"]:
-        assert _in_context(path), path
+    assert _in_context("cloud_registry/api/dot.env.yaml")
