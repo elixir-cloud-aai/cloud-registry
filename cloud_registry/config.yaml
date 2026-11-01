@@ -364,8 +364,9 @@ custom:
         # services that have them (see "Service types" in `docs/api.md`)
         service_types: open
         # How many service types that no service has a user other than an
-        # admin may have added, in every mode (`409` above); `null` for no
-        # limit (see "Service types" in `docs/configuration.md`)
+        # admin may have added, in modes `open` and `moderated` (`409`
+        # above; served as `0` in mode `controlled`); `null` for no limit
+        # (see "Service types" in `docs/configuration.md`)
         max_unused_service_types: 10
         # How many of the registered services a user other than an admin
         # may have registered (`409` above); `null` for no limit, `0` to

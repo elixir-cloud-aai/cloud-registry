@@ -241,7 +241,8 @@ types](api.md#service-types):
 
 Users other than admins may only have added
 `custom.access_control.max_unused_service_types` types that no service has
-(default: 10; `null` for no limit), in every mode: further types are rejected
+(default: 10; `null` for no limit), in modes `open` and `moderated` (in mode
+`controlled`, they can't add types at all): further types are rejected
 (`409`), whether added explicitly or by registering or changing services,
 until services have them or admins remove them (approved types count too).
 Types become unused when their services are deleted or change their type, so
@@ -251,7 +252,8 @@ deleting them, one registration per type); set `0`
 to let only admins add types other than those of services. Concurrent
 requests of a user can exceed the limit by their number. Clients read the
 mode and the limit from the service info, rather than configuring them (see
-[Registration rules](api.md#registration-rules)).
+[Registration rules](api.md#registration-rules)), which gives the limit as
+`0` in mode `controlled`, whatever its value.
 
 The limit is per user, so accounts that anyone can create (e.g., with LS
 Login) can still add types, and pending types in mode `moderated`, without
@@ -273,7 +275,7 @@ overlay (with the Helm chart, in `config`):
 ```yaml
 custom:
     access_control:
-        service_types: controlled
+        service_types: moderated
         max_unused_service_types: 5
 ```
 

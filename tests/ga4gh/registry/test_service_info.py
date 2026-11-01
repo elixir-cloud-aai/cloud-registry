@@ -63,6 +63,19 @@ def test_registration_rules_configured(unit_app: Flask) -> None:
         assert registration_rules()["max_services_per_user"] == 0
 
 
+def test_registration_rules_controlled(unit_app: Flask) -> None:
+    """In the controlled mode, users can't add types: `0` unused types.
+
+    Whatever the configured limit, also without one (`null`).
+    """
+    with unit_app.app_context():
+        custom = get_custom_config(CustomConfig)
+        custom.access_control.service_types = "controlled"
+        assert registration_rules()["max_unused_service_types"] == 0
+        custom.access_control.max_unused_service_types = None
+        assert registration_rules()["max_unused_service_types"] == 0
+
+
 def test_registration_rules_copied(unit_app: Flask) -> None:
     """Changing the rules returned doesn't change the config."""
     with unit_app.app_context():
