@@ -12,7 +12,7 @@ checks that CI runs:
 
 ```bash
 uv sync --locked --extra dev  # the app, with the dev dependencies, in `.venv`
-source .venv/bin/activate  # or `activate.fish` etc.; or prefix commands with `uv run`
+source .venv/bin/activate  # or `activate.fish` etc.
 pre-commit install  # run the checks on every commit
 pre-commit run --all-files  # ruff, mypy, semgrep, ast-grep, actionlint
 pre-commit run --all-files --hook-stage manual gitleaks-all  # secrets
@@ -20,7 +20,9 @@ helm dependency build deployment  # the library chart, for the chart tests
 pytest
 ```
 
-`pip install -e ".[dev]"` also works, but installs the newest versions
+Instead of activating `.venv`, commands can be run with `uv run` (e.g.,
+`uv run pytest`). `pip install -e ".[dev]"` also works, but installs the
+newest versions
 in the ranges of `pyproject.toml` instead of the locked ones, so its results
 can differ from CI's.
 

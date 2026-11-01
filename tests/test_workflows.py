@@ -484,6 +484,8 @@ def test_dev_version_uv_image() -> None:
     assert result.stdout == match[1] + "\n"
 
 
+# `uv sync`, also with options before the subcommand
+UV_SYNC = re.compile(r"\buv\s+(\S+\s+)*?sync\b")
 # The jobs of `ci.yml` that install the app's dependencies, with their extra
 LOCKED_JOBS = {"lint": "dev", "test": "dev", "chart": "dev", "docs": "docs"}
 
@@ -505,17 +507,70 @@ def test_jobs_on_lock(job_id: str, extra: str) -> None:
     steps = {step.get("name"): step for step in job["steps"]}
     uv = steps["Set up uv"]
     assert re.fullmatch(r"astral-sh/setup-uv@[0-9a-f]{40}", uv["uses"])
-    (sync,) = [
-        shlex.split(command)
-        for command in _commands(steps["Install dependencies"])
-        if command.startswith("uv sync")
-    ]
-    assert "--locked" in sync, sync
-    assert "--frozen" not in sync, sync
-    assert sync[sync.index("--extra") + 1] == extra, sync
+    commands = _commands(steps["Install dependencies"])
+    (sync,) = [shlex.split(command) for command in commands if UV_SYNC.search(command)]
+    assert "--locked" in sync, (job_id, sync)
+    assert "--frozen" not in sync, (job_id, sync)
+    extras = {
+        value
+        for option, value in zip(sync, [*sync[1:], ""], strict=True)
+        if option == "--extra"
+    } | {
+        token.removeprefix("--extra=") for token in sync if token.startswith("--extra=")
+    }
+    assert extras == {extra}, (job_id, sync)
+    assert "--all-extras" not in sync, (job_id, sync)
+    # Later steps run the tools of `.venv`
+    assert 'echo "${PWD}/.venv/bin" >> "$GITHUB_PATH"' in commands, job_id
     names = list(steps)
     assert names.index("Set up Python") < names.index("Set up uv")
     assert names.index("Set up uv") < names.index("Install dependencies")
+
+
+def _allowed_install(command: str) -> bool:
+    """Check whether a command of a job without credentials may install.
+
+    Allowed are `uv sync --locked`, `pipx run` of a pinned tool (`--spec
+    <name>==<version>`, e.g., cffconvert in `lint`, in its own environment)
+    and `python -m build` (the build of the distributions in `lint`, with
+    build requirements from the index, as the editable install of the app).
+
+    Args:
+        command: A command.
+
+    Returns:
+        Whether the command is allowed.
+    """
+    tokens = shlex.split(command)
+    if UV_SYNC.search(command):
+        return "--locked" in tokens
+    if command.startswith("pipx run --spec "):
+        return "==" in tokens[3]
+    return command == "python -m build"
+
+
+@pytest.mark.parametrize(
+    ("command", "allowed"),
+    [
+        pytest.param("uv sync --locked --extra dev", True, id="sync-locked"),
+        pytest.param("uv sync --extra dev", False, id="sync"),
+        pytest.param("env X=1 uv sync", False, id="sync-env"),
+        pytest.param("uv --quiet sync", False, id="sync-option"),
+        pytest.param("pipx run --spec foo==1.0 foo", True, id="pipx-pinned"),
+        pytest.param("pipx run --spec foo>=1 foo", False, id="pipx-range"),
+        pytest.param("pipx run foo", False, id="pipx"),
+        pytest.param("uvx ruff", False, id="uvx"),
+        pytest.param("python -m build", True, id="build"),
+    ],
+)
+def test_allowed_install(command: str, allowed: bool) -> None:
+    """Only locked syncs, pinned `pipx run` and the build may install.
+
+    Args:
+        command: A command.
+        allowed: Whether it is allowed.
+    """
+    assert _allowed_install(command) == allowed
 
 
 def test_no_unlocked_installs() -> None:
@@ -523,8 +578,7 @@ def test_no_unlocked_installs() -> None:
 
     No pip command installs anything, except the hash-checked installs of
     jobs with credentials (`test_credential_jobs_install_hash_checked`), and
-    every `uv sync` is `--locked`. `pipx run` of a pinned tool (cffconvert
-    in `lint`, in its own environment) is allowed.
+    other installers are used only as `_allowed_install` allows.
     """
     credential = {(name, job_id) for name, job_id, _ in _credential_jobs()}
     for path in sorted(WORKFLOWS.glob("*.yml")):
@@ -535,8 +589,8 @@ def test_no_unlocked_installs() -> None:
                 for command in _commands(step):
                     where = (path.name, job_id, step.get("name"), command)
                     assert not PIP.search(command), where
-                    if command.startswith("uv sync"):
-                        assert "--locked" in shlex.split(command), where
+                    if INSTALLERS.search(command) or UV_SYNC.search(command):
+                        assert _allowed_install(command), where
 
 
 def test_uv_version_locked() -> None:
