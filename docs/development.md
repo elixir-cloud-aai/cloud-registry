@@ -71,7 +71,10 @@ The build requirements of the app (`build-system.requires`), with which the
 image build builds the app's wheel, are locked the same way, as the
 dependency group `build-system`, and installed from the lock with hash
 checks, too; the wheel is built without network, so the image build
-downloads nothing that isn't hash-checked. Keep the group and
+downloads nothing that isn't hash-checked. CI derives the version of dev
+images with them, installed the same way, so that no job that holds
+publishing credentials installs a package without hash checks (the tests
+check this). Keep the group and
 `build-system.requires` the same (the tests fail if they differ).
 After adding, removing or changing a dependency in `pyproject.toml`, update
 the lock and commit both:

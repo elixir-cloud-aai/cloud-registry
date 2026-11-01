@@ -403,14 +403,32 @@ jobs:
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
+      # uv, to export the locked build requirements: the version locked in
+      # `uv.lock` (a dev dependency), its checksum verified by the action; no
+      # cache in a job with credentials
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version-file: uv.lock
+          enable-cache: false
       # The Docker build gets no Git metadata, so the version (e.g.,
-      # `0.3.1.dev4+g<commit>`) is passed as a build argument
+      # `0.3.1.dev4+g<commit>`) is passed as a build argument. It is derived
+      # with the build requirements (`build-system.requires`, the dependency
+      # group `build-system`) installed as the image build installs them
+      # (`Dockerfile`): at the versions of `uv.lock`, checked against its
+      # hashes, as wheels only, into a virtual environment of their own
       - name: Derive version
         id: version
-        # Same bound as in `build-system.requires` of `pyproject.toml`
         run: |
-          pip install "setuptools-scm>=8"
-          echo "version=$(python -m setuptools_scm)" >> "$GITHUB_OUTPUT"
+          requirements="${RUNNER_TEMP}/build-requirements.txt"
+          uv export --frozen --only-group build-system --no-emit-project \
+            --output-file "${requirements}"
+          python -m venv "${RUNNER_TEMP}/build-env"
+          "${RUNNER_TEMP}/build-env/bin/pip" install --require-hashes \
+            --only-binary :all: --no-deps -r "${requirements}"
+          version="$("${RUNNER_TEMP}/build-env/bin/python" -m setuptools_scm)"
+          echo "Version: ${version}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       # OCI labels with the version, commit and source; the tags are set by

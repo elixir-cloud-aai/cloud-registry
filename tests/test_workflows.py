@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import tomllib
 from typing import Any
 
 from packaging.version import Version
@@ -250,3 +251,101 @@ def test_release_chart_check_runs(
         check=False,
     )
     assert (result.returncode == 0) == passes, result.stdout + result.stderr
+
+
+def _credential_jobs() -> list[tuple[str, str, dict[str, Any]]]:
+    """List the jobs that hold publishing credentials.
+
+    These are the jobs that run in an environment (`environment:`), which
+    holds the Docker Hub secrets, of all workflows.
+
+    Returns:
+        The workflow file name, job ID and job of each such job.
+    """
+    return [
+        (path.name, job_id, job)
+        for path in sorted(WORKFLOWS.glob("*.yml"))
+        for job_id, job in _load(path)["jobs"].items()
+        if "environment" in job
+    ]
+
+
+def test_credential_jobs_found() -> None:
+    """The jobs that publish images are found as credential jobs."""
+    found = {(name, job_id) for name, job_id, _ in _credential_jobs()}
+    assert {
+        ("ci.yml", "push"),
+        ("ci.yml", "publish"),
+        ("release.yml", "push"),
+        ("release.yml", "publish"),
+    } <= found
+
+
+def test_credential_jobs_install_hash_checked() -> None:
+    """Jobs with publishing credentials install Python packages hash-checked.
+
+    A compromised release of a package installed unpinned would run code in
+    a job that holds registry credentials. So every `pip install` there
+    installs exported locked requirements (`-r`) with hash checks, as wheels
+    only and without resolving anything else, and no other installer (`pipx`,
+    `uv pip`, `uv tool`, `uvx`, `uv sync`, `uv run`) is used.
+    """
+    for name, job_id, job in _credential_jobs():
+        for step in job["steps"]:
+            # One command per line, continuation lines joined
+            lines = step.get("run", "").replace("\\\n", " ").splitlines()
+            where = (name, job_id, step.get("name"))
+            script = " ".join(" ".join(lines).split())
+            for other in ("pipx", "uv pip", "uv tool", "uvx", "uv sync", "uv run"):
+                assert other not in script, where
+            # Also `"<venv>/bin/pip" install` and `pip3 install`
+            commands = [
+                command
+                for line in lines
+                for command in re.findall(
+                    r"pip3?[\"']?\s+install[^;&|]*", " ".join(line.split())
+                )
+            ]
+            for command in commands:
+                for option in (
+                    "--require-hashes",
+                    "--only-binary :all:",
+                    "--no-deps",
+                    "-r ",
+                ):
+                    assert option in command, (*where, command)
+
+
+def test_dev_version_from_locked_build_requirements() -> None:
+    """The `push` job of `ci.yml` derives the version with the locked tools.
+
+    setuptools-scm and its dependencies are the `build-system` group of
+    `uv.lock`, exported by a uv of the pinned `astral-sh/setup-uv` (no cache
+    in the job with credentials), as the image build installs them.
+    """
+    workflow = _load(WORKFLOWS / "ci.yml")
+    steps = {step["name"]: step for step in workflow["jobs"]["push"]["steps"]}
+    uv = steps["Set up uv"]
+    assert re.fullmatch(r"astral-sh/setup-uv@[0-9a-f]{40}", uv["uses"])
+    assert uv["with"]["version-file"] == "uv.lock"
+    assert uv["with"]["enable-cache"] is False
+    script = " ".join(steps["Derive version"]["run"].replace("\\\n", " ").split())
+    # Found by `test_credential_jobs_install_hash_checked`
+    assert re.search(r"/bin/pip\" install --require-hashes", script)
+    assert "uv export --frozen --only-group build-system --no-emit-project" in script
+    assert "-m setuptools_scm" in script
+    names = list(steps)
+    assert names.index("Set up uv") < names.index("Derive version")
+    assert names.index("Derive version") < names.index("Log in to Docker Hub")
+
+
+def test_uv_version_locked() -> None:
+    """The workflows' uv is the version locked in `uv.lock`.
+
+    `astral-sh/setup-uv` reads it from the lock (`version-file`), where uv is
+    a dev dependency; without it there, the action would install the latest
+    uv. Dependabot bumps it with the other locked packages.
+    """
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    (uv,) = [package for package in lock["package"] if package["name"] == "uv"]
+    assert Version(uv["version"])
