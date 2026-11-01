@@ -463,6 +463,7 @@ def test_replicas() -> None:
     assert docs[("PodDisruptionBudget", APP)]["spec"] == {
         "maxUnavailable": 1,
         "selector": deployment["spec"]["selector"],
+        "unhealthyPodEvictionPolicy": "AlwaysAllow",
     }
 
 
@@ -488,7 +489,8 @@ def test_pod_disruption_budget_bounds(
 ) -> None:
     """`minAvailable` or `maxUnavailable` set the budget."""
     budget = _render(*REPLICAS, *args)[("PodDisruptionBudget", APP)]["spec"]
-    assert {key: value for key, value in budget.items() if key != "selector"} == bounds
+    names = {"minAvailable", "maxUnavailable"}
+    assert {key: value for key, value in budget.items() if key in names} == bounds
 
 
 def test_pod_disruption_budget_disabled() -> None:

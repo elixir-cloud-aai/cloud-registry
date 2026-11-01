@@ -560,7 +560,7 @@ they complete.
 `cloudRegistry.replicas` (1 by default) sets the number of the app's pods.
 With two or more, the registry stays available while a pod is restarted,
 evicted or replaced, e.g., on node drains, crashes and upgrades (rolling
-updates start a new pod before they remove an old one):
+updates replace the pods one by one, so the others keep serving):
 
 ```yaml
 cloudRegistry:
@@ -570,15 +570,17 @@ cloudRegistry:
 With more than one replica, the chart adds a PodDisruptionBudget, so that
 node drains evict one pod at a time (`cloudRegistry.podDisruptionBudget`:
 `maxUnavailable`, 1 if neither it nor `minAvailable` is set, or
-`minAvailable`, each a number or a percentage; `enabled: false` for none).
-The scheduler spreads the pods across nodes where it can; check with
-`kubectl get pods -n <namespace> -o wide`. See [Several
+`minAvailable`, each a number or a percentage; `enabled: false` for none);
+pods that are not ready can always be evicted, so that they don't block
+drains. The scheduler usually spreads the pods across nodes, but doesn't
+guarantee it, and a crash of a node with all of them takes the registry
+down: check with `kubectl get pods -n <namespace> -o wide`. See [Several
 replicas](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.3.0/docs/helm-chart.md#several-replicas)
 in the library chart's documentation.
 
 The app is correct with several replicas, as it already runs as several
-instances (one per Gunicorn worker, and old and new pods side by side
-during rolling updates): services, roles, invitations, locks of renames and
+instances (old and new pods side by side during rolling updates, and one
+per Gunicorn worker with more than one): services, roles, invitations, locks of renames and
 the counters of services per user are kept in MongoDB, and each instance
 applies roles granted or revoked by any other before its next request. Keep
 in mind:
