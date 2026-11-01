@@ -37,10 +37,10 @@ def registration_rules() -> dict[str, Any]:
         add service types (`service_types`: `open`, `controlled` or
         `moderated`), how many types that no service has users other
         than admins may have added (`max_unused_service_types`; left out if
-        there is no limit; `0` if they can't add types, also in the
-        `controlled` mode), and how many
-        services they may have registered (`max_services_per_user`; left
-        out if there is no limit; `0` if they can't register services).
+        there is no limit; `0` if they can't add types, always in mode
+        `controlled`), and how many services they may have registered
+        (`max_services_per_user`; left out if there is no limit; `0` if
+        they can't register services).
         Lists are copies.
     """
     custom = get_custom_config(CustomConfig)

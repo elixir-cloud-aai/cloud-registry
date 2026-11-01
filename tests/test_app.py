@@ -1279,11 +1279,11 @@ def test_registration_rules_configured(
 def test_registration_rules_follow_config(app: App, client: FlaskClient) -> None:
     """The registration rules are read from the config on each request.
 
-    So they match the rules the registry enforces, e.g., a limit of `0`.
+    So they match the rules the registry enforces, e.g., a limit of `0`,
+    also of unused types in mode `controlled`, whatever the configured limit.
     """
     custom = _custom_config(app)
     custom.access_control.service_types = "controlled"
-    custom.access_control.max_unused_service_types = 0
     custom.access_control.max_services_per_user = 0
     custom.endpoints.services.environments = ["production"]
     rules = client.get(f"{BASE}/service-info").get_json()["registration_rules"]
@@ -2295,16 +2295,17 @@ def test_validation_error_detail(
     assert detail in response.get_json()["detail"]
 
 
-def test_extra_query_parameters_without_parameters(client: FlaskClient) -> None:
+@pytest.mark.parametrize("path", ["/services", "/service-info"])
+def test_extra_query_parameters_without_parameters(
+    client: FlaskClient, path: str
+) -> None:
     """Operations without parameters ignore query parameters.
 
     Connexion only checks the query parameters of operations with
     parameters (cf. `extra_parameter` of `test_validation_error_detail()`),
     as `docs/api.md` (Errors) says.
     """
-    response = client.get(f"{BASE}/services?x=1")
-    assert response.status_code == 200
-    assert response.get_json() == []
+    assert client.get(f"{BASE}{path}?x=1").status_code == 200
 
 
 def test_validation_error_detail_large_body(
