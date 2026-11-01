@@ -2,7 +2,8 @@
 ## uv, to export the locked requirements (`uv.lock`) for the image build;
 ## mounted into the steps that export them only, so that the image doesn't
 ## contain it. Pinned by digest; Dependabot updates the tag and digest
-## together
+## together. CI's `push` job exports the build requirements with this image
+## too (`.github/workflows/ci.yml`), as the `build` stage below does
 FROM ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0 AS uv
 
 ##### BASE IMAGE #####

@@ -71,8 +71,12 @@ The build requirements of the app (`build-system.requires`), with which the
 image build builds the app's wheel, are locked the same way, as the
 dependency group `build-system`, and installed from the lock with hash
 checks, too; the wheel is built without network, so the image build
-downloads nothing that isn't hash-checked. Keep the group and
-`build-system.requires` the same (the tests fail if they differ).
+downloads nothing that isn't hash-checked. CI derives the version of dev
+images with them, installed the same way (exported by the uv image of the
+`Dockerfile`, pinned by digest), so that no job that holds publishing
+credentials installs a package without hash checks (the tests check
+this). Keep the group and `build-system.requires` the same (the tests
+fail if they differ).
 After adding, removing or changing a dependency in `pyproject.toml`, update
 the lock and commit both:
 
@@ -84,10 +88,11 @@ uv lock --check  # what CI checks: the lock matches `pyproject.toml`
 
 Dependabot updates `pyproject.toml` and `uv.lock` together, including the
 `build-system` group (`uv` entry of `.github/dependabot.yml`), and the image
-of uv that the `Dockerfile` uses (`docker` entry). The lock also pins FOCA,
-and the image build fails unless the base image has exactly the locked FOCA,
-so FOCA is updated by hand, in the base image and the lock together
-(`uv lock --upgrade-package foca`); Dependabot ignores FOCA in both entries.
+of uv that the `Dockerfile` and CI use (`docker` entry). The lock also pins
+FOCA, and the image build fails unless the base image has exactly the
+locked FOCA, so FOCA is updated by hand, in the base image and the lock
+together (`uv lock --upgrade-package foca`); Dependabot ignores FOCA in both
+entries.
 
 ## Documentation
 
