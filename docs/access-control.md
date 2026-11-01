@@ -285,6 +285,17 @@ can't be granted to groups then: `400 Bad Request`).
     virtual organization (VO) or of a large community, but to groups of the
     team that runs the service.
 
+### Entitlement-style groups
+
+Groups that are URNs, such as the values of an `entitlement` claim, contain
+`:` and `#`, which must be percent-encoded in the path (`:` as `%3A`, `#` as
+`%23`), as in the example above. With `curl`, pass the encoded form, e.g.,
+`urn%3Aexample%3Agroup%3Ateam%23issuer.example.org` for
+`urn:example:group:team#issuer.example.org`. The configuration needed to read
+such claims (issuer, audience, `claim_groups`, `userinfo_claims`, the login
+scope and access tokens of type `at+jwt`) is in
+[Configuration](configuration.md#entitlement-style-groups).
+
 ### Group membership changes
 
 Group memberships are those of the token: if the group claim is in the access

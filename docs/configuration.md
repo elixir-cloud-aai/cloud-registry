@@ -58,6 +58,55 @@ security:
             registry-admins: admin
 ```
 
+### Entitlement-style groups
+
+Some identity providers release groups as entitlements, i.e., URNs, in a
+multi-valued claim (here `entitlement`) other than `groups`, and only via user
+info:
+
+```yaml
+security:
+    auth:
+        issuers:
+            - https://idp.example.org/
+        audience:
+            - <client ID of the front end>
+        userinfo_claims:
+            - entitlement
+            - name
+            - email
+            - email_verified
+    access_control:
+        claim_groups: entitlement
+        group_mapping:
+            "urn:example:group:admins#issuer.example.org": admin
+```
+
+Settings for specific identity providers belong to the documentation of the
+deployment, not here.
+
+Notes:
+
+- `audience` lists the client IDs of the apps that call the registry, usually
+  the front end's (the `aud` claim of its access tokens).
+- The group (the URN above is illustrative) is a value of the claim. Quote
+  such keys in YAML, as they contain `:` and `#`.
+- Without the claim in `userinfo_claims`, no user gets the admin role or roles
+  of groups; without `email` and `email_verified`, the email addresses of
+  users who accept invitations are not stored (see
+  [Invitations](access-control.md#invitations)).
+- Clients must request the scope that releases the claim when logging in
+  (here the one for `entitlement`, besides `openid` and the scopes for
+  `name`, `email` and `email_verified`), and the identity provider must
+  allow it for the client.
+- The registry accepts only access tokens with the `typ` header `at+jwt`
+  (`security.auth.verify_token_type`, enabled by default). Before going live,
+  check that the identity provider issues such tokens to the front end, and
+  that their `aud` matches `audience`: otherwise requests fail with `401
+  Unauthorized`.
+- Roles of groups are granted with the URL-encoded group in the path (see
+  [Roles of groups](access-control.md#roles-of-groups)).
+
 Roles of users and groups on services are granted by owners and admins via
 the API, not configured (see [Roles on
 services](access-control.md#roles-on-services)). The policies
