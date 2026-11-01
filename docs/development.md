@@ -1,6 +1,6 @@
 # Development
 
-See [Contributing](contributing.md) for how to contribute, including the
+See [Contributing](contributing/index.md) for how to contribute, including the
 Python guidelines; this page describes the development setup, the checks, the
 documentation and the releases.
 

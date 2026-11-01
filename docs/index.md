@@ -25,8 +25,8 @@
 - [Upgrading](upgrading.md): changes to existing deployments and data.
 - [Development](development.md): development setup, checks, versioning and
   releases.
-- [Contributing](contributing.md): how to contribute, the code of conduct,
-  pull requests, commit messages and the Python guidelines.
+- [Contributing](contributing/index.md): how to contribute, the citation metadata
+  and the Python guidelines.
 - [API reference](reference.md): the code, generated from its docstrings.
 - [Changelog](changelog.md): release notes.
 
