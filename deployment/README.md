@@ -732,12 +732,12 @@ Deployment is called after `cloud_registry.appName`, by default
      'mongorestore --quiet --drop --archive \
      -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" \
      --authenticationDatabase admin' < serviceStore.archive
-   kubectl scale deploy/cloud-registry -n <namespace> --replicas=1
+   kubectl scale deploy/cloud-registry -n <namespace> --replicas=<replicas>
    ```
 
-   With several replicas (see [Replicas](#replicas)), scale to
-   `cloudRegistry.replicas` instead, or run `helm upgrade` with the values
-   file, which restores it.
+   Replace `<replicas>` with `cloudRegistry.replicas` from your values
+   (1 by default, see [Replicas](#replicas)), or run `helm upgrade` with the
+   values file instead, which restores it.
 
 Once the new release works, delete a retained volume
 (`kubectl delete pv <name>`) and the local dump.
