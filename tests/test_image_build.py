@@ -1,8 +1,9 @@
-"""Tests of the image build's downloads (`Dockerfile`).
+"""Tests of the image build (`Dockerfile`, `.dockerignore`).
 
 The image build downloads packages only with hash checks: the runtime
 dependencies and the build requirements of the app (`build-system.requires`)
-are both exported from the lock (`uv.lock`), with their hashes.
+are both exported from the lock (`uv.lock`), with their hashes. Local
+secrets (`.env` files) are kept out of its build context.
 """
 
 import os
@@ -16,6 +17,7 @@ from uv import find_uv_bin
 
 ROOT = Path(__file__).parents[1]
 DOCKERFILE = ROOT / "Dockerfile"
+DOCKERIGNORE = ROOT / ".dockerignore"
 # Dependency group that locks the build requirements of the app
 GROUP = "build-system"
 
@@ -212,3 +214,110 @@ def test_uv_mounted_only() -> None:
     for command in _run_commands():
         if re.search(r"\buv\s+export\b", command):
             assert "UV_NO_CACHE=1" in command, command
+
+
+def _pattern(pattern: str) -> re.Pattern[str]:
+    """Compile a `.dockerignore` pattern to a regular expression.
+
+    As Docker matches them: `**` matches any number of directories (also
+    none), `*` and `?` match within one path segment, and a pattern that
+    matches a directory also matches everything in it, and character
+    classes (`[...]`) match one character of a path segment.
+
+    Args:
+        pattern: Pattern, without a leading `!`.
+
+    Returns:
+        Regular expression that matches the paths (relative to the build
+        context) that the pattern matches.
+    """
+    regex = ""
+    rest = pattern.strip("/")
+    while rest:
+        if rest.startswith("**/"):
+            regex += "(?:.*/)?"
+            rest = rest[3:]
+        elif rest.startswith("**"):
+            regex += ".*"
+            rest = rest[2:]
+        elif rest[0] == "*":
+            regex += "[^/]*"
+            rest = rest[1:]
+        elif rest[0] == "?":
+            regex += "[^/]"
+            rest = rest[1:]
+        elif rest[0] == "[":
+            end = rest.index("]")
+            # as in Docker, copied unchanged (e.g., ranges)
+            regex += rest[: end + 1]
+            rest = rest[end + 1 :]
+        else:
+            regex += re.escape(rest[0])
+            rest = rest[1:]
+    return re.compile(f"{regex}(?:/.*)?")
+
+
+def _in_context(path: str) -> bool:
+    """Check whether `.dockerignore` keeps a path in the build context.
+
+    The last pattern that matches the path decides, as in Docker.
+
+    Args:
+        path: Path, relative to the build context.
+
+    Returns:
+        Whether the path is sent to the build.
+    """
+    included = True
+    for line in DOCKERIGNORE.read_text().splitlines():
+        pattern = line.strip()
+        if not pattern or pattern.startswith("#"):
+            continue
+        negated = pattern.startswith("!")
+        if _pattern(pattern.removeprefix("!")).fullmatch(path):
+            included = negated
+    return included
+
+
+def test_context_files() -> None:
+    """The build context has the files the image build needs, not others."""
+    for path in [
+        "cloud_registry/app.py",
+        "cloud_registry/api/additions.openapi.yaml",
+        "pyproject.toml",
+        "uv.lock",
+        "scripts/image_requirements.py",
+    ]:
+        assert _in_context(path), path
+    for path in [
+        "tests/test_app.py",
+        "docs/index.md",
+        "cloud_registry/__pycache__/app.cpython-313.pyc",
+        "cloud_registry/app.pyc",
+        "cloud_registry/ga4gh/registry/__pycache__/service.cpython-313.pyc",
+    ]:
+        assert not _in_context(path), path
+
+
+def test_context_without_env_files() -> None:
+    """Local `.env` files are not sent to the build.
+
+    Also not in the included paths (e.g., `cloud_registry/`), whose files
+    the build copies into a layer of its build stage; nor files whose names
+    start with `.env` (e.g., `.envrc` of direnv), or directories named so.
+    Files that only contain `.env` in their names are kept.
+    """
+    for path in [
+        ".env",
+        ".env.local",
+        ".env.example",
+        "cloud_registry/.env",
+        "cloud_registry/.env.production",
+        "cloud_registry/.env-prod",
+        "cloud_registry/.envrc",
+        "cloud_registry/.env/settings",
+        "cloud_registry/ga4gh/registry/.env",
+        "scripts/.env",
+    ]:
+        assert not _in_context(path), path
+    assert _in_context("cloud_registry/api/dot.env.yaml")

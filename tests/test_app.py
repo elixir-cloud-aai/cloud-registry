@@ -1279,11 +1279,11 @@ def test_registration_rules_configured(
 def test_registration_rules_follow_config(app: App, client: FlaskClient) -> None:
     """The registration rules are read from the config on each request.
 
-    So they match the rules the registry enforces, e.g., a limit of `0`.
+    So they match the rules the registry enforces, e.g., a limit of `0`,
+    also of unused types in mode `controlled`, whatever the configured limit.
     """
     custom = _custom_config(app)
     custom.access_control.service_types = "controlled"
-    custom.access_control.max_unused_service_types = 0
     custom.access_control.max_services_per_user = 0
     custom.endpoints.services.environments = ["production"]
     rules = client.get(f"{BASE}/service-info").get_json()["registration_rules"]
@@ -2293,6 +2293,58 @@ def test_validation_error_detail(
     assert response.content_type == ERROR_MEDIA_TYPE
     assert response.get_json()["title"] == "Bad request"
     assert detail in response.get_json()["detail"]
+
+
+@pytest.mark.parametrize(
+    "method, path, status",
+    [
+        ("get", "/services", 200),
+        ("get", "/service-info", 200),
+        ("post", "/services/types", 201),
+    ],
+)
+def test_extra_query_parameters_without_parameters(
+    client: FlaskClient,
+    admin_headers: dict[str, str],
+    method: str,
+    path: str,
+    status: int,
+) -> None:
+    """Operations without parameters ignore query parameters.
+
+    Connexion only checks the query parameters of operations with path,
+    query or header parameters (cf. `extra_parameter` of
+    `test_validation_error_detail()`), not request bodies, as `docs/api.md`
+    (Errors) says.
+    """
+    body = SERVICE["type"] if method == "post" else None
+    response = client.open(
+        f"{BASE}{path}?x=1", method=method, headers=admin_headers, json=body
+    )
+    assert response.status_code == status, response.get_json()
+
+
+@pytest.mark.parametrize(
+    "method, path", [("post", "/services"), ("put", "/services/abc")]
+)
+def test_organization_extra_fields(
+    client: FlaskClient, admin_headers: dict[str, str], method: str, path: str
+) -> None:
+    """Registrations and updates with extra organization fields return `400`.
+
+    Otherwise, they could store and serve values of any size (only limited
+    by the size limit of request bodies).
+    """
+    organization = {**SERVICE["organization"], "blob": "x" * 1000}
+    response = client.open(
+        f"{BASE}{path}",
+        method=method,
+        headers=admin_headers,
+        json=_service(organization=organization),
+    )
+    _assert_error(response, 400)
+    assert "'blob' was unexpected" in response.get_json()["detail"]
+    assert client.get(f"{BASE}/services").get_json() == []
 
 
 def test_validation_error_detail_large_body(

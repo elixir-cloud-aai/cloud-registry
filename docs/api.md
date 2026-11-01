@@ -106,9 +106,9 @@ forms, `GET /service-info` serves them in `registration_rules`:
   `moderated` (see [Service types](#service-types));
 - `max_unused_service_types`: how many types that no service has users other
   than admins may have added (`409 Conflict` for further ones); `0` if they
-  can't add types, and not set if there is no limit; concurrent requests of
-  a user can exceed it by their number (see [Service
-  types](configuration.md#service-types));
+  can't add types (always in mode `controlled`), and not set if there is no
+  limit; concurrent requests of a user can exceed it by their number (see
+  [Service types](configuration.md#service-types));
 - `max_services_per_user`: how many of the registered services users other
   than admins may have registered (`409 Conflict` for further ones); `0` if
   only admins can register services, and not set if there is no limit (see
@@ -177,8 +177,11 @@ verifications (`PUT /services/{serviceId}/verification`) are limited in length
 | `description` | 4096 |
 | `version`, `environment`, `type.group`, `type.artifact`, `type.version` | 256 |
 
-Services stored before the checks of lengths were introduced may not pass
-them; see [Upgrading](upgrading.md#stored-services).
+Organizations (`organization`) may only have a `name` and a `url`; other
+fields are rejected (`400 Bad Request`), so that their size is limited too.
+
+Services stored before the checks of lengths and of organization fields were
+introduced may not pass them; see [Upgrading](upgrading.md#stored-services).
 
 Users other than admins may only have registered a limited number of the
 registered services (50 by default; `409 Conflict` with code `services-limit`
@@ -353,8 +356,12 @@ curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/types/approval" \
 ## Errors
 
 Requests that don't match the API specification (e.g., missing or unknown
-fields, values that are too long, extra query parameters, or bodies that
-aren't JSON) are rejected with `400 Bad Request`, with the reason in `detail`.
+fields, values that are too long, or bodies that aren't JSON) are rejected
+with `400 Bad Request`, with the reason in `detail`. So are extra query
+parameters of operations that have path, query or header parameters (e.g.,
+`GET /services/{serviceId}?page=1`); operations without any (request bodies
+don't count), such as `GET /services`, `GET /service-info` and `POST
+/services/types`, ignore query parameters.
 
 Errors handled by the app are [problem
 details](https://www.rfc-editor.org/rfc/rfc7807) (`title`, `status` and

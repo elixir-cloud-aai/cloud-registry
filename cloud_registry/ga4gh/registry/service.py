@@ -705,6 +705,39 @@ def warn_invalid_urls() -> None:
         )
 
 
+# Fields of the organization of a service (cf. `ExternalServiceRegister` in
+# `api/additions.openapi.yaml`, which rejects others)
+ORGANIZATION_FIELDS = frozenset({"name", "url"})
+
+
+def warn_organization_fields() -> None:
+    """Warn of stored services whose organizations have extra fields.
+
+    For example, of services registered before fields other than `name` and
+    `url` were rejected in organizations (cf. "Stored services" in
+    `docs/upgrading.md`). Such services are still served, but can only be
+    updated without these fields. Organizations that aren't objects are
+    skipped (e.g., arrays, which MongoDB's `$type: object` also matches if
+    they have objects).
+    """
+    ids = []
+    for service in get_collection("services").find(
+        {"organization": {"$type": "object"}},
+        {"_id": False, "id": True, "organization": True},
+        sort=[("id", 1)],
+    ):
+        organization = service["organization"]
+        if isinstance(organization, dict) and organization.keys() - ORGANIZATION_FIELDS:
+            ids.append(f"'{service['id']}'")
+    if ids:
+        logger.warning(
+            "Services with organization fields other than `name` and `url` "
+            "are still served, but can only be updated without them; update "
+            "or delete them: %s",
+            escape_log_value(", ".join(ids)),
+        )
+
+
 def warn_environments() -> None:
     """Warn of stored services whose environments are not allowed.
 

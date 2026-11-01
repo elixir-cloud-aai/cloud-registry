@@ -196,8 +196,9 @@ class AccessControlConfig(FOCABaseConfig):
             than admins are pending until an admin approves them, and so are
             the services that have them.
         max_unused_service_types: How many service types that no service
-            has a user other than an admin may have added, in every mode
-            (`409` above); unlimited if `None`. Bounds the lists of types,
+            has a user other than an admin may have added, in modes `open`
+            and `moderated` (`409` above; served as `0` in mode
+            `controlled`); unlimited if `None`. Bounds the lists of types,
             and of pending types, that users can grow.
         max_services_per_user: How many of the registered services a user
             other than an admin may have registered (`409` above);
@@ -213,8 +214,9 @@ class AccessControlConfig(FOCABaseConfig):
             than admins are pending until an admin approves them, and so are
             the services that have them.
         max_unused_service_types: How many service types that no service
-            has a user other than an admin may have added, in every mode
-            (`409` above); unlimited if `None`. Bounds the lists of types,
+            has a user other than an admin may have added, in modes `open`
+            and `moderated` (`409` above; served as `0` in mode
+            `controlled`); unlimited if `None`. Bounds the lists of types,
             and of pending types, that users can grow.
         max_services_per_user: How many of the registered services a user
             other than an admin may have registered (`409` above);
