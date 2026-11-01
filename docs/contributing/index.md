@@ -14,7 +14,9 @@ environment.
 ## Commit messages and pull request titles
 
 Use `feat`, `fix`, `perf`, `refactor` and `style` only for changes of what is
-deployed: the app (`cloud_registry/`) and its Helm chart (`deployment/`).
+deployed: the app (`cloud_registry/`) and its Helm chart (`deployment/`). The CI
+job `PR title` checks the titles of pull requests, which are the commit
+messages of squash merges.
 
 ## Citation metadata
 

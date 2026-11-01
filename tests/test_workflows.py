@@ -115,15 +115,34 @@ def test_shared_actions_release_comments() -> None:
 def test_gate_uses_shared_action() -> None:
     """The gate of `ci.yml` uses the shared `gate` action.
 
-    It passes the results of all needed jobs and allows `push` and
-    `publish` to be skipped on pull requests only.
+    It passes the results of all needed jobs and allows `title` to be
+    skipped, and `push` and `publish` on pull requests only.
     """
     (step,) = _load(WORKFLOWS / "ci.yml")["jobs"][GATE]["steps"]
     assert step["uses"].startswith("elixir-cloud-aai/.github/actions/gate@")
     assert step["with"]["needs"] == "${{ toJSON(needs) }}"
     assert step["with"]["allow-skipped"] == (
-        "${{ github.event_name == 'pull_request' && 'push publish' || '' }}"
+        "${{ github.event_name == 'pull_request' && 'title push publish' || 'title' }}"
     )
+
+
+def test_title_job() -> None:
+    """The `title` job checks pull request titles with the shared action.
+
+    It runs only on pull requests, needs no permissions, and `ci.yml` also
+    runs when a pull request is edited.
+    """
+    workflow = _load(WORKFLOWS / "ci.yml")
+    # PyYAML parses the key `on` as `True`
+    events = {str(key): value for key, value in workflow.items()}.get("True")
+    events = events or workflow["on"]
+    assert "edited" in events["pull_request"]["types"]
+    job = workflow["jobs"]["title"]
+    assert job["name"] == "PR title"
+    assert job["permissions"] == {}
+    assert "github.event_name == 'pull_request'" in job["if"]
+    (step,) = job["steps"]
+    assert step["uses"].startswith("elixir-cloud-aai/.github/actions/pr-title@")
 
 
 def test_verification_signer_workflow() -> None:
