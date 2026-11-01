@@ -318,7 +318,7 @@ PIP = re.compile(r"\bpip[0-9.]*[\"']?(\s+\S+)*?\s+(install|wheel|download)\b")
 HASH_CHECKED = ["--require-hashes", "--only-binary", ":all:", "--no-deps"]
 # Other installers, and builds that install build requirements
 INSTALLERS = re.compile(
-    r"\b(pipx|pipenv|easy_install|uvx|pip-sync|poetry|pdm|hatch"
+    r"\b(pipx|pipenv|easy_install|uvx|pip-sync|poetry|pdm|hatch|conda|mamba|micromamba"
     r"|uv\s+(pip|tool|sync|run|add|build|venv)|python[0-9.]*\s+-m\s+build)\b"
 )
 
@@ -372,6 +372,8 @@ def test_pip_pattern(command: str, found: bool) -> None:
         "uv build",
         "python -m build",
         "poetry install",
+        "conda install foo",
+        "micromamba install foo",
     ],
 )
 def test_installers_pattern(command: str) -> None:
