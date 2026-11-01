@@ -74,6 +74,13 @@ further fields in `organization` must drop them. Services stored with such
 fields are still served; the app warns of them on startup (see [Stored
 services](#stored-services)).
 
+With the Helm chart, the default `cloudRegistry.image` is now fully
+qualified, `docker.io/elixircloud/cloud-registry` (see
+[Image](deployment.md#image)): adapt image allow-lists, admission policies
+(e.g., of Kyverno or Gatekeeper) and registry mirror rules that match the
+short name `elixircloud/cloud-registry`, or pods may be rejected, or pull
+past the mirror, after `helm upgrade`.
+
 ## From 0.5.0
 
 Data is kept. The app now builds on FOCA 0.18, which provides several of
@@ -387,16 +394,38 @@ in the database, e.g., with `mongosh` (see [MongoDB](deployment.md#mongodb)),
 which keeps only `name` and `url`:
 
 ```javascript
-db.getSiblingDB("serviceStore").services.updateOne({id: "<id>"}, [
-  {$set: {organization: {$arrayToObject: {$filter: {
-    input: {$objectToArray: "$organization"},
-    cond: {$in: ["$$this.k", ["name", "url"]]},
-  }}}}},
-])
+db.getSiblingDB("serviceStore").services.updateOne(
+  {id: "<id>", "organization.name": {$exists: true}, "organization.url": {$exists: true}},
+  [
+    {$set: {organization: {$arrayToObject: {$filter: {
+      input: {$objectToArray: "$organization"},
+      cond: {$in: ["$$this.k", ["name", "url"]]},
+    }}}}},
+  ],
+)
 ```
 
-Services without an organization `name` or `url` can then still only be
-updated with both.
+Services whose organization lacks `name` or `url` (only data written outside
+the API, which has always required both) aren't served: with response
+validation on (`validate_responses` in the base config), `GET
+/services/{serviceId}` returns `500 Internal Server Error` for them, and so
+does the whole list, `GET /services`, until both are set. The app doesn't
+warn of them on startup, and the example above doesn't match them
+(`matchedCount: 0`), so that it doesn't leave an organization of `{}`. List
+them, and set both fields (or delete the services), e.g.:
+
+```javascript
+db.getSiblingDB("serviceStore").services.find(
+  {$or: [{"organization.name": {$exists: false}}, {"organization.url": {$exists: false}}]},
+  {_id: 0, id: 1, organization: 1},
+)
+db.getSiblingDB("serviceStore").services.updateOne(
+  {id: "<id>"},
+  {$set: {"organization.name": "<name>", "organization.url": "<URL>"}},
+)
+```
+
+Then clean up their further fields as above.
 
 Services stored before the check of [duplicate
 services](api.md#duplicate-services) get their key on startup; only services
