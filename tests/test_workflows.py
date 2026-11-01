@@ -259,7 +259,8 @@ def _credential_jobs() -> list[tuple[str, str, dict[str, Any]]]:
     These are the jobs of all workflows that run in an environment
     (`environment:`, which holds the Docker Hub secrets), use a Docker Hub
     secret directly, or may sign or write (`id-token`, `contents`,
-    `packages` or `attestations` permission `write`). No workflow passes a
+    `packages` or `attestations` permission `write`, or `write-all`, also
+    inherited from the workflow's permissions). No workflow passes a
     secret to all its jobs (workflow-level `env:`).
 
     Returns:
@@ -270,10 +271,14 @@ def _credential_jobs() -> list[tuple[str, str, dict[str, Any]]]:
         workflow = _load(path)
         assert "secrets." not in yaml.safe_dump(workflow.get("env", {})), path
         for job_id, job in workflow["jobs"].items():
-            permissions = job.get("permissions", {})
-            writes = isinstance(permissions, dict) and any(
-                permissions.get(scope) == "write"
-                for scope in ("id-token", "contents", "packages", "attestations")
+            # Jobs without permissions of their own inherit the workflow's
+            permissions = job.get("permissions", workflow.get("permissions", {}))
+            writes = permissions == "write-all" or (
+                isinstance(permissions, dict)
+                and any(
+                    permissions.get(scope) == "write"
+                    for scope in ("id-token", "contents", "packages", "attestations")
+                )
             )
             if (
                 "environment" in job
@@ -304,13 +309,15 @@ def _commands(step: dict[str, Any]) -> list[str]:
     ]
 
 
-# pip (also `pip3`, `pip3.13`, `"<venv>/bin/pip"`, with global options)
-# commands that install or build packages; the latter runs their build
-# backends
-PIP = re.compile(r"\bpip[0-9.]*[\"']?(\s+-\S+)*\s+(install|wheel|download)\b")
+# pip (also `pip3`, `pip3.13`, `"<venv>/bin/pip"`, with global options and
+# their values) commands that install or build packages; the latter runs
+# their build backends
+PIP = re.compile(r"\bpip[0-9.]*[\"']?(\s+\S+)*?\s+(install|wheel|download)\b")
+# The only options of an install in a job with credentials, besides `-r`
+HASH_CHECKED = ["--require-hashes", "--only-binary", ":all:", "--no-deps"]
 # Other installers, and builds that install build requirements
 INSTALLERS = re.compile(
-    r"\b(pipx|easy_install|uvx|pip-sync|poetry|pdm|hatch"
+    r"\b(pipx|pipenv|easy_install|uvx|pip-sync|poetry|pdm|hatch"
     r"|uv\s+(pip|tool|sync|run|add|build|venv)|python[0-9.]*\s+-m\s+build)\b"
 )
 
@@ -335,6 +342,7 @@ def test_credential_jobs_found() -> None:
         pytest.param("python -m pip wheel .", True, id="wheel"),
         pytest.param("pip download foo", True, id="download"),
         pytest.param("pip -q install foo", True, id="global-option"),
+        pytest.param("pip --log pip.log install foo", True, id="option-value"),
         pytest.param(
             "python -m pip --disable-pip-version-check install foo",
             True,
@@ -356,7 +364,14 @@ def test_pip_pattern(command: str, found: bool) -> None:
 
 @pytest.mark.parametrize(
     "command",
-    ["pipx run foo", "uv sync", "uv build", "python -m build", "poetry install"],
+    [
+        "pipx run foo",
+        "pipenv install",
+        "uv sync",
+        "uv build",
+        "python -m build",
+        "poetry install",
+    ],
 )
 def test_installers_pattern(command: str) -> None:
     """The pattern finds other installers and builds.
@@ -395,16 +410,14 @@ def test_credential_jobs_install_hash_checked() -> None:
                 assert not INSTALLERS.search(command), where
                 if match := PIP.search(command):
                     assert match.group(2) == "install", where
+                    # Exactly these options and one requirements file (no
+                    # other files, packages or options)
                     options = shlex.split(command[match.end() :])
-                    for option in (
-                        "--require-hashes",
-                        "--no-deps",
-                        "-r",
-                        "--only-binary",
-                    ):
-                        assert option in options, where
-                    binary = options.index("--only-binary")
-                    assert options[binary + 1] == ":all:", where
+                    assert options.count("-r") == 1, where
+                    file = options.index("-r")
+                    assert options[file + 1].startswith("$"), where
+                    rest = options[:file] + options[file + 2 :]
+                    assert rest == HASH_CHECKED, where
 
 
 def _derive_version() -> dict[str, Any]:
