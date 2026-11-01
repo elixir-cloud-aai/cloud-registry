@@ -130,7 +130,8 @@ upgrade. As `config` is stored in a ConfigMap, it must not contain secrets
 The app image is `cloudRegistry.image` (default
 `docker.io/elixircloud/cloud-registry`, fully qualified, as some container
 runtimes, e.g., CRI-O and Podman, refuse short names) with tag
-`cloudRegistry.tag`, which defaults to the chart's `appVersion`. Charts attached to [GitHub
+`cloudRegistry.tag`, which defaults to the chart's `appVersion`. Charts
+attached to [GitHub
 releases](https://github.com/elixir-cloud-aai/cloud-registry/releases) have
 the release version as `version` and `appVersion`, so they deploy the image of
 their release (`X.Y.Z`). In the repository, both are placeholders, and
@@ -146,8 +147,7 @@ cloudRegistry:
 
 `cloudRegistry.image` may also include a tag or digest (e.g.,
 `docker.io/elixircloud/cloud-registry:{{ version }}`, as in earlier chart
-versions); then
-`cloudRegistry.tag` must be empty. See [Versioning and
+versions); then `cloudRegistry.tag` must be empty. See [Versioning and
 releases](https://cloud-registry.readthedocs.io/en/latest/development/#versioning-and-releases) for the image tags.
 
 The image is pulled on every start of a pod
@@ -674,17 +674,14 @@ Deployment is called after `cloud_registry.appName`, by default
    ```
 
 7. Restore the dump, replacing the collections the app has created, then
-   start the app again with the number of pods the release sets
-   (`<replicas>`, 1 by default), or, instead of `kubectl scale`, upgrade the
-   release with the values file (see [Upgrades](#upgrades)), which restores
-   that number:
+   start the app:
 
    ```bash
    kubectl exec -i deploy/cloud-registry-mongodb -n <namespace> -- sh -c \
      'mongorestore --quiet --drop --archive \
      -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" \
      --authenticationDatabase admin' < serviceStore.archive
-   kubectl scale deploy/cloud-registry -n <namespace> --replicas=<replicas>
+   kubectl scale deploy/cloud-registry -n <namespace> --replicas=1
    ```
 
 Once the new release works, delete a retained volume
@@ -803,6 +800,9 @@ for all changes; for Helm releases:
   them on startup; see [Stored
   services](https://cloud-registry.readthedocs.io/en/latest/upgrading/#stored-services)
   for how to clean them up.
+- **Image:** the default `cloudRegistry.image` is now fully qualified
+  (`docker.io/elixircloud/cloud-registry`, see [Image](#image)); adapt
+  image allow-lists or mirror rules that match the short name.
 
 Restart the app once after the rollout, so that services registered,
 updated or deleted by pods of 0.6.0 during the rollout are counted correctly
