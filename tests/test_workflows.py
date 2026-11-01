@@ -8,6 +8,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import tomllib
 from typing import Any
 
 from packaging.version import Version
@@ -317,7 +318,7 @@ PIP = re.compile(r"\bpip[0-9.]*[\"']?(\s+\S+)*?\s+(install|wheel|download)\b")
 HASH_CHECKED = ["--require-hashes", "--only-binary", ":all:", "--no-deps"]
 # Other installers, and builds that install build requirements
 INSTALLERS = re.compile(
-    r"\b(pipx|pipenv|easy_install|uvx|pip-sync|poetry|pdm|hatch"
+    r"\b(pipx|pipenv|easy_install|uvx|pip-sync|poetry|pdm|hatch|conda|mamba|micromamba"
     r"|uv\s+(pip|tool|sync|run|add|build|venv)|python[0-9.]*\s+-m\s+build)\b"
 )
 
@@ -371,6 +372,8 @@ def test_pip_pattern(command: str, found: bool) -> None:
         "uv build",
         "python -m build",
         "poetry install",
+        "conda install foo",
+        "micromamba install foo",
     ],
 )
 def test_installers_pattern(command: str) -> None:
@@ -481,3 +484,133 @@ def test_dev_version_uv_image() -> None:
     assert match
     assert re.fullmatch(r"ghcr\.io/astral-sh/uv:[^@]+@sha256:[0-9a-f]{64}", match[1])
     assert result.stdout == match[1] + "\n"
+
+
+# `uv sync`, also with options before the subcommand
+UV_SYNC = re.compile(r"\buv\s+(\S+\s+)*?sync\b")
+# The jobs of `ci.yml` that install the app's dependencies, with their extra
+LOCKED_JOBS = {"lint": "dev", "test": "dev", "chart": "dev", "docs": "docs"}
+
+
+@pytest.mark.parametrize(("job_id", "extra"), LOCKED_JOBS.items())
+def test_jobs_on_lock(job_id: str, extra: str) -> None:
+    """The jobs that install the app's dependencies install the locked ones.
+
+    They run on the versions of `uv.lock`, as the image does, so that pull
+    requests that change only the lock (e.g., Dependabot's) are tested on
+    it, with uv of a pinned `astral-sh/setup-uv`; no pip command installs
+    anything.
+
+    Args:
+        job_id: The ID of the job.
+        extra: The extra that the job installs.
+    """
+    job = _load(WORKFLOWS / "ci.yml")["jobs"][job_id]
+    steps = {step.get("name"): step for step in job["steps"]}
+    uv = steps["Set up uv"]
+    assert re.fullmatch(r"astral-sh/setup-uv@[0-9a-f]{40}", uv["uses"])
+    commands = _commands(steps["Install dependencies"])
+    (sync,) = [shlex.split(command) for command in commands if UV_SYNC.search(command)]
+    assert "--locked" in sync, (job_id, sync)
+    assert "--frozen" not in sync, (job_id, sync)
+    extras = {
+        value
+        for option, value in zip(sync, [*sync[1:], ""], strict=True)
+        if option == "--extra"
+    } | {
+        token.removeprefix("--extra=") for token in sync if token.startswith("--extra=")
+    }
+    assert extras == {extra}, (job_id, sync)
+    assert "--all-extras" not in sync, (job_id, sync)
+    # Later steps run the tools of `.venv`
+    assert 'echo "${PWD}/.venv/bin" >> "$GITHUB_PATH"' in commands, job_id
+    names = list(steps)
+    assert names.index("Set up Python") < names.index("Set up uv")
+    assert names.index("Set up uv") < names.index("Install dependencies")
+
+
+def _allowed_install(command: str) -> bool:
+    """Check whether a command of a job without credentials may install.
+
+    Allowed are `uv sync --locked`, `pipx run` of a pinned tool (`--spec
+    <name>==<version>`, e.g., cffconvert in `lint`, in its own environment)
+    and `python -m build` (the build of the distributions in `lint`, with
+    build requirements from the index, as the editable install of the app).
+
+    Args:
+        command: A command.
+
+    Returns:
+        Whether the command is allowed.
+    """
+    tokens = shlex.split(command)
+    if UV_SYNC.search(command):
+        return "--locked" in tokens
+    if command.startswith("pipx run --spec "):
+        return "==" in tokens[3]
+    return command == "python -m build"
+
+
+@pytest.mark.parametrize(
+    ("command", "allowed"),
+    [
+        pytest.param("uv sync --locked --extra dev", True, id="sync-locked"),
+        pytest.param("uv sync --extra dev", False, id="sync"),
+        pytest.param("env X=1 uv sync", False, id="sync-env"),
+        pytest.param("uv --quiet sync", False, id="sync-option"),
+        pytest.param("pipx run --spec foo==1.0 foo", True, id="pipx-pinned"),
+        pytest.param("pipx run --spec foo>=1 foo", False, id="pipx-range"),
+        pytest.param("pipx run foo", False, id="pipx"),
+        pytest.param("uvx ruff", False, id="uvx"),
+        pytest.param("python -m build", True, id="build"),
+    ],
+)
+def test_allowed_install(command: str, allowed: bool) -> None:
+    """Only locked syncs, pinned `pipx run` and the build may install.
+
+    Args:
+        command: A command.
+        allowed: Whether it is allowed.
+    """
+    assert _allowed_install(command) == allowed
+
+
+def test_no_unlocked_installs() -> None:
+    """No job installs Python packages other than from the lock.
+
+    No pip command installs anything, except the hash-checked installs of
+    jobs with credentials (`test_credential_jobs_install_hash_checked`), and
+    other installers are used only as `_allowed_install` allows.
+    """
+    credential = {(name, job_id) for name, job_id, _ in _credential_jobs()}
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        for job_id, job in _load(path)["jobs"].items():
+            if (path.name, job_id) in credential:
+                continue
+            for step in job.get("steps", []):
+                for command in _commands(step):
+                    where = (path.name, job_id, step.get("name"), command)
+                    assert not PIP.search(command), where
+                    if INSTALLERS.search(command) or UV_SYNC.search(command):
+                        assert _allowed_install(command), where
+
+
+def test_uv_version_locked() -> None:
+    """Every `astral-sh/setup-uv` step installs the uv locked in `uv.lock`.
+
+    The action reads the version from the lock (`version-file`), where uv is
+    a dev dependency; it fails if the lock has none. Dependabot bumps it
+    with the other locked packages.
+    """
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    assert [package for package in lock["package"] if package["name"] == "uv"]
+    setups = [
+        (path.name, job_id, step)
+        for path in sorted(WORKFLOWS.glob("*.yml"))
+        for job_id, job in _load(path)["jobs"].items()
+        for step in job.get("steps", [])
+        if step.get("uses", "").startswith("astral-sh/setup-uv@")
+    ]
+    assert setups
+    for name, job_id, step in setups:
+        assert step["with"] == {"version-file": "uv.lock"}, (name, job_id)
