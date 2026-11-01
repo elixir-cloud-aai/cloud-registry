@@ -391,38 +391,45 @@ of any size; they are still served, but can only be updated without them. The
 app warns of them on startup, naming them. Have their owners (or admins)
 update them via the API (`PUT /services/{serviceId}`), or remove the fields
 in the database, e.g., with `mongosh` (see [MongoDB](deployment.md#mongodb)),
-which keeps only `name` and `url`:
+which keeps only `name` and `url`, and only changes the service if its
+organization is an object with both:
 
 ```javascript
-db.getSiblingDB("serviceStore").services.updateOne(
-  {id: "<id>", "organization.name": {$exists: true}, "organization.url": {$exists: true}},
-  [
-    {$set: {organization: {$arrayToObject: {$filter: {
-      input: {$objectToArray: "$organization"},
-      cond: {$in: ["$$this.k", ["name", "url"]]},
-    }}}}},
-  ],
-)
+const services = db.getSiblingDB("serviceStore").services
+const organizationValid = {
+  $expr: {$eq: [{$type: "$organization"}, "object"]},
+  "organization.name": {$type: "string"},
+  "organization.url": {$type: "string"},
+}
+services.updateOne({id: "<id>", ...organizationValid}, [
+  {$set: {organization: {$arrayToObject: {$filter: {
+    input: {$objectToArray: "$organization"},
+    cond: {$in: ["$$this.k", ["name", "url"]]},
+  }}}}},
+])
 ```
 
-Services whose organization lacks `name` or `url` (only data written outside
-the API, which has always required both) aren't served: with response
-validation on (`validate_responses` in the base config), `GET
-/services/{serviceId}` returns `500 Internal Server Error` for them, and so
-does the whole list, `GET /services`, until both are set. The app doesn't
-warn of them on startup, and the example above doesn't match them
-(`matchedCount: 0`), so that it doesn't leave an organization of `{}`. List
-them, and set both fields (or delete the services), e.g.:
+Services whose organization lacks `name` or `url` (or isn't an object, or
+has values that aren't strings; only data written outside the API, which has
+always required both) aren't served: with response validation on
+(`validate_responses` in the base config), `GET /services/{serviceId}`
+returns `500 Internal Server Error` for them, and so does the whole list,
+`GET /services`, until both are set. The app doesn't warn of them on
+startup, and the example above doesn't match them (`matchedCount: 0`), so
+that it doesn't leave an organization of `{}`. List them, and set both
+fields (or delete the services); the update only changes services that are
+still broken (e.g., not fixed via the API meanwhile), and keeps the other
+fields of organizations that are objects:
 
 ```javascript
-db.getSiblingDB("serviceStore").services.find(
-  {$or: [{"organization.name": {$exists: false}}, {"organization.url": {$exists: false}}]},
-  {_id: 0, id: 1, organization: 1},
-)
-db.getSiblingDB("serviceStore").services.updateOne(
-  {id: "<id>"},
-  {$set: {"organization.name": "<name>", "organization.url": "<URL>"}},
-)
+const organizationBroken = {$nor: [organizationValid]}
+services.find(organizationBroken, {_id: 0, id: 1, organization: 1})
+services.updateOne({id: "<id>", ...organizationBroken}, [
+  {$set: {organization: {$mergeObjects: [
+    {$cond: [{$eq: [{$type: "$organization"}, "object"]}, "$organization", {}]},
+    {name: "<name>", url: "<URL>"},
+  ]}}},
+])
 ```
 
 Then clean up their further fields as above.
