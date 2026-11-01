@@ -58,30 +58,32 @@ security:
             registry-admins: admin
 ```
 
-### Entitlement-style groups (e.g., LS Login)
+### Entitlement-style groups
 
-Some identity providers release groups as entitlements, i.e., URNs, in a claim
-other than `groups`, and only via user info. For example, [LS
-Login](https://lifescience-ri.eu/ls-login/) (Life Science AAI) releases
-`eduperson_entitlement`:
+Some identity providers release groups as entitlements, i.e., URNs, in a
+multi-valued claim (here `entitlement`) other than `groups`, and only via user
+info:
 
 ```yaml
 security:
     auth:
         issuers:
-            - https://login.aai.lifescience-ri.eu/oidc/
+            - https://idp.example.org/
         audience:
             - <client ID of the front end>
         userinfo_claims:
-            - eduperson_entitlement
+            - entitlement
             - name
             - email
             - email_verified
     access_control:
-        claim_groups: eduperson_entitlement
+        claim_groups: entitlement
         group_mapping:
-            "urn:geant:example.org:group:registry-admins#login.aai.lifescience-ri.eu": admin
+            "urn:example:group:admins#issuer.example.org": admin
 ```
+
+Settings for specific identity providers belong to the documentation of the
+deployment, not here.
 
 Notes:
 
@@ -94,8 +96,8 @@ Notes:
   users who accept invitations are not stored (see
   [Invitations](access-control.md#invitations)).
 - Clients must request the scope that releases the claim when logging in
-  (here `eduperson_entitlement`, besides `openid` and, for `name`, `email`
-  and `email_verified`, `profile` and `email`), and the identity provider must
+  (here the one for `entitlement`, besides `openid` and the scopes for
+  `name`, `email` and `email_verified`), and the identity provider must
   allow it for the client.
 - The registry accepts only access tokens with the `typ` header `at+jwt`
   (`security.auth.verify_token_type`, enabled by default). Before going live,
