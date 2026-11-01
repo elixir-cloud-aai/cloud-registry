@@ -208,6 +208,28 @@ def test_release_chart_checked() -> None:
     assert names.index("Sign chart") < names.index("Create release")
 
 
+def test_release_chart_default_image() -> None:
+    """Released charts default to the fully qualified published image.
+
+    The default image in `values.yaml` is fully qualified, like MongoDB's,
+    as runtimes that enforce short names (e.g., CRI-O, Podman) may refuse
+    short ones. The release workflow sets the published image (`IMAGE_NAME`,
+    by default that of `values.yaml`) in the packaged chart as it is, so
+    that it doesn't turn the default into a short name.
+    """
+    release = _load(WORKFLOWS / "release.yml")
+    image = release["env"]["IMAGE_NAME"].replace(
+        "${{ vars.DOCKERHUB_ORG || 'elixircloud' }}", "elixircloud"
+    )
+    values = yaml.safe_load((ROOT / "deployment" / "values.yaml").read_text())
+    assert values["cloudRegistry"]["image"] == image
+    assert image == "docker.io/elixircloud/cloud-registry"
+    steps = {step["name"]: step for step in release["jobs"]["prepare"]["steps"]}
+    script = steps["Package chart"]["run"]
+    assert 'image="${IMAGE_NAME}"' in script
+    assert "${IMAGE_NAME#" not in script
+
+
 @pytest.mark.parametrize(
     ("extra", "rename", "tamper", "file", "sha256", "passes"),
     [

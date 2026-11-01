@@ -218,7 +218,7 @@ def test_image_defaults_to_app_version() -> None:
 
     That is `dev` for the chart in the repository.
     """
-    assert _app_image() == f"elixircloud/cloud-registry:{APP_VERSION}"
+    assert _app_image() == f"docker.io/elixircloud/cloud-registry:{APP_VERSION}"
 
 
 # Chart versions are SemVer, app versions PEP 440; the pairs mirror the
@@ -256,7 +256,10 @@ def test_image_of_packaged_chart(
         check=True,
     )
     package = tmp_path / f"cloud-registry-{chart_version}.tgz"
-    assert _app_image(chart=package) == f"elixircloud/cloud-registry:{app_version}"
+    assert (
+        _app_image(chart=package)
+        == f"docker.io/elixircloud/cloud-registry:{app_version}"
+    )
 
 
 def test_packaged_chart_includes_library(tmp_path: Path) -> None:
@@ -286,7 +289,10 @@ def test_packaged_chart_includes_library(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("args", "image"),
     [
-        (("--set", "cloudRegistry.tag=sha-abc"), "elixircloud/cloud-registry:sha-abc"),
+        (
+            ("--set", "cloudRegistry.tag=sha-abc"),
+            "docker.io/elixircloud/cloud-registry:sha-abc",
+        ),
         (
             ("--set", "cloudRegistry.image=registry.example.org:5000/cr"),
             f"registry.example.org:5000/cr:{APP_VERSION}",

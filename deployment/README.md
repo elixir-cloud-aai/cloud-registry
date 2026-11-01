@@ -128,8 +128,10 @@ upgrade. As `config` is stored in a ConfigMap, it must not contain secrets
 ## Image
 
 The app image is `cloudRegistry.image` (default
-`elixircloud/cloud-registry`) with tag `cloudRegistry.tag`, which defaults to
-the chart's `appVersion`. Charts attached to [GitHub
+`docker.io/elixircloud/cloud-registry`, fully qualified, as some container
+runtimes, e.g., CRI-O and Podman, refuse short names) with tag
+`cloudRegistry.tag`, which defaults to the chart's `appVersion`. Charts
+attached to [GitHub
 releases](https://github.com/elixir-cloud-aai/cloud-registry/releases) have
 the release version as `version` and `appVersion`, so they deploy the image of
 their release (`X.Y.Z`). In the repository, both are placeholders, and
@@ -144,8 +146,8 @@ cloudRegistry:
 ```
 
 `cloudRegistry.image` may also include a tag or digest (e.g.,
-`elixircloud/cloud-registry:{{ version }}`, as in earlier chart versions); then
-`cloudRegistry.tag` must be empty. See [Versioning and
+`docker.io/elixircloud/cloud-registry:{{ version }}`, as in earlier chart
+versions); then `cloudRegistry.tag` must be empty. See [Versioning and
 releases](https://cloud-registry.readthedocs.io/en/latest/development/#versioning-and-releases) for the image tags.
 
 The image is pulled on every start of a pod
@@ -763,6 +765,59 @@ set `config.security.access_control.opt_in_roles: []` in the values to keep
 the previous behaviour. See [From
 0.5.0](https://cloud-registry.readthedocs.io/en/latest/upgrading/#from-050)
 for the other changes.
+
+### To app version 1.0.0rc1
+
+Data is kept. See [From
+0.6.0](https://cloud-registry.readthedocs.io/en/latest/upgrading/#from-060)
+for all changes; for Helm releases:
+
+- **Services per user:** users other than admins may register at most 50
+  services each. Check how many services your users registered, and raise
+  `config.custom.access_control.max_services_per_user` (or set it to `null`
+  for no limit) in the same upgrade if needed (see [Services per
+  user](https://cloud-registry.readthedocs.io/en/latest/configuration/#services-per-user)).
+  The app counts the services on its first start, so list the users at or
+  above the limit after the upgrade (with your limit instead of 50); to see
+  the counts before the limit applies, upgrade with the limit set to `null`
+  first and set it in a later upgrade. Without authentication, omit `-u`,
+  `-p` and `--authenticationDatabase` (as in [Version](#version)):
+
+  ```bash
+  kubectl exec deploy/cloud-registry-mongodb -n <namespace> -- sh -c 'mongosh serviceStore --quiet \
+    -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" \
+    --authenticationDatabase admin --eval "printjson(db.service_counts.find({count: {\$gte: 50}}).toArray())"'
+  ```
+
+- **Policies:** values files that give
+  `config.security.access_control.policies` as a list must add the rules
+  `owners-manage-invitations`, `owners-revoke-invitations` and
+  `accept-invitations`, or the invitation endpoints return `403 Forbidden`.
+  Values files that stop owners from granting roles, by removing or
+  restricting `owners-change-permissions`, must also set
+  `owners-manage-invitations` and `owners-revoke-invitations` to `null` (see
+  [Invitations](https://cloud-registry.readthedocs.io/en/latest/access-control/#invitations)).
+- **Organization fields:** registrations and updates with organization
+  fields other than `name` and `url` are rejected (`400 Bad Request`).
+  Services stored with such fields are still served, and the app warns of
+  them on startup; see [Stored
+  services](https://cloud-registry.readthedocs.io/en/latest/upgrading/#stored-services)
+  for how to clean them up.
+- **Image:** the default `cloudRegistry.image` is now fully qualified
+  (`docker.io/elixircloud/cloud-registry`, see [Image](#image)); adapt
+  image allow-lists or mirror rules that match the short name.
+
+Restart the app once after the rollout, so that services registered,
+updated or deleted by pods of 0.6.0 during the rollout are counted correctly
+(or upgrade with the app scaled to 0 replicas, as for 0.4.0 above). Pods of
+0.6.0 don't apply the limit, so users may register more services through
+them during the rollout; they keep these, but can't register others until
+they are below the limit. The commands are for the release
+`cloud-registry`, as in the sections above:
+
+```bash
+kubectl rollout restart deployment/cloud-registry -n <namespace>
+```
 
 ## Probes
 
