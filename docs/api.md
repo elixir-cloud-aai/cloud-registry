@@ -106,7 +106,8 @@ forms, `GET /service-info` serves them in `registration_rules`:
   `moderated` (see [Service types](#service-types));
 - `max_unused_service_types`: how many types that no service has users other
   than admins may have added (`409 Conflict` for further ones); `0` if they
-  can't add types, and not set if there is no limit; concurrent requests of
+  can't add types (also if only admins can, `service_types: controlled`), and
+  not set if there is no limit; concurrent requests of
   a user can exceed it by their number (see [Service
   types](configuration.md#service-types));
 - `max_services_per_user`: how many of the registered services users other
@@ -353,8 +354,11 @@ curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/types/approval" \
 ## Errors
 
 Requests that don't match the API specification (e.g., missing or unknown
-fields, values that are too long, extra query parameters, or bodies that
-aren't JSON) are rejected with `400 Bad Request`, with the reason in `detail`.
+fields, values that are too long, or bodies that aren't JSON) are rejected
+with `400 Bad Request`, with the reason in `detail`. So are extra query
+parameters of operations that have parameters (e.g., `GET
+/services/{serviceId}?page=1`); operations without any, such as `GET
+/services` and `GET /service-info`, ignore query parameters.
 
 Errors handled by the app are [problem
 details](https://www.rfc-editor.org/rfc/rfc7807) (`title`, `status` and

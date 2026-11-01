@@ -1281,8 +1281,9 @@ components:
           description: |
             How many service types that no service has a user other than an
             admin may have added (`409` above; see `POST /services/types`);
-            `0` if they can't add types (explicitly or with services). Not
-            set if there is no limit
+            `0` if they can't add types (explicitly or with services), e.g.,
+            in the `controlled` mode (`service_types`), whatever the
+            configured limit. Otherwise not set if there is no limit
             (`custom.access_control.max_unused_service_types: null`).
             Concurrent requests of a user can exceed it by their number.
           example: 10

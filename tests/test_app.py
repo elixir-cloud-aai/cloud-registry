@@ -2295,6 +2295,18 @@ def test_validation_error_detail(
     assert detail in response.get_json()["detail"]
 
 
+def test_extra_query_parameters_without_parameters(client: FlaskClient) -> None:
+    """Operations without parameters ignore query parameters.
+
+    Connexion only checks the query parameters of operations with
+    parameters (cf. `extra_parameter` of `test_validation_error_detail()`),
+    as `docs/api.md` (Errors) says.
+    """
+    response = client.get(f"{BASE}/services?x=1")
+    assert response.status_code == 200
+    assert response.get_json() == []
+
+
 def test_validation_error_detail_large_body(
     client: FlaskClient, admin_headers: dict[str, str]
 ) -> None:

@@ -37,7 +37,8 @@ def registration_rules() -> dict[str, Any]:
         add service types (`service_types`: `open`, `controlled` or
         `moderated`), how many types that no service has users other
         than admins may have added (`max_unused_service_types`; left out if
-        there is no limit; `0` if they can't add types), and how many
+        there is no limit; `0` if they can't add types, also in the
+        `controlled` mode), and how many
         services they may have registered (`max_services_per_user`; left
         out if there is no limit; `0` if they can't register services).
         Lists are copies.
@@ -50,8 +51,11 @@ def registration_rules() -> dict[str, Any]:
         "url_schemes": list(services.url_schemes),
         "service_types": access_control.service_types,
     }
+    # users can't add types in the controlled mode, whatever the limit
+    if access_control.service_types == "controlled":
+        rules["max_unused_service_types"] = 0
     # FOCA leaves out `None` values of the service info anyway
-    if access_control.max_unused_service_types is not None:
+    elif access_control.max_unused_service_types is not None:
         rules["max_unused_service_types"] = access_control.max_unused_service_types
     if access_control.max_services_per_user is not None:
         rules["max_services_per_user"] = access_control.max_services_per_user

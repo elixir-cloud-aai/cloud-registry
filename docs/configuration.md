@@ -251,7 +251,8 @@ deleting them, one registration per type); set `0`
 to let only admins add types other than those of services. Concurrent
 requests of a user can exceed the limit by their number. Clients read the
 mode and the limit from the service info, rather than configuring them (see
-[Registration rules](api.md#registration-rules)).
+[Registration rules](api.md#registration-rules)); in mode `controlled`, it
+gives the limit as `0`, as users other than admins can't add types.
 
 The limit is per user, so accounts that anyone can create (e.g., with LS
 Login) can still add types, and pending types in mode `moderated`, without
