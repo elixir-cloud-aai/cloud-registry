@@ -383,14 +383,20 @@ Services stored before organization fields other than `name` and `url` were
 of any size; they are still served, but can only be updated without them. The
 app warns of them on startup, naming them. Have their owners (or admins)
 update them via the API (`PUT /services/{serviceId}`), or remove the fields
-in the database, e.g., with `mongosh` (see [MongoDB](deployment.md#mongodb)):
+in the database, e.g., with `mongosh` (see [MongoDB](deployment.md#mongodb)),
+which keeps only `name` and `url`:
 
 ```javascript
-db.getSiblingDB("serviceStore").services.updateOne(
-  {id: "<id>"},
-  [{$set: {organization: {name: "$organization.name", url: "$organization.url"}}}],
-)
+db.getSiblingDB("serviceStore").services.updateOne({id: "<id>"}, [
+  {$set: {organization: {$arrayToObject: {$filter: {
+    input: {$objectToArray: "$organization"},
+    cond: {$in: ["$$this.k", ["name", "url"]]},
+  }}}}},
+])
 ```
+
+Services without an organization `name` or `url` can then still only be
+updated with both.
 
 Services stored before the check of [duplicate
 services](api.md#duplicate-services) get their key on startup; only services

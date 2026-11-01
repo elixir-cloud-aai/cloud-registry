@@ -717,7 +717,8 @@ def warn_organization_fields() -> None:
     `url` were rejected in organizations (cf. "Stored services" in
     `docs/upgrading.md`). Such services are still served, but can only be
     updated without these fields. Organizations that aren't objects are
-    skipped.
+    skipped (e.g., arrays, which MongoDB's `$type: object` also matches if
+    they have objects).
     """
     ids = []
     for service in get_collection("services").find(
@@ -725,7 +726,8 @@ def warn_organization_fields() -> None:
         {"_id": False, "id": True, "organization": True},
         sort=[("id", 1)],
     ):
-        if service["organization"].keys() - ORGANIZATION_FIELDS:
+        organization = service["organization"]
+        if isinstance(organization, dict) and organization.keys() - ORGANIZATION_FIELDS:
             ids.append(f"'{service['id']}'")
     if ids:
         logger.warning(
