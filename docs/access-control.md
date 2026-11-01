@@ -285,6 +285,19 @@ can't be granted to groups then: `400 Bad Request`).
     virtual organization (VO) or of a large community, but to groups of the
     team that runs the service.
 
+### Entitlement-style groups (e.g., LS Login)
+
+Groups that are URNs, such as the values of LS Login's
+`eduperson_entitlement` claim, contain `:` and `#`, which must be
+percent-encoded in the path (`:` as `%3A`, `#` as `%23`), as in the example
+above. With `curl`, pass the encoded form, e.g.,
+`urn%3Ageant%3Aexample.org%3Agroup%3Aregistry-team%23login.aai.lifescience-ri.eu`
+for `urn:geant:example.org:group:registry-team#login.aai.lifescience-ri.eu`
+(illustrative). The configuration needed to read such claims (issuer,
+audience, `claim_groups`, `userinfo_claims`, the login scope and access
+tokens of type `at+jwt`) is in
+[Configuration](configuration.md#entitlement-style-groups-eg-ls-login).
+
 ### Group membership changes
 
 Group memberships are those of the token: if the group claim is in the access
