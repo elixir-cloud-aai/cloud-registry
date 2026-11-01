@@ -13,3 +13,8 @@
 **/__pycache__
 **/*.py[cod]
 **/*.egg-info
+# Local secrets, also within the included paths (cf. the org's rule for
+# image repos); examples are kept
+**/.env
+**/.env.*
+!**/.env.example
