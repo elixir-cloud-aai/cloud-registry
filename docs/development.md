@@ -424,7 +424,7 @@ that version: bump it by hand, in both workflows together.
 
 The chart is a thin chart over FOCA's library chart `foca-common` (see the
 [library chart's
-documentation](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.2.0/docs/helm-chart.md)):
+documentation](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.3.0/docs/helm-chart.md)):
 `deployment/Chart.yaml` pins its version, and `deployment/Chart.lock` locks
 it; `helm dependency build deployment` downloads it into `deployment/charts/`
 (ignored by Git), and the release workflow packages it with the chart. CI
