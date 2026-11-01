@@ -403,26 +403,29 @@ jobs:
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
-      # uv, to export the locked build requirements: the version locked in
-      # `uv.lock` (a dev dependency), its checksum verified by the action; no
-      # cache in a job with credentials
-      - name: Set up uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          version-file: uv.lock
-          enable-cache: false
       # The Docker build gets no Git metadata, so the version (e.g.,
       # `0.3.1.dev4+g<commit>`) is passed as a build argument. It is derived
       # with the build requirements (`build-system.requires`, the dependency
       # group `build-system`) installed as the image build installs them
-      # (`Dockerfile`): at the versions of `uv.lock`, checked against its
-      # hashes, as wheels only, into a virtual environment of their own
+      # (`Dockerfile`): exported from `uv.lock` by the uv image of the
+      # `Dockerfile` (pinned by digest, so that the uv binary is verified;
+      # without network, as `--frozen` reads the lock only), then installed
+      # at the exact versions of the lock, checked against its hashes, as
+      # wheels only, into a virtual environment of their own
       - name: Derive version
         id: version
         run: |
+          uv_image="$(sed -En 's/^FROM (ghcr\.io\/astral-sh\/uv:[^ @]+@sha256:[0-9a-f]{64}) AS uv$/\1/p' Dockerfile)"
+          if [[ -z "${uv_image}" ]]; then
+            echo "::error::No uv image pinned by digest in the Dockerfile"
+            exit 1
+          fi
           requirements="${RUNNER_TEMP}/build-requirements.txt"
-          uv export --frozen --only-group build-system --no-emit-project \
-            --output-file "${requirements}"
+          docker run --rm --network none --tmpfs /tmp --env UV_NO_CACHE=1 \
+            --volume "${PWD}/pyproject.toml:/src/pyproject.toml:ro" \
+            --volume "${PWD}/uv.lock:/src/uv.lock:ro" "${uv_image}" \
+            export --frozen --only-group build-system --no-emit-project \
+            --project /src > "${requirements}"
           python -m venv "${RUNNER_TEMP}/build-env"
           "${RUNNER_TEMP}/build-env/bin/pip" install --require-hashes \
             --only-binary :all: --no-deps -r "${requirements}"

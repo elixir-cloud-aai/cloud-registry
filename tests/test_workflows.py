@@ -5,9 +5,9 @@ import importlib.util
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
-import tomllib
 from typing import Any
 
 from packaging.version import Version
@@ -256,8 +256,9 @@ def test_release_chart_check_runs(
 def _credential_jobs() -> list[tuple[str, str, dict[str, Any]]]:
     """List the jobs that hold publishing credentials.
 
-    These are the jobs that run in an environment (`environment:`), which
-    holds the Docker Hub secrets, of all workflows.
+    These are the jobs of all workflows that run in an environment
+    (`environment:`, which holds the Docker Hub secrets) or use a Docker Hub
+    secret directly.
 
     Returns:
         The workflow file name, job ID and job of each such job.
@@ -266,8 +267,29 @@ def _credential_jobs() -> list[tuple[str, str, dict[str, Any]]]:
         (path.name, job_id, job)
         for path in sorted(WORKFLOWS.glob("*.yml"))
         for job_id, job in _load(path)["jobs"].items()
-        if "environment" in job
+        if "environment" in job or "secrets.DOCKERHUB" in yaml.safe_dump(job)
     ]
+
+
+def _commands(step: dict[str, Any]) -> list[str]:
+    """Split the script of a step into commands.
+
+    Args:
+        step: A step of a job.
+
+    Returns:
+        The lines of the step's `run` script, with continuation lines joined
+        and whitespace normalised.
+    """
+    lines = step.get("run", "").replace("\\\n", " ").splitlines()
+    return [" ".join(line.split()) for line in lines if line.strip()]
+
+
+# pip (also `pip3`, `pip3.13`, `"<venv>/bin/pip"`) commands that install or
+# build packages; the latter runs their build backends
+PIP = re.compile(r"\bpip[0-9.]*[\"']?\s+(install|wheel|download)\b")
+# Other installers
+INSTALLERS = re.compile(r"\b(pipx|easy_install|uvx|uv\s+(pip|tool|sync|run|add))\b")
 
 
 def test_credential_jobs_found() -> None:
@@ -281,71 +303,107 @@ def test_credential_jobs_found() -> None:
     } <= found
 
 
+@pytest.mark.parametrize(
+    ("command", "found"),
+    [
+        pytest.param("pip install foo", True, id="pip"),
+        pytest.param("pip3.13 install foo", True, id="versioned"),
+        pytest.param('"${VENV}/bin/pip" install foo', True, id="venv"),
+        pytest.param("python -m pip wheel .", True, id="wheel"),
+        pytest.param("pip download foo", True, id="download"),
+        pytest.param("pip list", False, id="list"),
+        pytest.param("echo pipeline install", False, id="other-word"),
+    ],
+)
+def test_pip_pattern(command: str, found: bool) -> None:
+    """The pattern finds pip commands that install or build packages.
+
+    Args:
+        command: A command.
+        found: Whether the pattern finds it.
+    """
+    assert bool(PIP.search(command)) == found
+
+
 def test_credential_jobs_install_hash_checked() -> None:
     """Jobs with publishing credentials install Python packages hash-checked.
 
     A compromised release of a package installed unpinned would run code in
-    a job that holds registry credentials. So every `pip install` there
-    installs exported locked requirements (`-r`) with hash checks, as wheels
-    only and without resolving anything else, and no other installer (`pipx`,
-    `uv pip`, `uv tool`, `uvx`, `uv sync`, `uv run`) is used.
+    a job that holds registry credentials. So every pip command there that
+    installs or builds packages is a `pip install` of exported locked
+    requirements (`-r`) with hash checks, as wheels only and without
+    resolving anything else, and no other installer is used. Actions
+    (`uses:`) are pinned by commit and not checked here.
     """
     for name, job_id, job in _credential_jobs():
         for step in job["steps"]:
-            # One command per line, continuation lines joined
-            lines = step.get("run", "").replace("\\\n", " ").splitlines()
-            where = (name, job_id, step.get("name"))
-            script = " ".join(" ".join(lines).split())
-            for other in ("pipx", "uv pip", "uv tool", "uvx", "uv sync", "uv run"):
-                assert other not in script, where
-            # Also `"<venv>/bin/pip" install` and `pip3 install`
-            commands = [
-                command
-                for line in lines
-                for command in re.findall(
-                    r"pip3?[\"']?\s+install[^;&|]*", " ".join(line.split())
-                )
-            ]
-            for command in commands:
-                for option in (
-                    "--require-hashes",
-                    "--only-binary :all:",
-                    "--no-deps",
-                    "-r ",
-                ):
-                    assert option in command, (*where, command)
+            for command in _commands(step):
+                where = (name, job_id, step.get("name"), command)
+                assert not INSTALLERS.search(command), where
+                if match := PIP.search(command):
+                    assert match.group(1) == "install", where
+                    options = shlex.split(command[match.end() :])
+                    for option in ("--require-hashes", "--no-deps", "-r"):
+                        assert option in options, where
+                    binary = options.index("--only-binary")
+                    assert options[binary + 1] == ":all:", where
+
+
+def _derive_version() -> dict[str, Any]:
+    """Get the step of the `push` job of `ci.yml` that derives the version.
+
+    Returns:
+        The step.
+    """
+    jobs = _load(WORKFLOWS / "ci.yml")["jobs"]
+    steps = {step["name"]: step for step in jobs["push"]["steps"]}
+    names = list(steps)
+    # Before the job logs in to Docker Hub
+    assert names.index("Derive version") < names.index("Log in to Docker Hub")
+    return steps["Derive version"]
 
 
 def test_dev_version_from_locked_build_requirements() -> None:
     """The `push` job of `ci.yml` derives the version with the locked tools.
 
     setuptools-scm and its dependencies are the `build-system` group of
-    `uv.lock`, exported by a uv of the pinned `astral-sh/setup-uv` (no cache
-    in the job with credentials), as the image build installs them.
+    `uv.lock`, exported by the uv image of the `Dockerfile` (pinned by
+    digest), as the image build installs them, and run from the virtual
+    environment they are installed into (with hash checks, see
+    `test_credential_jobs_install_hash_checked`).
     """
-    workflow = _load(WORKFLOWS / "ci.yml")
-    steps = {step["name"]: step for step in workflow["jobs"]["push"]["steps"]}
-    uv = steps["Set up uv"]
-    assert re.fullmatch(r"astral-sh/setup-uv@[0-9a-f]{40}", uv["uses"])
-    assert uv["with"]["version-file"] == "uv.lock"
-    assert uv["with"]["enable-cache"] is False
-    script = " ".join(steps["Derive version"]["run"].replace("\\\n", " ").split())
-    # Found by `test_credential_jobs_install_hash_checked`
-    assert re.search(r"/bin/pip\" install --require-hashes", script)
-    assert "uv export --frozen --only-group build-system --no-emit-project" in script
-    assert "-m setuptools_scm" in script
-    names = list(steps)
-    assert names.index("Set up uv") < names.index("Derive version")
-    assert names.index("Derive version") < names.index("Log in to Docker Hub")
+    script = " ".join(_commands(_derive_version()))
+    assert '"${uv_image}" export --frozen --only-group build-system' in script
+    assert "--no-emit-project" in script
+    assert "--network none" in script
+    assert re.search(r"build-env/bin/python\"? -m setuptools_scm", script)
 
 
-def test_uv_version_locked() -> None:
-    """The workflows' uv is the version locked in `uv.lock`.
+def test_dev_version_uv_image() -> None:
+    """The step finds the uv image of the `Dockerfile`, with its digest.
 
-    `astral-sh/setup-uv` reads it from the lock (`version-file`), where uv is
-    a dev dependency; without it there, the action would install the latest
-    uv. Dependabot bumps it with the other locked packages.
+    The step's `sed` command runs against the `Dockerfile`, as in the step
+    (GNU `sed`, as on the GitHub runners).
     """
-    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
-    (uv,) = [package for package in lock["package"] if package["name"] == "uv"]
-    assert Version(uv["version"])
+    sed = shutil.which("sed")
+    assert sed
+    (command,) = [
+        command
+        for command in _commands(_derive_version())
+        if command.startswith('uv_image="$(sed ')
+    ]
+    args = shlex.split(command.removeprefix('uv_image="$(').removesuffix(')"'))
+    assert args[0] == "sed"
+    assert args[-1] == "Dockerfile"
+    result = subprocess.run(  # noqa: S603 (fixed arguments, no shell)
+        [sed, *args[1:]],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+        check=True,
+    )
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    match = re.search(r"^FROM (ghcr\.io/astral-sh/uv:\S+) AS uv$", dockerfile, re.M)
+    assert match
+    assert re.fullmatch(r"ghcr\.io/astral-sh/uv:[^@]+@sha256:[0-9a-f]{64}", match[1])
+    assert result.stdout == match[1] + "\n"
