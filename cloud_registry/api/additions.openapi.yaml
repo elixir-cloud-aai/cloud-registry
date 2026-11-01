@@ -1695,10 +1695,11 @@ components:
           example: 'This service provides...'
         organization:
           type: object
-          description: 'Organization providing the service'
+          description: 'Organization providing the service (only `name` and `url`; other fields return `400`)'
           required:
             - name
             - url
+          additionalProperties: false
           properties:
             name:
               type: string

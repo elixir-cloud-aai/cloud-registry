@@ -2324,6 +2324,29 @@ def test_extra_query_parameters_without_parameters(
     assert response.status_code == status, response.get_json()
 
 
+@pytest.mark.parametrize(
+    "method, path", [("post", "/services"), ("put", "/services/abc")]
+)
+def test_organization_extra_fields(
+    client: FlaskClient, admin_headers: dict[str, str], method: str, path: str
+) -> None:
+    """Registrations and updates with extra organization fields return `400`.
+
+    Otherwise, they could store and serve values of any size (only limited
+    by the size limit of request bodies).
+    """
+    organization = {**SERVICE["organization"], "blob": "x" * 1000}
+    response = client.open(
+        f"{BASE}{path}",
+        method=method,
+        headers=admin_headers,
+        json=_service(organization=organization),
+    )
+    _assert_error(response, 400)
+    assert "'blob' was unexpected" in response.get_json()["detail"]
+    assert client.get(f"{BASE}/services").get_json() == []
+
+
 def test_validation_error_detail_large_body(
     client: FlaskClient, admin_headers: dict[str, str]
 ) -> None:
