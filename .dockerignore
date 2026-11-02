@@ -18,3 +18,16 @@
 # the build copies none (and an exception with wildcards makes Docker walk
 # all excluded directories)
 **/.env*
+# Other common names of secret files
+**/*.env
+**/*.pem
+**/*.key
+**/id_rsa*
+**/id_ed25519*
+**/id_ecdsa*
+**/*.p12
+**/*.pfx
+**/.git-credentials
+**/.pypirc
+**/credentials*.json
+**/.netrc
