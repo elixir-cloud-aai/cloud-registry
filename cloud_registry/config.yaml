@@ -314,7 +314,7 @@ service_info:
         organization:
             name: "Example Organization"
             url: "https://example.org"
-        documentationUrl: "https://github.com/elixir-cloud-aai/cloud-registry"
+        documentationUrl: "https://cloud-registry.readthedocs.io/"
         environment: "dev"
         # Optional timestamps (RFC 3339), served only if set, e.g.:
         # createdAt: "2020-11-08T00:00:00Z"

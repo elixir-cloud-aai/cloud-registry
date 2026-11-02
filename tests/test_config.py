@@ -194,41 +194,42 @@ def test_config_requires_audience(
 # Values specific to an identity provider or deployment, which the
 # repository must not contain (examples use fictitious values)
 IDP_SPECIFIC = re.compile(
-    # Names not preceded or followed by letters (e.g., also `perun_groups`)
-    r"lifescience|(?<![a-z])ls[ -]login(?![a-z])|eduperson|(?<![a-z])perun(?![a-z])"
+    # Names not preceded or followed by letters (e.g., also `perun_groups`),
+    # also split across lines
+    r"lifescience|(?<![a-z])ls[\s-]+login(?![a-z])|eduperson|(?<![a-z])perun(?![a-z])"
     r"|(?<![a-z])ecp(?![a-z])|urn:geant",
     re.IGNORECASE,
 )
 
 
-def _text_lines(path: Path) -> list[str]:
-    """Get the lines of a file, or none if it is not text (UTF-8).
+def _text(path: Path) -> str:
+    """Get the text of a file, or none if it is not text (UTF-8).
 
     Args:
         path: The file.
 
     Returns:
-        Its lines.
+        Its text; empty if it is not text.
     """
     try:
-        return path.read_text(encoding="utf-8").splitlines()
+        return path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
-        return []
+        return ""
 
 
-def test_text_lines(tmp_path: Path) -> None:
-    """Files that aren't UTF-8 text (e.g., images) have no lines."""
+def test_text(tmp_path: Path) -> None:
+    """Files that aren't UTF-8 text (e.g., images) have no text."""
     (tmp_path / "text.md").write_text("a\nb\n")
     (tmp_path / "image.png").write_bytes(b"\x89PNG\r\n\x1a\n\xff")
-    assert _text_lines(tmp_path / "text.md") == ["a", "b"]
-    assert _text_lines(tmp_path / "image.png") == []
+    assert _text(tmp_path / "text.md") == "a\nb\n"
+    assert _text(tmp_path / "image.png") == ""
 
 
-def _repository_lines() -> list[tuple[str, int, str]]:
-    """Get the lines of the repository's text files.
+def _repository_texts() -> list[tuple[str, str]]:
+    """Get the texts of the repository's text files.
 
     Returns:
-        The file name, line number and line of each line.
+        The file name and text of each file.
     """
     files = (
         subprocess.run(
@@ -241,24 +242,46 @@ def _repository_lines() -> list[tuple[str, int, str]]:
         .split("\0")
     )
     return [
+        (name, _text(ROOT / name)) for name in files if name and (ROOT / name).is_file()
+    ]
+
+
+def _repository_lines() -> list[tuple[str, int, str]]:
+    """Get the lines of the repository's text files.
+
+    Returns:
+        The file name, line number and line of each line.
+    """
+    return [
         (name, number, line)
-        for name in files
-        if name and (ROOT / name).is_file()
-        for number, line in enumerate(_text_lines(ROOT / name), start=1)
+        for name, text in _repository_texts()
+        for number, line in enumerate(text.splitlines(), start=1)
+    ]
+
+
+def test_idp_specific_pattern() -> None:
+    """Names are found also when a line break splits them."""
+    text = "with LS\n  Login, LS-Login, ls login; not als logins"
+    assert [m[0] for m in IDP_SPECIFIC.finditer(text)] == [
+        "LS\n  Login",
+        "LS-Login",
+        "ls login",
     ]
 
 
 def test_repository_generic() -> None:
     """No file of the repository has identity provider specific values.
 
-    Guides for specific identity providers or deployments are kept
-    elsewhere.
+    The whole text of each file is searched, so that names split across
+    lines are found too. Guides for specific identity providers or
+    deployments are kept elsewhere.
     """
     found = [
-        f"{name}:{number}: {line.strip()}"
-        for name, number, line in _repository_lines()
+        f"{name}:{text.count('\n', 0, match.start()) + 1}: {match[0]!r}"
+        for name, text in _repository_texts()
         # This file names the values to find
-        if name != "tests/test_config.py" and IDP_SPECIFIC.search(line)
+        if name != "tests/test_config.py"
+        for match in IDP_SPECIFIC.finditer(text)
     ]
     assert found == []
 

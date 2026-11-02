@@ -1655,6 +1655,35 @@ def test_create_app_environments(
     assert response.status_code == 200
 
 
+def test_create_app_organization_fields(
+    mongo_client: MongoClient[dict[str, Any]],
+    app_env: None,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`create_app()` warns of stored services with extra organization fields.
+
+    They are still served, but can't be updated unchanged.
+    """
+    organization = {**SERVICE["organization"], "blob": "x"}
+    services = mongo_client["serviceStore"]["services"]
+    services.insert_one({**_service(organization=organization), "id": "BLOB"})
+    app = cloud_registry.app.create_app()
+    err = capsys.readouterr().err
+    assert "organization fields other than `name` and `url`" in err
+    assert "'BLOB'" in err
+    client = app.app.test_client()
+    response = client.get(f"{BASE}/services/BLOB")
+    assert response.status_code == 200
+    assert response.get_json()["organization"] == organization
+    response = client.put(
+        f"{BASE}/services/BLOB",
+        json=_service(organization=organization),
+        headers=make_headers(),
+    )
+    _assert_error(response, 400)
+    assert "'blob' was unexpected" in response.get_json()["detail"]
+
+
 def test_create_app_invalid_urls(
     mongo_client: MongoClient[dict[str, Any]],
     app_env: None,

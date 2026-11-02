@@ -297,21 +297,23 @@ until services have them or admins remove them (approved types count too).
 Types become unused when their services are deleted or change their type, so
 the limit bounds how many types each user can add without services (users
 can still leave more types unused by registering services with new types and
-deleting them, one registration per type); set `0`
-to let only admins add types other than those of services. Concurrent
-requests of a user can exceed the limit by their number. Clients read the
-mode and the limit from the service info, rather than configuring them (see
+deleting them, one registration per type); set `0` to let only admins add
+types: users other than admins can then only register services with types
+that are registered already, as in mode `controlled`. Concurrent requests of
+a user can exceed the limit by their number. Clients read the mode and the
+limit from the service info, rather than configuring them (see
 [Registration rules](api.md#registration-rules)), which gives the limit as
 `0` in mode `controlled`, whatever its value.
 
-The limit is per user, so accounts that anyone can create (e.g., with LS
-Login) can still add types, and pending types in mode `moderated`, without
-bound. Reads don't slow down with the number of pending types, as services
-are marked as pending when stored, but `GET /services/types` and `GET
-/approvals` list them all. Rate-limit write requests, at least `POST
-/services/types` and `POST /services`, at the ingress or reverse proxy in
-front of the app (see [Rate limits](deployment.md#rate-limits)), and remove
-unwanted types as an admin (`DELETE /services/types`).
+The limit is per user, so accounts that anyone can create (e.g., at an open
+identity provider) can still add types, and pending types in mode
+`moderated`, without bound. Reads don't slow down with the number of
+pending types, as services are marked as pending when stored, but `GET
+/services/types` and `GET /approvals` list them all. Rate-limit write
+requests, at least `POST /services/types` and `POST /services`, at the
+ingress or reverse proxy in front of the app (see [Rate
+limits](deployment.md#rate-limits)), and remove unwanted types as an admin
+(`DELETE /services/types`).
 
 Only admins can remove types, in every mode. Set this option rather than
 removing the policy `add-service-types` (in `security.access_control.policies`),
