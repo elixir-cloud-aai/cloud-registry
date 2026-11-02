@@ -321,3 +321,25 @@ def test_context_without_env_files() -> None:
     ]:
         assert not _in_context(path), path
     assert _in_context("cloud_registry/api/dot.env.yaml")
+
+
+def test_context_without_secret_files() -> None:
+    """Other common secret files are not sent to the build."""
+    for name in [
+        "prod.env",
+        "server.pem",
+        "tls.key",
+        "id_rsa",
+        "id_rsa.pub",
+        "id_ed25519",
+        "id_ecdsa",
+        "keystore.p12",
+        "keystore.pfx",
+        ".git-credentials",
+        ".pypirc",
+        "credentials.json",
+        "credentials-prod.json",
+        ".netrc",
+    ]:
+        assert not _in_context(f"cloud_registry/{name}"), name
+        assert not _in_context(f"cloud_registry/ga4gh/{name}"), name
