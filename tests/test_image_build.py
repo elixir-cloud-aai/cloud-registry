@@ -341,5 +341,8 @@ def test_context_without_secret_files() -> None:
         "credentials-prod.json",
         ".netrc",
     ]:
+        assert not _in_context(name), name
         assert not _in_context(f"cloud_registry/{name}"), name
         assert not _in_context(f"cloud_registry/ga4gh/{name}"), name
+    for name in ["keys.py", "credentials.py", "tokens.pem.yaml"]:
+        assert _in_context(f"cloud_registry/{name}"), name
