@@ -1,12 +1,10 @@
 """Tests for upgrades of data stored by 1.0.0rc1 to the paths of users' roles.
 
 `data/store_1.0.0rc1.json` is what 1.0.0rc1 stored in MongoDB 7.0, except for
-the hash of the token of its invitation, so that no such value is in the
-repository. The version had the rule
-`/ga4gh/registry/v1/services/:id/permissions/*`, which covers the roles of
-users and groups. In the store are the service `R71YIG` of alice, with roles of
-users (bob, carol and a namespaced user) and of a group (maintainer), and an open
-invitation, and the service `6WHRT0`, whose only owner is the group.
+the hashes of the tokens of its invitations, so that no such value is in the
+repository; `data/capture_rc1.py` makes it and describes its data. The version
+had the rule `/ga4gh/registry/v1/services/:id/permissions/*`, which covers the
+roles of users and groups.
 
 Each test starts the app of this version on the stored data, without a
 migration.
@@ -22,6 +20,7 @@ from bson import json_util
 from flask.testing import FlaskClient
 from foca.security.access_control.constants import CONFIGURED_FIELD
 from pymongo import MongoClient
+from pymongo.errors import OperationFailure
 import pytest
 
 from cloud_registry.ga4gh.registry.invitations import hash_token
@@ -44,7 +43,7 @@ from tests.test_access_control import (
     revoke,
     revoke_group,
 )
-from tests.test_invitations import accept
+from tests.test_invitations import accept, invitations, revoke_invitation
 
 STORE = Path(__file__).parent / "data" / "store_1.0.0rc1.json"
 CAPTURE = json_util.loads(STORE.read_text())
@@ -53,30 +52,48 @@ NAMESPACED_USER = "https://login.other.example.org/|dave"
 # Rule of 1.0.0rc1 in stored form, and the path of the rule that replaces it
 RC1_RULE = {"ptype": "p", "v0": "owner", "v1": USERS_RULE_RC1[2]}
 USERS_RULE_PATH = f"{BASE}/services/:id/permissions/users/*"
-# Token of the invitation in the tests (cf. `stored()`)
+# Tokens of the invitations in the tests (cf. `stored()`)
 INVITATION = "rc1"
+EXPIRED_INVITATION = "rc1-expired"
+ACCEPTED_INVITATION = "rc1-accepted"
+# Who accepted the accepted invitation
+GRACE = "grace@example.org"
 
 
 @pytest.fixture
 def stored(
     db_client: MongoClient[dict[str, Any]], app_env: None
 ) -> MongoClient[dict[str, Any]]:
-    """Store the data of 1.0.0rc1, with its invitation still open.
+    """Store the data of 1.0.0rc1, with its invitations in their states.
+
+    Their times are set relative to now: the open and accepted ones haven't
+    expired, and the expired one, which is for the role `owner`, has.
 
     Returns:
         Client of the MongoDB with the data.
     """
     for name, documents in CAPTURE["store"].items():
         db_client[DB][name].insert_many(deepcopy(documents))
-    db_client[DB]["invitations"].update_many(
-        {},
-        {
-            "$set": {
-                "token_hash": hash_token(INVITATION),
-                "expires_at": datetime.now(UTC) + timedelta(days=1),
-            }
-        },
-    )
+    stored_invitations = db_client[DB]["invitations"]
+    now = datetime.now(UTC)
+    for query, token, expires_at in (
+        (
+            {"role": "maintainer", "accepted": {"$exists": False}},
+            INVITATION,
+            now + timedelta(days=1),
+        ),
+        ({"role": "owner"}, EXPIRED_INVITATION, now - timedelta(hours=1)),
+        (
+            {"accepted": {"$exists": True}},
+            ACCEPTED_INVITATION,
+            now + timedelta(days=1),
+        ),
+    ):
+        result = stored_invitations.update_one(
+            query,
+            {"$set": {"token_hash": hash_token(token), "expires_at": expires_at}},
+        )
+        assert result.matched_count == 1
     return db_client
 
 
@@ -197,6 +214,90 @@ def test_stored_invitation_accepted(upgraded: FlaskClient) -> None:
     assert _update(upgraded, SERVICE, "frank@example.org") == 200
     # their role is managed on the new paths
     assert revoke(upgraded, SERVICE, "frank@example.org", ALICE) == 200
+
+
+def _invitation_id(client: MongoClient[dict[str, Any]], query: dict[str, Any]) -> str:
+    """Get the identifier of a stored invitation.
+
+    Args:
+        client: Client of the MongoDB with the data.
+        query: Filter for the invitation.
+
+    Returns:
+        Identifier of the invitation.
+    """
+    invitation = client[DB]["invitations"].find_one(query)
+    assert invitation is not None
+    identifier: str = invitation["_id"]
+    return identifier
+
+
+def test_stored_invitations_listed(upgraded: FlaskClient) -> None:
+    """Invitations stored by 1.0.0rc1 are listed with their status."""
+    listed = invitations(upgraded, SERVICE)
+    assert sorted(item["status"] for item in listed) == ["expired", "open"]
+    everything = invitations(upgraded, SERVICE, include_accepted=True)
+    assert sorted(item["status"] for item in everything) == [
+        "accepted",
+        "expired",
+        "open",
+    ]
+    accepted = next(item for item in everything if item["status"] == "accepted")
+    assert accepted["accepted"]["user_id"] == GRACE
+    assert accepted["accepted"]["name"] == "Grace"
+    assert accepted["accepted"]["email"] == GRACE
+    assert {item["created_by"] for item in everything} == {ALICE}
+
+
+def test_stored_expired_invitation(
+    stored: MongoClient[dict[str, Any]], upgraded: FlaskClient
+) -> None:
+    """An expired invitation of 1.0.0rc1 can't be accepted, only be removed."""
+    assert accept(upgraded, EXPIRED_INVITATION, user=ERIN).status_code == 404
+    identifier = _invitation_id(stored, {"role": "owner"})
+    assert revoke_invitation(upgraded, SERVICE, identifier).status_code == 200
+    assert revoke_invitation(upgraded, SERVICE, identifier).status_code == 404
+
+
+def test_stored_accepted_invitation(
+    stored: MongoClient[dict[str, Any]], upgraded: FlaskClient
+) -> None:
+    """An accepted invitation of 1.0.0rc1 can neither be reused nor revoked."""
+    response = accept(upgraded, ACCEPTED_INVITATION, user=ERIN)
+    assert response.status_code == 409
+    assert response.get_json()["code"] == "invitation-accepted"
+    identifier = _invitation_id(stored, {"accepted": {"$exists": True}})
+    response = revoke_invitation(upgraded, SERVICE, identifier)
+    assert response.status_code == 409
+    assert response.get_json()["code"] == "invitation-accepted"
+
+
+def test_stored_acceptance_forgotten(
+    stored: MongoClient[dict[str, Any]], upgraded: FlaskClient
+) -> None:
+    """Revoking the role removes the name and email of an acceptance of 1.0.0rc1."""
+    assert revoke(upgraded, SERVICE, GRACE, ALICE) == 200
+    invitation = stored[DB]["invitations"].find_one({"accepted.user_id": GRACE})
+    assert invitation is not None
+    assert set(invitation["accepted"]) == {"user_id", "accepted_at"}
+
+
+def test_going_back_index(
+    stored: MongoClient[dict[str, Any]], upgraded: FlaskClient
+) -> None:
+    """1.0.0rc1 can't create its index until `expires_at_1` is dropped.
+
+    The sequence of "Going back" in `docs/upgrading.md`, with the index as
+    1.0.0rc1 configures it.
+    """
+    collection = stored[DB]["invitations"]
+    keys = [("expires_at", 1)]
+    assert collection.index_information()["expires_at_1"]["expireAfterSeconds"] > 0
+    with pytest.raises(OperationFailure):
+        collection.create_index(keys, expireAfterSeconds=0)
+    collection.drop_index("expires_at_1")
+    collection.create_index(keys, expireAfterSeconds=0)
+    assert collection.index_information()["expires_at_1"]["expireAfterSeconds"] == 0
 
 
 @pytest.mark.parametrize("method", ["put", "delete"])
