@@ -7,8 +7,10 @@ from typing import Any
 
 from flask import Flask
 from pymongo.collection import Collection
+from pymongo.errors import OperationFailure
 import pytest
 
+from cloud_registry import utils
 from cloud_registry.utils import (
     format_time,
     get_collection,
@@ -16,7 +18,7 @@ from cloud_registry.utils import (
     now,
     set_ttl_index,
 )
-from tests.conftest import MONGODB_TEST_URI
+from tests.conftest import COLLECTION_CLASS, MONGODB_TEST_URI
 
 
 def _seconds(collection: Collection[dict[str, Any]]) -> int | None:
@@ -65,7 +67,7 @@ def test_set_ttl_index_unchanged(
     set_ttl_index(services, "expires", 60)
 
     def fail(*args: Any, **kwargs: Any) -> None:
-        """Fail if a command is run.
+        """Fail if an index is dropped.
 
         Args:
             args: Arguments; unused.
@@ -74,11 +76,123 @@ def test_set_ttl_index_unchanged(
         Raises:
             AssertionError: Always.
         """
-        raise AssertionError("changed")
+        raise AssertionError("dropped")
 
-    monkeypatch.setattr(type(services.database), "command", fail)
+    monkeypatch.setattr(COLLECTION_CLASS, "drop_index", fail)
     set_ttl_index(services, "expires", 60)
     assert _seconds(services) == 60
+
+
+@pytest.mark.parametrize("code", [26, 27, 85, 86, 276])
+def test_set_ttl_index_races(
+    services: Collection[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    code: int,
+) -> None:
+    """Runs that interfere with each other try again."""
+    monkeypatch.setattr(utils, "TTL_INDEX_WAIT", 0)
+    set_ttl_index(services, "expires", 60)
+    original = COLLECTION_CLASS.create_index
+    failures = iter([True, False])
+
+    def create_index(self: Any, *args: Any, **kwargs: Any) -> Any:
+        """Fail once, as if another run had interfered.
+
+        Args:
+            self: Collection.
+            args: Arguments of `create_index()`.
+            kwargs: Keyword arguments of `create_index()`.
+
+        Returns:
+            Name of the index.
+
+        Raises:
+            OperationFailure: On the first call.
+        """
+        if next(failures):
+            raise OperationFailure("race", code=code)
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(COLLECTION_CLASS, "create_index", create_index)
+    set_ttl_index(services, "expires", 120)
+    assert _seconds(services) == 120
+
+
+def test_set_ttl_index_other_run_done(
+    services: Collection[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Runs stop when another run has set the seconds meanwhile."""
+    monkeypatch.setattr(utils, "TTL_INDEX_WAIT", 0)
+    set_ttl_index(services, "expires", 60)
+    original = COLLECTION_CLASS.drop_index
+
+    def drop_index(self: Any, *args: Any, **kwargs: Any) -> None:
+        """Let another run replace the index, and fail as if it interfered.
+
+        Args:
+            self: Collection.
+            args: Arguments of `drop_index()`.
+            kwargs: Keyword arguments of `drop_index()`.
+
+        Raises:
+            OperationFailure: Always.
+        """
+        original(self, *args, **kwargs)
+        self.create_index([("expires", 1)], expireAfterSeconds=120)
+        raise OperationFailure("build aborted", code=276)
+
+    monkeypatch.setattr(COLLECTION_CLASS, "drop_index", drop_index)
+    set_ttl_index(services, "expires", 120)
+    assert _seconds(services) == 120
+
+
+def test_set_ttl_index_gives_up(
+    services: Collection[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Runs that keep interfering with others fail in the end."""
+    monkeypatch.setattr(utils, "TTL_INDEX_WAIT", 0)
+
+    def create_index(*args: Any, **kwargs: Any) -> None:
+        """Always fail, as if another run had interfered.
+
+        Args:
+            args: Arguments; unused.
+            kwargs: Keyword arguments; unused.
+
+        Raises:
+            OperationFailure: Always.
+        """
+        raise OperationFailure("race", code=276)
+
+    monkeypatch.setattr(COLLECTION_CLASS, "create_index", create_index)
+    with pytest.raises(OperationFailure, match="race"):
+        set_ttl_index(services, "expires", 120)
+
+
+def test_set_ttl_index_refused(
+    services: Collection[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Other failures are raised at once, e.g., for lack of permissions."""
+    set_ttl_index(services, "expires", 60)
+    calls = []
+
+    def drop_index(*args: Any, **kwargs: Any) -> None:
+        """Refuse to drop the index.
+
+        Args:
+            args: Arguments; unused.
+            kwargs: Keyword arguments; unused.
+
+        Raises:
+            OperationFailure: Always.
+        """
+        calls.append(args)
+        raise OperationFailure("unauthorized", code=13)
+
+    monkeypatch.setattr(COLLECTION_CLASS, "drop_index", drop_index)
+    with pytest.raises(OperationFailure, match="unauthorized"):
+        set_ttl_index(services, "expires", 120)
+    assert len(calls) == 1
 
 
 def test_set_ttl_index_logged(
@@ -109,7 +223,7 @@ def _set_at_once(
 
 
 def test_set_ttl_index_concurrent(services: Collection[dict[str, Any]]) -> None:
-    """Concurrent runs don't fail, unlike dropping and creating the index.
+    """Concurrent runs don't fail, and set the seconds.
 
     Dropping an index aborts the build of another run (`IndexBuildAborted`).
     """

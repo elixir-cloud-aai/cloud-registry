@@ -31,7 +31,7 @@ Expired invitations that weren't accepted are now kept (see
 - `max_per_service` still counts the same: invitations that haven't expired,
   open or accepted.
 - The app changes the indexes of the collection `invitations` when it starts,
-  so that its database user needs to be able to change indexes (`collMod`, as
+  so that its database user needs to be able to drop and create indexes (as
   `readWrite` can): the new `accepted_expires_at` removes accepted invitations
   when they expire, as before, and `expires_at_1`, which removed all of them
   when they expired, then removes the others after the days to keep them. The
