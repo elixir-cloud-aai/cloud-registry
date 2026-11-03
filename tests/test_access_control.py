@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 import re
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 from connexion import App
 from flask.testing import FlaskClient
@@ -192,7 +192,7 @@ def grant(
         Status code of the response.
     """
     return client.put(
-        f"{BASE}/services/{service_id}/permissions/{user}",
+        f"{BASE}/services/{service_id}/permissions/users/{user}",
         json={"role": role},
         headers=headers(as_user),
     ).status_code
@@ -311,7 +311,7 @@ def test_owners_manage_permissions(client: FlaskClient) -> None:
         (CAROL, "owner"),
     ]
     response = client.delete(
-        f"{BASE}/services/{service_id}/permissions/{BOB}",
+        f"{BASE}/services/{service_id}/permissions/users/{BOB}",
         headers=headers(ALICE),
     )
     assert response.status_code == 200
@@ -327,7 +327,7 @@ def test_invalid_permissions(client: FlaskClient) -> None:
     assert grant(client, "UNKNWN", BOB, "owner", ADMIN) == 404
     assert revoke(client, "UNKNWN", BOB, as_user=ADMIN) == 404
     response = client.delete(
-        f"{BASE}/services/{service_id}/permissions/{BOB}",
+        f"{BASE}/services/{service_id}/permissions/users/{BOB}",
         headers=headers(ALICE),
     )
     assert response.status_code == 404
@@ -366,7 +366,8 @@ def revoke(
         Status code of the response.
     """
     return client.delete(
-        f"{BASE}/services/{service_id}/permissions/{user}", headers=headers(as_user)
+        f"{BASE}/services/{service_id}/permissions/users/{user}",
+        headers=headers(as_user),
     ).status_code
 
 
@@ -1001,7 +1002,7 @@ ADMIN_OPERATIONS: list[tuple[str, str, dict[str, Any] | None]] = [
     ("PUT", "/services/{id}", _service()),
     ("DELETE", "/services/{id}", None),
     ("GET", "/services/{id}/permissions", None),
-    ("PUT", f"/services/{{id}}/permissions/{CAROL}", {"role": "owner"}),
+    ("PUT", f"/services/{{id}}/permissions/users/{CAROL}", {"role": "owner"}),
     ("PUT", "/services/{id}/verification", None),
     # new identifiers
     ("PUT", "/services/ADMNEW", _service()),
@@ -1263,36 +1264,59 @@ def test_invalid_group_permissions(client: FlaskClient) -> None:
     ]
 
 
-@pytest.mark.parametrize("path", ["groups", "groups/"])
-def test_group_permissions_without_group(
-    app: App, client: FlaskClient, path: str
-) -> None:
-    """Group roles without a group are not found.
-
-    Nor are they taken as roles of a user `groups` (which would also count as
-    another owner).
-    """
+@pytest.mark.parametrize("path", ["groups", "groups/", "users", "users/"])
+def test_permissions_without_subject(client: FlaskClient, path: str) -> None:
+    """The paths of roles without a group or user are not found."""
     service_id = register(client)
     url = f"{BASE}/services/{service_id}/permissions/{path}"
-    response = client.put(url, json={"role": "owner"}, headers=headers(ALICE))
-    assert response.status_code == 404
-    assert response.get_json()["status"] == 404
+    for method in (client.put, client.delete):
+        response = method(url, json={"role": "owner"}, headers=headers(ALICE))
+        assert response.status_code == 404
+        assert response.get_json()["status"] == 404
     assert permission_list(client, service_id) == [
         {"user_id": ALICE, "name": NAMES[ALICE], "role": "owner"}
     ]
-    assert revoke(client, service_id, ALICE) == 409
-    # nor is a role of a user `groups` revoked (e.g., one stored before)
-    with app.app.test_request_context(f"{BASE}/services/{service_id}"):
-        add_resource_role(
-            subject="groups",
-            role="maintainer",
-            resource=permissions_module.service_path(service_id),
-        )
-    assert client.delete(url, headers=headers(ALICE)).status_code == 404
-    assert permissions(client, service_id) == [
-        (ALICE, "owner"),
-        ("groups", "maintainer"),
-    ]
+
+
+@pytest.mark.parametrize("path", [BOB, "https://login.example.org/|x", "a/b"])
+@pytest.mark.parametrize("as_user", [ALICE, None])
+def test_old_user_paths_gone(
+    client: FlaskClient, path: str, as_user: str | None
+) -> None:
+    """The former paths of users' roles are not found, without an alias.
+
+    Whoever asks: no route is left for FOCA to check access to.
+    """
+    service_id = register(client)
+    url = f"{BASE}/services/{service_id}/permissions/{path}"
+    request_headers = {} if as_user is None else headers(as_user)
+    for method in (client.put, client.delete):
+        response = method(url, json={"role": "owner"}, headers=request_headers)
+        assert response.status_code == 404
+    assert permissions(client, service_id) == [(ALICE, "owner")]
+
+
+@pytest.mark.parametrize(
+    "user", ["groups", "groups/x", "groups%5Cx", "users", "users/x", "a/groups/b"]
+)
+def test_users_named_like_paths(client: FlaskClient, user: str) -> None:
+    """Users may be called `groups` or `users`, or start with these segments.
+
+    They are granted and revoked roles as any other user, and don't get the
+    roles of groups of the same name (nor do these groups get theirs).
+    """
+    service_id = register(client)
+    decoded = unquote(user)
+    url = f"{BASE}/services/{service_id}/permissions/users/{user}"
+    response = client.put(url, json={"role": "owner"}, headers=headers(ALICE))
+    assert response.status_code == 200, response.get_json()
+    assert response.get_json() == {"user_id": decoded, "role": "owner"}
+    assert (decoded, "owner") in permissions(client, service_id)
+    assert group_permissions(client, service_id) == []
+    response = client.delete(url, headers=headers(ALICE))
+    assert response.status_code == 200
+    assert response.get_json() == decoded
+    assert permissions(client, service_id) == [(ALICE, "owner")]
 
 
 def test_group_with_slash(client: FlaskClient) -> None:
@@ -1305,7 +1329,7 @@ def test_group_with_slash(client: FlaskClient) -> None:
     assert group_permissions(client, service_id) == []
 
 
-@pytest.mark.parametrize("kind", ["", "groups/"], ids=["user", "group"])
+@pytest.mark.parametrize("kind", ["users/", "groups/"], ids=["user", "group"])
 @pytest.mark.parametrize("principal", [".", "..", "%2E", "%2E%2E"])
 def test_dot_segment_principals(client: FlaskClient, kind: str, principal: str) -> None:
     """Users and groups that are dot segments are rejected.
@@ -1331,7 +1355,7 @@ def test_dot_segments_in_groups(client: FlaskClient, group: str) -> None:
     """Groups with dot segments between slashes are rejected.
 
     Clients that don't encode slashes would resolve their URLs to other ones
-    (e.g., `groups/../a` to the user `a`).
+    (e.g., `groups/../users/a` to the user `a`).
     """
     service_id = register(client)
     url = f"{BASE}/services/{service_id}/permissions/groups/{group}"
@@ -1356,7 +1380,7 @@ def test_dot_segments_in_users(client: FlaskClient, user: str) -> None:
     Browsers take backslashes in URLs as slashes.
     """
     service_id = register(client)
-    url = f"{BASE}/services/{service_id}/permissions/{user}"
+    url = f"{BASE}/services/{service_id}/permissions/users/{user}"
     response = client.put(url, json={"role": "owner"}, headers=headers(ADMIN))
     assert response.status_code == 400
     assert client.delete(url, headers=headers(ADMIN)).status_code == 400
@@ -1763,15 +1787,15 @@ def test_may_read_service_unrouted(client: FlaskClient, service_id: str) -> None
         assert not may_read_service(service_id)
 
 
-# Rules of owners' roles on services: of users as in 0.5.0 (`:user`), of users
-# for `PUT` only, and of groups as in the base config
+# Rules of owners' roles on services: as in 0.5.0 (`:user`, on a path no longer
+# served), of users for `PUT` only, and of groups as in the base config
 USERS_RULE_050 = [
     "p",
     "owner",
     f"{BASE}/services/:id/permissions/:user",
     "(PUT)|(DELETE)",
 ]
-USERS_RULE_PUT = ["p", "owner", f"{BASE}/services/:id/permissions/*", "PUT"]
+USERS_RULE_PUT = ["p", "owner", f"{BASE}/services/:id/permissions/users/*", "PUT"]
 GROUPS_RULE = [
     "p",
     "owner",
@@ -1779,41 +1803,52 @@ GROUPS_RULE = [
     "(PUT)|(DELETE)",
 ]
 NO_GROUPS = {"owners-change-group-permissions": None}
-# Without the rule of groups, and the rule of users as in 0.5.0
-NO_GROUPS_050 = {**NO_GROUPS, "owners-change-permissions": USERS_RULE_050}
+# As in the base config of 1.0.0rc1, which covers the roles of users and groups
+USERS_RULE_RC1 = [
+    "p",
+    "owner",
+    f"{BASE}/services/:id/permissions/*",
+    "(PUT)|(DELETE)",
+]
+RC1_NO_GROUPS = {**NO_GROUPS, "owners-change-permissions": USERS_RULE_RC1}
 # Other rules: owners may only list roles, maintainers and any user may change
-# them, owners may only grant roles to groups
-USERS_RULE_GET = ["p", "owner", f"{BASE}/services/:id/permissions/*", "GET"]
+# them, owners may only grant roles to groups or users of one issuer
+USERS_RULE_GET = ["p", "owner", f"{BASE}/services/:id/permissions/users/*", "GET"]
+WIDE_RULE_PUT = ["p", "owner", f"{BASE}/services/:id/permissions/*", "PUT"]
+WIDE_RULE_GET = ["p", "owner", f"{BASE}/services/:id/permissions/*", "GET"]
 MAINTAINERS_RULE = ["p", "maintainer", f"{BASE}/services/:id/permissions/*", "PUT"]
 ANYONE_RULE = ["p", "*", f"{BASE}/services/:id/permissions/*", "DELETE"]
-# Covers namespaced users (and groups), not bare ones
-NAMESPACED_RULE = ["p", "owner", f"{BASE}/services/:id/permissions/:ns/*", "PUT"]
+# Covers users and groups, whatever their kind
+ANY_KIND_RULE = ["p", "owner", f"{BASE}/services/:id/permissions/:kind/*", "PUT"]
 GROUPS_RULE_PUT = ["p", "owner", f"{BASE}/services/:id/permissions/groups/*", "PUT"]
+ISSUER_USERS_RULE = [
+    "p",
+    "owner",
+    f"{BASE}/services/:id/permissions/users/https:/*",
+    "PUT",
+]
 
 
 @pytest.mark.parametrize(
     "policies, warned",
     [
         ({}, False),
-        (NO_GROUPS, True),
+        (NO_GROUPS, False),
         ({**NO_GROUPS, "owners-change-permissions": None}, False),
         ({**NO_GROUPS, "owners-change-permissions": USERS_RULE_050}, False),
-        ({**NO_GROUPS, "owners-change-permissions": USERS_RULE_PUT}, True),
+        ({**NO_GROUPS, "owners-change-permissions": USERS_RULE_PUT}, False),
+        (RC1_NO_GROUPS, True),
+        ({**NO_GROUPS, "owners-change-permissions": WIDE_RULE_PUT}, True),
         ({"owners-change-group-permissions": GROUPS_RULE}, False),
         ({"owners-change-permissions": None}, False),
-        ([USERS_RULE_PUT], True),
+        ([WIDE_RULE_PUT], True),
+        ([USERS_RULE_PUT], False),
         ([USERS_RULE_050], False),
-        ({**NO_GROUPS, "owners-change-permissions": USERS_RULE_GET}, False),
-        ({**NO_GROUPS_050, "maintainers-change-permissions": MAINTAINERS_RULE}, False),
-        ({**NO_GROUPS_050, "anyone-changes-permissions": ANYONE_RULE}, True),
-        ({**NO_GROUPS_050, "owners-change-namespaced": NAMESPACED_RULE}, True),
-        (
-            {
-                "owners-change-permissions": USERS_RULE_050,
-                "owners-change-group-permissions": GROUPS_RULE_PUT,
-            },
-            False,
-        ),
+        ({**NO_GROUPS, "owners-change-permissions": WIDE_RULE_GET}, False),
+        ({**NO_GROUPS, "maintainers-change-permissions": MAINTAINERS_RULE}, False),
+        ({**NO_GROUPS, "anyone-changes-permissions": ANYONE_RULE}, True),
+        ({**NO_GROUPS, "owners-change-any-kind": ANY_KIND_RULE}, True),
+        ({"owners-change-group-permissions": GROUPS_RULE_PUT}, False),
     ],
     ids=[
         "unchanged",
@@ -1821,14 +1856,17 @@ GROUPS_RULE_PUT = ["p", "owner", f"{BASE}/services/:id/permissions/groups/*", "P
         "both-removed",
         "users-as-in-0.5.0",
         "users-put-only",
+        "users-as-in-1.0.0rc1",
+        "wide-put-only",
         "groups-same",
         "users-removed",
         "list-allowing-groups",
-        "list",
-        "users-get-only",
+        "list-users-only",
+        "list-as-in-0.5.0",
+        "wide-get-only",
         "maintainers",
         "any-user",
-        "namespaced-users",
+        "any-kind",
         "groups-put-only",
     ],
 )
@@ -1843,9 +1881,9 @@ def test_owner_rules_warning(
     """The app warns if owners can change roles of groups against overlays.
 
     That is, if the rule of owners' roles of groups is changed or removed,
-    but rules that cover the roles of users still allow owners to change
-    those of groups (e.g., the rule of users' roles, which covers groups
-    unlike in 0.5.0); not of rules for groups only, or for other roles.
+    but a rule that also covers the roles of users still allows owners to
+    change those of groups (e.g., the rule of users' roles as in 1.0.0rc1); not
+    of rules for users or groups only, or for other roles.
     """
     overlay = {"security": {"access_control": {"policies": policies}}}
     _create_app(monkeypatch, tmp_path, overlay)
@@ -1863,11 +1901,8 @@ def test_owner_rules_warning(
 
 @pytest.mark.parametrize(
     "policies, status",
-    [
-        (NO_GROUPS, 200),
-        ({**NO_GROUPS, "owners-change-permissions": USERS_RULE_050}, 403),
-    ],
-    ids=["groups-removed", "users-as-in-0.5.0"],
+    [(NO_GROUPS, 403), (RC1_NO_GROUPS, 200)],
+    ids=["groups-removed", "users-as-in-1.0.0rc1"],
 )
 def test_owner_rules_groups(
     monkeypatch: pytest.MonkeyPatch,
@@ -1876,15 +1911,18 @@ def test_owner_rules_groups(
     policies: dict[str, Any],
     status: int,
 ) -> None:
-    """Without the rule of groups' roles, the rule of users' still allows them.
+    """Removing the rule of groups' roles is enough to stop owners' changes.
 
-    Unless it is restricted to users as in 0.5.0 (`:user`), which misses user
-    identifiers with slashes.
+    Unless an overlay keeps the rule of users' roles as in 1.0.0rc1, which
+    also covers them (of which the app warns, cf.
+    `test_owner_rules_warning()`).
     """
     overlay = {"security": {"access_control": {"policies": policies}}}
     client = _create_app(monkeypatch, tmp_path, overlay)
     service_id = register(client)
     assert grant_group(client, service_id, TEAM_GROUP, "maintainer") == status
+    # users' roles aren't affected
+    assert grant(client, service_id, BOB, "maintainer") == 200
 
 
 # Rules of invitations as in the base config, and the recipe of the docs that
@@ -1917,8 +1955,10 @@ NO_OWNER_GRANTS = {
         ({"owners-change-permissions": None}, True),
         ({**NO_GROUPS, "owners-change-permissions": None}, True),
         ({"owners-change-permissions": USERS_RULE_GET}, True),
-        ({"owners-change-permissions": USERS_RULE_050}, False),
+        ({"owners-change-permissions": USERS_RULE_050}, True),
         ({"owners-change-permissions": USERS_RULE_PUT}, False),
+        ({"owners-change-permissions": USERS_RULE_RC1}, False),
+        ({"owners-change-permissions": ISSUER_USERS_RULE}, False),
         (NO_GROUPS, False),
         (NO_OWNER_GRANTS, False),
         (
@@ -1939,6 +1979,8 @@ NO_OWNER_GRANTS = {
         "users-get-only",
         "users-as-in-0.5.0",
         "users-put-only",
+        "users-as-in-1.0.0rc1",
+        "users-of-one-issuer",
         "groups-removed",
         "recipe",
         "invitations-get-only",
@@ -1959,9 +2001,10 @@ def test_invitation_rules_warning(
 
     That is, if configured rules let owners (or any user) create invitations
     (`POST .../invitations`), which grant roles to users, but no rule lets
-    them grant roles to users (`PUT .../permissions/<user>`), e.g., as a
+    them grant roles to users (`PUT .../permissions/users/<user>`), e.g., as a
     deployment of 0.6.0 removed `owners-change-permissions`, and the rules of
-    invitations are inherited from the base config.
+    invitations are inherited from the base config; or a rule still has a
+    former path of users' roles that isn't served anymore (`:user`).
     """
     overlay = {"security": {"access_control": {"policies": policies}}}
     _create_app(monkeypatch, tmp_path, overlay)
@@ -1987,7 +2030,7 @@ def test_invitation_rules_recipe(
     client = _create_app(monkeypatch, tmp_path, overlay)
     service_id = register(client)
     response = client.put(
-        f"{BASE}/services/{service_id}/permissions/{BOB}",
+        f"{BASE}/services/{service_id}/permissions/users/{BOB}",
         json={"role": "owner"},
         headers=headers(ALICE),
     )

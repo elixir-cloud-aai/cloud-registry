@@ -446,8 +446,8 @@ def _changes(service_id: str) -> list[tuple[str, str, dict[str, Any] | None, str
         ("PUT", service, _other_service(), ALICE),
         ("PUT", service, _other_service(), ADMIN),
         ("DELETE", service, None, ALICE),
-        ("PUT", f"{service}/permissions/{BOB}", role, ALICE),
-        ("DELETE", f"{service}/permissions/{BOB}", None, ALICE),
+        ("PUT", f"{service}/permissions/users/{BOB}", role, ALICE),
+        ("DELETE", f"{service}/permissions/users/{BOB}", None, ALICE),
         ("PUT", group_path(service_id, TEAM_GROUP), role, ALICE),
         ("DELETE", group_path(service_id, TEAM_GROUP), None, ALICE),
     ]

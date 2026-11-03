@@ -455,7 +455,7 @@ paths:
           $ref: '#/components/responses/InternalServerError'
         default:
           $ref: '#/components/responses/Error'
-  "/services/{serviceId}/permissions/{userId}":
+  "/services/{serviceId}/permissions/users/{userId}":
     put:
       summary: Grant service permission.
       description: |
@@ -730,7 +730,7 @@ paths:
         accepted, or remove an expired one, so that it is no longer listed.
         Accepted invitations can't be revoked (`409`, `code`:
         `invitation-accepted`); revoke the role instead (`DELETE
-        /services/{serviceId}/permissions/{userId}`). Only for owners of
+        /services/{serviceId}/permissions/users/{userId}`). Only for owners of
         the service and admins.
       operationId: deleteServiceInvitation
       x-openapi-router-controller: cloud_registry.ga4gh.registry.invitations
@@ -953,8 +953,8 @@ paths:
       description: |
         Accept an invitation to a service, which grants its role to the
         current user, replacing any other role of the user on the service
-        (as `PUT /services/{serviceId}/permissions/{userId}`; the last owner
-        of a service can't be downgraded, `409`). The token goes in the
+        (as `PUT /services/{serviceId}/permissions/users/{userId}`; the last
+        owner of a service can't be downgraded, `409`). The token goes in the
         body, not in the URL, so that it doesn't end up in access logs.
         Each invitation can be accepted once (`409`, `code`:
         `invitation-accepted`); unknown, revoked and expired ones are not
@@ -1045,9 +1045,7 @@ components:
         claim of the user's tokens (e.g., `abc123@login.example.org`); if
         the deployment trusts several token issuers, namespaced by issuer
         (e.g., `https://login.example.org/|abc123`), URL-encoded (e.g., `|`
-        as `%7C`; may contain `/`, but not start with it, cf. `group`). Not
-        `groups`, and not starting with `groups/`: the path is then that of
-        the roles of groups, so it is not found (`404`) or names a group.
+        as `%7C`; may contain `/`, but not start with it, cf. `group`).
         Segments `.` and `..` (the whole identifier, or between slashes or
         backslashes, which browsers take as slashes) are not allowed
         (`400`), as clients resolve them in URLs.

@@ -1,0 +1,427 @@
+{
+ "services": [
+  "R71YIG",
+  "6WHRT0"
+ ],
+ "store": {
+  "invitations": [
+   {
+    "_id": "84a356e04ef34f47b57082a0b7f1b9a0",
+    "created_as": {
+     "user": "alice@example.org"
+    },
+    "created_at": {
+     "$date": "2026-11-03T05:59:54.934Z"
+    },
+    "created_by": "alice@example.org",
+    "expires_at": {
+     "$date": "2026-11-10T05:59:54.934Z"
+    },
+    "role": "maintainer",
+    "service_id": "R71YIG",
+    "token_hash": "replaced-by-the-tests"
+   }
+  ],
+  "policy_rules": [
+   {
+    "_id": {
+     "$oid": "6ae9785ae16393368232e45a"
+    },
+    "configured": true,
+    "generations": [
+     "6ae9785ae16393368232e459"
+    ],
+    "id": "0e8t8R",
+    "ptype": "p",
+    "v0": "*",
+    "v1": "/ga4gh/registry/v1/services",
+    "v2": "POST"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9785ae16393368232e45b"
+    },
+    "configured": true,
+    "generations": [
+     "6ae9785ae16393368232e459"
+    ],
+    "id": "kZDywl",
+    "ptype": "p",
+    "v0": "owner",
+    "v1": "/ga4gh/registry/v1/services/:id",
+    "v2": "(PUT)|(DELETE)"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9785ae16393368232e45c"
+    },
+    "configured": true,
+    "generations": [
+     "6ae9785ae16393368232e459"
+    ],
+    "id": "UClvdF",
+    "ptype": "p",
+    "v0": "owner",
+    "v1": "/ga4gh/registry/v1/services/:id/permissions",
+    "v2": "GET"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9785ae16393368232e45d"
+    },
+    "configured": true,
+    "generations": [
+     "6ae9785ae16393368232e459"
+    ],
+    "id": "LdJZfm",
+    "ptype": "p",
+    "v0": "owner",
+    "v1": "/ga4gh/registry/v1/services/:id/permissions/*",
+    "v2": "(PUT)|(DELETE)"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9785ae16393368232e45e"
+    },
+    "configured": true,
+    "generations": [
+     "6ae9785ae16393368232e459"
+    ],
+    "id": "eRpPsR",
+    "ptype": "p",
+    "v0": "owner",
+    "v1": "/ga4gh/registry/v1/services/:id/permissions/groups/*",
+    "v2": "(PUT)|(DELETE)"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9785ae16393368232e45f"
+    },
+    "configured": true,
+    "generations": [
+     "6ae9785ae16393368232e459"
+    ],
+    "id": "0Y0jnX",
+    "ptype": "p",
+    "v0": "maintainer",
+    "v1": "/ga4gh/registry/v1/services/:id",
+    "v2": "PUT"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9785ae16393368232e460"
+    },
+    "configured": true,
+    "generations": [
+     "6ae9785ae16393368232e459"
+    ],
+    "id": "SCMDCh",
+    "ptype": "p",
+    "v0": "owner",
+    "v1": "/ga4gh/registry/v1/services/:id/invitations",
+    "v2": "(GET)|(POST)"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9785ae16393368232e461"
+    },
+    "configured": true,
+    "generations": [
+     "6ae9785ae16393368232e459"
+    ],
+    "id": "Hr65UP",
+    "ptype": "p",
+    "v0": "owner",
+    "v1": "/ga4gh/registry/v1/services/:id/invitations/:invitation",
+    "v2": "DELETE"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9785ae16393368232e462"
+    },
+    "configured": true,
+    "generations": [
+     "6ae9785ae16393368232e459"
+    ],
+    "id": "SKvfvS",
+    "ptype": "p",
+    "v0": "*",
+    "v1": "/ga4gh/registry/v1/invitations/accept",
+    "v2": "POST"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9785ae16393368232e463"
+    },
+    "configured": true,
+    "generations": [
+     "6ae9785ae16393368232e459"
+    ],
+    "id": "dkidSd",
+    "ptype": "p",
+    "v0": "*",
+    "v1": "/ga4gh/registry/v1/services/types",
+    "v2": "POST"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9785ae16393368232e464"
+    },
+    "configured": true,
+    "generations": [
+     "6ae9785ae16393368232e459"
+    ],
+    "id": "wxOJ3j",
+    "ptype": "p",
+    "v0": "*",
+    "v1": "/ga4gh/registry/v1/approvals",
+    "v2": "GET"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9785ae16393368232e465"
+    },
+    "configured": true,
+    "generations": [
+     "6ae9785ae16393368232e459"
+    ],
+    "id": "Xe0aXL",
+    "ptype": "p",
+    "v0": "*",
+    "v1": "/ga4gh/registry/v1/me",
+    "v2": "GET"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9785ae16393368232e466"
+    },
+    "configured": true,
+    "generations": [
+     "6ae9785ae16393368232e459"
+    ],
+    "id": "rj8ho7",
+    "ptype": "p",
+    "v0": "*",
+    "v1": "/ga4gh/registry/v1/services",
+    "v2": "GET"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9785ae16393368232e467"
+    },
+    "configured": true,
+    "generations": [
+     "6ae9785ae16393368232e459"
+    ],
+    "id": "gHNIj7",
+    "ptype": "p",
+    "v0": "*",
+    "v1": "/ga4gh/registry/v1/services/:id",
+    "v2": "GET"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9785ae16393368232e468"
+    },
+    "configured": true,
+    "generations": [
+     "6ae9785ae16393368232e459"
+    ],
+    "id": "h1m8Cn",
+    "ptype": "p",
+    "v0": "*",
+    "v1": "/ga4gh/registry/v1/services/:id/verification",
+    "v2": "GET"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9785ae16393368232e469"
+    },
+    "configured": true,
+    "generations": [
+     "6ae9785ae16393368232e459"
+    ],
+    "id": "kC1AFM",
+    "ptype": "p",
+    "v0": "*",
+    "v1": "/ga4gh/registry/v1/verifications",
+    "v2": "GET"
+   },
+   {
+    "_id": "configured_policies",
+    "generation": "6ae9785ae16393368232e459"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9785ae16393368232e46d"
+    },
+    "id": "ipCAQN",
+    "ptype": "g2",
+    "v0": "user:alice@example.org",
+    "v1": "owner",
+    "v2": "/ga4gh/registry/v1/services/R71YIG"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9785ae16393368232e46f"
+    },
+    "granted": {
+     "$timestamp": {
+      "i": 1,
+      "t": 1793685594
+     }
+    },
+    "id": "7N2ggg",
+    "ptype": "g2",
+    "v0": "user:bob@example.org",
+    "v1": "maintainer",
+    "v2": "/ga4gh/registry/v1/services/R71YIG"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9785ae16393368232e472"
+    },
+    "granted": {
+     "$timestamp": {
+      "i": 2,
+      "t": 1793685594
+     }
+    },
+    "id": "u3Na6B",
+    "ptype": "g2",
+    "v0": "user:carol@example.org",
+    "v1": "owner",
+    "v2": "/ga4gh/registry/v1/services/R71YIG"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9785ae16393368232e475"
+    },
+    "granted": {
+     "$timestamp": {
+      "i": 3,
+      "t": 1793685594
+     }
+    },
+    "id": "uX2AMQ",
+    "ptype": "g2",
+    "v0": "user:https://login.other.example.org/|dave",
+    "v1": "maintainer",
+    "v2": "/ga4gh/registry/v1/services/R71YIG"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9785ae16393368232e478"
+    },
+    "granted": {
+     "$timestamp": {
+      "i": 4,
+      "t": 1793685594
+     }
+    },
+    "id": "WSElCH",
+    "ptype": "g2",
+    "v0": "group:urn:example:group:registry-team#login.example.org",
+    "v1": "maintainer",
+    "v2": "/ga4gh/registry/v1/services/R71YIG"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9785be16393368232e47f"
+    },
+    "granted": {
+     "$timestamp": {
+      "i": 1,
+      "t": 1793685595
+     }
+    },
+    "id": "Afx8rI",
+    "ptype": "g2",
+    "v0": "group:urn:example:group:registry-team#login.example.org",
+    "v1": "owner",
+    "v2": "/ga4gh/registry/v1/services/6WHRT0"
+   }
+  ],
+  "service_counts": [
+   {
+    "_id": "alice@example.org",
+    "count": 2
+   }
+  ],
+  "service_types": [
+   {
+    "_id": {
+     "$oid": "6ae9785a1d198f546709bcf8"
+    },
+    "artifact": "tes",
+    "created_by": "alice@example.org",
+    "group": "org.ga4gh",
+    "version": "1.1.0"
+   }
+  ],
+  "services": [
+   {
+    "_createdBy": "alice@example.org",
+    "_id": {
+     "$oid": "6ae9785ae16393368232e46b"
+    },
+    "_serviceKey": "[\"org.ga4gh\",\"tes\",\"https://tes0.example.org\"]",
+    "createdAt": "2026-11-03T05:59:54.448Z",
+    "id": "R71YIG",
+    "name": "My TES",
+    "organization": {
+     "name": "My organization",
+     "url": "https://example.org"
+    },
+    "type": {
+     "artifact": "tes",
+     "group": "org.ga4gh",
+     "version": "1.1.0"
+    },
+    "updatedAt": "2026-11-03T05:59:54.448Z",
+    "url": "https://tes0.example.org",
+    "version": "1.0.0"
+   },
+   {
+    "_createdBy": "alice@example.org",
+    "_id": {
+     "$oid": "6ae9785ae16393368232e47b"
+    },
+    "_serviceKey": "[\"org.ga4gh\",\"tes\",\"https://tes1.example.org\"]",
+    "createdAt": "2026-11-03T05:59:54.978Z",
+    "id": "6WHRT0",
+    "name": "My TES",
+    "organization": {
+     "name": "My organization",
+     "url": "https://example.org"
+    },
+    "type": {
+     "artifact": "tes",
+     "group": "org.ga4gh",
+     "version": "1.1.0"
+    },
+    "updatedAt": "2026-11-03T05:59:54.978Z",
+    "url": "https://tes1.example.org",
+    "version": "1.0.0"
+   }
+  ],
+  "user_names": [
+   {
+    "_id": {
+     "$oid": "6ae9785a1d198f546709bd0b"
+    },
+    "name": "Alice Example",
+    "service_id": "R71YIG",
+    "user_id": "alice@example.org"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9785a1d198f546709bd80"
+    },
+    "name": "Bob Example",
+    "service_id": "R71YIG",
+    "user_id": "bob@example.org"
+   }
+  ]
+ }
+}

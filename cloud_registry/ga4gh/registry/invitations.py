@@ -5,8 +5,8 @@ identifiers: they create an invitation for a role (`POST
 /services/{serviceId}/invitations`), which returns a one-time token, and send
 a link with it through any channel; the invited user logs in and accepts it
 (`POST /invitations/accept`), which grants the role to their own identifier,
-as `PUT /services/{serviceId}/permissions/{userId}` would (replacing their
-other role on the service). Owners list the invitations of a service, with
+as `PUT /services/{serviceId}/permissions/users/{userId}` would (replacing
+their other role on the service). Owners list the invitations of a service, with
 who accepted them, and revoke open ones. Expired invitations that weren't
 accepted stay listed, with their status, until they are removed by owners or
 automatically, so that owners know who needs a nudge; accepted ones are only
@@ -479,9 +479,9 @@ def deleteServiceInvitation(
     """Revoke an open invitation to a service, or remove an expired one.
 
     Accepted invitations can't be revoked; revoke the role instead (`DELETE
-    /services/{serviceId}/permissions/{userId}`). An acceptance and a revocation
-    at the same time can't both succeed: both only change an invitation that
-    wasn't accepted, atomically.
+    /services/{serviceId}/permissions/users/{userId}`). An acceptance and a
+    revocation at the same time can't both succeed: both only change an
+    invitation that wasn't accepted, atomically.
 
     Args:
         serviceId: Service identifier.

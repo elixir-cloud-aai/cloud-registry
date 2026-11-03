@@ -622,38 +622,6 @@ def _delete_roles(serviceId: str, subject: str, subject_type: SubjectType) -> No
             )
 
 
-def _first_segment(path: str) -> str:
-    """Get the first segment of a path, with backslashes as slashes.
-
-    Args:
-        path: Path, e.g., a user identifier.
-
-    Returns:
-        The part before the first slash or backslash (as in browsers).
-    """
-    return path.replace("\\", "/").split("/", 1)[0]
-
-
-def check_namespaces() -> None:
-    """Check that no trusted issuer has a namespace with the segment `groups`.
-
-    Must be called in an app context. The identifiers of its users would
-    start with `groups/`, the path of the roles of groups, so their roles
-    couldn't be changed via the permissions API (cf. `_check_user_id()`).
-
-    Raises:
-        ValueError: The namespace of a trusted issuer
-            (`security.auth.issuers`) is `groups` or starts with `groups/`.
-    """
-    for issuer, namespace in get_config().security.auth.get_namespaces().items():
-        if namespace is not None and _first_segment(namespace) == "groups":
-            raise ValueError(
-                f"The namespace {namespace!r} of the issuer {issuer!r} must "
-                "not start with 'groups/', the path of the roles of groups: "
-                "set another namespace ('security.auth.issuers')"
-            )
-
-
 def is_manageable_user_id(userId: str) -> bool:
     """Check whether roles of a user can be managed via the permissions API.
 
@@ -661,15 +629,14 @@ def is_manageable_user_id(userId: str) -> bool:
         userId: User identifier.
 
     Returns:
-        Whether `PUT` and `DELETE /services/{serviceId}/permissions/{userId}`
-        accept the identifier: it is not `groups` and doesn't start with
-        `groups/` (cf. `_check_user_id()`), doesn't start with a slash, and
-        has no segments `.` or `..` (backslashes count as slashes, as in
-        browsers; cf. the pattern of `userId` in
-        `cloud_registry/api/additions.openapi.yaml`).
+        Whether `PUT` and `DELETE
+        /services/{serviceId}/permissions/users/{userId}` accept the
+        identifier: it doesn't start with a slash, and has no segments `.` or
+        `..` (backslashes count as slashes, as in browsers; cf. the pattern of
+        `userId` in `cloud_registry/api/additions.openapi.yaml`).
     """
     path = userId.replace("\\", "/")
-    if path.startswith("/") or _first_segment(path) == "groups":
+    if path.startswith("/"):
         return False
     return not any(segment in (".", "..") for segment in path.split("/"))
 
@@ -679,15 +646,16 @@ def warn_owner_rules() -> None:
 
     Deployments that change or remove the rule of owners' roles of groups
     (`OWNER_GROUP_RULE`) usually restrict them, but other rules may still
-    allow them: `owners-change-permissions` (`/services/:id/permissions/*`)
-    also covers the roles of groups (unlike in 0.5.0). So, unless the rule
-    is kept as in the packaged base config (`BASE_CONFIG`, which deployments
-    change with overlays), warns of configured rules (named or a list) for
-    owners or any user (`*`) that allow `PUT` or `DELETE` on the roles of
-    both users (`EXAMPLE_USERS`) and groups (paths of the base rule with
-    example values), i.e., that cover groups as a side effect; rules for
-    groups only (e.g., the changed rule itself) are the deployment's choice.
-    Rules stored via FOCA's permissions API are not checked.
+    allow them, e.g., an overlay that keeps `owners-change-permissions` as in
+    1.0.0rc1 (`/services/:id/permissions/*`), which also covers the roles of
+    groups. So, unless the rule of groups is kept as in the packaged base
+    config (`BASE_CONFIG`, which deployments change with overlays), warns of
+    configured rules (named or a list) for owners or any user (`*`) that
+    allow `PUT` or `DELETE` on the roles of both users (`EXAMPLE_USERS`) and
+    groups (paths of the base rule with example values), i.e., that cover
+    groups as a side effect; rules for users or groups only (e.g., the
+    changed rule itself) are the deployment's choice. Rules stored via FOCA's
+    permissions API are not checked.
 
     Also warns if configured rules let owners (or any user) create
     invitations (`POST /services/:id/invitations`), which grant roles to
@@ -695,7 +663,8 @@ def warn_owner_rules() -> None:
     any of `EXAMPLE_USERS`), e.g., as a deployment of 0.6.0 removed
     `owners-change-permissions` to stop owners from granting roles, and
     inherits the rules of invitations (`INVITATION_RULES`) from the base
-    config.
+    config, or as an overlay has the path of 0.5.0 (`.../permissions/:user`),
+    which isn't served anymore.
 
     Must be called in an app context.
     """
@@ -708,7 +677,9 @@ def warn_owner_rules() -> None:
     _warn_invitation_rules(policies, path.split("/permissions/")[0])
     if base in policies:
         return
-    user_paths = [path.replace("groups/group", user) for user in EXAMPLE_USERS]
+    user_paths = [
+        path.replace("groups/group", f"users/{user}") for user in EXAMPLE_USERS
+    ]
     allowing = sorted(
         {
             str(rule)
@@ -722,7 +693,7 @@ def warn_owner_rules() -> None:
             "The policy rule '%s' is changed or removed "
             "('security.access_control.policies'), but owners can still grant "
             "and revoke roles of groups (e.g., '%s') via: %s. Change these "
-            "rules, too (see 'From 0.5.0' in the upgrade guide).",
+            "rules, too (see 'From 1.0.0rc1' in the upgrade guide).",
             OWNER_GROUP_RULE,
             path,
             ", ".join(allowing),
@@ -764,7 +735,7 @@ def _warn_invitation_rules(policies: list[list[str]], service: str) -> None:
         {str(rule) for rule in _owner_rules(policies, f"{service}/invitations", "POST")}
     )
     if not inviting or any(
-        _owner_rules(policies, f"{service}/permissions/{user}", "PUT")
+        _owner_rules(policies, f"{service}/permissions/users/{user}", "PUT")
         for user in EXAMPLE_USERS
     ):
         return
@@ -772,36 +743,15 @@ def _warn_invitation_rules(policies: list[list[str]], service: str) -> None:
         "No policy rule lets owners grant roles to users "
         "('security.access_control.policies'), but owners can still grant "
         "roles to users by invitation via: %s. Remove these rules, too "
-        "(e.g., set %s to null; see 'From 0.6.0' in the upgrade guide).",
+        "(e.g., set %s to null; see 'From 0.6.0' in the upgrade guide), or "
+        "move rules of former paths to '.../permissions/users/*' (see 'From "
+        "1.0.0rc1').",
         ", ".join(inviting),
         " and ".join(f"'{name}'" for name in INVITATION_RULES),
     )
 
 
-def _check_user_id(userId: str) -> None:
-    """Check that a user identifier is not `groups`, nor starts with `groups/`.
-
-    Backslashes count as slashes, as in browsers (cf. the patterns of
-    `userId` in `cloud_registry/api/additions.openapi.yaml`).
-
-    `/services/{serviceId}/permissions/groups` is the path of the roles of
-    groups without a group (cf. `putServiceGroupPermission()`), not of a
-    user `groups`, so it is not found, like `.../permissions/groups/`, which
-    is routed here, as user identifiers may contain slashes (namespaced by
-    issuer); paths with a group are routed to the roles of groups.
-
-    Args:
-        userId: User identifier.
-
-    Raises:
-        cloud_registry.exceptions.NotFound: The user identifier is `groups`
-            or starts with `groups/`.
-    """
-    if _first_segment(userId) == "groups":
-        raise NotFound
-
-
-# PUT /services/{serviceId}/permissions/{userId}
+# PUT /services/{serviceId}/permissions/users/{userId}
 def putServicePermission(serviceId: str, userId: str, **kwargs: Any) -> dict[str, Any]:
     """Grant a user a role on a service, replacing any other role.
 
@@ -815,18 +765,13 @@ def putServicePermission(serviceId: str, userId: str, **kwargs: Any) -> dict[str
 
     Returns:
         User identifier and granted role.
-
-    Raises:
-        cloud_registry.exceptions.NotFound: The user identifier is `groups`
-            (cf. `_check_user_id()`).
     """
-    _check_user_id(userId)
     role = request.json["role"]
     put_role(serviceId, userId, "user", role)
     return {"user_id": userId, "role": role}
 
 
-# DELETE /services/{serviceId}/permissions/{userId}
+# DELETE /services/{serviceId}/permissions/users/{userId}
 def deleteServicePermission(serviceId: str, userId: str, **kwargs: Any) -> str:
     """Revoke all roles of a user on a service (cf. `_delete_roles()`).
 
@@ -838,12 +783,7 @@ def deleteServicePermission(serviceId: str, userId: str, **kwargs: Any) -> str:
 
     Returns:
         User identifier.
-
-    Raises:
-        cloud_registry.exceptions.NotFound: The user identifier is `groups`
-            (cf. `_check_user_id()`).
     """
-    _check_user_id(userId)
     _delete_roles(serviceId, userId, "user")
     return userId
 
