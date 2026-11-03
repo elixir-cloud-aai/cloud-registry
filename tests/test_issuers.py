@@ -169,7 +169,11 @@ def test_namespaces_named_like_paths(
     response = client.put(url, json={"role": "maintainer"}, headers=owner)
     assert response.status_code == 200, response.get_json()
     assert response.get_json() == {"user_id": user, "role": "maintainer"}
+    roles = f"{BASE}/services/{service_id}/permissions"
+    role = {"user_id": user, "role": "maintainer"}
+    assert role in client.get(roles, headers=owner).get_json()
     assert client.delete(url, headers=owner).status_code == 200
+    assert role not in client.get(roles, headers=owner).get_json()
 
 
 def test_service_types_by_issuer(
