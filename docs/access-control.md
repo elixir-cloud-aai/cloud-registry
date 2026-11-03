@@ -175,22 +175,20 @@ The app warns on startup if configured rules let owners create invitations
 while no rule lets them grant roles to users. More on the two rules of roles:
 
 - `owners-change-permissions`
-  (`/ga4gh/registry/v1/services/:id/permissions/*`) also covers the roles
-  of groups (`.../permissions/groups/<group>`), as user identifiers may
-  contain slashes, so removing only `owners-change-group-permissions`
-  doesn't stop owners from granting and revoking roles of groups. If the
-  rule of groups is changed or removed, the app warns on startup of
-  configured rules that still let owners change roles of groups this way.
-- To let owners grant roles to users but not to groups, redefine
-  `owners-change-permissions` with `.../permissions/:user` (as in 0.5.0),
-  which doesn't match the roles of groups. It doesn't match user
-  identifiers with slashes either: with [several token
-  issuers](configuration.md#several-token-issuers), those of issuers whose
-  namespace contains slashes (by default, the issuer URL). Add a rule per
-  such namespace (e.g., `.../permissions/https:/*` for issuer URLs, which
-  doesn't match `groups/...`, as namespaces can't start with `groups/`), or
-  give new issuers namespaces without slashes (changing the namespace of an
-  issuer invalidates its users' stored roles).
+  (`/ga4gh/registry/v1/services/:id/permissions/users/*`) only covers the
+  roles of users, and `owners-change-group-permissions`
+  (`.../permissions/groups/*`) only those of groups, so that each can be
+  changed on its own: to let owners grant roles to users but not to groups,
+  set `owners-change-group-permissions: null`, and the other way around.
+- Rules that cover both, e.g., `.../permissions/*` (the path of
+  `owners-change-permissions` in 1.0.0rc1), also let owners change roles of
+  groups. If the rule of groups is changed or removed, the app warns on
+  startup of configured rules that still let owners do so.
+- `.../permissions/users/:user` doesn't match user identifiers with slashes:
+  with [several token issuers](configuration.md#several-token-issuers), those
+  of issuers whose namespace contains slashes (by default, the issuer URL).
+  Keep the `*` to cover all users, or add a rule per such namespace (e.g.,
+  `.../permissions/users/https:/*` for issuer URLs).
 
 !!! danger "With great power comes great responsibility"
     Patches and rules in overlays can weaken or remove authentication and
@@ -213,7 +211,7 @@ while no rule lets them grant roles to users. More on the two rules of roles:
   `<namespace>|<sub>`: encode it in URLs, slashes may also be kept):
 
   ```bash
-  curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/<id>/permissions/<user-id>" \
+  curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/<id>/permissions/users/<user-id>" \
     -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
     -d '{"role": "maintainer"}'
   ```
@@ -222,7 +220,7 @@ while no rule lets them grant roles to users. More on the two rules of roles:
   link](#invitations) instead. `GET /services/<id>/permissions` lists the
   roles granted on a service (with the users' names, once they have used the
   registry since being granted the role; names are deleted with the role), and
-  `DELETE /services/<id>/permissions/<user-id>` revokes them. The last owner
+  `DELETE /services/<id>/permissions/users/<user-id>` revokes them. The last owner
   of a service can't be removed or downgraded (`409 Conflict`); delete the
   service instead. The role `maintainer` is only granted on services with an
   owner (`400 Bad Request` otherwise, e.g., on services stored before owners
@@ -319,7 +317,7 @@ Owners (and admins) can also invite users by link, without knowing their user
 identifier: they create an invitation to a service for a role, send the link
 through any channel, and the invited user logs in and accepts it, which grants
 the role to their own identifier (replacing another role of theirs on the
-service, as `PUT /services/<id>/permissions/<user-id>` would). No email
+service, as `PUT /services/<id>/permissions/users/<user-id>` would). No email
 addresses are involved.
 
 ```bash

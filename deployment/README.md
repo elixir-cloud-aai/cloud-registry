@@ -874,6 +874,22 @@ they are below the limit. The commands are for the release
 kubectl rollout restart deployment/cloud-registry -n <namespace>
 ```
 
+### To app version 1.0.0rc2
+
+Data is kept. The roles of users move to
+`/services/<id>/permissions/users/<user-id>`, without an alias, so move API
+clients in the same upgrade. See [From
+1.0.0rc1](https://cloud-registry.readthedocs.io/en/latest/upgrading/#from-100rc1)
+for all changes; for Helm releases:
+
+- **Policies:** values files that redefine `owners-change-permissions` in
+  `config.security.access_control.policies`, or give the policies as a list,
+  must move it to `.../permissions/users/*`. It no longer covers the roles of
+  groups, for which `owners-change-group-permissions` is now the only rule.
+- **Rollout:** restart the app once after the rollout, as above, or upgrade
+  with the app scaled to 0 replicas, so that no rules of pods of 1.0.0rc1 stay
+  in place.
+
 ## Probes
 
 - **App:** ready once it serves its Swagger UI (`/ga4gh/registry/v1/ui/`;

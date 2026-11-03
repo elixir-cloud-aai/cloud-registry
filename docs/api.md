@@ -22,7 +22,7 @@ under the API base path `/ga4gh/registry/v1`:
 | `/services/{serviceId}` | `DELETE` | owners, admins |
 | `/services/{serviceId}/rename` | `POST` | admins |
 | `/services/{serviceId}/permissions` | `GET` | owners, admins |
-| `/services/{serviceId}/permissions/{userId}` | `PUT`, `DELETE` | owners, admins |
+| `/services/{serviceId}/permissions/users/{userId}` | `PUT`, `DELETE` | owners, admins |
 | `/services/{serviceId}/permissions/groups/{group}` | `PUT`, `DELETE` | owners, admins (`PUT` by owners: groups they are members of) |
 | `/services/{serviceId}/invitations` | `GET`, `POST` | owners, admins |
 | `/services/{serviceId}/invitations/{invitationId}` | `DELETE` | owners, admins |

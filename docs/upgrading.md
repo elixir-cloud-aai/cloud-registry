@@ -8,7 +8,57 @@ how existing setups and data are affected.
 
 ## From 1.0.0rc1
 
-Data is kept, and no manual steps are needed. Invitations can have a `label`
+Data is kept. The paths of users' roles change, as they collided with those of
+groups, which API clients and overlays with their own policy rules must follow:
+
+- **API:** `PUT` and `DELETE /services/<id>/permissions/<user-id>` move to
+  `/services/<id>/permissions/users/<user-id>`. There is no alias: the former
+  paths are not found (`404 Not Found`), so move API clients in the same
+  rollout, also [cloud-registry-ui](https://github.com/elixir-cloud-aai/cloud-registry-ui).
+  `/services/<id>/permissions/groups/<group>` and `GET
+  /services/<id>/permissions` stay. Users called `groups`, or whose identifiers
+  start with `groups/`, were refused and can now be granted roles and accept
+  invitations; the namespaces of issuers (`security.auth.issuers`) may now start
+  with `groups/`.
+- **Policies:** the rule `owners-change-permissions` moves from
+  `/ga4gh/registry/v1/services/:id/permissions/*` to
+  `.../permissions/users/*`, and no longer covers the roles of groups;
+  `owners-change-group-permissions` (`.../permissions/groups/*`) keeps its path
+  and is now the only rule for them. Overlays that only set rules to `null`
+  need no change, but note that `owners-change-group-permissions: null` now
+  stops owners from changing roles of groups, which needed a change of both
+  rules before. Overlays that redefine `owners-change-permissions`, or give
+  `policies` as a list, must move their rules:
+    - `.../permissions/*` still lets owners change roles of users, but also of
+      groups: change it to `.../permissions/users/*`. The app warns on startup
+      if the rule of groups is changed or removed, but such a rule is still
+      configured.
+    - `.../permissions/:user` and rules per namespace (e.g.,
+      `.../permissions/https:/*`) don't match the new paths, so that owners get
+      `403 Forbidden`: change them to `.../permissions/users/*` (or
+      `.../permissions/users/https:/*`). The app warns on startup if owners can
+      create invitations, but no rule lets them grant roles to users.
+- **Stored data:** no migration is needed. Roles are stored on the service
+  (`/ga4gh/registry/v1/services/<id>`), not on these paths, so they keep
+  working. Configured rules are replaced when the app starts, so the former
+  rule doesn't stay in the database. Rules stored via FOCA's permissions API
+  do stay: list them (`GET /admin/access-control/permissions`, in admin mode),
+  and remove those on the former paths (`DELETE
+  /admin/access-control/permissions/<rule-id>`), as `.../permissions/*` would
+  still let owners change roles of groups, and the startup warning only checks
+  configured rules.
+- **Rollout:** during a rolling update, pods of the two versions serve different
+  paths, and each pod that starts replaces the configured rules of all of them,
+  so owners may get `403 Forbidden` from pods of the other version. Upgrade with
+  the app scaled to 0 replicas if that matters, or restart the app once after
+  the rollout, so that a pod of 1.0.0rc1 that started last doesn't leave its
+  rules in place.
+- **Going back:** 1.0.0rc1 replaces the configured rules again when it starts,
+  and stored roles are the same. It can't manage the roles of users called
+  `groups`, or starting with `groups/`, granted in the meantime, and doesn't
+  start with namespaces starting with `groups/`.
+
+Invitations can have a `label`
 (see [Invitations](access-control.md#invitations)). It is optional, so scripts
 and stored invitations keep working; only invitations with a label have the
 field in responses, so clients that reject unknown fields of invitations must
@@ -174,7 +224,8 @@ its settings and checks; change the config before upgrading:
    `owners-change-permissions`, or owners can grant and revoke roles of
    groups again: remove it, or redefine it for users only (see [Requiring
    login for reads](access-control.md#requiring-login-for-reads), also for
-   the startup warning).
+   the startup warning). Later versions move the roles of users (see [From
+   1.0.0rc1](#from-100rc1)), so that the rules no longer overlap.
 
 Noticeable, but no action needed:
 
@@ -316,7 +367,8 @@ To keep the data anyway, dump and restore it as described in [From the legacy
 charts](deployment.md#from-the-legacy-charts): the app then adds keys to the
 stored services on startup and refuses to start while some of them have
 invalid URLs or are duplicates (see [Stored services](#stored-services)), and
-admins have to assign owners (`PUT /services/{serviceId}/permissions/{userId}`).
+admins have to assign owners (`PUT
+/services/{serviceId}/permissions/users/{userId}`).
 
 Docker Compose setups keep the data in a named volume now; see [Docker Compose
 data](#docker-compose-data) to keep using the former bind mount.
