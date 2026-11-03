@@ -469,13 +469,38 @@ def test_label_longest(client: FlaskClient) -> None:
 
 @pytest.mark.parametrize(
     "label",
-    ["", " ", "\t", "Bob\n", "\nBob", "a\nb", "a\x00b", "a\x7fb", "a\x85b", 1, None],
+    [
+        "",
+        " ",
+        "\t",
+        "Bob\n",
+        "\nBob",
+        "a\nb",
+        "a\x00b",
+        "a\x7fb",
+        "a\x85b",
+        f"a{chr(0x2028)}b",
+        chr(0x200B),
+        f"a{chr(0x202E)}b",
+        f"a{chr(0x2066)}b",
+        chr(0xFEFF),
+        f"Bob{chr(0xD800)}",
+        1,
+        None,
+    ],
 )
 def test_label_invalid(app: App, client: FlaskClient, label: Any) -> None:
     """Labels are plain text of one line, not blank; others are rejected."""
     service_id = register(client)
     assert invite(client, service_id, label=label).status_code == 400
     assert stored(app) == []
+
+
+def test_label_joiners(client: FlaskClient) -> None:
+    """Labels may have joiners, which names in some scripts need."""
+    service_id = register(client)
+    label = f"a{chr(0x200C)}b{chr(0x200D)}c"
+    assert invite(client, service_id, label=label).get_json()["label"] == label
 
 
 def test_label_hidden_from_accepting_user(client: FlaskClient) -> None:
@@ -503,7 +528,26 @@ def test_label_not_logged(
     service_id = register(client)
     created = invite(client, service_id, label="For Bob").get_json()
     assert accept(client, created["token"]).status_code == 200
+    other = invite(client, service_id, label="For Bob").get_json()
+    invitations(client, service_id)
+    assert revoke_invitation(client, service_id, other["id"]).status_code == 200
     assert "For Bob" not in caplog.text
+
+
+def test_label_removed_with_role(app: App, client: FlaskClient) -> None:
+    """Labels of accepted invitations are removed with the user's roles.
+
+    They may name the user, and accepted invitations can't be revoked; others
+    keep theirs.
+    """
+    service_id = register(client)
+    created = invite(client, service_id, label="For Bob").get_json()
+    assert accept(client, created["token"]).status_code == 200
+    invite(client, service_id, label="For Carol")
+    assert revoke(client, service_id, BOB) == 200
+    first, second = invitations(client, service_id)
+    assert "label" not in first
+    assert second["label"] == "For Carol"
 
 
 def test_label_moves_with_rename(client: FlaskClient) -> None:

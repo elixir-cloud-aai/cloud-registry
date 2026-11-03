@@ -1473,15 +1473,17 @@ components:
       description: |
         Plain text that tells those who manage the invitations of a service
         what an invitation is for (e.g., who it was sent to), so that they
-        send the right link: one line, not blank, without control characters;
+        send the right link: one line, not blank, without control or
+        direction-changing characters, of at most 100 characters before
         whitespace around it is removed. Clients must not render it as
         markup. Only for those who may list the invitations: the user who
         accepts the invitation doesn't get it. As it may name people, it is
-        stored only as long as the invitation.
+        stored only as long as the invitation, and removed when the role of
+        the user who accepted the invitation is revoked.
       type: string
       minLength: 1
       maxLength: 100
-      pattern: '^(?![\s\S]*[\x00-\x1F\x7F-\x9F\u2028\u2029])\s*\S'
+      pattern: '^(?![\s\S]*[\x00-\x1F\x7F-\x9F\u200B\u2028-\u202E\u2060\u2066-\u2069\uFEFF])\s*\S'
       example: Bob (variant calling team)
     Invitation:
       description: Invitation to a service.

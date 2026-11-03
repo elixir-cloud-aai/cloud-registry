@@ -11,7 +11,8 @@ how existing setups and data are affected.
 Data is kept, and nothing needs to be done. Invitations can have a `label`
 (see [Invitations](access-control.md#invitations)). It is optional, so scripts
 and stored invitations keep working; only invitations with a label have the
-field in responses, so clients that refuse unknown fields must allow it.
+field in responses, so clients that reject unknown fields of invitations must
+accept `label`.
 
 ## From 0.6.0
 
