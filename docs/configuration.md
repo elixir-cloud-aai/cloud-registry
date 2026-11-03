@@ -249,7 +249,8 @@ Registrations (`POST /services`, `PUT /services/{serviceId}`) with other
 values are rejected with `400 Bad Request`, naming the allowed values
 (case-sensitive); services without `environment` are accepted. An empty
 list allows any value. For example, in a config overlay (with the Helm
-chart, in `config`):
+chart, in `config`), with an environment of the registry from the list, as
+the app requires (see below):
 
 ```yaml
 custom:
@@ -258,6 +259,9 @@ custom:
             environments:
                 - production
                 - testing
+service_info:
+    service:
+        environment: production
 ```
 
 Clients that let users choose an environment (e.g., UIs) must offer the
@@ -470,8 +474,8 @@ domains, and there is no `contactUrl`. Deployments set their own `id` (unique,
 e.g., in reverse domain name notation), `name`, `description`, `organization`,
 `contactUrl` and `environment` (the default is `dev`; it must be one of the
 [allowed values](#service-environments), or the app refuses to start); while
-`id` or the name or URL of `organization` are the placeholders, the app logs a warning on
-startup, naming the fields to set (also with Docker Compose, whose
+`id` or the name or URL of `organization` are the placeholders, the app logs a
+warning on startup, naming the fields to set (also with Docker Compose, whose
 development config keeps them). Fields and list items set to `null`
 (e.g., in a config overlay) are not served. The app adds the [registration
 rules](api.md#registration-rules) (`registration_rules`), built from the

@@ -2045,17 +2045,20 @@ def test_create_app_service_info_environment(
     assert "`custom.endpoints.services.environments`" in str(exc_info.value)
 
 
+@pytest.mark.parametrize("allowed", [["production"], []])
 def test_create_app_service_info_environment_allowed(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    allowed: list[str],
 ) -> None:
     """The value may be one the deployment allows, or any with an empty list."""
-    for allowed in (["production"], []):
-        overlay = _service_info_overlay({"service": {"environment": "production"}})
-        overlay["custom"] = {"endpoints": {"services": {"environments": allowed}}}
-        _set_overlay(monkeypatch, tmp_path, overlay)
-        client = cloud_registry.app.create_app().app.test_client()
-        info = client.get(f"{BASE}/service-info").get_json()
-        assert info["environment"] == "production"
+    overlay = _service_info_overlay({"service": {"environment": "production"}})
+    overlay["custom"] = {"endpoints": {"services": {"environments": allowed}}}
+    _set_overlay(monkeypatch, tmp_path, overlay)
+    client = cloud_registry.app.create_app().app.test_client()
+    info = client.get(f"{BASE}/service-info").get_json()
+    assert info["environment"] == "production"
 
 
 def test_create_app_invalid_service_info(
