@@ -95,6 +95,16 @@ groups, which API clients and overlays with their own policy rules must follow:
   `groups/`, granted in the meantime, and doesn't start with namespaces starting
   with `groups/`.
 
+**Environment of the service info:** the app now refuses to start if
+`service_info.service.environment` isn't in
+`custom.endpoints.services.environments` (see [Service
+environments](configuration.md#service-environments)). The defaults pass
+(`dev`, which the default list has), as does an empty list or a service info
+without `environment`, so check this only if you changed one of the two: in
+that case, add the value to the list, or set the environment to a listed value,
+before upgrading. Otherwise, the pods of this version don't start, and the error
+names both settings.
+
 **Invitation labels:** invitations can have a `label`
 (see [Invitations](access-control.md#invitations)). It is optional, so scripts
 and stored invitations keep working; only invitations with a label have the

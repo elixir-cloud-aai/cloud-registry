@@ -9,6 +9,7 @@ import pytest
 from cloud_registry.ga4gh.registry.service_info import (
     RULES,
     RUNTIME_FIELDS,
+    check_service_info_environment,
     check_service_info_fields,
     registration_rules,
     runtime_fields,
@@ -151,3 +152,46 @@ def test_check_service_info_fields_none(unit_app: Flask) -> None:
         pytest.raises(RuntimeError, match="registration_rules"),
     ):
         check_service_info_fields()
+
+
+@pytest.mark.parametrize(
+    "service, allowed",
+    [
+        # an allowed value, as written
+        ({**SERVICE, "environment": "dev"}, ["prod", "dev"]),
+        # an empty list allows any value, as for services
+        ({**SERVICE, "environment": "anything"}, []),
+        # without an environment, also if removed in an overlay (`null`)
+        (SERVICE, ["prod"]),
+        ({**SERVICE, "environment": None}, ["prod"]),
+    ],
+)
+def test_check_service_info_environment(
+    unit_app: Flask, service: dict[str, object], allowed: list[str]
+) -> None:
+    """Service infos with an allowed environment, or none, pass."""
+    _set_service_info(unit_app, service, RUNTIME_FIELDS)
+    with unit_app.app_context():
+        get_custom_config(CustomConfig).endpoints.services.environments = allowed
+        check_service_info_environment()
+
+
+@pytest.mark.parametrize("environment", ["production", "Dev", ""])
+def test_check_service_info_environment_not_allowed(
+    unit_app: Flask, environment: str
+) -> None:
+    """Other values fail (case-sensitive, as for services), naming the settings."""
+    _set_service_info(unit_app, {**SERVICE, "environment": environment}, RUNTIME_FIELDS)
+    with unit_app.app_context(), pytest.raises(RuntimeError) as exc_info:
+        check_service_info_environment()
+    message = str(exc_info.value)
+    assert "`service_info.service.environment`" in message
+    assert "`custom.endpoints.services.environments`" in message
+    assert f"'{environment}'" in message
+    assert "'prod', 'test', 'dev', 'staging'" in message
+
+
+def test_check_service_info_environment_no_service_info(unit_app: Flask) -> None:
+    """Without a service info, there is nothing to check."""
+    with unit_app.app_context():
+        check_service_info_environment()

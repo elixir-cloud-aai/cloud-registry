@@ -98,3 +98,33 @@ def check_service_info_fields() -> None:
             f"`service_info.runtime_fields` ('{RUNTIME_FIELDS}') and don't set "
             f"`service_info.service.{RULES}`"
         )
+
+
+def check_service_info_environment() -> None:
+    """Check that the service info has an environment allowed for services.
+
+    A registry shouldn't describe itself with a value it refuses for any
+    service. As for services, an empty list allows any value, and a service
+    info without `environment` (also if set to `null` in a config overlay,
+    which isn't served) passes. Must be called in an app context.
+
+    Raises:
+        RuntimeError: The environment of the service info
+            (`service_info.service.environment`) isn't one of the values
+            allowed for services (`custom.endpoints.services.environments`,
+            case-sensitive).
+    """
+    service_info = get_config().service_info
+    service = {} if service_info is None else service_info.service
+    environment = service.get("environment")
+    allowed = get_custom_config(CustomConfig).endpoints.services.environments
+    if environment is None or not allowed or environment in allowed:
+        return
+    values = ", ".join(f"'{value}'" for value in allowed)
+    raise RuntimeError(
+        "The environment of the service info "
+        f"(`service_info.service.environment`: '{environment}') must be one of "
+        "the values allowed for services "
+        f"(`custom.endpoints.services.environments`: {values}): change one of "
+        "the two settings"
+    )

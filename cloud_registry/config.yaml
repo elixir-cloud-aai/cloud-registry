@@ -405,7 +405,8 @@ custom:
             # the values that the GA4GH specification suggests; an empty list
             # allows any value. Served in the service info
             # (`registration_rules`), for clients (e.g., UIs) to offer the
-            # same values
+            # same values. The app refuses to start unless the list has the
+            # environment of the service info (`service_info.service`)
             environments:
                 - prod
                 - test
