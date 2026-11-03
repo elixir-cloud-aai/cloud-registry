@@ -5,6 +5,7 @@ from typing import Any
 
 from flask import Flask
 from pymongo.collection import Collection
+from pymongo.errors import OperationFailure
 import pytest
 
 from cloud_registry.utils import (
@@ -12,7 +13,123 @@ from cloud_registry.utils import (
     get_collection,
     is_date_time,
     now,
+    set_ttl_index,
 )
+from tests.conftest import COLLECTION_CLASS
+
+
+def _seconds(collection: Collection[dict[str, Any]]) -> int | None:
+    """Get the seconds of the index on the field `expires`.
+
+    Args:
+        collection: Collection.
+
+    Returns:
+        Value of `expireAfterSeconds`, if any.
+    """
+    index: dict[str, Any] = collection.index_information()["expires_1"]
+    return index.get("expireAfterSeconds")
+
+
+def test_set_ttl_index(services: Collection[dict[str, Any]]) -> None:
+    """TTL indexes are created, and changed if their seconds differ.
+
+    Also indexes on the field without seconds. Documents are kept, as are
+    other indexes on the field.
+    """
+    services.insert_one({"_id": "kept"})
+    services.create_index(
+        [("expires", 1)],
+        name="partial",
+        partialFilterExpression={"x": {"$exists": True}},
+    )
+    set_ttl_index(services, "expires", 60)
+    assert _seconds(services) == 60
+    set_ttl_index(services, "expires", 0)
+    assert _seconds(services) == 0
+    set_ttl_index(services, "expires", 120)
+    assert _seconds(services) == 120
+    assert services.count_documents({"_id": "kept"}) == 1
+    assert "partial" in services.index_information()
+    services.drop_index("expires_1")
+    services.create_index([("expires", 1)])
+    set_ttl_index(services, "expires", 60)
+    assert _seconds(services) == 60
+
+
+def test_set_ttl_index_unchanged(
+    services: Collection[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TTL indexes with the given seconds are left alone."""
+    set_ttl_index(services, "expires", 60)
+
+    def fail(*args: Any, **kwargs: Any) -> None:
+        """Fail if an index is dropped.
+
+        Args:
+            args: Arguments; unused.
+            kwargs: Keyword arguments; unused.
+
+        Raises:
+            AssertionError: Always.
+        """
+        raise AssertionError("dropped")
+
+    monkeypatch.setattr(COLLECTION_CLASS, "drop_index", fail)
+    set_ttl_index(services, "expires", 60)
+    assert _seconds(services) == 60
+
+
+@pytest.mark.parametrize("code", [26, 27])
+def test_set_ttl_index_dropped_meanwhile(
+    services: Collection[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    code: int,
+) -> None:
+    """An index that another worker dropped meanwhile is created anyway."""
+    set_ttl_index(services, "expires", 60)
+    original = COLLECTION_CLASS.drop_index
+
+    def drop_twice(self: Any, *args: Any, **kwargs: Any) -> None:
+        """Drop the index, then fail as if another worker had done so.
+
+        Args:
+            self: Collection.
+            args: Arguments of `drop_index()`.
+            kwargs: Keyword arguments of `drop_index()`.
+
+        Raises:
+            OperationFailure: Always.
+        """
+        original(self, *args, **kwargs)
+        raise OperationFailure("gone", code=code)
+
+    monkeypatch.setattr(COLLECTION_CLASS, "drop_index", drop_twice)
+    set_ttl_index(services, "expires", 120)
+    assert _seconds(services) == 120
+
+
+def test_set_ttl_index_drop_fails(
+    services: Collection[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Other failures of dropping the index are raised, e.g., permissions."""
+    set_ttl_index(services, "expires", 60)
+
+    def refuse(*args: Any, **kwargs: Any) -> None:
+        """Refuse to drop the index.
+
+        Args:
+            args: Arguments; unused.
+            kwargs: Keyword arguments; unused.
+
+        Raises:
+            OperationFailure: Always.
+        """
+        raise OperationFailure("unauthorized", code=13)
+
+    monkeypatch.setattr(COLLECTION_CLASS, "drop_index", refuse)
+    with pytest.raises(OperationFailure, match="unauthorized"):
+        set_ttl_index(services, "expires", 120)
 
 
 def test_get_collection(unit_app: Flask, services: Collection[dict[str, Any]]) -> None:

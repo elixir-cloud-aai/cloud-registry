@@ -370,18 +370,28 @@ limits](deployment.md#rate-limits)).
 
 `custom.access_control.invitations` sets how long [invitations to
 services](access-control.md#invitations) are valid (`expiry_days`, default:
-7) and how many that haven't expired a service may have (`max_per_service`,
-default: 20; `null` for no limit). Invitations expire after at most 3650
-days: the app refuses to start with larger values. For example, in a config overlay (with the
-Helm chart, in `config`):
+7), for how many days expired ones that weren't accepted are kept before they
+are removed (`keep_expired_days`, default: 30, `0` removes them when they
+expire), and how many that haven't expired, open or accepted, a service may
+have (`max_per_service`, default: 20; `null` for no limit). Invitations expire
+after at most 3650 days and are kept for at most 365 days: the app refuses to
+start with larger values, and there is no value for keeping them forever. For
+example, in a config overlay (with the Helm chart, in `config`):
 
 ```yaml
 custom:
     access_control:
         invitations:
             expiry_days: 2
+            keep_expired_days: 7
             max_per_service: 5
 ```
+
+Changes of `keep_expired_days` take effect when the app starts, without manual
+steps in the database: the app changes the TTL index that removes them (the
+chart restarts the app when its config changes). Lowering the value removes
+invitations that are past the new value soon after the start; raising it can't
+bring back those removed already.
 
 ## Request size limit
 

@@ -632,10 +632,11 @@ paths:
         don't send to servers. An optional `label` says what the invitation
         is for; only those who can list the invitations see it. Invitations
         are single-use and expire after the days that the deployment sets
-        (`expires_at`; by default, 7),
-        also once accepted. A service has at most as many invitations that
-        haven't expired, open or accepted, as the deployment allows (by
-        default, 20; `409` above, `code`: `invitations-limit`). Invitations
+        (`expires_at`; by default, 7), also once accepted. A service has at
+        most as many invitations that haven't expired, open or accepted, as
+        the deployment allows (by default, 20; `409` above, `code`:
+        `invitations-limit`); accepted ones count until they expire, also if
+        lists leave them out. Invitations
         only grant their role while their creator is an owner of the
         service (or created them as an admin). Only for owners of the
         service and admins.
@@ -679,16 +680,27 @@ paths:
     get:
       summary: List the invitations to a service.
       description: |
-        List the open and accepted invitations to a service that haven't
-        expired, oldest first, without their tokens, with their labels
-        (`label`), if any; accepted ones with who accepted them (`accepted`).
-        Only for owners of the service and admins.
+        List the invitations to a service that weren't accepted, oldest
+        first, without their tokens, with their status (`status`) and labels
+        (`label`), if any. Expired invitations stay listed until they are
+        removed (`DELETE`), or automatically after the days that the deployment
+        sets (by default, 30), so that owners can see who didn't accept in
+        time. With `include_accepted`, also lists the accepted invitations
+        that haven't expired, with who accepted them (`accepted`). Only for
+        owners of the service and admins.
       operationId: getServiceInvitations
       x-openapi-router-controller: cloud_registry.ga4gh.registry.invitations
       tags:
         - cloud-registry
       parameters:
         - $ref: '#/components/parameters/ServiceId'
+        - name: include_accepted
+          in: query
+          description: Whether to list accepted invitations too.
+          required: false
+          schema:
+            type: boolean
+            default: false
       responses:
         '200':
           description: Invitations to the service.
@@ -698,6 +710,8 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Invitation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -710,10 +724,11 @@ paths:
           $ref: '#/components/responses/Error'
   "/services/{serviceId}/invitations/{invitationId}":
     delete:
-      summary: Revoke an invitation to a service.
+      summary: Revoke an invitation to a service, or remove an expired one.
       description: |
         Revoke an open invitation to a service, so that it can't be
-        accepted. Accepted invitations can't be revoked (`409`, `code`:
+        accepted, or remove an expired one, so that it is no longer listed.
+        Accepted invitations can't be revoked (`409`, `code`:
         `invitation-accepted`); revoke the role instead (`DELETE
         /services/{serviceId}/permissions/{userId}`). Only for owners of
         the service and admins.
@@ -726,7 +741,7 @@ paths:
         - $ref: '#/components/parameters/InvitationId'
       responses:
         '200':
-          description: The invitation was revoked.
+          description: The invitation was revoked or removed.
           content:
             application/json:
               schema:
@@ -1179,7 +1194,8 @@ components:
                   `/services/{serviceId}/permissions/...`, `POST
                   /invitations/accept`).
                 - `invitations-limit`: the service has as many
-                  invitations that haven't expired as allowed (`POST
+                  invitations that haven't expired as allowed; accepted ones
+                  count until they expire (`POST
                   /services/{serviceId}/invitations`).
                 - `invitation-accepted`: the invitation was accepted already
                   (`POST /invitations/accept`, `DELETE
@@ -1478,8 +1494,10 @@ components:
         whitespace around it is removed. Clients must not render it as
         markup. Only for those who may list the invitations: the user who
         accepts the invitation doesn't get it. As it may name people, it is
-        stored only as long as the invitation, and removed when the role of
-        the user who accepted the invitation is revoked.
+        stored only as long as the invitation (accepted ones: until they
+        expire; others: until they are removed, by default at most 30 days
+        after they expire), and removed when the role of the user who
+        accepted the invitation is revoked.
       type: string
       minLength: 1
       maxLength: 100
@@ -1492,6 +1510,7 @@ components:
         - id
         - service_id
         - role
+        - status
         - created_by
         - created_at
         - expires_at
@@ -1507,6 +1526,8 @@ components:
           $ref: '#/components/schemas/Role'
         label:
           $ref: '#/components/schemas/InvitationLabel'
+        status:
+          $ref: '#/components/schemas/InvitationStatus'
         created_by:
           type: string
           description: Identifier of the user who created the invitation.
@@ -1520,7 +1541,7 @@ components:
           format: date-time
           description: |
             When the invitation expires (RFC 3339 format, UTC), whether
-            accepted or not; it is no longer listed then.
+            accepted or not; it can no longer be accepted then.
           example: '2026-11-04T12:34:56.789Z'
         accepted:
           $ref: '#/components/schemas/InvitationAcceptance'
@@ -1533,6 +1554,7 @@ components:
         - id
         - service_id
         - role
+        - status
         - created_by
         - created_at
         - expires_at
@@ -1549,6 +1571,8 @@ components:
           $ref: '#/components/schemas/Role'
         label:
           $ref: '#/components/schemas/InvitationLabel'
+        status:
+          $ref: '#/components/schemas/InvitationStatus'
         created_by:
           type: string
           description: Identifier of the user who created the invitation.
@@ -1570,6 +1594,19 @@ components:
             Token of the invitation, to send to the invited user (e.g., in
             the fragment of a link); only returned when the invitation is
             created, as the registry stores its hash only.
+    InvitationStatus:
+      description: |
+        Status of an invitation:
+
+        - `open`: it can be accepted.
+        - `expired`: it wasn't accepted in time, and can no longer be.
+        - `accepted`: it was accepted (see `accepted`); it is only listed if
+          asked for.
+      type: string
+      enum:
+        - open
+        - expired
+        - accepted
     InvitationAcceptance:
       description: |
         Who accepted an invitation, and when; not set for open invitations.

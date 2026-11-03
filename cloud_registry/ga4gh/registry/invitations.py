@@ -7,10 +7,13 @@ a link with it through any channel; the invited user logs in and accepts it
 (`POST /invitations/accept`), which grants the role to their own identifier,
 as `PUT /services/{serviceId}/permissions/{userId}` would (replacing their
 other role on the service). Owners list the invitations of a service, with
-who accepted them, and revoke open ones. An optional label (`LABEL`) tells them
-what an invitation is for; it may name people, so it is served to them only,
-not logged once stored, and removed with the invitation, or when the role of
-the user who accepted it is revoked.
+who accepted them, and revoke open ones. Expired invitations that weren't
+accepted stay listed, with their status, until they are removed by owners or
+automatically, so that owners know who needs a nudge; accepted ones are only
+listed if asked for. An optional label (`LABEL`) tells owners what an
+invitation is for; it may name people, so it is served to them only, not logged
+once stored, and removed with the invitation, or when the role of the user who
+accepted it is revoked.
 
 Invitations only grant roles while their creators may: each stores how its
 creator was allowed to create it (`CREATED_AS`: as an admin, as an owner, or
@@ -25,8 +28,11 @@ Invitations are stored in their own collection (`INVITATIONS`), with the
 SHA-256 hash of their token, never the token itself, so that the stored
 invitations can't be accepted by those who read the database. They expire
 after `custom.access_control.invitations.expiry_days` (default: 7), also once
-accepted, and are then deleted by MongoDB (TTL index on `expires_at`; until
-then, reads skip them). A service has at most
+accepted. MongoDB deletes them with TTL indexes on `expires_at`: accepted ones
+when they expire (until then, reads skip them; cf. `config.yaml`), others
+`custom.access_control.invitations.keep_expired_days` later (default: 30; cf.
+`apply_keep_expired_days()`). As expired invitations stay stored, each read
+must say whether it wants them (cf. `_unexpired()`). A service has at most
 `custom.access_control.invitations.max_per_service` invitations that
 haven't expired, open or accepted (default: 20), so that owners can't grow
 the collection (e.g., by accepting their own invitations); concurrent
@@ -45,7 +51,7 @@ use, and owners seeing who accepted (and being able to revoke the role)
 limit this.
 """
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 import hashlib
 import logging
 import secrets
@@ -80,7 +86,7 @@ from cloud_registry.ga4gh.registry.permissions import (
 )
 from cloud_registry.ga4gh.registry.service import check_strings, service_exists
 from cloud_registry.service_models.custom_config import CustomConfig
-from cloud_registry.utils import format_time, get_collection, now
+from cloud_registry.utils import format_time, get_collection, now, set_ttl_index
 
 logger = logging.getLogger(__name__)
 # Fields of stored invitations: the hash of the token, and the acceptance
@@ -94,8 +100,11 @@ LABEL = "label"
 # `{"admin": True}`, `{"user": <user identifier>}` (owner) or `{"group":
 # <group>}` (member of an owner group); never served
 CREATED_AS = "created_as"
+# Field of stored invitations: when they expire, and a TTL index removes them
+EXPIRES_AT = "expires_at"
 # Bytes of randomness of tokens (cf. `secrets.token_urlsafe()`)
 TOKEN_BYTES = 32
+SECONDS_PER_DAY = 86400
 
 
 class InvitationAccepted(CodedConflict):
@@ -112,7 +121,11 @@ class InvitationAccepted(CodedConflict):
 
 
 class InvitationsLimit(CodedConflict):
-    """A service has as many invitations that haven't expired as allowed."""
+    """A service has as many invitations that haven't expired as allowed.
+
+    Lists leave out accepted invitations unless asked, so the message says that
+    they count, and how to see them.
+    """
 
     problem_code = "invitations-limit"
 
@@ -125,7 +138,9 @@ class InvitationsLimit(CodedConflict):
         """
         super().__init__(
             f"The service has {limit} invitations that haven't expired, as many "
-            "as allowed; revoke open ones, or wait until they expire."
+            "as allowed. Accepted invitations count until they expire, also those "
+            "that lists leave out (see `include_accepted`). Revoke open ones, or "
+            "wait until invitations expire."
         )
 
 
@@ -141,14 +156,37 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+def apply_keep_expired_days() -> None:
+    """Apply the days for which expired invitations are kept to the database.
+
+    Sets the TTL index on `expires_at` that applies to all invitations (cf.
+    `set_ttl_index()`), also replacing that of versions that deleted
+    invitations when they expired. Accepted ones are deleted when they expire
+    by another index (cf. `config.yaml`). Must be called in an app context, on
+    startup.
+    """
+    days = get_custom_config(CustomConfig).access_control.invitations.keep_expired_days
+    set_ttl_index(get_collection(INVITATIONS), EXPIRES_AT, days * SECONDS_PER_DAY)
+
+
 def _unexpired() -> dict[str, Any]:
     """Get the filter for invitations that haven't expired.
 
     Returns:
         Filter for invitations that haven't expired, open or accepted (expired
-        ones may be stored until MongoDB deletes them).
+        ones stay stored: open ones until they are removed, accepted ones
+        until MongoDB deletes them).
     """
-    return {"expires_at": {"$gt": now()}}
+    return {EXPIRES_AT: {"$gt": now()}}
+
+
+def _unused() -> dict[str, Any]:
+    """Get the filter for invitations that weren't accepted.
+
+    Returns:
+        Filter for invitations that weren't accepted, expired or not.
+    """
+    return {ACCEPTED: {"$exists": False}}
 
 
 def _open_filter() -> dict[str, Any]:
@@ -157,7 +195,7 @@ def _open_filter() -> dict[str, Any]:
     Returns:
         Filter for invitations that are neither accepted nor expired.
     """
-    return {ACCEPTED: {"$exists": False}, **_unexpired()}
+    return {**_unused(), **_unexpired()}
 
 
 def _accepted_filter() -> dict[str, Any]:
@@ -167,6 +205,23 @@ def _accepted_filter() -> dict[str, Any]:
         Filter for invitations that were accepted and haven't expired.
     """
     return {ACCEPTED: {"$exists": True}, **_unexpired()}
+
+
+def _status(invitation: dict[str, Any]) -> str:
+    """Get the status of an invitation.
+
+    Args:
+        invitation: Stored invitation.
+
+    Returns:
+        `accepted`, or else `expired` if it can no longer be accepted (cf.
+        `_unexpired()`), or else `open`.
+    """
+    if ACCEPTED in invitation:
+        return "accepted"
+    expires_at: datetime = invitation[EXPIRES_AT]
+    # naive, as read from the database, or aware, as just created
+    return "expired" if expires_at.replace(tzinfo=UTC) <= now() else "open"
 
 
 def _serve(invitation: dict[str, Any], users: set[str] | None = None) -> dict[str, Any]:
@@ -180,16 +235,18 @@ def _serve(invitation: dict[str, Any], users: set[str] | None = None) -> dict[st
             role was revoked (cf. `_delete_roles()`). All users' if `None`.
 
     Returns:
-        The invitation, without the hash of its token, with times as RFC 3339
-        date-times, and with its label, if any.
+        The invitation, without the hash of its token, with its status (cf.
+        `_status()`), with times as RFC 3339 date-times, and with its label, if
+        any.
     """
     served = {
         "id": invitation["_id"],
         "service_id": invitation["service_id"],
         "role": invitation["role"],
+        "status": _status(invitation),
         "created_by": invitation["created_by"],
         "created_at": format_time(invitation["created_at"]),
-        "expires_at": format_time(invitation["expires_at"]),
+        EXPIRES_AT: format_time(invitation[EXPIRES_AT]),
     }
     if LABEL in invitation:
         served[LABEL] = invitation[LABEL]
@@ -210,7 +267,8 @@ def _check_limit(serviceId: str) -> None:
     """Check that a service may have another invitation.
 
     Invitations count until they expire, also once accepted, so that owners
-    can't grow the collection by accepting their own invitations.
+    can't grow the collection by accepting their own invitations; expired ones
+    don't count, also if they are still stored.
 
     Args:
         serviceId: Service identifier.
@@ -352,7 +410,7 @@ def postServiceInvitation(
         "created_by": creator,
         CREATED_AS: created_as,
         "created_at": created_at,
-        "expires_at": created_at + timedelta(days=expiry_days),
+        EXPIRES_AT: created_at + timedelta(days=expiry_days),
     }
     if LABEL in invitation:
         document[LABEL] = invitation[LABEL].strip()
@@ -379,25 +437,32 @@ def postServiceInvitation(
 
 
 # GET /services/{serviceId}/invitations
-def getServiceInvitations(serviceId: str, **kwargs: Any) -> list[dict[str, Any]]:
+def getServiceInvitations(
+    serviceId: str, include_accepted: bool = False, **kwargs: Any
+) -> list[dict[str, Any]]:
     """List the invitations to a service.
 
     Args:
         serviceId: Service identifier.
+        include_accepted: Whether to list accepted invitations too.
         **kwargs: Further arguments that Connexion passes (`user`,
             `token_info`); unused.
 
     Returns:
-        The open and accepted invitations of the service that haven't
-        expired (cf. `_serve()`), without tokens, oldest first.
+        The invitations of the service that weren't accepted, open or expired
+        (cf. `_serve()`), and those that were accepted and haven't expired if
+        asked for; without tokens, oldest first.
 
     Raises:
         cloud_registry.exceptions.NotFound: The service doesn't exist.
     """
     if not service_exists(serviceId):
         raise NotFound
+    selected = (
+        {"$or": [_unused(), _accepted_filter()]} if include_accepted else _unused()
+    )
     invitations = get_collection(INVITATIONS).find(
-        {"service_id": serviceId, **_unexpired()},
+        {"service_id": serviceId, **selected},
         sort=[("created_at", 1), ("_id", 1)],
     )
     users = {
@@ -412,10 +477,12 @@ def getServiceInvitations(serviceId: str, **kwargs: Any) -> list[dict[str, Any]]
 def deleteServiceInvitation(
     serviceId: str, invitationId: str, **kwargs: Any
 ) -> str | Response:
-    """Revoke an open invitation to a service.
+    """Revoke an open invitation to a service, or remove an expired one.
 
-    Accepted invitations stay listed until they expire; revoke the role
-    instead (`DELETE /services/{serviceId}/permissions/{userId}`).
+    Accepted invitations can't be revoked; revoke the role instead (`DELETE
+    /services/{serviceId}/permissions/{userId}`). An acceptance and a revocation
+    at the same time can't both succeed: both only change an invitation that
+    wasn't accepted, atomically.
 
     Args:
         serviceId: Service identifier.
@@ -429,13 +496,14 @@ def deleteServiceInvitation(
 
     Raises:
         cloud_registry.exceptions.NotFound: The service doesn't exist, or the
-            invitation doesn't exist, is of another service or expired.
+            invitation doesn't exist, is of another service, or was accepted
+            and expired (MongoDB is about to delete it).
     """
     if not service_exists(serviceId):
         raise NotFound
     collection = get_collection(INVITATIONS)
     query = {"_id": invitationId, "service_id": serviceId}
-    result = collection.delete_one({**query, **_open_filter()})
+    result = collection.delete_one({**query, **_unused()})
     if not result.deleted_count:
         if collection.count_documents({**query, **_accepted_filter()}, limit=1):
             return problem(InvitationAccepted())

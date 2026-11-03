@@ -36,6 +36,7 @@ from foca.security import auth
 import jwt
 import mongomock
 from mongomock.collection import Collection as MockCollection
+from mongomock.store import CollectionStore
 from pymongo import MongoClient, uri_parser
 from pymongo.collection import Collection
 import pytest
@@ -101,6 +102,25 @@ COLLECTION_CLASS: type[Collection[Any]] | type[MockCollection] = (
     Collection if MONGODB_TEST_URI else MockCollection
 )
 _CONNECT = socket.socket.connect
+_EXPIRE_DOCUMENTS = CollectionStore._expire_documents
+
+
+def _expire_documents(store: CollectionStore, index: dict[str, Any]) -> None:
+    """Expire documents of a mongomock collection, as MongoDB does.
+
+    mongomock ignores the filter of partial TTL indexes, and would delete all
+    documents that have the date; tests of what partial TTL indexes delete need
+    MongoDB (`MONGODB_TEST_URI`), so they don't delete any here.
+
+    Args:
+        store: Store of the collection.
+        index: TTL index.
+    """
+    if "partialFilterExpression" not in index:
+        _EXPIRE_DOCUMENTS(store, index)
+
+
+CollectionStore._expire_documents = _expire_documents  # type: ignore[method-assign]
 
 
 def without_timestamps(service: dict[str, Any]) -> dict[str, Any]:
