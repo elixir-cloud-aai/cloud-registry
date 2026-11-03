@@ -162,7 +162,7 @@ def test_last_owner(client: FlaskClient) -> None:
     """Removals of the last owner: `last-owner`."""
     service_id = _register(client, user=USER).get_json()
     response = client.delete(
-        f"{BASE}/services/{service_id}/permissions/{USER}", headers=make_headers()
+        f"{BASE}/services/{service_id}/permissions/users/{USER}", headers=make_headers()
     )
     assert _code(response) == "last-owner"
     assert response.get_json()["detail"] == CONFLICT_DETAIL

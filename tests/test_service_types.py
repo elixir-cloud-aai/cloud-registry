@@ -614,7 +614,7 @@ def test_moderated_maintainers(client: FlaskClient, moderated: None) -> None:
     service_id = register(client, _service(), OTHER).get_json()
     assert approvals(client, MAINTAINER)["services"] == []
     response = client.put(
-        f"{BASE}/services/{service_id}/permissions/{MAINTAINER}",
+        f"{BASE}/services/{service_id}/permissions/users/{MAINTAINER}",
         json={"role": "maintainer"},
         headers=headers(OTHER),
     )

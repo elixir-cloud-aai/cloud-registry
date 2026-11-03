@@ -187,7 +187,7 @@ def service(client: FlaskClient) -> str:
     assert put_service(client) == 201
     # make the user owner, as if they had registered it
     response = client.put(
-        f"{BASE}/services/{SERVICE_ID}/permissions/{USER}",
+        f"{BASE}/services/{SERVICE_ID}/permissions/users/{USER}",
         json={"role": "owner"},
         headers=headers(ADMIN),
     )

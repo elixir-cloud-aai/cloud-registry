@@ -251,7 +251,8 @@ def test_kept_whatever_roles(
     assert grant_group(client, service_id, TEAM_GROUP, "owner") == 200
     assert grant(client, service_id, BOB, "owner") == 200
     response = client.delete(
-        f"{BASE}/services/{service_id}/permissions/{ALICE}", headers=headers(ALICE)
+        f"{BASE}/services/{service_id}/permissions/users/{ALICE}",
+        headers=headers(ALICE),
     )
     assert response.status_code == 200, response.get_json()
     assert _limited(_post(client))

@@ -1339,9 +1339,7 @@ def test_without_creator_basis(app: App, client: FlaskClient) -> None:
     assert stored(app) == []
 
 
-@pytest.mark.parametrize(
-    "user", ["groups", "groups/x", "/x", "\\x", "a/../b", "a\\..", ".", "groups\\x"]
-)
+@pytest.mark.parametrize("user", ["/x", "\\x", "a/../b", "a\\..", "."])
 def test_unmanageable_user(app: App, client: FlaskClient, user: str) -> None:
     """Users whose roles the permissions API couldn't revoke can't accept."""
     service_id = register(client)
@@ -1352,11 +1350,33 @@ def test_unmanageable_user(app: App, client: FlaskClient, user: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "user", [BOB, "https://login.example.org/|x", "a/b", "a.b/..c"]
+    "user",
+    [
+        BOB,
+        "https://login.example.org/|x",
+        "a/b",
+        "a.b/..c",
+        "groups",
+        "groups/x",
+        "groups\\x",
+    ],
 )
 def test_manageable_user(user: str) -> None:
     """Other identifiers, also with slashes and dots, are fine."""
     assert is_manageable_user_id(user)
+
+
+@pytest.mark.parametrize("user", ["groups", "groups/x"])
+def test_user_named_groups_accepts(client: FlaskClient, user: str) -> None:
+    """Users starting with the segment `groups` can accept invitations.
+
+    Their roles are managed under `.../permissions/users/`, as those of others.
+    """
+    service_id = register(client)
+    token = token_of(client, service_id)
+    assert accept(client, token, user=user).status_code == 200
+    url = f"{BASE}/services/{service_id}/permissions/users/{user}"
+    assert client.delete(url, headers=headers(ALICE)).status_code == 200
 
 
 def test_names_removed_with_role(client: FlaskClient) -> None:

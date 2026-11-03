@@ -82,7 +82,7 @@ def test_namespaced_permissions(two_issuers: FlaskClient, encode: bool) -> None:
     client = two_issuers
     service_id = register(client, ALICE)
     user = quote(ALICE2, safe="") if encode else ALICE2
-    url = f"{BASE}/services/{service_id}/permissions/{user}"
+    url = f"{BASE}/services/{service_id}/permissions/users/{user}"
     owner = make_headers(ALICE)
     response = client.put(url, json={"role": "maintainer"}, headers=owner)
     assert response.status_code == 200, response.get_json()
@@ -115,19 +115,19 @@ def test_group_permissions_routed(
     assert response.get_json() == {"group": group, "role": "maintainer"}
 
 
-@pytest.mark.parametrize("user", ["groups", "groups%5Cx", "groups/"])
-def test_user_groups_not_found(two_issuers: FlaskClient, user: str) -> None:
-    """User identifiers `groups` and with the segment `groups` are not found.
+@pytest.mark.parametrize("user", [ALICE2, "groups/a|x"])
+def test_old_namespaced_paths_gone(two_issuers: FlaskClient, user: str) -> None:
+    """The former paths of namespaced users' roles are not found or a group's.
 
-    They are the paths of roles of groups, also with backslashes (encoded
-    slashes are decoded, so `groups%2Fx` is the group `x`).
+    Only `groups/...` is routed, to the roles of a group of that name, which
+    only members of the group and admins can be granted.
     """
     client = two_issuers
     service_id = register(client, ALICE)
     url = f"{BASE}/services/{service_id}/permissions/{user}"
-    for method in (client.put, client.delete):
-        response = method(url, json={"role": "maintainer"}, headers=make_headers(ADMIN))
-        assert response.status_code == 404, (method, response.get_json())
+    expected = 403 if user.startswith("groups/") else 404
+    response = client.put(url, json={"role": "owner"}, headers=make_headers(ALICE))
+    assert response.status_code == expected, response.get_json()
 
 
 @pytest.mark.parametrize(
@@ -138,31 +138,38 @@ def test_namespaced_dot_segments(two_issuers: FlaskClient, user: str) -> None:
     client = two_issuers
     service_id = register(client, ALICE)
     response = client.put(
-        f"{BASE}/services/{service_id}/permissions/{user}",
+        f"{BASE}/services/{service_id}/permissions/users/{user}",
         json={"role": "maintainer"},
         headers=make_headers(ALICE),
     )
     assert response.status_code == 400, response.get_json()
 
 
-@pytest.mark.parametrize("namespace", ["groups", "groups/a", "groups\\a"])
-def test_groups_namespace_refused(
+@pytest.mark.parametrize("namespace", ["groups", "groups/a", "groups\\a", "users"])
+def test_namespaces_named_like_paths(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     app_env: None,
     namespace: str,
 ) -> None:
-    """Namespaces with the first segment `groups` are refused on startup.
+    """Namespaces may have any first segment, also `groups` or `users`.
 
-    The identifiers of their users would be paths of roles of groups.
+    The identifiers of their users are under `users/`, whatever they contain.
     """
     overlay = {
         "security": {
             "auth": {"issuers": [{"issuer": ISSUER, "namespace": namespace}, ISSUER2]}
         }
     }
-    with pytest.raises(ValueError, match="must not start with 'groups/'"):
-        _create_app(monkeypatch, tmp_path, overlay)
+    client = _create_app(monkeypatch, tmp_path, overlay)
+    service_id = register(client, ALICE)
+    user = f"{namespace}|bob"
+    url = f"{BASE}/services/{service_id}/permissions/users/{quote(user, safe='')}"
+    owner = make_headers(ALICE)
+    response = client.put(url, json={"role": "maintainer"}, headers=owner)
+    assert response.status_code == 200, response.get_json()
+    assert response.get_json() == {"user_id": user, "role": "maintainer"}
+    assert client.delete(url, headers=owner).status_code == 200
 
 
 def test_service_types_by_issuer(
