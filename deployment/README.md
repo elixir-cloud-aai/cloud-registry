@@ -120,6 +120,9 @@ The environments of services must be `prod`, `test`, `dev` or `staging` by
 default; `config.custom.endpoints.services.environments` sets others (`[]`
 allows any; see [Service
 environments](https://cloud-registry.readthedocs.io/en/latest/configuration/#service-environments)).
+The app refuses to start if the list doesn't have the environment of the
+service info (`config.service_info.service.environment`), so change the two
+together.
 
 Do not edit the ConfigMap with `kubectl edit`: Helm overwrites it on the next
 upgrade. As `config` is stored in a ConfigMap, it must not contain secrets

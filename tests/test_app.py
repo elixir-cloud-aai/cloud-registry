@@ -2027,6 +2027,37 @@ def test_create_app_service_info_nulls(
     assert info["version"] == version("cloud-registry")
 
 
+def test_create_app_service_info_environment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
+) -> None:
+    """`create_app()` fails if the environment of the service info isn't allowed.
+
+    The message names both settings.
+    """
+    _set_overlay(
+        monkeypatch,
+        tmp_path,
+        _service_info_overlay({"service": {"environment": "production"}}),
+    )
+    with pytest.raises(RuntimeError) as exc_info:
+        cloud_registry.app.create_app()
+    assert "`service_info.service.environment`" in str(exc_info.value)
+    assert "`custom.endpoints.services.environments`" in str(exc_info.value)
+
+
+def test_create_app_service_info_environment_allowed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
+) -> None:
+    """The value may be one the deployment allows, or any with an empty list."""
+    for allowed in (["production"], []):
+        overlay = _service_info_overlay({"service": {"environment": "production"}})
+        overlay["custom"] = {"endpoints": {"services": {"environments": allowed}}}
+        _set_overlay(monkeypatch, tmp_path, overlay)
+        client = cloud_registry.app.create_app().app.test_client()
+        info = client.get(f"{BASE}/service-info").get_json()
+        assert info["environment"] == "production"
+
+
 def test_create_app_invalid_service_info(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
 ) -> None:

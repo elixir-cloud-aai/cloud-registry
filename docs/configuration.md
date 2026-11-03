@@ -267,6 +267,15 @@ with other values are served as they are, and only checked when they are
 next written; the app logs a warning on startup that names them (see
 [Upgrading](upgrading.md#stored-services)).
 
+The registry must describe itself with an allowed value, too: the app refuses
+to start if the environment of its [service info](#service-info)
+(`service_info.service.environment`) isn't in the list, with an error that
+names both settings. An empty list allows any value, and a service info
+without `environment` (`null` in an overlay) always passes. The defaults fit
+each other (`dev` is in the default list), so this only concerns deployments
+that change one of the two: `environments` without `dev`, for example, needs
+`service_info.service.environment` set to one of the listed values, too.
+
 ## Service types
 
 `custom.access_control.service_types` sets who may add [service
@@ -459,8 +468,9 @@ deployment: `id` (`org.example.cloud-registry`) and `organization` (`Example
 Organization`, `https://example.org`) are placeholders with reserved example
 domains, and there is no `contactUrl`. Deployments set their own `id` (unique,
 e.g., in reverse domain name notation), `name`, `description`, `organization`,
-`contactUrl` and `environment` (the default is `dev`); while `id` or the name
-or URL of `organization` are the placeholders, the app logs a warning on
+`contactUrl` and `environment` (the default is `dev`; it must be one of the
+[allowed values](#service-environments), or the app refuses to start); while
+`id` or the name or URL of `organization` are the placeholders, the app logs a warning on
 startup, naming the fields to set (also with Docker Compose, whose
 development config keeps them). Fields and list items set to `null`
 (e.g., in a config overlay) are not served. The app adds the [registration

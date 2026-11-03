@@ -27,7 +27,10 @@ from cloud_registry.ga4gh.registry.service import (
     warn_organization_fields,
     warn_url_schemes,
 )
-from cloud_registry.ga4gh.registry.service_info import check_service_info_fields
+from cloud_registry.ga4gh.registry.service_info import (
+    check_service_info_environment,
+    check_service_info_fields,
+)
 from cloud_registry.ga4gh.registry.service_limits import (
     add_service_creators,
     reconcile_service_counts,
@@ -56,11 +59,12 @@ def create_app() -> App:
     """Create the app from the config, with the registry's checks.
 
     Refuses service clients (FOCA's `require_no_service_clients()`), as the
-    app doesn't support them, requires a size limit of request bodies and
-    that the service info serves the registration rules of the app, adds
-    missing keys of services, resumes interrupted renames of services (cf.
-    `resume_renames()`; also before requests of the registry's operations,
-    cf. `resume_renames_periodically()`), adds the types of registered
+    app doesn't support them, requires a size limit of request bodies, that
+    the service info serves the registration rules of the app and has an
+    environment allowed for services, adds missing keys of services, resumes
+    interrupted renames of services (cf. `resume_renames()`; also before
+    requests of the registry's operations, cf.
+    `resume_renames_periodically()`), adds the types of registered
     services that aren't stored (e.g., on upgrades) and applies the days for
     which expired invitations are kept (cf. `apply_keep_expired_days()`). Warns
     of stored services with invalid URLs or URL schemes that are not allowed, and of
@@ -88,8 +92,9 @@ def create_app() -> App:
             (`server.max_content_length` is null), the public URL
             (`server.public_url`) is not set, service clients are
             configured (which the app doesn't support), the service info
-            doesn't serve the registration rules of the app, or stored
-            services are invalid or duplicates.
+            doesn't serve the registration rules of the app, or has an
+            environment not allowed for services, or stored services are
+            invalid or duplicates.
         pydantic.ValidationError: The config is invalid, e.g., no token
             issuers are trusted, or the service info is invalid (naming the
             invalid field).
@@ -106,6 +111,7 @@ def create_app() -> App:
 
     with app.app.app_context():
         check_service_info_fields()
+        check_service_info_environment()
         warn_owner_rules()
         # `null` would remove FOCA's size limit of request bodies, so that
         # bodies of any size are read before the access token is checked
