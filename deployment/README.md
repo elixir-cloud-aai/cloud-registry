@@ -890,6 +890,31 @@ for all changes; for Helm releases:
   unless no client changes roles during the upgrade: pods of 1.0.0rc1 take the
   new paths for the old ones, and grant roles to a user `users/<user-id>`. After
   a rolling update, restart the app once, and look for such roles as described
+  in the upgrade steps: for each, grant its role to `<user-id>` first, also if
+  it is `maintainer`, as it can be a downgrade, and then revoke
+  `users/<user-id>` (if a service would have no owner left, `409 Conflict`,
+  first grant `owner` to whoever should own it).
+- **Going back:** once a pod of this version has started, pods of 1.0.0rc1 exit
+  on startup (`ValueError: Index [('expires_at', 1)] ... conflicts with an
+  existing index`), as the index isn't part of the Helm release. So `helm
+  rollback`, `helm upgrade --atomic` and automatic reverts of GitOps tools don't
+  get the app running again by themselves, and neither does a pod of 1.0.0rc1
+  that restarts during a rolling update. Data is kept. To go back, scale the app
+  to 0 replicas, wait until its pods have terminated (a pod still starting
+  creates the index again), and move clients back. Remove
+  `config.custom.access_control.invitations.keep_expired_days` from your values
+  if you set it, which 1.0.0rc1 refuses, and drop the index first (if the app
+  only ran with `keep_expired_days: 0`, it doesn't conflict). Without
+  authentication, omit `-u`, `-p` and `--authenticationDatabase`:
+
+  ```bash
+  kubectl exec deploy/cloud-registry-mongodb -n <namespace> -- sh -c 'mongosh serviceStore --quiet \
+    -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" \
+    --authenticationDatabase admin --eval "db.invitations.dropIndex(\"expires_at_1\")"'
+  ```
+
+  See also [Going
+  back](https://cloud-registry.readthedocs.io/en/latest/upgrading/#from-100rc1)
   in the upgrade steps.
 
 ## Probes
