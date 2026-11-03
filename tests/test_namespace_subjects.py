@@ -9,6 +9,7 @@ from typing import Any
 
 from flask.testing import FlaskClient
 from foca.security.access_control.constants import CONFIGURED_FIELD
+from pymongo import MongoClient
 import pytest
 
 from cloud_registry import namespace_subjects as namespace_module
@@ -30,7 +31,8 @@ from cloud_registry.namespace_subjects import (
 )
 from cloud_registry.utils import get_collection
 from tests.conftest import ISSUER, ISSUER2
-from tests.test_access_control import _create_app
+from tests.mock_data import DB
+from tests.test_access_control import USERS_RULE_RC1, _create_app
 
 # Overlay trusting both issuers, with namespaced subjects (the default)
 NAMESPACED: dict[str, Any] = {"security": {"auth": {"issuers": [ISSUER, ISSUER2]}}}
@@ -412,3 +414,51 @@ def test_main(client: FlaskClient, capsys: pytest.CaptureFixture[str]) -> None:
     assert "Namespaced rules: 2" in capsys.readouterr().out
     assert main(["https://other.example.org/"]) == 1
     assert "error: No trusted issuer" in capsys.readouterr().err
+
+
+def _snapshot(mongo_client: MongoClient[dict[str, Any]]) -> dict[str, Any]:
+    """Get the indexes and documents of all collections of the database.
+
+    Args:
+        mongo_client: Client of the database of the app.
+
+    Returns:
+        Indexes and documents, by collection.
+    """
+    database = mongo_client[DB]
+    return {
+        name: (database[name].index_information(), list(database[name].find()))
+        for name in database.list_collection_names()
+    }
+
+
+def test_main_dry_run_read_only(
+    monkeypatch: pytest.MonkeyPatch,
+    client: FlaskClient,
+    mongo_client: MongoClient[dict[str, Any]],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A dry run on the data of an older version leaves all of it as it is.
+
+    It is possible with a newer image than the pods that use the database, so
+    it must neither change the indexes that keep them from restarting, nor
+    replace the configured rules they need. The fixture `client` stores the data.
+    """
+    invitations = mongo_client[DB][INVITATIONS]
+    invitations.drop_index("expires_at_1")
+    invitations.drop_index("accepted_expires_at")
+    invitations.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    mongo_client[DB]["policy_rules"].update_one(
+        {CONFIGURED_FIELD: True, "ptype": "p", "v0": "owner"},
+        {"$set": {"v1": USERS_RULE_RC1[2]}},
+    )
+    before = _snapshot(mongo_client)
+
+    def fail() -> None:
+        """Fail if the app is set up with its startup tasks."""
+        pytest.fail("A dry run must not set up the app")
+
+    monkeypatch.setattr(namespace_module, "create_app", fail)
+    assert main([ISSUER, "--dry-run"]) == 0
+    assert "To namespace rules: 2" in capsys.readouterr().out
+    assert _snapshot(mongo_client) == before
