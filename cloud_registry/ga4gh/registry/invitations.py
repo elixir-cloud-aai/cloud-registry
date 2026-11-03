@@ -175,9 +175,9 @@ def _serve(invitation: dict[str, Any], users: set[str] | None = None) -> dict[st
     Args:
         invitation: Stored invitation.
         users: Users with a role on the service; the name and email address
-            of users who accepted the invitation are only served while they
-            have one, also if removing them failed when the role was revoked
-            (cf. `_delete_roles()`). All users' if `None`.
+            of users who accepted the invitation, and its label, are only
+            served while they have one, also if removing them failed when the
+            role was revoked (cf. `_delete_roles()`). All users' if `None`.
 
     Returns:
         The invitation, without the hash of its token, with times as RFC 3339
@@ -202,6 +202,7 @@ def _serve(invitation: dict[str, Any], users: set[str] | None = None) -> dict[st
         if users is not None and accepted["user_id"] not in users:
             served[ACCEPTED].pop("name", None)
             served[ACCEPTED].pop("email", None)
+            served.pop(LABEL, None)
     return served
 
 

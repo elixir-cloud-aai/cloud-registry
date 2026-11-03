@@ -1032,12 +1032,15 @@ def test_creator_checked_in_lock(
 def test_names_hidden_without_role(app: App, client: FlaskClient) -> None:
     """Names of users without a role on the service are not served.
 
-    Also if removing them failed when the role was revoked.
+    Nor are the labels of their invitations, which may name them. Also if
+    removing them failed when the role was revoked.
     """
     service_id = register(client)
-    assert accept(client, token_of(client, service_id)).status_code == 200
+    created = invite(client, service_id, label="For Bob").get_json()
+    assert accept(client, created["token"]).status_code == 200
     with app.app.app_context():
         remove_resource_role(BOB, "maintainer", f"{PATH}/{service_id}")
     (accepted,) = invitations(client, service_id)
     assert set(accepted["accepted"]) == {"user_id", "accepted_at"}
+    assert "label" not in accepted
     assert stored(app)[0]["accepted"]["name"] == NAMES[BOB]
