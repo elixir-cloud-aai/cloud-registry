@@ -130,7 +130,8 @@ security:
             owners-change-group-permissions: [p, owner, "/ga4gh/registry/v1/services/:id/permissions/groups/*", "(PUT)|(DELETE)"]
             maintainers-update-services: [p, maintainer, "/ga4gh/registry/v1/services/:id", PUT]
             # owners may invite users to their services by link, list the
-            # invitations and revoke open ones; any authenticated user may
+            # invitations, revoke open ones and remove expired ones; any
+            # authenticated user may
             # accept an invitation, which grants them its role
             owners-manage-invitations: [p, owner, "/ga4gh/registry/v1/services/:id/invitations", "(GET)|(POST)"]
             owners-revoke-invitations: [p, owner, "/ga4gh/registry/v1/services/:id/invitations/:invitation", DELETE]
@@ -233,9 +234,12 @@ db:
                           options:
                             'unique': True
                 # Invitations to services, by the hash of their token
-                # (unique), and by service, for listing them; expired ones
-                # are removed by MongoDB (TTL index, checked about every
-                # minute; reads skip them until then)
+                # (unique), and by service, for listing them. MongoDB removes
+                # accepted ones when they expire (TTL index, checked about
+                # every minute; reads skip them until then), others
+                # `custom.access_control.invitations.keep_expired_days` after
+                # that: as the setting can change, the app sets that index on
+                # startup (cf. `cloud_registry.utils.set_ttl_index()`)
                 invitations:
                     indexes:
                         - keys:
@@ -248,7 +252,11 @@ db:
                         - keys:
                               expires_at: 1
                           options:
+                            'name': accepted_expires_at
                             'expireAfterSeconds': 0
+                            'partialFilterExpression':
+                                accepted:
+                                    '$exists': True
                 # Locks of services, so that renames don't interleave with
                 # other changes: of renames by identifier (`_id`), of other
                 # changes by service (`service`); stale ones are removed or
@@ -375,11 +383,14 @@ custom:
         max_services_per_user: 50
         # Invitations to services by link (`POST
         # /services/{serviceId}/invitations`): days after which they expire
-        # (and are deleted, also once accepted), and how many a service
-        # may have until they expire, open or accepted (`409` above; `null`
-        # for no limit; see "Invitations" in `docs/access-control.md`)
+        # (accepted ones are deleted then), for how many days expired ones
+        # that weren't accepted are kept before they are deleted (0 to 365),
+        # and how many a service may have until they expire, open or accepted
+        # (`409` above; `null` for no limit; see "Invitations" in
+        # `docs/access-control.md`)
         invitations:
             expiry_days: 7
+            keep_expired_days: 30
             max_per_service: 20
     endpoints:
         services:

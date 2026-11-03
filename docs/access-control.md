@@ -339,24 +339,23 @@ curl -X POST "http://localhost:8080/ga4gh/registry/v1/invitations/accept" \
   to servers; the token goes in the body of `POST /invitations/accept`, not in
   a URL, so that it doesn't end up in access logs.
 - **Single use and expiry:** each invitation can be accepted once (`409
-  Conflict`, `code` `invitation-accepted`, also for the same user), and
-  expires after `custom.access_control.invitations.expiry_days` days (default:
-  7), also once accepted; MongoDB then deletes it (within about a minute).
-  Unknown, revoked and expired invitations, and those of deleted services, are
-  not found (`404`). If the role can't be granted, e.g., because the user is
-  the last owner of the service and the invitation is for `maintainer` (`409`,
-  `last-owner`), the invitation stays open.
+  Conflict`, `code` `invitation-accepted`, also for the same user), also by
+  concurrent requests, and expires after
+  `custom.access_control.invitations.expiry_days` days (default: 7), also once
+  accepted. Unknown, revoked and expired invitations, and those of deleted
+  services, are not found (`404`). If the role can't be granted, e.g., because
+  the user is the last owner of the service and the invitation is for
+  `maintainer` (`409`, `last-owner`), the invitation stays open.
 - **Labels:** an optional `label` says what an invitation is for (e.g., who
   it was sent to), so that owners don't send the wrong link: plain text of at
   most 100 characters on one line, not blank, without control or
   direction-changing characters (`400 Bad Request` otherwise; whitespace around
   it is removed). It is only returned to those who can list the invitations of
   the service, not to the user who accepts it. Labels may name people, so don't
-  put more in them than needed. A label is stored with its invitation: it is
-  removed when the invitation is revoked, or by MongoDB within about a minute
-  after it expires, and earlier if the invitation was accepted and the user's
-  roles on the service are revoked; database backups keep it as long as the
-  deployment keeps them. The registry doesn't log labels, but the log message
+  put more in them than needed. A label is stored as long as its invitation
+  (see **Removal**), and removed earlier if the invitation was accepted and the
+  user's roles on the service are revoked; database backups keep it as long as
+  the deployment keeps them. The registry doesn't log labels, but the log message
   of a request rejected as invalid quotes the rejected value. Clients must show
   labels as text, not as markup. Whether clients require a label is up to them;
   the API doesn't.
@@ -379,13 +378,17 @@ curl -X POST "http://localhost:8080/ga4gh/registry/v1/invitations/accept" \
   (identifiers that are `groups` or start with `groups/` or a slash, or with
   the segments `.` or `..`; see [Roles on services](#roles-on-services))
   can't accept invitations (`400 Bad Request`).
-- **Listing and revoking:** `GET /services/<id>/invitations` lists the open
-  and accepted invitations that haven't expired, with who accepted them
+- **Listing and revoking:** `GET /services/<id>/invitations` lists the
+  invitations that weren't accepted, never with a token, with their `status`:
+  `open`, or `expired` if they weren't accepted in time, so that owners see who
+  needs a nudge. With `?include_accepted=true`, it also lists those that were
+  accepted (`status` `accepted`) and haven't expired, with who accepted them
   (`accepted`: user identifier, and the name and verified email address if
   the identity provider releases them, e.g., with `name`, `email` and
   `email_verified` in `security.auth.userinfo_claims`; removed when the
-  user's roles on the service are revoked), and
-  `DELETE /services/<id>/invitations/<invitation-id>` revokes an open one.
+  user's roles on the service are revoked).
+  `DELETE /services/<id>/invitations/<invitation-id>` revokes an open one or
+  removes an expired one.
   Accepted invitations can't be revoked (`409`, `invitation-accepted`):
   revoke the role instead. Only the user identifier reliably identifies who
   accepted: users may be able to choose their name, and email addresses are
@@ -394,13 +397,18 @@ curl -X POST "http://localhost:8080/ga4gh/registry/v1/invitations/accept" \
   revoke invitations (`403 Forbidden`). Deployments that stop owners from
   granting roles also remove the rules of owners' invitations (see
   [Requiring login for reads](#requiring-login-for-reads)).
+- **Removal:** MongoDB removes accepted invitations when they expire, and
+  others `custom.access_control.invitations.keep_expired_days` days after that
+  (default: 30, at most 365; `0` removes them when they expire), in both cases
+  within about a minute. Owners can remove expired ones earlier.
 - **Limit:** a service has at most
   `custom.access_control.invitations.max_per_service` invitations that
   haven't expired, open or accepted (default: 20; `null` for no limit), so
   that owners can't grow the collection without bound (e.g., by accepting
-  their own invitations); further ones are refused (`409`,
-  `invitations-limit`) until open ones are revoked or invitations expire.
-  Concurrent requests can exceed the limit by their number.
+  their own invitations). Accepted invitations count until they expire, also
+  if lists leave them out, and expired ones don't count. Further ones are
+  refused (`409`, `invitations-limit`) until open ones are revoked or
+  invitations expire. Concurrent requests can exceed the limit by their number.
 - **Storage:** only the SHA-256 hash of the token is stored, so that those
   who read the database can't accept invitations. Invitations are deleted
   with their service, and move with it when an admin renames it.
@@ -417,6 +425,7 @@ custom:
     access_control:
         invitations:
             expiry_days: 2
+            keep_expired_days: 7
             max_per_service: 5
 ```
 

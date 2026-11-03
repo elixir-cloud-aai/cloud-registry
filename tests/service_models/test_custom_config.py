@@ -96,6 +96,19 @@ def test_services_config_invalid_url_schemes(schemes: object) -> None:
         )
 
 
+def test_invitations_keep_expired_days() -> None:
+    """Expired invitations are kept for 0 to 365 days; 30 by default.
+
+    There is no value for keeping them forever.
+    """
+    assert InvitationsConfig().keep_expired_days == 30
+    for days in (0, 365):
+        assert InvitationsConfig(keep_expired_days=days).keep_expired_days == days
+    for value in (-1, 366, None):
+        with pytest.raises(ValidationError):
+            InvitationsConfig.model_validate({"keep_expired_days": value})
+
+
 def test_invitations_expiry_days() -> None:
     """Invitations expire after 1 to 3650 days (about ten years).
 

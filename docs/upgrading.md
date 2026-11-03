@@ -8,11 +8,45 @@ how existing setups and data are affected.
 
 ## From 1.0.0rc1
 
-Data is kept, and nothing needs to be done. Invitations can have a `label`
+Data is kept, and no manual steps are needed. Invitations can have a `label`
 (see [Invitations](access-control.md#invitations)). It is optional, so scripts
 and stored invitations keep working; only invitations with a label have the
 field in responses, so clients that reject unknown fields of invitations must
 accept `label`.
+
+Expired invitations that weren't accepted are now kept (see
+[Invitations](access-control.md#invitations)):
+
+- `GET /services/<id>/invitations` lists them, and no longer lists accepted
+  invitations unless asked (`?include_accepted=true`). All invitations have a
+  new `status` (`open`, `expired` or `accepted`). Clients that look for
+  acceptances in the list must ask for them, and clients that show all listed
+  invitations as open must check `status`.
+- `DELETE /services/<id>/invitations/<invitation-id>` removes expired ones,
+  which used to be `404 Not Found`. Their links still can't be accepted (`404`).
+- The new option `custom.access_control.invitations.keep_expired_days` (default:
+  30, at most 365) sets when they are removed automatically. `0` removes them
+  when they expire, as before. Check the default against your privacy
+  statement, as their labels may name people.
+- `max_per_service` still counts the same: invitations that haven't expired,
+  open or accepted.
+- The app changes the indexes of the collection `invitations` when it starts,
+  so that its database user needs to be able to drop and create indexes (as
+  `readWrite` can): the new `accepted_expires_at` removes accepted invitations
+  when they expire, as before, and `expires_at_1`, which removed all of them
+  when they expired, then removes the others after the days to keep them. The
+  app does so each time it starts and the value differs. Invitations that
+  expired before the upgrade are gone.
+- Pods of the old version keep working during a rolling update, without listing
+  expired invitations, but can't start again once a pod of this version has
+  started, as the index they would create conflicts. To go back to an older
+  version, remove `keep_expired_days` from your config, which older versions
+  refuse, and first drop the index, whereupon that version removes all expired
+  invitations:
+
+  ```javascript
+  db.getSiblingDB("serviceStore").invitations.dropIndex("expires_at_1")
+  ```
 
 ## From 0.6.0
 
@@ -20,7 +54,7 @@ Data is kept. Owners can invite users to their services by link (see
 [Invitations](access-control.md#invitations)):
 
 - The app stores invitations in the new collection `invitations`, whose
-  indexes it creates on startup (one of them a TTL index, with which MongoDB
+  indexes it creates on startup (among them TTL indexes, with which MongoDB
   deletes expired invitations).
 - The base config has three new rules (`owners-manage-invitations`,
   `owners-revoke-invitations`, `accept-invitations` in

@@ -12,6 +12,7 @@ from connexion import App
 from foca import Foca, get_config
 from foca.security.auth import require_no_service_clients
 
+from cloud_registry.ga4gh.registry.invitations import apply_keep_expired_days
 from cloud_registry.ga4gh.registry.permissions import (
     check_namespaces,
     warn_owner_rules,
@@ -48,9 +49,10 @@ def create_app() -> App:
     that the service info serves the registration rules of the app, adds
     missing keys of services, resumes interrupted renames of services (cf.
     `resume_renames()`; also before requests of the registry's operations,
-    cf. `resume_renames_periodically()`) and adds the types of registered
-    services that aren't stored (e.g., on upgrades). Warns of stored
-    services with invalid URLs or URL schemes that are not allowed, and of
+    cf. `resume_renames_periodically()`), adds the types of registered
+    services that aren't stored (e.g., on upgrades) and applies the days for
+    which expired invitations are kept (cf. `apply_keep_expired_days()`). Warns
+    of stored services with invalid URLs or URL schemes that are not allowed, and of
     rules that let owners change roles of groups although the rule for
     these is changed, or grant roles by invitation although no rule lets
     them grant roles to users (cf. `warn_owner_rules()`).
@@ -116,6 +118,7 @@ def create_app() -> App:
                 "`server.public_url` to its URL as clients see it (e.g., "
                 "`https://registry.example.org/`)"
             )
+        apply_keep_expired_days()
         add_service_keys()
         resume_renames()
         add_service_creators()

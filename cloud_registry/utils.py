@@ -1,13 +1,24 @@
 """Typed access to the configuration and collections of the app."""
 
 from datetime import UTC, date, datetime
+import logging
 import re
+import time
 from typing import Any
 
 from foca import get_collection as get_foca_collection
 from pymongo.collection import Collection
+from pymongo.errors import OperationFailure
 
+logger = logging.getLogger(__name__)
 DB = "serviceStore"
+# Codes of MongoDB's errors when others change a TTL index at the same time
+# (cf. `set_ttl_index()`): namespace or index not found, index options or key
+# specs conflict, and index build aborted
+TTL_INDEX_RACES = frozenset({26, 27, 85, 86, 276})
+TTL_INDEX_ATTEMPTS = 5
+# Time to wait after the first attempt, in seconds; then longer each time
+TTL_INDEX_WAIT = 0.2
 # RFC 3339, section 5.6 (ASCII digits only; the RFC allows a space instead of
 # `T` in a note only)
 DATE_TIME = re.compile(
@@ -28,6 +39,63 @@ def get_collection(name: str) -> Collection[dict[str, Any]]:
         MongoDB collection.
     """
     return get_foca_collection(db=DB, collection=name)
+
+
+def set_ttl_index(
+    collection: Collection[dict[str, Any]], field: str, seconds: int
+) -> None:
+    """Make sure that a TTL index on a date field has the given seconds.
+
+    For TTL indexes whose seconds come from a setting. MongoDB refuses to create
+    an index with the same key and other options, so such an index can't be
+    listed in FOCA's config, which only creates indexes; call this on startup,
+    after FOCA has registered the database, so that changing the setting takes
+    effect without manual steps. An existing index with other seconds is dropped
+    and created again, as the role `readWrite` allows that, but not changing it
+    in place (`collMod`); documents are only kept for longer meanwhile.
+
+    Only handles the ascending index on the field with MongoDB's default name
+    (`<field>_1`), which it owns: other indexes on the field need names of their
+    own. Concurrent runs are safe (e.g., in each worker of the app on startup):
+    runs interfering with each other (e.g., one dropping the index that another
+    is building) try again, up to `TTL_INDEX_ATTEMPTS` times, and stop as soon as
+    the index has the seconds. Of runs with different seconds, the last one wins.
+
+    Args:
+        collection: Collection.
+        field: Name of the date field.
+        seconds: Seconds after the date in the field at which MongoDB removes
+            a document.
+
+    Raises:
+        pymongo.errors.OperationFailure: The index could not be dropped or
+            created, e.g., for lack of permissions, or concurrent runs kept
+            interfering.
+    """
+    name = f"{field}_1"
+    for attempt in range(1, TTL_INDEX_ATTEMPTS + 1):
+        index = collection.index_information().get(name)
+        previous = None if index is None else index.get("expireAfterSeconds")
+        if previous == seconds:
+            return
+        try:
+            if index is not None:
+                collection.drop_index(name)
+            collection.create_index([(field, 1)], expireAfterSeconds=seconds)
+        except OperationFailure as exc:
+            if exc.code not in TTL_INDEX_RACES or attempt == TTL_INDEX_ATTEMPTS:
+                raise
+            time.sleep(TTL_INDEX_WAIT * attempt)
+            continue
+        if index is not None:
+            logger.warning(
+                "TTL index '%s' of collection '%s' changed from %s to %d seconds.",
+                name,
+                collection.name,
+                previous,
+                seconds,
+            )
+        return
 
 
 def is_date_time(value: object) -> bool:

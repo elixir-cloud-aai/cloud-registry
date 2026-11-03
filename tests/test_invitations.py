@@ -5,10 +5,14 @@ services and roles are those of `tests/test_access_control.py` and
 `tests/test_rename.py`.
 """
 
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 import hashlib
 import os
+from pathlib import Path
+from threading import Barrier
+import time
 from typing import Any
 from urllib.parse import quote
 
@@ -17,12 +21,15 @@ from flask.testing import FlaskClient
 from foca import get_custom_config
 from foca.security import auth
 from foca.security.access_control import list_roles, remove_resource_role
+from pymongo import MongoClient
 import pytest
 from werkzeug.test import TestResponse
 
+from cloud_registry.app import create_app
 from cloud_registry.ga4gh.registry import invitations as invitations_module
 from cloud_registry.ga4gh.registry import locks as locks_module
 from cloud_registry.ga4gh.registry.invitations import (
+    SECONDS_PER_DAY,
     TOKEN_BYTES,
     hash_token,
 )
@@ -34,7 +41,8 @@ from cloud_registry.ga4gh.registry.permissions import (
 )
 from cloud_registry.service_models.custom_config import CustomConfig
 from cloud_registry.utils import get_collection, now
-from tests.conftest import ADMIN, GROUPS, NAMES, TEAM_GROUP
+from tests.conftest import ADMIN, CONFIG_OVERLAY, GROUPS, NAMES, TEAM_GROUP
+from tests.mock_data import DB
 from tests.test_access_control import (
     ALICE,
     BASE,
@@ -114,7 +122,10 @@ def accept(client: FlaskClient, token: Any, user: str | None = BOB) -> TestRespo
 
 
 def invitations(
-    client: FlaskClient, service_id: str, user: str = ALICE
+    client: FlaskClient,
+    service_id: str,
+    user: str = ALICE,
+    include_accepted: bool = False,
 ) -> list[dict[str, Any]]:
     """List the invitations to a service.
 
@@ -122,12 +133,15 @@ def invitations(
         client: Test client of the app.
         service_id: Service identifier.
         user: User who lists them.
+        include_accepted: Whether to ask for accepted invitations too.
 
     Returns:
         Invitations, as listed.
     """
     response = client.get(
-        f"{BASE}/services/{service_id}/invitations", headers=headers(user)
+        f"{BASE}/services/{service_id}/invitations",
+        headers=headers(user),
+        query_string={"include_accepted": "true"} if include_accepted else None,
     )
     assert response.status_code == 200, response.get_json()
     listed: list[dict[str, Any]] = response.get_json()
@@ -180,15 +194,16 @@ def set_invitations_config(app: App, **kwargs: Any) -> None:
             setattr(config, key, value)
 
 
-def expire(app: App) -> None:
-    """Let all stored invitations expire, before MongoDB deletes them.
+def expire(app: App, query: dict[str, Any] | None = None) -> None:
+    """Let stored invitations expire, before MongoDB may delete them.
 
     Args:
         app: App.
+        query: Filter for the invitations; all of them if `None`.
     """
     with app.app.app_context():
         get_collection(INVITATIONS).update_many(
-            {}, {"$set": {"expires_at": now() - timedelta(seconds=1)}}
+            query or {}, {"$set": {"expires_at": now() - timedelta(seconds=1)}}
         )
 
 
@@ -231,8 +246,11 @@ def test_invite_and_accept(client: FlaskClient) -> None:
         permission_list(client, service_id)
     )
     assert update(client, service_id, BOB) == 200
-    (accepted,) = invitations(client, service_id)
+    assert invitations(client, service_id) == []
+    (accepted,) = invitations(client, service_id, include_accepted=True)
     acceptance = accepted.pop("accepted")
+    assert accepted.pop("status") == "accepted"
+    assert listed[0].pop("status") == "open"
     assert accepted == listed[0]
     assert acceptance["user_id"] == BOB
     assert acceptance["name"] == NAMES[BOB]
@@ -328,22 +346,213 @@ def test_accept_requires_login(client: FlaskClient) -> None:
     assert client.delete(f"{path}/x").status_code == 401
 
 
-def test_expired(app: App, client: FlaskClient) -> None:
-    """Expired invitations can't be accepted or revoked, and aren't listed.
+def test_expired_open(app: App, client: FlaskClient) -> None:
+    """Expired invitations that weren't used stay listed, but can't be used.
 
-    Also once accepted.
+    They have the status `expired`, keep their label, and are refused as
+    unknown tokens are. Being refused doesn't change them.
     """
     service_id = register(client)
-    accepted = token_of(client, service_id)
-    assert accept(client, accepted).status_code == 200
-    token = token_of(client, service_id)
-    (invitation_id,) = [i["id"] for i in invitations(client, service_id)][1:]
+    created = invite(client, service_id, label="For Bob").get_json()
+    assert created["status"] == "open"
     expire(app)
-    assert accept(client, token, user=ERIN).status_code == 404
-    assert accept(client, accepted, user=ERIN).status_code == 404
-    assert invitations(client, service_id) == []
-    response = revoke_invitation(client, service_id, invitation_id)
+    response = accept(client, created["token"])
     assert response.status_code == 404
+    assert response.get_json()["status"] == 404
+    (listed,) = invitations(client, service_id)
+    assert listed["id"] == created["id"]
+    assert listed["status"] == "expired"
+    assert listed["label"] == "For Bob"
+    assert "accepted" not in listed
+    assert "accepted" not in stored(app)[0]
+    assert permissions(client, service_id) == [(ALICE, "owner")]
+
+
+def test_expired_at_expiry(
+    app: App, client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Invitations are expired from the moment of `expires_at`.
+
+    So that the status agrees with what can be done with them.
+    """
+    service_id = register(client)
+    token = token_of(client, service_id)
+    moment = now()
+    with app.app.app_context():
+        get_collection(INVITATIONS).update_many({}, {"$set": {"expires_at": moment}})
+    monkeypatch.setattr(invitations_module, "now", lambda: moment)
+    assert invitations(client, service_id)[0]["status"] == "expired"
+    assert accept(client, token).status_code == 404
+
+
+def test_listings_without_tokens(app: App, client: FlaskClient) -> None:
+    """No token or hash of one is ever listed, whatever the status."""
+    service_id = register(client)
+    used = invite(client, service_id).get_json()
+    assert accept(client, used["token"]).status_code == 200
+    old = invite(client, service_id).get_json()
+    expire(app, {"accepted": {"$exists": False}})
+    fresh = invite(client, service_id).get_json()
+    listed = invitations(client, service_id, include_accepted=True)
+    assert [i["status"] for i in listed] == ["accepted", "expired", "open"]
+    text = repr(listed)
+    for invitation, document in zip((used, old, fresh), stored(app), strict=True):
+        assert invitation["token"] not in text
+        assert document["token_hash"] not in text
+    assert all("token" not in i and "token_hash" not in i for i in listed)
+
+
+def test_accepted_not_listed_by_default(app: App, client: FlaskClient) -> None:
+    """Accepted invitations are only listed if asked for, until they expire.
+
+    Also then, they count and can't be used; once expired, they are hidden and
+    not found, as they are about to be removed.
+    """
+    service_id = register(client)
+    used = invite(client, service_id).get_json()
+    assert accept(client, used["token"]).status_code == 200
+    assert invitations(client, service_id) == []
+    (listed,) = invitations(client, service_id, include_accepted=True)
+    assert listed["status"] == "accepted"
+    assert listed["accepted"]["user_id"] == BOB
+    response = accept(client, used["token"], user=ERIN)
+    assert response.status_code == 409
+    assert response.get_json()["code"] == "invitation-accepted"
+    expire(app)
+    assert invitations(client, service_id) == []
+    assert invitations(client, service_id, include_accepted=True) == []
+    assert accept(client, used["token"], user=ERIN).status_code == 404
+    response = revoke_invitation(client, service_id, used["id"])
+    assert response.status_code == 404
+
+
+def test_include_accepted_lists_all(app: App, client: FlaskClient) -> None:
+    """With accepted invitations, the list has all that aren't hidden."""
+    service_id = register(client)
+    assert accept(client, token_of(client, service_id)).status_code == 200
+    token_of(client, service_id)
+    expire(app, {"accepted": {"$exists": False}})
+    token_of(client, service_id)
+    default = invitations(client, service_id)
+    assert [i["status"] for i in default] == ["expired", "open"]
+    everything = invitations(client, service_id, include_accepted=True)
+    assert [i["status"] for i in everything] == ["accepted", "expired", "open"]
+
+
+def test_include_accepted_invalid(client: FlaskClient) -> None:
+    """Invalid values of `include_accepted` are rejected."""
+    service_id = register(client)
+    response = client.get(
+        f"{BASE}/services/{service_id}/invitations",
+        headers=headers(ALICE),
+        query_string={"include_accepted": "maybe"},
+    )
+    assert response.status_code == 400
+
+
+def test_delete_expired(app: App, client: FlaskClient) -> None:
+    """Expired invitations that weren't used can be removed."""
+    service_id = register(client)
+    other_id = register(client)
+    created = invite(client, service_id).get_json()
+    expire(app)
+    response = revoke_invitation(client, other_id, created["id"])
+    assert response.status_code == 404
+    response = revoke_invitation(client, service_id, created["id"])
+    assert response.status_code == 200
+    assert response.get_json() == created["id"]
+    assert stored(app) == []
+    response = revoke_invitation(client, service_id, created["id"])
+    assert response.status_code == 404
+
+
+def test_release_after_expiry(
+    app: App, client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A claim released after the expiry leaves an expired invitation."""
+    service_id = register(client)
+    token = token_of(client, service_id)
+
+    def expire_then_fail(*args: Any, **kwargs: Any) -> None:
+        """Let the invitation expire, then fail.
+
+        Args:
+            args: Arguments of `put_role()`; unused.
+            kwargs: Keyword arguments of `put_role()`; unused.
+
+        Raises:
+            RuntimeError: Always (a server error).
+        """
+        expire(app)
+        raise RuntimeError("failed")
+
+    monkeypatch.setattr(invitations_module, "put_role", expire_then_fail)
+    assert accept(client, token).status_code == 500
+    monkeypatch.undo()
+    (listed,) = invitations(client, service_id)
+    assert listed["status"] == "expired"
+    assert "accepted" not in stored(app)[0]
+
+
+def test_expired_follow_service(app: App, client: FlaskClient) -> None:
+    """Expired invitations move and are deleted with their service."""
+    service_id = register(client)
+    token_of(client, service_id)
+    expire(app)
+    assert rename(client, service_id).status_code == 200
+    (listed,) = invitations(client, NEW_ID)
+    assert listed["service_id"] == NEW_ID
+    assert listed["status"] == "expired"
+    assert delete(client, NEW_ID, ALICE) == 200
+    assert stored(app) == []
+
+
+def _after(barrier: Barrier, function: Callable[..., TestResponse], *args: Any) -> Any:
+    """Wait for the other threads, then send a request.
+
+    Args:
+        barrier: Barrier of the threads.
+        function: Function that sends the request.
+        *args: Arguments of the function.
+
+    Returns:
+        Response.
+    """
+    barrier.wait()
+    return function(*args)
+
+
+def test_concurrent_accept_and_revoke(client: FlaskClient) -> None:
+    """Either an acceptance or the revocation of an invitation succeeds."""
+    if not os.environ.get("MONGODB_TEST_URI"):
+        pytest.skip("mongomock is not thread-safe")
+    service_id = register(client)
+    for _ in range(5):
+        created = invite(client, service_id).get_json()
+        barrier = Barrier(2)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            accepting = pool.submit(_after, barrier, accept, client, created["token"])
+            revoking = pool.submit(
+                _after, barrier, revoke_invitation, client, service_id, created["id"]
+            )
+        outcome = (accepting.result().status_code, revoking.result().status_code)
+        assert outcome in ((200, 409), (404, 200))
+        if outcome[0] == 200:
+            assert revoke(client, service_id, BOB) == 200
+
+
+def test_concurrent_accepts_of_expired(app: App, client: FlaskClient) -> None:
+    """Concurrent acceptances of an expired invitation all fail."""
+    if not os.environ.get("MONGODB_TEST_URI"):
+        pytest.skip("mongomock is not thread-safe")
+    service_id = register(client)
+    token = token_of(client, service_id)
+    expire(app)
+    users = [f"user{index}@example.org" for index in range(8)]
+    with ThreadPoolExecutor(max_workers=len(users)) as pool:
+        responses = list(pool.map(lambda user: accept(client, token, user), users))
+    assert {response.status_code for response in responses} == {404}
+    assert permissions(client, service_id) == [(ALICE, "owner")]
 
 
 def test_expiry_days(app: App, client: FlaskClient) -> None:
@@ -355,14 +564,182 @@ def test_expiry_days(app: App, client: FlaskClient) -> None:
     assert expiry == timedelta(days=1)
 
 
-def test_ttl_index(app: App, client: FlaskClient) -> None:
-    """MongoDB deletes expired invitations (TTL index on `expires_at`)."""
-    with app.app.app_context():
-        indexes = get_collection(INVITATIONS).index_information()
-    ttl = [index for index in indexes.values() if "expireAfterSeconds" in index]
-    assert [(index["key"], index["expireAfterSeconds"]) for index in ttl] == [
-        ([("expires_at", 1)], 0)
+def _ttl_indexes(collection: Any) -> dict[str, tuple[Any, ...]]:
+    """Get the TTL indexes of a collection.
+
+    Args:
+        collection: Collection.
+
+    Returns:
+        Keys, seconds and the partial filter of the TTL indexes, by name.
+    """
+    return {
+        name: (
+            index["key"],
+            index["expireAfterSeconds"],
+            index.get("partialFilterExpression"),
+        )
+        for name, index in collection.index_information().items()
+        if "expireAfterSeconds" in index
+    }
+
+
+def _expected_ttl_indexes(days: int) -> dict[str, tuple[Any, ...]]:
+    """Get the TTL indexes of the collection of invitations.
+
+    Args:
+        days: Days to keep expired invitations.
+
+    Returns:
+        The indexes as `_ttl_indexes()` gets them.
+    """
+    return {
+        "expires_at_1": ([("expires_at", 1)], days * SECONDS_PER_DAY, None),
+        "accepted_expires_at": (
+            [("expires_at", 1)],
+            0,
+            {"accepted": {"$exists": True}},
+        ),
+    }
+
+
+def _overlay(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, days: int) -> None:
+    """Add a config overlay that sets the days to keep expired invitations.
+
+    Args:
+        tmp_path: Directory for the overlay.
+        monkeypatch: Fixture to set `FOCA_CONFIG_OVERLAY` with.
+        days: Days to keep expired invitations.
+    """
+    path = tmp_path / f"days-{days}.yaml"
+    path.write_text(
+        f"custom:\n  access_control:\n    invitations:\n"
+        f"      keep_expired_days: {days}\n"
+    )
+    monkeypatch.setenv(
+        "FOCA_CONFIG_OVERLAY", os.pathsep.join([str(CONFIG_OVERLAY), str(path)])
+    )
+
+
+@pytest.mark.usefixtures("app_env")
+def test_upgrade_from_old_index(mongo_client: MongoClient[dict[str, Any]]) -> None:
+    """The app starts with the index of older versions, and replaces it.
+
+    Older versions deleted all invitations when they expired. Data is kept,
+    and starting again changes nothing.
+    """
+    collection = mongo_client[DB][INVITATIONS]
+    collection.create_index([("token_hash", 1)], unique=True)
+    collection.create_index([("service_id", 1), ("created_at", 1)])
+    collection.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    collection.insert_one({"_id": "kept", "expires_at": now() + timedelta(days=1)})
+    create_app()
+    assert _ttl_indexes(collection) == _expected_ttl_indexes(30)
+    assert collection.count_documents({"_id": "kept"}) == 1
+    create_app()
+    assert _ttl_indexes(collection) == _expected_ttl_indexes(30)
+
+
+@pytest.mark.usefixtures("app_env")
+@pytest.mark.parametrize("days", [0, 1, 365])
+def test_keep_expired_days_changed(
+    mongo_client: MongoClient[dict[str, Any]],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    days: int,
+) -> None:
+    """Changing the days takes effect when the app starts, without other steps."""
+    create_app()
+    collection = mongo_client[DB][INVITATIONS]
+    assert _ttl_indexes(collection) == _expected_ttl_indexes(30)
+    _overlay(tmp_path, monkeypatch, days)
+    create_app()
+    assert _ttl_indexes(collection) == _expected_ttl_indexes(days)
+    monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(CONFIG_OVERLAY))
+    create_app()
+    assert _ttl_indexes(collection) == _expected_ttl_indexes(30)
+
+
+@pytest.fixture
+def fast_ttl_monitor(
+    db_client: MongoClient[dict[str, Any]],
+) -> Iterator[MongoClient[dict[str, Any]]]:
+    """Let MongoDB check TTL indexes every second, not every minute."""
+    if not os.environ.get("MONGODB_TEST_URI"):
+        pytest.skip("TTL indexes of MongoDB")
+    db_client.admin.command("setParameter", 1, ttlMonitorSleepSecs=1)
+    yield db_client
+    db_client.admin.command("setParameter", 1, ttlMonitorSleepSecs=60)
+
+
+def _stored_ids(collection: Any) -> set[str]:
+    """Get the identifiers of the stored documents.
+
+    Args:
+        collection: Collection.
+
+    Returns:
+        Identifiers.
+    """
+    return {document["_id"] for document in collection.find()}
+
+
+def _wait_for_ids(collection: Any, expected: set[str]) -> set[str]:
+    """Wait until the given documents are the only ones left, or give up.
+
+    Args:
+        collection: Collection.
+        expected: Identifiers of the documents to wait for.
+
+    Returns:
+        Identifiers of the documents that are left.
+    """
+    for _ in range(40):
+        if _stored_ids(collection) == expected:
+            break
+        time.sleep(0.5)
+    return _stored_ids(collection)
+
+
+@pytest.mark.usefixtures("app_env")
+def test_ttl_removal(
+    fast_ttl_monitor: MongoClient[dict[str, Any]],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """MongoDB removes invitations as documented, after an upgrade too.
+
+    Accepted ones when they expire; others only after the days to keep them,
+    also when the days change on a deployment with stored invitations.
+    """
+    collection = fast_ttl_monitor[DB][INVITATIONS]
+    collection.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    create_app()
+    current = now()
+    accepted = {"accepted": {"user_id": BOB, "accepted_at": current}}
+    documents: list[dict[str, Any]] = [
+        {"_id": "open", "expires_at": current + timedelta(days=1)},
+        {"_id": "used", "expires_at": current + timedelta(days=1), **accepted},
+        {"_id": "used-expired", "expires_at": current, **accepted},
+        {"_id": "expired", "expires_at": current - timedelta(days=2)},
+        {"_id": "old", "expires_at": current - timedelta(days=31)},
     ]
+    # the hash of the token is unique
+    collection.insert_many([{**doc, "token_hash": doc["_id"]} for doc in documents])
+    expected = {"open", "used", "expired"}
+    assert _wait_for_ids(collection, expected) == expected
+    _overlay(tmp_path, monkeypatch, 1)
+    create_app()
+    expected = {"open", "used"}
+    assert _wait_for_ids(collection, expected) == expected
+
+
+def test_indexes(app: App, client: FlaskClient) -> None:
+    """Invitations are removed by TTL indexes, and found by token and service."""
+    with app.app.app_context():
+        collection = get_collection(INVITATIONS)
+        assert _ttl_indexes(collection) == _expected_ttl_indexes(30)
+        indexes = collection.index_information()
     unique = [index["key"] for index in indexes.values() if index.get("unique")]
     assert unique == [[("token_hash", 1)]]
     keys = [index["key"] for index in indexes.values()]
@@ -388,7 +765,7 @@ def test_revoke(app: App, client: FlaskClient) -> None:
     assert invitations(client, service_id) == []
     token = token_of(client, service_id)
     assert accept(client, token).status_code == 200
-    (accepted,) = invitations(client, service_id)
+    (accepted,) = invitations(client, service_id, include_accepted=True)
     response = revoke_invitation(client, service_id, accepted["id"])
     assert response.status_code == 409
     assert response.get_json()["code"] == "invitation-accepted"
@@ -548,7 +925,7 @@ def test_label_removed_with_role(app: App, client: FlaskClient) -> None:
     assert accept(client, created["token"]).status_code == 200
     invite(client, service_id, label="For Carol")
     assert revoke(client, service_id, BOB) == 200
-    first, second = invitations(client, service_id)
+    first, second = invitations(client, service_id, include_accepted=True)
     assert "label" not in first
     assert second["label"] == "For Carol"
 
@@ -701,11 +1078,27 @@ def test_limit(app: App, client: FlaskClient) -> None:
     assert invite(client, service_id).status_code == 409
     expire(app)
     assert invite(client, service_id).status_code == 201
+    assert any(i["status"] == "expired" for i in invitations(client, service_id))
     set_invitations_config(app, max_per_service=0)
     assert invite(client, service_id).status_code == 409
     set_invitations_config(app, max_per_service=None)
     for _ in range(3):
         assert invite(client, service_id).status_code == 201
+
+
+def test_limit_explains_accepted(client: FlaskClient) -> None:
+    """The error says that accepted invitations, which are hidden, count."""
+    service_id = register(client)
+    response = None
+    for _ in range(21):
+        response = invite(client, service_id)
+    assert response is not None
+    assert response.status_code == 409
+    problem = response.get_json()
+    assert problem["code"] == "invitations-limit"
+    assert "20" in problem["detail"]
+    assert "ccepted invitations count until they expire" in problem["detail"]
+    assert "include_accepted" in problem["detail"]
 
 
 def test_email_and_name(app: App, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -768,6 +1161,21 @@ def test_logged(client: FlaskClient, caplog: pytest.LogCaptureFixture) -> None:
         f"'{ALICE}'." in caplog.text
     )
     assert created["token"] not in caplog.text
+
+
+def test_removal_logged(
+    app: App, client: FlaskClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Removing an expired invitation is logged, not as revoking a usable one."""
+    caplog.set_level("INFO")
+    service_id = register(client)
+    created = invite(client, service_id).get_json()
+    expire(app)
+    assert revoke_invitation(client, service_id, created["id"]).status_code == 200
+    assert (
+        f"Invitation '{created['id']}' to service '{service_id}' removed by "
+        f"'{ALICE}'." in caplog.text
+    )
 
 
 def test_limit_logged(
@@ -957,11 +1365,13 @@ def test_names_removed_with_role(client: FlaskClient) -> None:
     other_id = register(client)
     for target in (service_id, other_id):
         assert accept(client, token_of(client, target)).status_code == 200
-    assert invitations(client, service_id)[0]["accepted"]["name"] == NAMES[BOB]
+    listed = invitations(client, service_id, include_accepted=True)
+    assert listed[0]["accepted"]["name"] == NAMES[BOB]
     assert revoke(client, service_id, BOB) == 200
-    (accepted,) = invitations(client, service_id)
+    (accepted,) = invitations(client, service_id, include_accepted=True)
     assert set(accepted["accepted"]) == {"user_id", "accepted_at"}
-    assert invitations(client, other_id)[0]["accepted"]["name"] == NAMES[BOB]
+    listed = invitations(client, other_id, include_accepted=True)
+    assert listed[0]["accepted"]["name"] == NAMES[BOB]
 
 
 def test_group_creator_left_group(
@@ -1040,7 +1450,7 @@ def test_names_hidden_without_role(app: App, client: FlaskClient) -> None:
     assert accept(client, created["token"]).status_code == 200
     with app.app.app_context():
         remove_resource_role(BOB, "maintainer", f"{PATH}/{service_id}")
-    (accepted,) = invitations(client, service_id)
+    (accepted,) = invitations(client, service_id, include_accepted=True)
     assert set(accepted["accepted"]) == {"user_id", "accepted_at"}
     assert "label" not in accepted
     assert stored(app)[0]["accepted"]["name"] == NAMES[BOB]

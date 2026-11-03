@@ -151,6 +151,9 @@ JKLMNOPQRSTUVWXYZ0123456789', length=6), url_schemes=['https'], environments=[\
 # Maximum days after which invitations expire (about ten years; larger values
 # can overflow the expiry times of invitations)
 MAX_EXPIRY_DAYS = 3650
+# Maximum days for which expired invitations are kept (labels may name people,
+# so there is no value for keeping them forever)
+MAX_KEEP_EXPIRED_DAYS = 365
 
 
 class InvitationsConfig(FOCABaseConfig):
@@ -158,14 +161,20 @@ class InvitationsConfig(FOCABaseConfig):
 
     Args:
         expiry_days: Days after which invitations expire, whether accepted
-            or not (at most `MAX_EXPIRY_DAYS`); expired ones are deleted.
+            or not (at most `MAX_EXPIRY_DAYS`); accepted ones are deleted then.
+        keep_expired_days: Days for which expired invitations that weren't
+            accepted are kept before they are deleted (at most
+            `MAX_KEEP_EXPIRED_DAYS`; `0` to delete them when they expire).
         max_per_service: How many invitations that haven't expired, open
             or accepted, a service may have (`409` above); unlimited if
             `None`.
 
     Attributes:
         expiry_days: Days after which invitations expire, whether accepted
-            or not (at most `MAX_EXPIRY_DAYS`); expired ones are deleted.
+            or not (at most `MAX_EXPIRY_DAYS`); accepted ones are deleted then.
+        keep_expired_days: Days for which expired invitations that weren't
+            accepted are kept before they are deleted (at most
+            `MAX_KEEP_EXPIRED_DAYS`; `0` to delete them when they expire).
         max_per_service: How many invitations that haven't expired, open
             or accepted, a service may have (`409` above); unlimited if
             `None`.
@@ -173,14 +182,16 @@ class InvitationsConfig(FOCABaseConfig):
     Raises:
         pydantic.ValidationError: The class was instantianted with an illegal
             data type, `expiry_days` is not positive or larger than
-            `MAX_EXPIRY_DAYS`, or `max_per_service` is negative.
+            `MAX_EXPIRY_DAYS`, `keep_expired_days` is negative or larger than
+            `MAX_KEEP_EXPIRED_DAYS`, or `max_per_service` is negative.
 
     Example:
         >>> InvitationsConfig(expiry_days=1)
-        InvitationsConfig(expiry_days=1, max_per_service=20)
+        InvitationsConfig(expiry_days=1, keep_expired_days=30, max_per_service=20)
     """
 
     expiry_days: Annotated[int, Field(gt=0, le=MAX_EXPIRY_DAYS)] = 7
+    keep_expired_days: Annotated[int, Field(ge=0, le=MAX_KEEP_EXPIRED_DAYS)] = 30
     max_per_service: NonNegativeInt | None = 20
 
 
@@ -233,7 +244,7 @@ class AccessControlConfig(FOCABaseConfig):
         >>> AccessControlConfig(service_types='controlled')
         AccessControlConfig(service_types='controlled', max_unused_service_types=10, \
 max_services_per_user=50, invitations=InvitationsConfig(expiry_days=7, \
-max_per_service=20))
+keep_expired_days=30, max_per_service=20))
     """
 
     service_types: Literal["open", "controlled", "moderated"] = "open"
@@ -272,8 +283,8 @@ class CustomConfig(FOCABaseConfig):
 nfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', length=6), url_schemes=['\
 https'], environments=['prod', 'test', 'dev', 'staging'])), access_control=Acc\
 essControlConfig(service_types='open', max_unused_service_types=10, max_serv\
-ices_per_user=50, invitations=InvitationsConfig(expiry_days=7, max_per_servi\
-ce=20)))
+ices_per_user=50, invitations=InvitationsConfig(expiry_days=7, keep_expired_d\
+ays=30, max_per_service=20)))
     """
 
     endpoints: EndpointsConfig
