@@ -56,6 +56,10 @@ USERS_RULE_PATH = f"{BASE}/services/:id/permissions/users/*"
 INVITATION = "rc1"
 EXPIRED_INVITATION = "rc1-expired"
 ACCEPTED_INVITATION = "rc1-accepted"
+# Filters for each of the invitations (cf. `data/capture_rc1.py`)
+OPEN_QUERY = {"role": "maintainer", "accepted": {"$exists": False}}
+EXPIRED_QUERY = {"role": "owner"}
+ACCEPTED_QUERY = {"accepted": {"$exists": True}}
 # Who accepted the accepted invitation
 GRACE = "grace@example.org"
 
@@ -77,17 +81,9 @@ def stored(
     stored_invitations = db_client[DB]["invitations"]
     now = datetime.now(UTC)
     for query, token, expires_at in (
-        (
-            {"role": "maintainer", "accepted": {"$exists": False}},
-            INVITATION,
-            now + timedelta(days=1),
-        ),
-        ({"role": "owner"}, EXPIRED_INVITATION, now - timedelta(hours=1)),
-        (
-            {"accepted": {"$exists": True}},
-            ACCEPTED_INVITATION,
-            now + timedelta(days=1),
-        ),
+        (OPEN_QUERY, INVITATION, now + timedelta(days=1)),
+        (EXPIRED_QUERY, EXPIRED_INVITATION, now - timedelta(hours=1)),
+        (ACCEPTED_QUERY, ACCEPTED_INVITATION, now + timedelta(days=1)),
     ):
         result = stored_invitations.update_one(
             query,
@@ -254,7 +250,7 @@ def test_stored_expired_invitation(
 ) -> None:
     """An expired invitation of 1.0.0rc1 can't be accepted, only be removed."""
     assert accept(upgraded, EXPIRED_INVITATION, user=ERIN).status_code == 404
-    identifier = _invitation_id(stored, {"role": "owner"})
+    identifier = _invitation_id(stored, EXPIRED_QUERY)
     assert revoke_invitation(upgraded, SERVICE, identifier).status_code == 200
     assert revoke_invitation(upgraded, SERVICE, identifier).status_code == 404
 
@@ -266,7 +262,7 @@ def test_stored_accepted_invitation(
     response = accept(upgraded, ACCEPTED_INVITATION, user=ERIN)
     assert response.status_code == 409
     assert response.get_json()["code"] == "invitation-accepted"
-    identifier = _invitation_id(stored, {"accepted": {"$exists": True}})
+    identifier = _invitation_id(stored, ACCEPTED_QUERY)
     response = revoke_invitation(upgraded, SERVICE, identifier)
     assert response.status_code == 409
     assert response.get_json()["code"] == "invitation-accepted"
@@ -297,7 +293,9 @@ def test_going_back_index(
         collection.create_index(keys, expireAfterSeconds=0)
     collection.drop_index("expires_at_1")
     collection.create_index(keys, expireAfterSeconds=0)
-    assert collection.index_information()["expires_at_1"]["expireAfterSeconds"] == 0
+    indexes = collection.index_information()
+    assert indexes["expires_at_1"]["expireAfterSeconds"] == 0
+    assert "accepted_expires_at" in indexes
 
 
 @pytest.mark.parametrize("method", ["put", "delete"])

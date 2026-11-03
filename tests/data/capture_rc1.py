@@ -13,6 +13,9 @@ From the root of the repository, with the version of MongoDB of `docker-compose.
         CAPTURE_FILE="$OLDPWD/tests/data/store_1.0.0rc1.json" \
         uv run python -m pytest tests/test_capture_rc1.py
 
+The file in the repository was made so, on `v1.0.0rc1` and MongoDB 7.0.34; all its
+identifiers and times are new on each run.
+
 Stored are the service of alice, with roles of users (bob, carol and a namespaced
 user) and of a group (maintainer), and three invitations:
 
