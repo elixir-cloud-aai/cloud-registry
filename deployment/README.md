@@ -886,9 +886,11 @@ for all changes; for Helm releases:
   `config.security.access_control.policies`, or give the policies as a list,
   must move it to `.../permissions/users/*`. It no longer covers the roles of
   groups, for which `owners-change-group-permissions` is now the only rule.
-- **Rollout:** restart the app once after the rollout, as above, or upgrade
-  with the app scaled to 0 replicas, so that no rules of pods of 1.0.0rc1 stay
-  in place.
+- **Rollout:** upgrade with the app scaled to 0 replicas, as for 0.4.0 above,
+  unless no client changes roles during the upgrade: pods of 1.0.0rc1 take the
+  new paths for the old ones, and grant roles to a user `users/<user-id>`. After
+  a rolling update, restart the app once, and look for such roles as described
+  in the upgrade steps.
 
 ## Probes
 

@@ -12,8 +12,8 @@ Each test starts the app of this version on the stored data, without a
 migration.
 """
 
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
-import json
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -47,7 +47,8 @@ from tests.test_access_control import (
 from tests.test_invitations import accept
 
 STORE = Path(__file__).parent / "data" / "store_1.0.0rc1.json"
-SERVICE, GROUP_SERVICE = json.loads(STORE.read_text())["services"]
+CAPTURE = json_util.loads(STORE.read_text())
+SERVICE, GROUP_SERVICE = CAPTURE["services"]
 NAMESPACED_USER = "https://login.other.example.org/|dave"
 # Rule of 1.0.0rc1 in stored form, and the path of the rule that replaces it
 RC1_RULE = {"ptype": "p", "v0": "owner", "v1": USERS_RULE_RC1[2]}
@@ -65,9 +66,8 @@ def stored(
     Returns:
         Client of the MongoDB with the data.
     """
-    data = json_util.loads(STORE.read_text())["store"]
-    for name, documents in data.items():
-        db_client[DB][name].insert_many(documents)
+    for name, documents in CAPTURE["store"].items():
+        db_client[DB][name].insert_many(deepcopy(documents))
     db_client[DB]["invitations"].update_many(
         {},
         {
@@ -123,23 +123,15 @@ def test_configured_rule_replaced(
         rules.count_documents({"ptype": "p", "v0": "owner", "v1": USERS_RULE_PATH}) == 1
     )
     expected = sorted(
-        (rule for rule in _store_rules() if rule.get("ptype") == "g2"),
+        (
+            rule
+            for rule in CAPTURE["store"]["policy_rules"]
+            if rule.get("ptype") == "g2"
+        ),
         key=lambda rule: rule["id"],
     )
     roles = sorted(rules.find({"ptype": "g2"}), key=lambda rule: rule["id"])
     assert roles == expected
-
-
-def _store_rules() -> list[dict[str, Any]]:
-    """Get the policy rules that 1.0.0rc1 stored.
-
-    Returns:
-        Stored documents.
-    """
-    rules: list[dict[str, Any]] = json_util.loads(STORE.read_text())["store"][
-        "policy_rules"
-    ]
-    return rules
 
 
 def test_roles_listed(upgraded: FlaskClient) -> None:
@@ -238,7 +230,8 @@ def test_rule_stored_via_permissions_api_stays(
 ) -> None:
     """Rules stored via FOCA's permissions API stay, as documented.
 
-    Only configured rules are replaced, so admins must remove such rules
+    Stored here as that API stores it, without marking it as configured. Only
+    configured rules are replaced, so admins must remove such rules
     themselves (cf. "From 1.0.0rc1" in `docs/upgrading.md`).
     """
     rules = stored[DB]["policy_rules"]

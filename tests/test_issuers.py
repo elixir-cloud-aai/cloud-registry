@@ -100,7 +100,7 @@ def test_namespaced_permissions(two_issuers: FlaskClient, encode: bool) -> None:
 def test_group_permissions_routed(
     two_issuers: FlaskClient, path: str, group: str
 ) -> None:
-    """Paths of roles of groups are not taken for users with slashes.
+    """Groups with slashes and encoded slashes are routed to roles of groups.
 
     Encoded slashes are decoded, so `groups%2Fx` is the group `x`.
     """

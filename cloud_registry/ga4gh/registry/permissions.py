@@ -646,9 +646,9 @@ def warn_owner_rules() -> None:
 
     Deployments that change or remove the rule of owners' roles of groups
     (`OWNER_GROUP_RULE`) usually restrict them, but other rules may still
-    allow them, e.g., `owners-change-permissions` as in 1.0.0rc1 and overlays
-    of that version (`/services/:id/permissions/*`), which also covers the
-    roles of groups. So, unless the rule is kept as in the packaged base
+    allow them, e.g., an overlay that keeps `owners-change-permissions` as in
+    1.0.0rc1 (`/services/:id/permissions/*`), which also covers the roles of
+    groups. So, unless the rule of groups is kept as in the packaged base
     config (`BASE_CONFIG`, which deployments change with overlays), warns of
     configured rules (named or a list) for owners or any user (`*`) that
     allow `PUT` or `DELETE` on the roles of both users (`EXAMPLE_USERS`) and

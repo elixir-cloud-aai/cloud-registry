@@ -373,7 +373,7 @@ curl -X POST "http://localhost:8080/ga4gh/registry/v1/invitations/accept" \
   invitations they created (no endpoint lists them across services: query
   the collection `invitations` by `created_by`).
 - **Identifiers:** users whose roles the permissions API couldn't revoke
-  (identifiers that are `groups` or start with `groups/` or a slash, or with
+  (identifiers that start with a slash, or with
   the segments `.` or `..`; see [Roles on services](#roles-on-services))
   can't accept invitations (`400 Bad Request`).
 - **Listing and revoking:** `GET /services/<id>/invitations` lists the

@@ -14,7 +14,11 @@ groups, which API clients and overlays with their own policy rules must follow:
 - **API:** `PUT` and `DELETE /services/<id>/permissions/<user-id>` move to
   `/services/<id>/permissions/users/<user-id>`. There is no alias: the former
   paths are not found (`404 Not Found`), so move API clients in the same
-  rollout, also [cloud-registry-ui](https://github.com/elixir-cloud-aai/cloud-registry-ui).
+  upgrade, also [cloud-registry-ui](https://github.com/elixir-cloud-aai/cloud-registry-ui).
+  The only exception are identifiers that start with `users/` (e.g., of an
+  issuer with such a namespace): their former path is the new path of the user
+  without that prefix, so clients that weren't moved change the roles of that
+  user. With such identifiers, stop these clients first.
   `/services/<id>/permissions/groups/<group>` and `GET
   /services/<id>/permissions` stay. Users called `groups`, or whose identifiers
   start with `groups/`, were refused and can now be granted roles and accept
@@ -47,24 +51,39 @@ groups, which API clients and overlays with their own policy rules must follow:
   /admin/access-control/permissions/<rule-id>`), as `.../permissions/*` would
   still let owners change roles of groups, and the startup warning only checks
   configured rules.
-- **Rollout:** during a rolling update, pods of the two versions serve different
-  paths, and each pod that starts replaces the configured rules of all of them,
-  so owners may get `403 Forbidden` from pods of the other version. Upgrade with
-  the app scaled to 0 replicas if that matters, or restart the app once after
-  the rollout, so that a pod of 1.0.0rc1 that started last doesn't leave its
-  rules in place.
+- **Rollout:** upgrade with the app scaled to 0 replicas, unless no client
+  changes roles during the upgrade. No order of clients and pods is safe in a
+  rolling update: pods of 1.0.0rc1 take the new paths for the old ones, so that
+  `PUT .../permissions/users/bob` answers `200 OK` and grants the role to a user
+  `users/bob`, not to `bob`; pods of this version don't find the old paths. Each
+  pod that starts also replaces the configured rules of all pods, so owners may
+  get `403 Forbidden`, and a pod of 1.0.0rc1 that starts last leaves its rules in
+  place until the app restarts. After a rolling update, restart the app once,
+  and look for such roles (the same after going back):
+
+    ```javascript
+    db.getSiblingDB("serviceStore").policy_rules.find(
+      {ptype: "g2", v0: /^user:users\//},
+    )
+    ```
+
+    Revoke them unless users really have these identifiers (`DELETE
+    /services/<id>/permissions/users/users/<user-id>`). They also count as
+    owners, so that the other owners of the service could have been removed:
+    check who owns these services (`GET /services/<id>/permissions`).
 - **Going back:** 1.0.0rc1 replaces the configured rules again when it starts,
-  and stored roles are the same. It can't manage the roles of users called
+  and stored roles are the same; scale the app to 0 replicas first and move
+  clients back, for the reasons above. It can't manage the roles of users called
   `groups`, or starting with `groups/`, granted in the meantime, and doesn't
   start with namespaces starting with `groups/`.
 
-Invitations can have a `label`
+**Invitation labels:** invitations can have a `label`
 (see [Invitations](access-control.md#invitations)). It is optional, so scripts
 and stored invitations keep working; only invitations with a label have the
 field in responses, so clients that reject unknown fields of invitations must
 accept `label`.
 
-Expired invitations that weren't accepted are now kept (see
+**Expired invitations:** those that weren't accepted are now kept (see
 [Invitations](access-control.md#invitations)):
 
 - `GET /services/<id>/invitations` lists them, and no longer lists accepted
