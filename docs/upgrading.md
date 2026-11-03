@@ -80,12 +80,16 @@ groups, which API clients and overlays with their own policy rules must follow:
     or a downgrade, after which `<user-id>` still has their former role. So for
     each rule, admins first grant its role (`v1`) to `<user-id>`, and then revoke
     `users/<user-id>` (`DELETE /services/<id>/permissions/users/users/<user-id>`,
-    on 1.0.0rc1 `DELETE /services/<id>/permissions/users/<user-id>`). Also check
+    on 1.0.0rc1 `DELETE /services/<id>/permissions/users/<user-id>`). If either
+    step returns `409 Conflict`, as the service would have no owner left, first
+    grant `owner` to whoever should own the service. Also check
     the other role changes of the rollout: a revocation that reached such a pod
     didn't revoke the role of `<user-id>`.
 - **Going back:** scale the app to 0 replicas, and move clients back, for the
   reasons above. 1.0.0rc1 can't start until the index of expired invitations is
-  dropped and `keep_expired_days` is removed from your config (see below); it
+  dropped and `keep_expired_days` is removed from your config (see below), after
+  all pods of this version have terminated, as a pod still starting creates the
+  index again; it
   then replaces the configured rules again when it starts, and stored roles are
   the same. It can't manage the roles of users called `groups`, or starting with
   `groups/`, granted in the meantime, and doesn't start with namespaces starting

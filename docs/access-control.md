@@ -402,8 +402,11 @@ curl -X POST "http://localhost:8080/ga4gh/registry/v1/invitations/accept" \
   invitations that weren't accepted keep their label, and who created them and
   when (`created_by`, `created_as`, `created_at`), and current owners see the
   creators. Revoking a role only cleans the invitations that the user accepted,
-  not those they created: these stay listed, also as `open` until they expire,
-  although accepting them then returns `404` (see **Creators**).
+  not those they created: these stay listed. Those whose creator lost the owner
+  role that allowed them show `open` until they expire, although accepting them
+  then returns `404`. Those created as an admin, or through a group that is still
+  owner, stay valid, so revoke them if they are no longer wanted (see
+  **Creators**).
 - **Limit:** a service has at most
   `custom.access_control.invitations.max_per_service` invitations that
   haven't expired, open or accepted (default: 20; `null` for no limit), so
