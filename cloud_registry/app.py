@@ -40,6 +40,18 @@ from cloud_registry.ga4gh.registry.service_types import (
 logger = logging.getLogger(__name__)
 
 
+def create_foca() -> Foca:
+    """Read and validate the config, without connecting to the database.
+
+    Returns:
+        FOCA's app factory, with the config of the registry.
+    """
+    return Foca(
+        config_file=Path(__file__).parent / "config.yaml",
+        custom_config_model="cloud_registry.service_models.custom_config.CustomConfig",
+    )
+
+
 def create_app() -> App:
     """Create the app from the config, with the registry's checks.
 
@@ -88,11 +100,7 @@ def create_app() -> App:
             (`custom.endpoints.service_info`) or the size limit of request
             bodies (`custom.max_content_length`).
     """
-    foca = Foca(
-        config_file=Path(__file__).parent / "config.yaml",
-        custom_config_model="cloud_registry.service_models.custom_config.CustomConfig",
-    )
-    app = foca.create_app()
+    app = create_foca().create_app()
     require_no_service_clients(app.app)
     app.app.before_request(resume_renames_periodically)
 
