@@ -614,10 +614,11 @@ def _delete_roles(serviceId: str, subject: str, subject_type: SubjectType) -> No
         if subject_type == "user":
             _forget_names(serviceId, subject)
             # the user's name and email address in the invitations they
-            # accepted, as names are deleted with the role
+            # accepted, as names are deleted with the role, and the labels of
+            # these invitations, which may name the user
             get_collection(INVITATIONS).update_many(
                 {"service_id": serviceId, "accepted.user_id": subject},
-                {"$unset": {"accepted.name": "", "accepted.email": ""}},
+                {"$unset": {"accepted.name": "", "accepted.email": "", "label": ""}},
             )
 
 

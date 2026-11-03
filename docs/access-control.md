@@ -326,7 +326,7 @@ addresses are involved.
 # owner: create an invitation; the response has its `token` (only here)
 curl -X POST "http://localhost:8080/ga4gh/registry/v1/services/<id>/invitations" \
   -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
-  -d '{"role": "maintainer"}'
+  -d '{"role": "maintainer", "label": "Bob (variant calling team)"}'
 # invited user: accept it
 curl -X POST "http://localhost:8080/ga4gh/registry/v1/invitations/accept" \
   -H "Authorization: Bearer <token of the invited user>" \
@@ -346,6 +346,20 @@ curl -X POST "http://localhost:8080/ga4gh/registry/v1/invitations/accept" \
   not found (`404`). If the role can't be granted, e.g., because the user is
   the last owner of the service and the invitation is for `maintainer` (`409`,
   `last-owner`), the invitation stays open.
+- **Labels:** an optional `label` says what an invitation is for (e.g., who
+  it was sent to), so that owners don't send the wrong link: plain text of at
+  most 100 characters on one line, not blank, without control or
+  direction-changing characters (`400 Bad Request` otherwise; whitespace around
+  it is removed). It is only returned to those who can list the invitations of
+  the service, not to the user who accepts it. Labels may name people, so don't
+  put more in them than needed. A label is stored with its invitation: it is
+  removed when the invitation is revoked, or by MongoDB within about a minute
+  after it expires, and earlier if the invitation was accepted and the user's
+  roles on the service are revoked; database backups keep it as long as the
+  deployment keeps them. The registry doesn't log labels, but the log message
+  of a request rejected as invalid quotes the rejected value. Clients must show
+  labels as text, not as markup. Whether clients require a label is up to them;
+  the API doesn't.
 - **Creators:** invitations only grant their role while their creator is an
   owner of the service: as a user, or through the group that made them owner
   when they created it, as long as that group is owner (and, if they accept

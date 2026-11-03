@@ -7,7 +7,10 @@ a link with it through any channel; the invited user logs in and accepts it
 (`POST /invitations/accept`), which grants the role to their own identifier,
 as `PUT /services/{serviceId}/permissions/{userId}` would (replacing their
 other role on the service). Owners list the invitations of a service, with
-who accepted them, and revoke open ones.
+who accepted them, and revoke open ones. An optional label (`LABEL`) tells them
+what an invitation is for; it may name people, so it is served to them only,
+not logged once stored, and removed with the invitation, or when the role of
+the user who accepted it is revoked.
 
 Invitations only grant roles while their creators may: each stores how its
 creator was allowed to create it (`CREATED_AS`: as an admin, as an owner, or
@@ -75,7 +78,7 @@ from cloud_registry.ga4gh.registry.permissions import (
     require_subject,
     service_path,
 )
-from cloud_registry.ga4gh.registry.service import service_exists
+from cloud_registry.ga4gh.registry.service import check_strings, service_exists
 from cloud_registry.service_models.custom_config import CustomConfig
 from cloud_registry.utils import format_time, get_collection, now
 
@@ -83,6 +86,10 @@ logger = logging.getLogger(__name__)
 # Fields of stored invitations: the hash of the token, and the acceptance
 TOKEN_HASH = "token_hash"  # noqa: S105 (field name)
 ACCEPTED = "accepted"
+# Field of stored invitations: plain text for those who manage them, if given;
+# served to those who may list them only, and not logged by the registry, as it
+# may name people
+LABEL = "label"
 # Field of stored invitations: how the creator was allowed to create it,
 # `{"admin": True}`, `{"user": <user identifier>}` (owner) or `{"group":
 # <group>}` (member of an owner group); never served
@@ -168,13 +175,13 @@ def _serve(invitation: dict[str, Any], users: set[str] | None = None) -> dict[st
     Args:
         invitation: Stored invitation.
         users: Users with a role on the service; the name and email address
-            of users who accepted the invitation are only served while they
-            have one, also if removing them failed when the role was revoked
-            (cf. `_delete_roles()`). All users' if `None`.
+            of users who accepted the invitation, and its label, are only
+            served while they have one, also if removing them failed when the
+            role was revoked (cf. `_delete_roles()`). All users' if `None`.
 
     Returns:
         The invitation, without the hash of its token, with times as RFC 3339
-        date-times.
+        date-times, and with its label, if any.
     """
     served = {
         "id": invitation["_id"],
@@ -184,6 +191,8 @@ def _serve(invitation: dict[str, Any], users: set[str] | None = None) -> dict[st
         "created_at": format_time(invitation["created_at"]),
         "expires_at": format_time(invitation["expires_at"]),
     }
+    if LABEL in invitation:
+        served[LABEL] = invitation[LABEL]
     accepted = invitation.get(ACCEPTED)
     if accepted is not None:
         served[ACCEPTED] = {
@@ -193,6 +202,7 @@ def _serve(invitation: dict[str, Any], users: set[str] | None = None) -> dict[st
         if users is not None and accepted["user_id"] not in users:
             served[ACCEPTED].pop("name", None)
             served[ACCEPTED].pop("email", None)
+            served.pop(LABEL, None)
     return served
 
 
@@ -297,7 +307,8 @@ def postServiceInvitation(
 
     Args:
         serviceId: Service identifier.
-        invitation: Request body, with the role to grant as `role`.
+        invitation: Request body, with the role to grant as `role`, and
+            optionally a label as `label` (whitespace around it is removed).
         **kwargs: Further arguments that Connexion passes (`user`,
             `token_info`); unused.
 
@@ -311,10 +322,13 @@ def postServiceInvitation(
         cloud_registry.exceptions.Forbidden: The user is no longer an owner
             (cf. `_created_as()`), also if the role was revoked while the
             invitation was stored (it is deleted then).
+        cloud_registry.ga4gh.registry.service.InvalidService: The label can't
+            be stored (cf. `check_strings()`).
         cloud_registry.exceptions.NotFound: The service doesn't exist, or was
             deleted meanwhile.
     """
     creator = require_subject()
+    check_strings(invitation)
     if not service_exists(serviceId):
         raise NotFound
     created_as = _created_as(serviceId, creator)
@@ -340,6 +354,8 @@ def postServiceInvitation(
         "created_at": created_at,
         "expires_at": created_at + timedelta(days=expiry_days),
     }
+    if LABEL in invitation:
+        document[LABEL] = invitation[LABEL].strip()
     collection = get_collection(INVITATIONS)
     collection.insert_one(document)
     # the service may have been deleted (with its invitations), or the

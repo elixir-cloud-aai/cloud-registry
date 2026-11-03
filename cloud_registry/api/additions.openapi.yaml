@@ -629,8 +629,10 @@ paths:
         here), which they accept (`POST /invitations/accept`) after logging
         in. Clients should put the token in the URL fragment (e.g.,
         `https://portal.example.org/invitations#<token>`), which browsers
-        don't send to servers. Invitations are single-use and expire after
-        the days that the deployment sets (`expires_at`; by default, 7),
+        don't send to servers. An optional `label` says what the invitation
+        is for; only those who can list the invitations see it. Invitations
+        are single-use and expire after the days that the deployment sets
+        (`expires_at`; by default, 7),
         also once accepted. A service has at most as many invitations that
         haven't expired, open or accepted, as the deployment allows (by
         default, 20; `409` above, `code`: `invitations-limit`). Invitations
@@ -644,7 +646,9 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ServiceId'
       requestBody:
-        description: Role to grant to the user who accepts the invitation.
+        description: |
+          Role to grant to the user who accepts the invitation, and optionally
+          a label for those who manage it.
         required: true
         content:
           application/json:
@@ -676,9 +680,9 @@ paths:
       summary: List the invitations to a service.
       description: |
         List the open and accepted invitations to a service that haven't
-        expired, oldest first, without their tokens; accepted ones with who
-        accepted them (`accepted`). Only for owners of the service and
-        admins.
+        expired, oldest first, without their tokens, with their labels
+        (`label`), if any; accepted ones with who accepted them (`accepted`).
+        Only for owners of the service and admins.
       operationId: getServiceInvitations
       x-openapi-router-controller: cloud_registry.ga4gh.registry.invitations
       tags:
@@ -1453,7 +1457,9 @@ components:
             Group the role was granted to, of which the user is a member;
             not set for roles granted to the user.
     InvitationRegister:
-      description: Role to grant to the user who accepts an invitation.
+      description: |
+        Role to grant to the user who accepts an invitation, and a label for
+        those who manage it.
       type: object
       required:
         - role
@@ -1461,6 +1467,24 @@ components:
       properties:
         role:
           $ref: '#/components/schemas/Role'
+        label:
+          $ref: '#/components/schemas/InvitationLabel'
+    InvitationLabel:
+      description: |
+        Plain text that tells those who manage the invitations of a service
+        what an invitation is for (e.g., who it was sent to), so that they
+        send the right link: one line, not blank, without control or
+        direction-changing characters, of at most 100 characters before
+        whitespace around it is removed. Clients must not render it as
+        markup. Only for those who may list the invitations: the user who
+        accepts the invitation doesn't get it. As it may name people, it is
+        stored only as long as the invitation, and removed when the role of
+        the user who accepted the invitation is revoked.
+      type: string
+      minLength: 1
+      maxLength: 100
+      pattern: '^(?![\s\S]*[\x00-\x1F\x7F-\x9F\u061C\u200B\u200E\u200F\u2028-\u202E\u2060\u2066-\u2069\uFEFF])\s*\S'
+      example: Bob (variant calling team)
     Invitation:
       description: Invitation to a service.
       type: object
@@ -1481,6 +1505,8 @@ components:
           description: Identifier of the service.
         role:
           $ref: '#/components/schemas/Role'
+        label:
+          $ref: '#/components/schemas/InvitationLabel'
         created_by:
           type: string
           description: Identifier of the user who created the invitation.
@@ -1521,6 +1547,8 @@ components:
           description: Identifier of the service.
         role:
           $ref: '#/components/schemas/Role'
+        label:
+          $ref: '#/components/schemas/InvitationLabel'
         created_by:
           type: string
           description: Identifier of the user who created the invitation.

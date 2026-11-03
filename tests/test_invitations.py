@@ -55,7 +55,11 @@ from tests.test_rename import NEW_ID, PATH, make_lock, move_service, rename, res
 
 
 def invite(
-    client: FlaskClient, service_id: str, role: str = "maintainer", user: str = ALICE
+    client: FlaskClient,
+    service_id: str,
+    role: str = "maintainer",
+    user: str = ALICE,
+    **fields: Any,
 ) -> TestResponse:
     """Create an invitation to a service.
 
@@ -64,13 +68,14 @@ def invite(
         service_id: Service identifier.
         role: Role of the invitation.
         user: User who creates the invitation.
+        **fields: Further fields of the request body (e.g., `label`).
 
     Returns:
         Response.
     """
     return client.post(
         f"{BASE}/services/{service_id}/invitations",
-        json={"role": role},
+        json={"role": role, **fields},
         headers=headers(user),
     )
 
@@ -426,6 +431,134 @@ def test_invalid_role(client: FlaskClient) -> None:
             headers=headers(ALICE),
         )
         assert response.status_code == 400, body
+
+
+def test_label(app: App, client: FlaskClient) -> None:
+    """Labels are stored and returned on creation and in the list."""
+    service_id = register(client)
+    created = invite(client, service_id, label="Bob (Lab Ö) <b>").get_json()
+    assert created["label"] == "Bob (Lab Ö) <b>"
+    assert invitations(client, service_id)[0]["label"] == "Bob (Lab Ö) <b>"
+    assert stored(app)[0]["label"] == "Bob (Lab Ö) <b>"
+
+
+def test_label_optional(app: App, client: FlaskClient) -> None:
+    """Labels are optional, and left out of invitations without one.
+
+    This includes those stored before labels existed.
+    """
+    service_id = register(client)
+    created = invite(client, service_id).get_json()
+    assert "label" not in created
+    assert "label" not in invitations(client, service_id)[0]
+    assert "label" not in stored(app)[0]
+
+
+def test_label_trimmed(client: FlaskClient) -> None:
+    """Whitespace around labels is removed."""
+    service_id = register(client)
+    assert invite(client, service_id, label="  Bob  ").get_json()["label"] == "Bob"
+
+
+def test_label_longest(client: FlaskClient) -> None:
+    """Labels have at most `100` characters, whatever their encoded size."""
+    service_id = register(client)
+    assert invite(client, service_id, label="Ö" * 100).status_code == 201
+    assert invite(client, service_id, label="x" * 101).status_code == 400
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        "",
+        " ",
+        "\t",
+        "Bob\n",
+        "\nBob",
+        "a\nb",
+        "a\x00b",
+        "a\x7fb",
+        "a\x85b",
+        f"a{chr(0x2028)}b",
+        chr(0x200B),
+        f"a{chr(0x202E)}b",
+        f"a{chr(0x200F)}b",
+        f"a{chr(0x061C)}b",
+        chr(0x200E),
+        f"a{chr(0x2066)}b",
+        chr(0xFEFF),
+        f"Bob{chr(0xD800)}",
+        1,
+        None,
+    ],
+)
+def test_label_invalid(app: App, client: FlaskClient, label: Any) -> None:
+    """Labels are plain text of one line, not blank; others are rejected."""
+    service_id = register(client)
+    assert invite(client, service_id, label=label).status_code == 400
+    assert stored(app) == []
+
+
+def test_label_joiners(client: FlaskClient) -> None:
+    """Labels may have joiners, which names in some scripts need."""
+    service_id = register(client)
+    label = f"a{chr(0x200C)}b{chr(0x200D)}c"
+    assert invite(client, service_id, label=label).get_json()["label"] == label
+
+
+def test_label_hidden_from_accepting_user(client: FlaskClient) -> None:
+    """Only those who may list invitations see their labels.
+
+    Not the user who accepts it, and not other users.
+    """
+    service_id = register(client)
+    created = invite(client, service_id, label="For Bob").get_json()
+    response = accept(client, created["token"])
+    assert response.status_code == 200
+    assert "For Bob" not in response.get_data(as_text=True)
+    path = f"{BASE}/services/{service_id}/invitations"
+    for user in (BOB, CAROL):
+        response = client.get(path, headers=headers(user))
+        assert response.status_code == 403
+        assert "For Bob" not in response.get_data(as_text=True)
+
+
+def test_label_not_logged(
+    client: FlaskClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Labels may name people, so they are not logged."""
+    caplog.set_level("INFO")
+    service_id = register(client)
+    created = invite(client, service_id, label="For Bob").get_json()
+    assert accept(client, created["token"]).status_code == 200
+    other = invite(client, service_id, label="For Bob").get_json()
+    invitations(client, service_id)
+    assert revoke_invitation(client, service_id, other["id"]).status_code == 200
+    assert "For Bob" not in caplog.text
+
+
+def test_label_removed_with_role(app: App, client: FlaskClient) -> None:
+    """Labels of accepted invitations are removed with the user's roles.
+
+    They may name the user, and accepted invitations can't be revoked; others
+    keep theirs.
+    """
+    service_id = register(client)
+    created = invite(client, service_id, label="For Bob").get_json()
+    assert accept(client, created["token"]).status_code == 200
+    invite(client, service_id, label="For Carol")
+    assert revoke(client, service_id, BOB) == 200
+    first, second = invitations(client, service_id)
+    assert "label" not in first
+    assert second["label"] == "For Carol"
+
+
+def test_label_moves_with_rename(client: FlaskClient) -> None:
+    """Labels stay with invitations when their service is renamed."""
+    service_id = register(client)
+    invite(client, service_id, label="For Bob")
+    assert rename(client, service_id).status_code == 200
+    assert invitations(client, NEW_ID)[0]["label"] == "For Bob"
 
 
 def test_unknown_service(client: FlaskClient) -> None:
@@ -899,12 +1032,15 @@ def test_creator_checked_in_lock(
 def test_names_hidden_without_role(app: App, client: FlaskClient) -> None:
     """Names of users without a role on the service are not served.
 
-    Also if removing them failed when the role was revoked.
+    Nor are the labels of their invitations, which may name them. Also if
+    removing them failed when the role was revoked.
     """
     service_id = register(client)
-    assert accept(client, token_of(client, service_id)).status_code == 200
+    created = invite(client, service_id, label="For Bob").get_json()
+    assert accept(client, created["token"]).status_code == 200
     with app.app.app_context():
         remove_resource_role(BOB, "maintainer", f"{PATH}/{service_id}")
     (accepted,) = invitations(client, service_id)
     assert set(accepted["accepted"]) == {"user_id", "accepted_at"}
+    assert "label" not in accepted
     assert stored(app)[0]["accepted"]["name"] == NAMES[BOB]
