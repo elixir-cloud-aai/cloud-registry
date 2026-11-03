@@ -20,7 +20,7 @@ groups, which API clients and overlays with their own policy rules must follow:
   `/services/<id>/permissions/users/<user-id>`. There is no alias: the former
   paths are not found (`404 Not Found`), so move API clients in the same
   upgrade, also [cloud-registry-ui](https://github.com/elixir-cloud-aai/cloud-registry-ui):
-  its version `1.0.0-rc2` uses the new paths and the `status` of invitations.
+  the UI's 1.0.0-rc2 uses the new paths and the `status` of invitations.
   The only exception are identifiers that start with `users/` (e.g., of an
   issuer with such a namespace): their former path is the new path of the user
   without that prefix, so clients that weren't moved change the roles of that
