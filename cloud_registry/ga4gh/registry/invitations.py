@@ -7,7 +7,9 @@ a link with it through any channel; the invited user logs in and accepts it
 (`POST /invitations/accept`), which grants the role to their own identifier,
 as `PUT /services/{serviceId}/permissions/{userId}` would (replacing their
 other role on the service). Owners list the invitations of a service, with
-who accepted them, and revoke open ones.
+who accepted them, and revoke open ones. An optional label (`LABEL`) tells them
+what an invitation is for; it may name people, so it is served to them only,
+never logged, and stored only as long as the invitation.
 
 Invitations only grant roles while their creators may: each stores how its
 creator was allowed to create it (`CREATED_AS`: as an admin, as an owner, or
@@ -83,6 +85,9 @@ logger = logging.getLogger(__name__)
 # Fields of stored invitations: the hash of the token, and the acceptance
 TOKEN_HASH = "token_hash"  # noqa: S105 (field name)
 ACCEPTED = "accepted"
+# Field of stored invitations: plain text for those who manage them, if given;
+# served to those who may list them only, and not logged, as it may name people
+LABEL = "label"
 # Field of stored invitations: how the creator was allowed to create it,
 # `{"admin": True}`, `{"user": <user identifier>}` (owner) or `{"group":
 # <group>}` (member of an owner group); never served
@@ -174,7 +179,7 @@ def _serve(invitation: dict[str, Any], users: set[str] | None = None) -> dict[st
 
     Returns:
         The invitation, without the hash of its token, with times as RFC 3339
-        date-times.
+        date-times, and with its label, if any.
     """
     served = {
         "id": invitation["_id"],
@@ -184,6 +189,8 @@ def _serve(invitation: dict[str, Any], users: set[str] | None = None) -> dict[st
         "created_at": format_time(invitation["created_at"]),
         "expires_at": format_time(invitation["expires_at"]),
     }
+    if LABEL in invitation:
+        served[LABEL] = invitation[LABEL]
     accepted = invitation.get(ACCEPTED)
     if accepted is not None:
         served[ACCEPTED] = {
@@ -297,7 +304,8 @@ def postServiceInvitation(
 
     Args:
         serviceId: Service identifier.
-        invitation: Request body, with the role to grant as `role`.
+        invitation: Request body, with the role to grant as `role`, and
+            optionally a label as `label` (whitespace around it is removed).
         **kwargs: Further arguments that Connexion passes (`user`,
             `token_info`); unused.
 
@@ -340,6 +348,8 @@ def postServiceInvitation(
         "created_at": created_at,
         "expires_at": created_at + timedelta(days=expiry_days),
     }
+    if LABEL in invitation:
+        document[LABEL] = invitation[LABEL].strip()
     collection = get_collection(INVITATIONS)
     collection.insert_one(document)
     # the service may have been deleted (with its invitations), or the

@@ -6,6 +6,13 @@ steps on this page. Upgrades of Helm releases are described in
 [Deployment](deployment.md#upgrades). This page describes how to upgrade, and
 how existing setups and data are affected.
 
+## From 1.0.0rc1
+
+Data is kept, and nothing needs to be done. Invitations can have a `label`
+(see [Invitations](access-control.md#invitations)). It is optional, so scripts
+and stored invitations keep working; only invitations with a label have the
+field in responses, so clients that refuse unknown fields must allow it.
+
 ## From 0.6.0
 
 Data is kept. Owners can invite users to their services by link (see
