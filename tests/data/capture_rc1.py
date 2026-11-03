@@ -20,7 +20,7 @@ Stored are the service of alice, with roles of users (bob, carol and a namespace
 user) and of a group (maintainer), and three invitations:
 
 - an open one, for the role `maintainer`;
-- an expired one, for the role `owner`, whose time is set in the database, as
+- an expired one, for the role `owner`, whose time is set in the capture, as
   1.0.0rc1 serves no such invitation, and its TTL index removes them within a
   minute;
 - one that grace accepted, with her name and verified email address.
@@ -101,15 +101,14 @@ def test_capture(
     assert accept(client, accepted, user=GRACE).status_code == 200
 
     database = db_client[DB]
-    database["invitations"].update_one(
-        {"role": "owner"},
-        {"$set": {"expires_at": datetime.now(UTC) - timedelta(seconds=1)}},
-    )
     store = {name: list(database[name].find()) for name in COLLECTIONS}
     assert len(store["invitations"]) == 3
     for invitation in store["invitations"]:
         # no credential: what the tests replace
         invitation["token_hash"] = "replaced-by-the-tests"  # noqa: S105
+        if invitation["role"] == "owner":
+            invitation["expires_at"] = datetime.now(UTC) - timedelta(seconds=1)
+    assert sum(item["role"] == "owner" for item in store["invitations"]) == 1
     capture = {"services": [service, group_service], "store": store}
     Path(os.environ["CAPTURE_FILE"]).write_text(
         json_util.dumps(

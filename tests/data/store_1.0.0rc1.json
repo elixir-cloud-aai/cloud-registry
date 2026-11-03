@@ -1,47 +1,47 @@
 {
  "services": [
-  "VVY4SC",
-  "NJYCF5"
+  "5UAFK5",
+  "3ZRP59"
  ],
  "store": {
   "invitations": [
    {
-    "_id": "cc9c881fa29a43ee8c1bd0c08c84d17f",
+    "_id": "9be6343638e24a5994528e9e8e42366a",
     "created_as": {
      "user": "alice@example.org"
     },
     "created_at": {
-     "$date": "2026-11-03T10:31:04.854Z"
+     "$date": "2026-11-03T11:40:40.176Z"
     },
     "created_by": "alice@example.org",
     "expires_at": {
-     "$date": "2026-11-10T10:31:04.854Z"
+     "$date": "2026-11-10T11:40:40.176Z"
     },
     "role": "maintainer",
-    "service_id": "VVY4SC",
+    "service_id": "5UAFK5",
     "token_hash": "replaced-by-the-tests"
    },
    {
-    "_id": "12f2ffc33aa24198a8c45b1ab978aaf9",
+    "_id": "65a8c5bc008046f5a9b9659cb7b373ec",
     "created_as": {
      "user": "alice@example.org"
     },
     "created_at": {
-     "$date": "2026-11-03T10:31:04.911Z"
+     "$date": "2026-11-03T11:40:40.225Z"
     },
     "created_by": "alice@example.org",
     "expires_at": {
-     "$date": "2026-11-03T10:31:04.142Z"
+     "$date": "2026-11-03T11:40:39.394Z"
     },
     "role": "owner",
-    "service_id": "VVY4SC",
+    "service_id": "5UAFK5",
     "token_hash": "replaced-by-the-tests"
    },
    {
-    "_id": "8f9437f1ecc34abd99563987b12466ba",
+    "_id": "71150a78b687436288dfcabc4d4e2a43",
     "accepted": {
      "accepted_at": {
-      "$date": "2026-11-03T10:31:05.027Z"
+      "$date": "2026-11-03T11:40:40.304Z"
      },
      "email": "grace@example.org",
      "name": "Grace",
@@ -51,27 +51,27 @@
      "user": "alice@example.org"
     },
     "created_at": {
-     "$date": "2026-11-03T10:31:04.977Z"
+     "$date": "2026-11-03T11:40:40.271Z"
     },
     "created_by": "alice@example.org",
     "expires_at": {
-     "$date": "2026-11-10T10:31:04.977Z"
+     "$date": "2026-11-10T11:40:40.271Z"
     },
     "role": "maintainer",
-    "service_id": "VVY4SC",
+    "service_id": "5UAFK5",
     "token_hash": "replaced-by-the-tests"
    }
   ],
   "policy_rules": [
    {
     "_id": {
-     "$oid": "6ae9b7e7f8346694bdaa7d92"
+     "$oid": "6ae9c8376e3bf372c1c66161"
     },
     "configured": true,
     "generations": [
-     "6ae9b7e7f8346694bdaa7d91"
+     "6ae9c8376e3bf372c1c66160"
     ],
-    "id": "8m7gtS",
+    "id": "vIBG58",
     "ptype": "p",
     "v0": "*",
     "v1": "/ga4gh/registry/v1/services",
@@ -79,13 +79,13 @@
    },
    {
     "_id": {
-     "$oid": "6ae9b7e7f8346694bdaa7d93"
+     "$oid": "6ae9c8376e3bf372c1c66162"
     },
     "configured": true,
     "generations": [
-     "6ae9b7e7f8346694bdaa7d91"
+     "6ae9c8376e3bf372c1c66160"
     ],
-    "id": "L9MHSr",
+    "id": "AY3yp4",
     "ptype": "p",
     "v0": "owner",
     "v1": "/ga4gh/registry/v1/services/:id",
@@ -93,13 +93,13 @@
    },
    {
     "_id": {
-     "$oid": "6ae9b7e7f8346694bdaa7d94"
+     "$oid": "6ae9c8376e3bf372c1c66163"
     },
     "configured": true,
     "generations": [
-     "6ae9b7e7f8346694bdaa7d91"
+     "6ae9c8376e3bf372c1c66160"
     ],
-    "id": "Q16NHo",
+    "id": "LkWhft",
     "ptype": "p",
     "v0": "owner",
     "v1": "/ga4gh/registry/v1/services/:id/permissions",
@@ -107,13 +107,13 @@
    },
    {
     "_id": {
-     "$oid": "6ae9b7e7f8346694bdaa7d95"
+     "$oid": "6ae9c8376e3bf372c1c66164"
     },
     "configured": true,
     "generations": [
-     "6ae9b7e7f8346694bdaa7d91"
+     "6ae9c8376e3bf372c1c66160"
     ],
-    "id": "vgP5NB",
+    "id": "qlvgqV",
     "ptype": "p",
     "v0": "owner",
     "v1": "/ga4gh/registry/v1/services/:id/permissions/*",
@@ -121,13 +121,13 @@
    },
    {
     "_id": {
-     "$oid": "6ae9b7e7f8346694bdaa7d96"
+     "$oid": "6ae9c8376e3bf372c1c66165"
     },
     "configured": true,
     "generations": [
-     "6ae9b7e7f8346694bdaa7d91"
+     "6ae9c8376e3bf372c1c66160"
     ],
-    "id": "6cvdCF",
+    "id": "OPn9wB",
     "ptype": "p",
     "v0": "owner",
     "v1": "/ga4gh/registry/v1/services/:id/permissions/groups/*",
@@ -135,13 +135,13 @@
    },
    {
     "_id": {
-     "$oid": "6ae9b7e7f8346694bdaa7d97"
+     "$oid": "6ae9c8376e3bf372c1c66166"
     },
     "configured": true,
     "generations": [
-     "6ae9b7e7f8346694bdaa7d91"
+     "6ae9c8376e3bf372c1c66160"
     ],
-    "id": "Cq5u19",
+    "id": "i6LNa0",
     "ptype": "p",
     "v0": "maintainer",
     "v1": "/ga4gh/registry/v1/services/:id",
@@ -149,13 +149,13 @@
    },
    {
     "_id": {
-     "$oid": "6ae9b7e7f8346694bdaa7d98"
+     "$oid": "6ae9c8376e3bf372c1c66167"
     },
     "configured": true,
     "generations": [
-     "6ae9b7e7f8346694bdaa7d91"
+     "6ae9c8376e3bf372c1c66160"
     ],
-    "id": "VPykoc",
+    "id": "a2Hcx6",
     "ptype": "p",
     "v0": "owner",
     "v1": "/ga4gh/registry/v1/services/:id/invitations",
@@ -163,13 +163,13 @@
    },
    {
     "_id": {
-     "$oid": "6ae9b7e7f8346694bdaa7d99"
+     "$oid": "6ae9c8376e3bf372c1c66168"
     },
     "configured": true,
     "generations": [
-     "6ae9b7e7f8346694bdaa7d91"
+     "6ae9c8376e3bf372c1c66160"
     ],
-    "id": "fKCMfJ",
+    "id": "xNdtIc",
     "ptype": "p",
     "v0": "owner",
     "v1": "/ga4gh/registry/v1/services/:id/invitations/:invitation",
@@ -177,13 +177,13 @@
    },
    {
     "_id": {
-     "$oid": "6ae9b7e7f8346694bdaa7d9a"
+     "$oid": "6ae9c8376e3bf372c1c66169"
     },
     "configured": true,
     "generations": [
-     "6ae9b7e7f8346694bdaa7d91"
+     "6ae9c8376e3bf372c1c66160"
     ],
-    "id": "3wP9Wx",
+    "id": "FImduy",
     "ptype": "p",
     "v0": "*",
     "v1": "/ga4gh/registry/v1/invitations/accept",
@@ -191,13 +191,13 @@
    },
    {
     "_id": {
-     "$oid": "6ae9b7e7f8346694bdaa7d9b"
+     "$oid": "6ae9c8376e3bf372c1c6616a"
     },
     "configured": true,
     "generations": [
-     "6ae9b7e7f8346694bdaa7d91"
+     "6ae9c8376e3bf372c1c66160"
     ],
-    "id": "sjaGVG",
+    "id": "a5cG4U",
     "ptype": "p",
     "v0": "*",
     "v1": "/ga4gh/registry/v1/services/types",
@@ -205,13 +205,13 @@
    },
    {
     "_id": {
-     "$oid": "6ae9b7e7f8346694bdaa7d9c"
+     "$oid": "6ae9c8376e3bf372c1c6616b"
     },
     "configured": true,
     "generations": [
-     "6ae9b7e7f8346694bdaa7d91"
+     "6ae9c8376e3bf372c1c66160"
     ],
-    "id": "dNaY3p",
+    "id": "Qrtl1K",
     "ptype": "p",
     "v0": "*",
     "v1": "/ga4gh/registry/v1/approvals",
@@ -219,13 +219,13 @@
    },
    {
     "_id": {
-     "$oid": "6ae9b7e7f8346694bdaa7d9d"
+     "$oid": "6ae9c8376e3bf372c1c6616c"
     },
     "configured": true,
     "generations": [
-     "6ae9b7e7f8346694bdaa7d91"
+     "6ae9c8376e3bf372c1c66160"
     ],
-    "id": "gZYEeQ",
+    "id": "z8Gdzu",
     "ptype": "p",
     "v0": "*",
     "v1": "/ga4gh/registry/v1/me",
@@ -233,13 +233,13 @@
    },
    {
     "_id": {
-     "$oid": "6ae9b7e7f8346694bdaa7d9e"
+     "$oid": "6ae9c8376e3bf372c1c6616d"
     },
     "configured": true,
     "generations": [
-     "6ae9b7e7f8346694bdaa7d91"
+     "6ae9c8376e3bf372c1c66160"
     ],
-    "id": "H5zLiS",
+    "id": "b5TC96",
     "ptype": "p",
     "v0": "*",
     "v1": "/ga4gh/registry/v1/services",
@@ -247,13 +247,13 @@
    },
    {
     "_id": {
-     "$oid": "6ae9b7e7f8346694bdaa7d9f"
+     "$oid": "6ae9c8376e3bf372c1c6616e"
     },
     "configured": true,
     "generations": [
-     "6ae9b7e7f8346694bdaa7d91"
+     "6ae9c8376e3bf372c1c66160"
     ],
-    "id": "nRK1fz",
+    "id": "cbgNvG",
     "ptype": "p",
     "v0": "*",
     "v1": "/ga4gh/registry/v1/services/:id",
@@ -261,13 +261,13 @@
    },
    {
     "_id": {
-     "$oid": "6ae9b7e7f8346694bdaa7da0"
+     "$oid": "6ae9c8376e3bf372c1c6616f"
     },
     "configured": true,
     "generations": [
-     "6ae9b7e7f8346694bdaa7d91"
+     "6ae9c8376e3bf372c1c66160"
     ],
-    "id": "wLPOLz",
+    "id": "V5h7x9",
     "ptype": "p",
     "v0": "*",
     "v1": "/ga4gh/registry/v1/services/:id/verification",
@@ -275,13 +275,13 @@
    },
    {
     "_id": {
-     "$oid": "6ae9b7e7f8346694bdaa7da1"
+     "$oid": "6ae9c8376e3bf372c1c66170"
     },
     "configured": true,
     "generations": [
-     "6ae9b7e7f8346694bdaa7d91"
+     "6ae9c8376e3bf372c1c66160"
     ],
-    "id": "sH2XyK",
+    "id": "k5JBPt",
     "ptype": "p",
     "v0": "*",
     "v1": "/ga4gh/registry/v1/verifications",
@@ -289,113 +289,113 @@
    },
    {
     "_id": "configured_policies",
-    "generation": "6ae9b7e7f8346694bdaa7d91"
+    "generation": "6ae9c8376e3bf372c1c66160"
    },
    {
     "_id": {
-     "$oid": "6ae9b7e7f8346694bdaa7da5"
+     "$oid": "6ae9c8376e3bf372c1c66174"
     },
-    "id": "6XErEs",
+    "id": "CXsJN0",
     "ptype": "g2",
     "v0": "user:alice@example.org",
     "v1": "owner",
-    "v2": "/ga4gh/registry/v1/services/VVY4SC"
+    "v2": "/ga4gh/registry/v1/services/5UAFK5"
    },
    {
     "_id": {
-     "$oid": "6ae9b7e7f8346694bdaa7da7"
+     "$oid": "6ae9c8376e3bf372c1c66176"
     },
     "granted": {
      "$timestamp": {
       "i": 1,
-      "t": 1793701863
+      "t": 1793706039
      }
     },
-    "id": "F2w5Q3",
+    "id": "B5c0eS",
     "ptype": "g2",
     "v0": "user:bob@example.org",
     "v1": "maintainer",
-    "v2": "/ga4gh/registry/v1/services/VVY4SC"
+    "v2": "/ga4gh/registry/v1/services/5UAFK5"
    },
    {
     "_id": {
-     "$oid": "6ae9b7e7f8346694bdaa7daa"
+     "$oid": "6ae9c8376e3bf372c1c66179"
     },
     "granted": {
      "$timestamp": {
       "i": 2,
-      "t": 1793701863
+      "t": 1793706039
      }
     },
-    "id": "VEoOTo",
+    "id": "kOYaqL",
     "ptype": "g2",
     "v0": "user:carol@example.org",
     "v1": "owner",
-    "v2": "/ga4gh/registry/v1/services/VVY4SC"
+    "v2": "/ga4gh/registry/v1/services/5UAFK5"
    },
    {
     "_id": {
-     "$oid": "6ae9b7e8f8346694bdaa7dad"
-    },
-    "granted": {
-     "$timestamp": {
-      "i": 1,
-      "t": 1793701864
-     }
-    },
-    "id": "j16cXn",
-    "ptype": "g2",
-    "v0": "user:https://login.other.example.org/|dave",
-    "v1": "maintainer",
-    "v2": "/ga4gh/registry/v1/services/VVY4SC"
-   },
-   {
-    "_id": {
-     "$oid": "6ae9b7e8f8346694bdaa7db0"
-    },
-    "granted": {
-     "$timestamp": {
-      "i": 2,
-      "t": 1793701864
-     }
-    },
-    "id": "CD7jJj",
-    "ptype": "g2",
-    "v0": "group:urn:example:group:registry-team#login.example.org",
-    "v1": "maintainer",
-    "v2": "/ga4gh/registry/v1/services/VVY4SC"
-   },
-   {
-    "_id": {
-     "$oid": "6ae9b7e8f8346694bdaa7db7"
+     "$oid": "6ae9c8376e3bf372c1c6617c"
     },
     "granted": {
      "$timestamp": {
       "i": 3,
-      "t": 1793701864
+      "t": 1793706039
      }
     },
-    "id": "lKYLV0",
+    "id": "nfrgFq",
     "ptype": "g2",
-    "v0": "group:urn:example:group:registry-team#login.example.org",
-    "v1": "owner",
-    "v2": "/ga4gh/registry/v1/services/NJYCF5"
+    "v0": "user:https://login.other.example.org/|dave",
+    "v1": "maintainer",
+    "v2": "/ga4gh/registry/v1/services/5UAFK5"
    },
    {
     "_id": {
-     "$oid": "6ae9b7e9f8346694bdaa7dbc"
+     "$oid": "6ae9c8376e3bf372c1c6617f"
+    },
+    "granted": {
+     "$timestamp": {
+      "i": 4,
+      "t": 1793706039
+     }
+    },
+    "id": "tkhLuL",
+    "ptype": "g2",
+    "v0": "group:urn:example:group:registry-team#login.example.org",
+    "v1": "maintainer",
+    "v2": "/ga4gh/registry/v1/services/5UAFK5"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9c8376e3bf372c1c66186"
+    },
+    "granted": {
+     "$timestamp": {
+      "i": 5,
+      "t": 1793706039
+     }
+    },
+    "id": "u1lkfJ",
+    "ptype": "g2",
+    "v0": "group:urn:example:group:registry-team#login.example.org",
+    "v1": "owner",
+    "v2": "/ga4gh/registry/v1/services/3ZRP59"
+   },
+   {
+    "_id": {
+     "$oid": "6ae9c8386e3bf372c1c6618b"
     },
     "granted": {
      "$timestamp": {
       "i": 1,
-      "t": 1793701865
+      "t": 1793706040
      }
     },
-    "id": "5BVSm4",
+    "id": "FERyIF",
     "ptype": "g2",
     "v0": "user:grace@example.org",
     "v1": "maintainer",
-    "v2": "/ga4gh/registry/v1/services/VVY4SC"
+    "v2": "/ga4gh/registry/v1/services/5UAFK5"
    }
   ],
   "service_counts": [
@@ -407,7 +407,7 @@
   "service_types": [
    {
     "_id": {
-     "$oid": "6ae9b7e79957d05827cc378c"
+     "$oid": "6ae9c837ef5d93c95ac81b03"
     },
     "artifact": "tes",
     "created_by": "alice@example.org",
@@ -419,11 +419,11 @@
    {
     "_createdBy": "alice@example.org",
     "_id": {
-     "$oid": "6ae9b7e7f8346694bdaa7da3"
+     "$oid": "6ae9c8376e3bf372c1c66172"
     },
     "_serviceKey": "[\"org.ga4gh\",\"tes\",\"https://tes0.example.org\"]",
-    "createdAt": "2026-11-03T10:31:03.619Z",
-    "id": "VVY4SC",
+    "createdAt": "2026-11-03T11:40:39.396Z",
+    "id": "5UAFK5",
     "name": "My TES",
     "organization": {
      "name": "My organization",
@@ -434,18 +434,18 @@
      "group": "org.ga4gh",
      "version": "1.1.0"
     },
-    "updatedAt": "2026-11-03T10:31:03.619Z",
+    "updatedAt": "2026-11-03T11:40:39.396Z",
     "url": "https://tes0.example.org",
     "version": "1.0.0"
    },
    {
     "_createdBy": "alice@example.org",
     "_id": {
-     "$oid": "6ae9b7e8f8346694bdaa7db3"
+     "$oid": "6ae9c8376e3bf372c1c66182"
     },
     "_serviceKey": "[\"org.ga4gh\",\"tes\",\"https://tes1.example.org\"]",
-    "createdAt": "2026-11-03T10:31:04.419Z",
-    "id": "NJYCF5",
+    "createdAt": "2026-11-03T11:40:39.863Z",
+    "id": "3ZRP59",
     "name": "My TES",
     "organization": {
      "name": "My organization",
@@ -456,7 +456,7 @@
      "group": "org.ga4gh",
      "version": "1.1.0"
     },
-    "updatedAt": "2026-11-03T10:31:04.419Z",
+    "updatedAt": "2026-11-03T11:40:39.863Z",
     "url": "https://tes1.example.org",
     "version": "1.0.0"
    }
@@ -464,18 +464,18 @@
   "user_names": [
    {
     "_id": {
-     "$oid": "6ae9b7e79957d05827cc379f"
+     "$oid": "6ae9c837ef5d93c95ac81b16"
     },
     "name": "Alice Example",
-    "service_id": "VVY4SC",
+    "service_id": "5UAFK5",
     "user_id": "alice@example.org"
    },
    {
     "_id": {
-     "$oid": "6ae9b7e89957d05827cc3814"
+     "$oid": "6ae9c837ef5d93c95ac81b8b"
     },
     "name": "Bob Example",
-    "service_id": "VVY4SC",
+    "service_id": "5UAFK5",
     "user_id": "bob@example.org"
    }
   ]
