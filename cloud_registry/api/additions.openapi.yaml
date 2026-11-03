@@ -1598,7 +1598,8 @@ components:
       description: |
         Status of an invitation:
 
-        - `open`: it can be accepted.
+        - `open`: it can still be accepted, as long as its creator may grant
+          its role.
         - `expired`: it wasn't accepted in time, and can no longer be.
         - `accepted`: it was accepted (see `accepted`); it is only listed if
           asked for.
@@ -1609,7 +1610,7 @@ components:
         - accepted
     InvitationAcceptance:
       description: |
-        Who accepted an invitation, and when; not set for open invitations.
+        Who accepted an invitation, and when; not set for others.
       type: object
       required:
         - user_id

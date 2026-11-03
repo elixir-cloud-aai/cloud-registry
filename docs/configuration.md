@@ -388,10 +388,19 @@ custom:
 ```
 
 Changes of `keep_expired_days` take effect when the app starts, without manual
-steps in the database: the app changes the TTL index that removes them (the
-chart restarts the app when its config changes). Lowering the value removes
-invitations that are past the new value soon after the start; raising it can't
-bring back those removed already.
+steps in the database: the app changes the TTL index that removes them, and logs
+a warning with the old and the new value (the chart restarts the app when its
+config changes). Lowering the value removes invitations that are past the new
+value soon after the start; raising it can't bring back those removed already.
+The value is in the database once for all instances of the app, and the last
+instance to start sets it, so an instance with the previous config that restarts
+during a rollout sets it back, until the next start; check for that warning if
+you rely on a higher value.
+
+Expired invitations don't count towards `max_per_service`, and lists of
+invitations aren't paginated: a service can have about `max_per_service * (1 +
+keep_expired_days / expiry_days)` stored invitations, about 105 by default, so
+avoid combining a few `expiry_days` with many `keep_expired_days`.
 
 ## Request size limit
 

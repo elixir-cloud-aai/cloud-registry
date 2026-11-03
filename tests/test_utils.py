@@ -1,11 +1,12 @@
 """Unit tests for `cloud_registry.utils`."""
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
+from threading import Barrier
 from typing import Any
 
 from flask import Flask
 from pymongo.collection import Collection
-from pymongo.errors import OperationFailure
 import pytest
 
 from cloud_registry.utils import (
@@ -15,7 +16,7 @@ from cloud_registry.utils import (
     now,
     set_ttl_index,
 )
-from tests.conftest import COLLECTION_CLASS
+from tests.conftest import MONGODB_TEST_URI
 
 
 def _seconds(collection: Collection[dict[str, Any]]) -> int | None:
@@ -64,7 +65,7 @@ def test_set_ttl_index_unchanged(
     set_ttl_index(services, "expires", 60)
 
     def fail(*args: Any, **kwargs: Any) -> None:
-        """Fail if an index is dropped.
+        """Fail if a command is run.
 
         Args:
             args: Arguments; unused.
@@ -73,63 +74,60 @@ def test_set_ttl_index_unchanged(
         Raises:
             AssertionError: Always.
         """
-        raise AssertionError("dropped")
+        raise AssertionError("changed")
 
-    monkeypatch.setattr(COLLECTION_CLASS, "drop_index", fail)
+    monkeypatch.setattr(type(services.database), "command", fail)
     set_ttl_index(services, "expires", 60)
     assert _seconds(services) == 60
 
 
-@pytest.mark.parametrize("code", [26, 27])
-def test_set_ttl_index_dropped_meanwhile(
-    services: Collection[dict[str, Any]],
-    monkeypatch: pytest.MonkeyPatch,
-    code: int,
+def test_set_ttl_index_logged(
+    services: Collection[dict[str, Any]], caplog: pytest.LogCaptureFixture
 ) -> None:
-    """An index that another worker dropped meanwhile is created anyway."""
+    """Changes of TTL indexes are logged as warnings, but not new ones."""
     set_ttl_index(services, "expires", 60)
-    original = COLLECTION_CLASS.drop_index
-
-    def drop_twice(self: Any, *args: Any, **kwargs: Any) -> None:
-        """Drop the index, then fail as if another worker had done so.
-
-        Args:
-            self: Collection.
-            args: Arguments of `drop_index()`.
-            kwargs: Keyword arguments of `drop_index()`.
-
-        Raises:
-            OperationFailure: Always.
-        """
-        original(self, *args, **kwargs)
-        raise OperationFailure("gone", code=code)
-
-    monkeypatch.setattr(COLLECTION_CLASS, "drop_index", drop_twice)
+    assert "TTL index" not in caplog.text
     set_ttl_index(services, "expires", 120)
-    assert _seconds(services) == 120
+    assert (
+        f"TTL index 'expires_1' of collection '{services.name}' changed from 60 to "
+        "120 seconds." in caplog.text
+    )
 
 
-def test_set_ttl_index_drop_fails(
-    services: Collection[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+def _set_at_once(
+    barrier: Barrier, collection: Collection[dict[str, Any]], seconds: int
 ) -> None:
-    """Other failures of dropping the index are raised, e.g., permissions."""
-    set_ttl_index(services, "expires", 60)
+    """Wait for the other threads, then set a TTL index.
 
-    def refuse(*args: Any, **kwargs: Any) -> None:
-        """Refuse to drop the index.
+    Args:
+        barrier: Barrier of the threads.
+        collection: Collection.
+        seconds: Seconds to set.
+    """
+    barrier.wait()
+    set_ttl_index(collection, "expires", seconds)
 
-        Args:
-            args: Arguments; unused.
-            kwargs: Keyword arguments; unused.
 
-        Raises:
-            OperationFailure: Always.
-        """
-        raise OperationFailure("unauthorized", code=13)
+def test_set_ttl_index_concurrent(services: Collection[dict[str, Any]]) -> None:
+    """Concurrent runs don't fail, unlike dropping and creating the index.
 
-    monkeypatch.setattr(COLLECTION_CLASS, "drop_index", refuse)
-    with pytest.raises(OperationFailure, match="unauthorized"):
-        set_ttl_index(services, "expires", 120)
+    Dropping an index aborts the build of another run (`IndexBuildAborted`).
+    """
+    if not MONGODB_TEST_URI:
+        pytest.skip("mongomock is not thread-safe")
+    collection = services.database["concurrent"]
+    collection.insert_many({"_id": index} for index in range(2000))
+    set_ttl_index(collection, "expires", 0)
+    for seconds in range(1, 21):
+        barrier = Barrier(4)
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = [
+                pool.submit(_set_at_once, barrier, collection, seconds)
+                for _ in range(4)
+            ]
+        for future in futures:
+            future.result()
+        assert _seconds(collection) == seconds
 
 
 def test_get_collection(unit_app: Flask, services: Collection[dict[str, Any]]) -> None:

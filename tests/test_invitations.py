@@ -28,6 +28,7 @@ from cloud_registry.app import create_app
 from cloud_registry.ga4gh.registry import invitations as invitations_module
 from cloud_registry.ga4gh.registry import locks as locks_module
 from cloud_registry.ga4gh.registry.invitations import (
+    SECONDS_PER_DAY,
     TOKEN_BYTES,
     hash_token,
 )
@@ -574,7 +575,7 @@ def _expected_ttl_indexes(days: int) -> dict[str, tuple[Any, ...]]:
         The indexes as `_ttl_indexes()` gets them.
     """
     return {
-        "expires_at_1": ([("expires_at", 1)], days * 86400, None),
+        "expires_at_1": ([("expires_at", 1)], days * SECONDS_PER_DAY, None),
         "accepted_expires_at": (
             [("expires_at", 1)],
             0,
@@ -1141,6 +1142,21 @@ def test_logged(client: FlaskClient, caplog: pytest.LogCaptureFixture) -> None:
         f"'{ALICE}'." in caplog.text
     )
     assert created["token"] not in caplog.text
+
+
+def test_removal_logged(
+    app: App, client: FlaskClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Removing an expired invitation is logged, not as revoking a usable one."""
+    caplog.set_level("INFO")
+    service_id = register(client)
+    created = invite(client, service_id).get_json()
+    expire(app)
+    assert revoke_invitation(client, service_id, created["id"]).status_code == 200
+    assert (
+        f"Invitation '{created['id']}' to service '{service_id}' removed by "
+        f"'{ALICE}'." in caplog.text
+    )
 
 
 def test_limit_logged(

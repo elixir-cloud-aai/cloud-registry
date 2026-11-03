@@ -31,16 +31,17 @@ Expired invitations that weren't accepted are now kept (see
 - `max_per_service` still counts the same: invitations that haven't expired,
   open or accepted.
 - The app changes the indexes of the collection `invitations` when it starts,
-  so that its database user needs to be able to drop indexes (as `readWrite`
-  can): the new `accepted_expires_at` removes accepted invitations when they
-  expire, as before, and `expires_at_1`, which removed all of them when they
-  expired, then removes the others after the days to keep them. The app does so
-  each time it starts and the value differs. Invitations that expired before the
-  upgrade are gone; those that expire during a rolling update are not.
+  so that its database user needs to be able to change indexes (`collMod`, as
+  `readWrite` can): the new `accepted_expires_at` removes accepted invitations
+  when they expire, as before, and `expires_at_1`, which removed all of them
+  when they expired, then removes the others after the days to keep them. The
+  app does so each time it starts and the value differs. Invitations that
+  expired before the upgrade are gone.
 - Pods of the old version keep working during a rolling update, without listing
   expired invitations, but can't start again once a pod of this version has
   started, as the index they would create conflicts. To go back to an older
-  version, first drop the index, whereupon that version removes all expired
+  version, remove `keep_expired_days` from your config, which older versions
+  refuse, and first drop the index, whereupon that version removes all expired
   invitations:
 
   ```javascript

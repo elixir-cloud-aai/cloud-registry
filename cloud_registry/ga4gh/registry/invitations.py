@@ -160,10 +160,9 @@ def apply_keep_expired_days() -> None:
     """Apply the days for which expired invitations are kept to the database.
 
     Sets the TTL index on `expires_at` that applies to all invitations (cf.
-    `set_ttl_index()`), also replacing that of versions that deleted
-    invitations when they expired. Accepted ones are deleted when they expire
-    by another index (cf. `config.yaml`). Must be called in an app context, on
-    startup.
+    `set_ttl_index()`), also changing that of versions that deleted invitations
+    when they expired. Accepted ones are deleted when they expire by another
+    index (cf. `config.yaml`). Must be called in an app context, on startup.
     """
     days = get_custom_config(CustomConfig).access_control.invitations.keep_expired_days
     set_ttl_index(get_collection(INVITATIONS), EXPIRES_AT, days * SECONDS_PER_DAY)
@@ -503,15 +502,16 @@ def deleteServiceInvitation(
         raise NotFound
     collection = get_collection(INVITATIONS)
     query = {"_id": invitationId, "service_id": serviceId}
-    result = collection.delete_one({**query, **_unused()})
-    if not result.deleted_count:
+    deleted = collection.find_one_and_delete({**query, **_unused()})
+    if deleted is None:
         if collection.count_documents({**query, **_accepted_filter()}, limit=1):
             return problem(InvitationAccepted())
         raise NotFound
     logger.info(
-        "Invitation '%s' to service '%s' revoked by '%s'.",
+        "Invitation '%s' to service '%s' %s by '%s'.",
         escape_log_value(invitationId),
         escape_log_value(serviceId),
+        "removed" if _status(deleted) == "expired" else "revoked",
         current_user(),
     )
     return invitationId

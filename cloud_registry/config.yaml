@@ -130,7 +130,8 @@ security:
             owners-change-group-permissions: [p, owner, "/ga4gh/registry/v1/services/:id/permissions/groups/*", "(PUT)|(DELETE)"]
             maintainers-update-services: [p, maintainer, "/ga4gh/registry/v1/services/:id", PUT]
             # owners may invite users to their services by link, list the
-            # invitations and revoke open ones; any authenticated user may
+            # invitations, revoke open ones and remove expired ones; any
+            # authenticated user may
             # accept an invitation, which grants them its role
             owners-manage-invitations: [p, owner, "/ga4gh/registry/v1/services/:id/invitations", "(GET)|(POST)"]
             owners-revoke-invitations: [p, owner, "/ga4gh/registry/v1/services/:id/invitations/:invitation", DELETE]

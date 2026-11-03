@@ -244,7 +244,7 @@ class AccessControlConfig(FOCABaseConfig):
         >>> AccessControlConfig(service_types='controlled')
         AccessControlConfig(service_types='controlled', max_unused_service_types=10, \
 max_services_per_user=50, invitations=InvitationsConfig(expiry_days=7, \
-max_per_service=20))
+keep_expired_days=30, max_per_service=20))
     """
 
     service_types: Literal["open", "controlled", "moderated"] = "open"
@@ -283,8 +283,8 @@ class CustomConfig(FOCABaseConfig):
 nfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', length=6), url_schemes=['\
 https'], environments=['prod', 'test', 'dev', 'staging'])), access_control=Acc\
 essControlConfig(service_types='open', max_unused_service_types=10, max_serv\
-ices_per_user=50, invitations=InvitationsConfig(expiry_days=7, max_per_servi\
-ce=20)))
+ices_per_user=50, invitations=InvitationsConfig(expiry_days=7, keep_expired_d\
+ays=30, max_per_service=20)))
     """
 
     endpoints: EndpointsConfig

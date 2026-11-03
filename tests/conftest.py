@@ -36,6 +36,7 @@ from foca.security import auth
 import jwt
 import mongomock
 from mongomock.collection import Collection as MockCollection
+from mongomock.database import Database as MockDatabase
 from mongomock.store import CollectionStore
 from pymongo import MongoClient, uri_parser
 from pymongo.collection import Collection
@@ -121,6 +122,40 @@ def _expire_documents(store: CollectionStore, index: dict[str, Any]) -> None:
 
 
 CollectionStore._expire_documents = _expire_documents  # type: ignore[method-assign]
+_COMMAND = MockDatabase.command
+
+
+def _command(
+    db: MockDatabase, command: str, value: str = "", **kwargs: Any
+) -> dict[str, Any]:
+    """Run a command on a mongomock database, also `collMod` of TTL indexes.
+
+    mongomock doesn't implement `collMod`, so that the index is replaced here;
+    the tests against MongoDB (`MONGODB_TEST_URI`) use the command itself.
+
+    Args:
+        db: Database.
+        command: Name of the command.
+        value: Value of the command (`collMod`: name of the collection).
+        **kwargs: Further arguments of the command.
+
+    Returns:
+        Result of the command.
+    """
+    if command != "collMod":
+        result: dict[str, Any] = _COMMAND(db, command, **kwargs)
+        return result
+    collection = db[value]
+    name = kwargs["index"]["name"]
+    key = collection.index_information()[name]["key"]
+    collection.drop_index(name)
+    collection.create_index(
+        key, name=name, expireAfterSeconds=kwargs["index"]["expireAfterSeconds"]
+    )
+    return {"ok": 1.0}
+
+
+MockDatabase.command = _command  # type: ignore[method-assign, assignment]
 
 
 def without_timestamps(service: dict[str, Any]) -> dict[str, Any]:

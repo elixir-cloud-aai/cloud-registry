@@ -344,8 +344,8 @@ curl -X POST "http://localhost:8080/ga4gh/registry/v1/invitations/accept" \
   `custom.access_control.invitations.expiry_days` days (default: 7), also once
   accepted. Unknown, revoked and expired invitations, and those of deleted
   services, are not found (`404`). If the role can't be granted, e.g., because
-  the user is the last owner of the service and the invitation is for `maintainer` (`409`,
-  `last-owner`), the invitation stays open.
+  the user is the last owner of the service and the invitation is for
+  `maintainer` (`409`, `last-owner`), the invitation stays open.
 - **Labels:** an optional `label` says what an invitation is for (e.g., who
   it was sent to), so that owners don't send the wrong link: plain text of at
   most 100 characters on one line, not blank, without control or
