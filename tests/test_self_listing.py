@@ -291,6 +291,20 @@ def test_list_type_pending(
     assert db["service_types"].find_one({"artifact": "service-registry"})["pending"]
 
 
+def test_list_type_pending_replaced_stays(
+    client: FlaskClient,
+    admin: dict[str, str],
+    db: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A pending type stored right after the operation added it stays."""
+    db["service_types"].insert_one({**ENTRY_TYPE, "pending": True})
+    monkeypatch.setattr(self_listing, "store_service_type", lambda *args: True)
+    response = client.put(LISTING, headers=admin)
+    assert response.status_code == 409
+    assert db["service_types"].count_documents(ENTRY_TYPE) == 1
+
+
 def test_list_moderated(app: App, client: FlaskClient, admin: dict[str, str]) -> None:
     """In mode `moderated`, the type and the entry aren't pending."""
     _custom(app).access_control.service_types = "moderated"

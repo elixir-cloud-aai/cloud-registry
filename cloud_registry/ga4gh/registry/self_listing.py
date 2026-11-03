@@ -356,9 +356,11 @@ def _store(service: RegisterService, stored: dict[str, Any] | None, key: str) ->
         if stored is not None:
             stored = _check_entry_id(service_id)
         added = store_service_type(service_type)
+        # not rolled back: a type this operation added isn't pending, so it
+        # was removed and added again by a user meanwhile
+        if is_pending(service_type):
+            raise PendingSelfListing
         try:
-            if is_pending(service_type):
-                raise PendingSelfListing
             if stored is None:
                 created = _insert(service, key)
             elif not _refresh(service, stored, key):
