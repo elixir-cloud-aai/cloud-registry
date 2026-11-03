@@ -20,6 +20,7 @@ from cloud_registry.ga4gh.registry.rename import (
     resume_renames,
     resume_renames_periodically,
 )
+from cloud_registry.ga4gh.registry.self_listing import refresh_self_listing
 from cloud_registry.ga4gh.registry.service import (
     add_service_keys,
     warn_environments,
@@ -64,8 +65,10 @@ def create_app() -> App:
     environment allowed for services, adds missing keys of services, resumes
     interrupted renames of services (cf. `resume_renames()`; also before
     requests of the registry's operations, cf.
-    `resume_renames_periodically()`), adds the types of registered
-    services that aren't stored (e.g., on upgrades) and applies the days for
+    `resume_renames_periodically()`), brings the entry of the registry among
+    its services up to date, if it is listed (cf. `refresh_self_listing()`),
+    adds the types of registered services that aren't stored (e.g., on
+    upgrades) and applies the days for
     which expired invitations are kept (cf. `apply_keep_expired_days()`). Warns
     of stored services with invalid URLs or URL schemes that are not allowed, and of
     rules that let owners change roles of groups although the rule for
@@ -133,6 +136,7 @@ def create_app() -> App:
         resume_renames()
         add_service_creators()
         reconcile_service_counts()
+        refresh_self_listing()
         add_service_types()
         sync_pending_services()
         warn_invalid_urls()

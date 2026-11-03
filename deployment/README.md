@@ -124,6 +124,12 @@ The app refuses to start if the list doesn't have the environment of the
 service info (`config.service_info.service.environment`), so change the two
 together.
 
+Admins can list the registry among its own services, from the service info and
+the public URL (`PUT /ga4gh/registry/v1/service-info/listing`); the app keeps
+the entry up to date when it starts, so pods restarted for a changed `config`
+also update it (see [Listing the registry
+itself](https://cloud-registry.readthedocs.io/en/latest/api/#listing-the-registry-itself)).
+
 Do not edit the ConfigMap with `kubectl edit`: Helm overwrites it on the next
 upgrade. As `config` is stored in a ConfigMap, it must not contain secrets
 (e.g., database credentials).

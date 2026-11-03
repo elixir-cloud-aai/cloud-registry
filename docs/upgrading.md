@@ -105,6 +105,15 @@ that case, add the value to the list, or set the environment to a listed value,
 before upgrading. Otherwise, the pods of this version don't start, and the error
 names both settings.
 
+**Listing the registry itself:** admins can now add the registry to its own
+services (see [Listing the registry
+itself](api.md#listing-the-registry-itself)). Nothing changes until they do, so
+no action is needed. The app creates a new index of the collection `services`
+when it starts. If the registry was registered by hand, delete that service
+first, as a second one with the same URL and API type is refused.
+Before going back to 1.0.0rc1, remove the entry
+(`DELETE /service-info/listing`), as that version would serve its internal field.
+
 **Invitation labels:** invitations can have a `label`
 (see [Invitations](access-control.md#invitations)). It is optional, so scripts
 and stored invitations keep working; only invitations with a label have the

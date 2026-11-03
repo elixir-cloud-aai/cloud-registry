@@ -440,8 +440,9 @@ custom:
 Members of the groups that the deployment maps to the role `admin`
 (`security.access_control.group_mapping`) are **admins**: they can do
 everything, including registering services with chosen identifiers (`PUT` of
-a new service), [renaming services](api.md#renaming-services) and [verifying
-services](api.md#verified-services). E.g.,
+a new service), [renaming services](api.md#renaming-services), [verifying
+services](api.md#verified-services) and [listing the
+registry itself](api.md#listing-the-registry-itself). E.g.,
 with the group claim `groups`:
 
 ```yaml

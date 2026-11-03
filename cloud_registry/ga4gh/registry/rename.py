@@ -134,7 +134,7 @@ def renameService(serviceId: str, rename: dict[str, Any], **kwargs: Any) -> Any:
     """
     new_id: str = rename["id"]
     try:
-        _check_id(new_id)
+        check_id(new_id)
     except InvalidService as exc:
         logger.info(
             "Service '%s' not renamed: %s",
@@ -167,7 +167,7 @@ def renameService(serviceId: str, rename: dict[str, Any], **kwargs: Any) -> Any:
     return new_id
 
 
-def _check_id(new_id: str) -> None:
+def check_id(new_id: str) -> None:
     """Check that a new identifier can be used.
 
     The API specification rejects identifiers that can't be used in URLs, as
