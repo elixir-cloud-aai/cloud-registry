@@ -5,12 +5,13 @@ services and roles are those of `tests/test_access_control.py` and
 `tests/test_rename.py`.
 """
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 import hashlib
 import os
 from pathlib import Path
+from threading import Barrier
 import time
 from typing import Any
 from urllib.parse import quote
@@ -506,6 +507,21 @@ def test_expired_follow_service(app: App, client: FlaskClient) -> None:
     assert stored(app) == []
 
 
+def _after(barrier: Barrier, function: Callable[..., TestResponse], *args: Any) -> Any:
+    """Wait for the other threads, then send a request.
+
+    Args:
+        barrier: Barrier of the threads.
+        function: Function that sends the request.
+        *args: Arguments of the function.
+
+    Returns:
+        Response.
+    """
+    barrier.wait()
+    return function(*args)
+
+
 def test_concurrent_accept_and_revoke(client: FlaskClient) -> None:
     """Either an acceptance or the revocation of an invitation succeeds."""
     if not os.environ.get("MONGODB_TEST_URI"):
@@ -513,9 +529,12 @@ def test_concurrent_accept_and_revoke(client: FlaskClient) -> None:
     service_id = register(client)
     for _ in range(5):
         created = invite(client, service_id).get_json()
+        barrier = Barrier(2)
         with ThreadPoolExecutor(max_workers=2) as pool:
-            accepting = pool.submit(accept, client, created["token"])
-            revoking = pool.submit(revoke_invitation, client, service_id, created["id"])
+            accepting = pool.submit(_after, barrier, accept, client, created["token"])
+            revoking = pool.submit(
+                _after, barrier, revoke_invitation, client, service_id, created["id"]
+            )
         outcome = (accepting.result().status_code, revoking.result().status_code)
         assert outcome in ((200, 409), (404, 200))
         if outcome[0] == 200:
