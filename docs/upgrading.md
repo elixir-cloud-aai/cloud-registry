@@ -57,9 +57,9 @@ groups, which API clients and overlays with their own policy rules must follow:
   `PUT .../permissions/users/bob` answers `200 OK` and grants the role to a user
   `users/bob`, not to `bob`; pods of this version don't find the old paths. Each
   pod that starts also replaces the configured rules of all pods, so owners may
-  get `403 Forbidden`, and a pod of 1.0.0rc1 that starts last leaves its rules in
-  place until the app restarts. After a rolling update, restart the app once,
-  and look for such roles (the same after going back):
+  get `403 Forbidden`, and if a pod of 1.0.0rc1 starts last, its rules stay in
+  place until the app restarts (see below for when such pods can still start).
+  After a rolling update, restart the app once, and look for such roles:
 
     ```javascript
     db.getSiblingDB("serviceStore").policy_rules.find(
@@ -67,15 +67,19 @@ groups, which API clients and overlays with their own policy rules must follow:
     )
     ```
 
-    Revoke them unless users really have these identifiers (`DELETE
-    /services/<id>/permissions/users/users/<user-id>`). They also count as
-    owners, so that the other owners of the service could have been removed:
-    check who owns these services (`GET /services/<id>/permissions`).
-- **Going back:** 1.0.0rc1 replaces the configured rules again when it starts,
-  and stored roles are the same; scale the app to 0 replicas first and move
-  clients back, for the reasons above. It can't manage the roles of users called
-  `groups`, or starting with `groups/`, granted in the meantime, and doesn't
-  start with namespaces starting with `groups/`.
+    Unless users really have these identifiers, first check who owns these
+    services (`GET /services/<id>/permissions`): such roles count as owners, so
+    that the other owners could have been removed, and the last owner can't be
+    revoked (`409 Conflict`). Admins then grant `owner` to the right users, and
+    revoke the others (`DELETE /services/<id>/permissions/users/users/<user-id>`,
+    on 1.0.0rc1 `DELETE /services/<id>/permissions/users/<user-id>`).
+- **Going back:** scale the app to 0 replicas, and move clients back, for the
+  reasons above. 1.0.0rc1 can't start until the index of expired invitations is
+  dropped and `keep_expired_days` is removed from your config (see below); it
+  then replaces the configured rules again when it starts, and stored roles are
+  the same. It can't manage the roles of users called `groups`, or starting with
+  `groups/`, granted in the meantime, and doesn't start with namespaces starting
+  with `groups/`.
 
 **Invitation labels:** invitations can have a `label`
 (see [Invitations](access-control.md#invitations)). It is optional, so scripts
