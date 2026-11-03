@@ -6,6 +6,11 @@ steps on this page. Upgrades of Helm releases are described in
 [Deployment](deployment.md#upgrades). This page describes how to upgrade, and
 how existing setups and data are affected.
 
+The steps add up: when skipping versions, apply the sections of all versions in
+between, starting with the oldest, which is the lowest on this page. Where
+sections advise different rollouts, follow the strictest (e.g., upgrade with the
+app scaled to 0 replicas).
+
 ## From 1.0.0rc1
 
 Data is kept. The paths of users' roles change, as they collided with those of
@@ -14,7 +19,8 @@ groups, which API clients and overlays with their own policy rules must follow:
 - **API:** `PUT` and `DELETE /services/<id>/permissions/<user-id>` move to
   `/services/<id>/permissions/users/<user-id>`. There is no alias: the former
   paths are not found (`404 Not Found`), so move API clients in the same
-  upgrade, also [cloud-registry-ui](https://github.com/elixir-cloud-aai/cloud-registry-ui).
+  upgrade, also [cloud-registry-ui](https://github.com/elixir-cloud-aai/cloud-registry-ui):
+  its version `1.0.0-rc2` uses the new paths and the `status` of invitations.
   The only exception are identifiers that start with `users/` (e.g., of an
   issuer with such a namespace): their former path is the new path of the user
   without that prefix, so clients that weren't moved change the roles of that
@@ -70,9 +76,13 @@ groups, which API clients and overlays with their own policy rules must follow:
     Unless users really have these identifiers, first check who owns these
     services (`GET /services/<id>/permissions`): such roles count as owners, so
     that the other owners could have been removed, and the last owner can't be
-    revoked (`409 Conflict`). Admins then grant `owner` to the right users, and
-    revoke the others (`DELETE /services/<id>/permissions/users/users/<user-id>`,
-    on 1.0.0rc1 `DELETE /services/<id>/permissions/users/<user-id>`).
+    revoked (`409 Conflict`). Such a role can also be a grant of `maintainer`
+    or a downgrade, after which `<user-id>` still has their former role. So for
+    each rule, admins first grant its role (`v1`) to `<user-id>`, and then revoke
+    `users/<user-id>` (`DELETE /services/<id>/permissions/users/users/<user-id>`,
+    on 1.0.0rc1 `DELETE /services/<id>/permissions/users/<user-id>`). Also check
+    the other role changes of the rollout: a revocation that reached such a pod
+    didn't revoke the role of `<user-id>`.
 - **Going back:** scale the app to 0 replicas, and move clients back, for the
   reasons above. 1.0.0rc1 can't start until the index of expired invitations is
   dropped and `keep_expired_days` is removed from your config (see below); it
@@ -100,7 +110,11 @@ accept `label`.
 - The new option `custom.access_control.invitations.keep_expired_days` (default:
   30, at most 365) sets when they are removed automatically. `0` removes them
   when they expire, as before. Check the default against your privacy
-  statement, as their labels may name people.
+  statement: until then, invitations that weren't accepted keep their labels,
+  which may name people, and who created them and when (`created_by`,
+  `created_as`, `created_at`), also after that user lost their role. With the
+  defaults, that is up to 37 days after they were created (`expiry_days` +
+  `keep_expired_days`; before, 7), and current owners see the creators.
 - `max_per_service` still counts the same: invitations that haven't expired,
   open or accepted.
 - The app changes the indexes of the collection `invitations` when it starts,
