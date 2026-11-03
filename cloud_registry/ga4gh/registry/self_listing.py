@@ -135,11 +135,14 @@ def _stored_entry() -> dict[str, Any] | None:
     return get_collection("services").find_one({SELF_ENTRY: True}, {"_id": False})
 
 
-def _check_entry_id(service_id: str) -> None:
+def _check_entry_id(service_id: str) -> dict[str, Any]:
     """Check that the entry still has an identifier, once it is locked.
 
     Args:
         service_id: Identifier of the entry, as read before it was locked.
+
+    Returns:
+        The stored entry, as read now.
 
     Raises:
         cloud_registry.exceptions.NotFound: The entry was removed meanwhile.
@@ -151,6 +154,7 @@ def _check_entry_id(service_id: str) -> None:
         raise NotFound
     if stored["id"] != service_id:
         raise ServiceBusy
+    return stored
 
 
 def _listing(service_id: str | None) -> dict[str, Any]:
@@ -350,7 +354,7 @@ def _store(service: RegisterService, stored: dict[str, Any] | None, key: str) ->
     created = False
     with changing(service_id):
         if stored is not None:
-            _check_entry_id(service_id)
+            stored = _check_entry_id(service_id)
         added = store_service_type(service_type)
         try:
             if is_pending(service_type):
