@@ -168,14 +168,14 @@ def renameService(serviceId: str, rename: dict[str, Any], **kwargs: Any) -> Any:
 
 
 def check_id(new_id: str) -> None:
-    """Check that a new identifier can be used.
+    """Check that an identifier can be used for a service.
 
     The API specification rejects identifiers that can't be used in URLs, as
     for `PUT /services/{serviceId}` (dot segments, `types`, slashes; cf.
     `cloud_registry.ga4gh.registry.service.RESERVED_IDS`).
 
     Args:
-        new_id: New identifier of a service.
+        new_id: Identifier of a service.
 
     Raises:
         InvalidService: The identifier has unpaired surrogates, or can't be
@@ -185,9 +185,7 @@ def check_id(new_id: str) -> None:
     try:
         validate_rule_value(f"{services_path()}/{new_id}")
     except ValueError as exc:
-        raise InvalidService(
-            f"The new identifier can't be used in roles: {exc}."
-        ) from exc
+        raise InvalidService(f"The identifier can't be used in roles: {exc}.") from exc
 
 
 def _lock(path: str, source: str, target: str) -> tuple[str, str] | None:

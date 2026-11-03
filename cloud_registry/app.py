@@ -68,8 +68,8 @@ def create_app() -> App:
     `resume_renames_periodically()`), brings the entry of the registry among
     its services up to date, if it is listed (cf. `refresh_self_listing()`),
     adds the types of registered services that aren't stored (e.g., on
-    upgrades) and applies the days for
-    which expired invitations are kept (cf. `apply_keep_expired_days()`). Warns
+    upgrades) and applies the days for which expired invitations are kept
+    (cf. `apply_keep_expired_days()`). Warns
     of stored services with invalid URLs or URL schemes that are not allowed, and of
     rules that let owners change roles of groups although the rule for
     these is changed, or grant roles by invitation although no rule lets

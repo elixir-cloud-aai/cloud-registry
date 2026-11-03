@@ -486,5 +486,6 @@ the app refuses to start otherwise. To change the service info, change
 the config and restart the app (the Helm chart restarts it when the `config`
 value changes). If admins [listed the
 registry](api.md#listing-the-registry-itself) among its services, the app then
-also brings that entry up to date. Previously, service info was set via the API; see
+also brings that entry up to date.
+Previously, service info was set via the API; see
 [Upgrading](upgrading.md#service-info).

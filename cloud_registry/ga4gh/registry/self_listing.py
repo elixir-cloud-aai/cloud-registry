@@ -29,8 +29,12 @@ without transactions (which need a replica set), in this order:
 So no entry is left without its type, unless the app stops or the database
 fails in step 3, which the app corrects on startup (cf. `add_service_types()`);
 at worst, an interruption leaves a type that no service has. The operation
-can be repeated. Removing the registry deletes the entry first, then its type,
-unless services have it (cf. `remove_service_type()`).
+can be repeated. Removing the registry revokes roles on the entry first, so
+that it can be repeated if that fails, then deletes the entry, and then its
+type, unless services have it (cf. `remove_service_type()`).
+
+The identifier of the entry can change (renames), so operations check it again
+once they hold the lock of the service (cf. `_check_entry_id()`).
 """
 
 import logging
@@ -44,7 +48,7 @@ from foca.utils.logging import escape_log_value
 from foca.utils.urls import get_public_url
 from pymongo.errors import DuplicateKeyError
 
-from cloud_registry.exceptions import CodedConflict, NotFound, problem
+from cloud_registry.exceptions import CodedConflict, NotFound, ServiceBusy, problem
 from cloud_registry.ga4gh.registry.locks import changing
 from cloud_registry.ga4gh.registry.permissions import (
     current_user,
@@ -129,6 +133,24 @@ def _stored_entry() -> dict[str, Any] | None:
         The entry, with internal fields; `None` if the registry isn't listed.
     """
     return get_collection("services").find_one({SELF_ENTRY: True}, {"_id": False})
+
+
+def _check_entry_id(service_id: str) -> None:
+    """Check that the entry still has an identifier, once it is locked.
+
+    Args:
+        service_id: Identifier of the entry, as read before it was locked.
+
+    Raises:
+        cloud_registry.exceptions.NotFound: The entry was removed meanwhile.
+        cloud_registry.exceptions.ServiceBusy: The entry was renamed meanwhile,
+            so that the lock is another one's; the request can be repeated.
+    """
+    stored = _stored_entry()
+    if stored is None:
+        raise NotFound
+    if stored["id"] != service_id:
+        raise ServiceBusy
 
 
 def _listing(service_id: str | None) -> dict[str, Any]:
@@ -319,7 +341,7 @@ def _store(service: RegisterService, stored: dict[str, Any] | None, key: str) ->
         SelfIdTaken: Another service has the identifier.
         cloud_registry.exceptions.NotFound: The entry was removed concurrently.
         cloud_registry.exceptions.ServiceBusy: The entry was still being
-            renamed after waiting.
+            renamed after waiting, or was renamed meanwhile.
     """
     service_id = service.data["id"]
     service_type = type_document(service.data["type"])
@@ -327,6 +349,8 @@ def _store(service: RegisterService, stored: dict[str, Any] | None, key: str) ->
     assert service_type is not None  # noqa: S101 (for type checkers)
     created = False
     with changing(service_id):
+        if stored is not None:
+            _check_entry_id(service_id)
         added = store_service_type(service_type)
         try:
             if is_pending(service_type):
@@ -387,14 +411,18 @@ def putSelfListing(**kwargs: Any) -> ListedResponse:
         _log_refused(exc)
         return problem(exc)
     except DuplicateService as exc:
+        # the entry itself, renamed after it was read
+        current = _stored_entry()
+        if current is not None and current["id"] == exc.existing_id:
+            raise ServiceBusy from exc
         _log_refused(exc)
         return problem(exc, serviceId=exc.existing_id)
-    logger.info(
-        "Registry listed as service '%s' by '%s'.",
-        escape_log_value(service_id),
-        current_user(),
-    )
     if created:
+        logger.info(
+            "Registry listed as service '%s' by '%s'.",
+            escape_log_value(service_id),
+            current_user(),
+        )
         location = get_public_url(f"{services_path()}/{service_id}")
         return _listing(service_id), 201, {"Location": location}
     return _listing(service_id)
@@ -416,9 +444,11 @@ def _log_refused(exc: InvalidService | CodedConflict) -> None:
 def deleteSelfListing(**kwargs: Any) -> dict[str, Any]:
     """Remove the registry from its own services.
 
-    Deletes the entry, with any roles granted on it, then its service type,
-    unless services have it. If the app stops in between, the type stays,
-    without services; admins remove it (`DELETE /services/types`).
+    Revokes the roles granted on the entry, deletes it, and then its service
+    type, unless services have it, and revokes roles again, as for other
+    services (cf. `deleteService()`). If the operation fails or the app stops
+    after the entry was deleted, the type may stay, without services; admins
+    remove it (`DELETE /services/types`).
 
     Args:
         **kwargs: Further arguments that Connexion passes (`user`,
@@ -430,22 +460,25 @@ def deleteSelfListing(**kwargs: Any) -> dict[str, Any]:
     Raises:
         cloud_registry.exceptions.NotFound: The registry isn't listed.
         cloud_registry.exceptions.ServiceBusy: The entry was still being
-            renamed after waiting.
+            renamed after waiting, or was renamed meanwhile.
     """
     stored = _stored_entry()
     if stored is None:
         raise NotFound
     service_id = stored["id"]
     with changing(service_id):
+        _check_entry_id(service_id)
+        remove_permissions(service_id)
         deleted = get_collection("services").find_one_and_delete(
             {SELF_ENTRY: True, "id": service_id}, {"_id": False, "type": True}
         )
         if deleted is None:
             raise NotFound
+        service_type = type_document(deleted.get("type"))
+        if service_type is not None:
+            _remove_unused_type(service_type)
+        # a no-op unless a role was granted during the deletion
         remove_permissions(service_id)
-    service_type = type_document(deleted.get("type"))
-    if service_type is not None:
-        _remove_unused_type(service_type)
     logger.info(
         "Registry (service '%s') no longer listed, by '%s'.",
         escape_log_value(service_id),

@@ -19,7 +19,6 @@ from werkzeug.test import TestResponse
 from cloud_registry.app import create_app
 from cloud_registry.ga4gh.registry import self_listing
 from cloud_registry.ga4gh.registry.self_listing import (
-    RegisterService,
     _refresh,
     refresh_self_listing,
 )
@@ -29,6 +28,7 @@ from cloud_registry.ga4gh.registry.service import (
     SELF_ENTRY,
     VERIFIED,
     DuplicateService,
+    RegisterService,
 )
 from cloud_registry.ga4gh.registry.service_limits import SERVICE_COUNTS
 from cloud_registry.service_models.custom_config import CustomConfig
@@ -412,6 +412,60 @@ def test_unlist_concurrently(
     db["services"].delete_one({"id": ENTRY_ID})
     monkeypatch.setattr(self_listing, "_stored_entry", lambda: stored)
     assert client.delete(LISTING, headers=admin).status_code == 404
+
+
+def test_unlist_removed_while_locking(
+    client: FlaskClient,
+    admin: dict[str, str],
+    db: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An entry removed before it is locked isn't found."""
+    _list(client, admin)
+    stored = db["services"].find_one({"id": ENTRY_ID})
+    reads = iter([stored, None])
+    monkeypatch.setattr(self_listing, "_stored_entry", lambda: next(reads))
+    assert client.delete(LISTING, headers=admin).status_code == 404
+
+
+@pytest.mark.parametrize("method", ["put", "delete"])
+def test_renamed_while_locking(
+    client: FlaskClient,
+    admin: dict[str, str],
+    db: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    method: str,
+) -> None:
+    """An entry renamed before it is locked is left alone: the request is busy."""
+    _list(client, admin)
+    stale = db["services"].find_one({"id": ENTRY_ID})
+    url = f"{BASE}/services/{ENTRY_ID}/rename"
+    assert client.post(url, json={"id": "renamed"}, headers=admin).status_code == 200
+    read = self_listing._stored_entry
+    reads = iter([stale])
+    monkeypatch.setattr(self_listing, "_stored_entry", lambda: next(reads, read()))
+    response = getattr(client, method)(LISTING, headers=admin)
+    assert response.status_code == 409
+    assert response.get_json()["code"] == "service-busy"
+    assert db["services"].find_one({"id": "renamed"})[SELF_ENTRY] is True
+
+
+def test_unlist_roles_not_revoked(
+    client: FlaskClient,
+    admin: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If roles can't be revoked, the entry stays, so that it can be repeated."""
+    _list(client, admin)
+
+    def fail(service_id: str) -> None:
+        raise RuntimeError(service_id)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(self_listing, "remove_permissions", fail)
+        assert client.delete(LISTING, headers=admin).status_code == 500
+    assert client.get(LISTING, headers=admin).get_json()["listed"] is True
+    assert client.delete(LISTING, headers=admin).status_code == 200
 
 
 def test_rename_keeps_listing(

@@ -527,7 +527,7 @@ curl -X PUT "http://localhost:8080/ga4gh/registry/v1/service-info/listing" \
 | --- | --- |
 | `GET /service-info/listing` | `200 OK`, the state |
 | `PUT /service-info/listing` | `201 Created`, the state, and the URL of the entry in `Location`, if the registry was added; `200 OK` and the state if it was listed, with its entry brought up to date |
-| `DELETE /service-info/listing` | `200 OK`, the state; `404 Not Found` if the registry isn't listed |
+| `DELETE /service-info/listing` | `200 OK`, the state; `404 Not Found` if the registry isn't listed; `409 Conflict`, code `service-busy`, while the entry is being [renamed](#renaming-services) |
 
 The state says whether the registry is listed, and if so, under which
 identifier: `{"listed": true, "service_id": "org.example.cloud-registry"}` or
@@ -584,11 +584,14 @@ The entry can be managed like other services, within these limits:
   rename the entry, or remove and add it.
 - Changes of its fields (`PUT /services/{serviceId}`), and removing its
   verification, only last until the app next starts or `PUT` is repeated.
+- The service info isn't checked against the [maximum lengths of
+  registrations](#registrations), so sending an entry with longer fields back
+  with `PUT /services/{serviceId}` is refused (`400 Bad Request`).
 - Deleting it (`DELETE /services/{serviceId}`) ends the listing, but leaves its
   type, as for other services: use `DELETE /service-info/listing` instead.
 
 Adding and removing are one operation each, without transactions (which need a
 replica set). If adding fails, a type it added is removed again. If the app stops
-during the operation, a type without services may stay: repeat the operation, or
-remove the type (`DELETE /services/types`). The app adds the type of an entry
-without one when it starts.
+while adding, repeat the operation. If removing fails or the app stops after the
+entry was deleted, its type may stay, without services: remove it (`DELETE
+/services/types`). The app adds the type of an entry without one when it starts.

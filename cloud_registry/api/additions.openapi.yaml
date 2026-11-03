@@ -140,7 +140,8 @@ paths:
       description: |
         Remove the entry of the registry from its services, and its service
         type, unless other services have it. Only for admins. Returns `404`
-        if the registry isn't listed.
+        if the registry isn't listed, and `409` (`service-busy`) while the
+        entry is being renamed; try again.
       operationId: deleteSelfListing
       x-openapi-router-controller: cloud_registry.ga4gh.registry.self_listing
       tags:
