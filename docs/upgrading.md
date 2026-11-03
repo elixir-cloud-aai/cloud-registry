@@ -459,9 +459,14 @@ they are accepted, as their creators seem to be no longer owners):
 - **Otherwise:** after the config change, namespace the stored identifiers
   of the issuer trusted so far with the migration of the image, with the
   app's new config (e.g., in a pod of the app, whose deployment name
-  depends on the release; `--dry-run` only counts them). The migration,
-  also with `--dry-run`, refuses to run while the config trusts a single
-  issuer, or keeps the subjects of an issuer bare:
+  depends on the release; `--dry-run` only counts them, and changes nothing in
+  the database, whereas the migration itself sets up the app as on startup, so
+  run it with the image of the deployed version). A dry run counts what is
+  stored, so its numbers can differ: configured rules are those that the running
+  app stored, and services that startup would still give a creator aren't
+  counted. It doesn't check the config as startup does, either. The migration,
+  also with `--dry-run`, refuses to run while the config trusts a single issuer,
+  or keeps the subjects of an issuer bare:
 
   ```bash
   kubectl exec deploy/cloud-registry -- \

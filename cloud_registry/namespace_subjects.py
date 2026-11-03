@@ -30,10 +30,17 @@ them again (FOCA's `Adapter.mark_changed()`).
 Run it once the config trusts the new issuer (so that it names the
 namespace), with the app's config (`FOCA_CONFIG_OVERLAY`), e.g., in a
 container of the app: `python -m cloud_registry.namespace_subjects
-<namespace>` (add `--dry-run` to only count the subjects). Until then, the
-issuer's stored users lose their roles. Prefer `namespace: ""` for the
-issuer trusted so far, which keeps its subjects bare (see "Several token
-issuers" in `docs/upgrading.md`).
+<namespace>` (add `--dry-run` to only count the subjects, which changes nothing
+in the database). Until then, the issuer's stored users lose their roles. Prefer
+`namespace: ""` for the issuer trusted so far, which keeps its subjects bare (see
+"Several token issuers" in `docs/upgrading.md`).
+
+Without `--dry-run`, it sets up the app as on startup (e.g., its indexes and
+configured rules), so run it with the image of the deployed version. A dry run
+does none of this, so it only counts what is stored: configured rules as the
+running app stored them, not those of the config, and no services that startup
+would still give a creator. Nor does it check the config as startup does, so it
+can succeed where the migration then fails to start.
 """
 
 import argparse
@@ -41,17 +48,25 @@ from collections.abc import Sequence
 import logging
 import re
 import sys
-from typing import Any
+from typing import Any, cast
 
-from flask import current_app
+from flask import Flask, current_app
 from foca import get_collection as get_foca_collection
 from foca import get_config
-from foca.models.config import NAMESPACE_SEPARATOR, IssuerConfig
+from foca.config.access import set_app_config
+from foca.database.register_mongodb import register_mongodb
+from foca.models.config import (
+    NAMESPACE_SEPARATOR,
+    CollectionConfig,
+    DBConfig,
+    IssuerConfig,
+    MongoConfig,
+)
 from foca.security.access_control.constants import CONFIGURED_FIELD
 from pymongo.collection import Collection
 from pymongo.errors import DuplicateKeyError
 
-from cloud_registry.app import create_app
+from cloud_registry.app import create_app, create_foca
 from cloud_registry.ga4gh.registry.invitations import ACCEPTED, CREATED_AS
 from cloud_registry.ga4gh.registry.permissions import INVITATIONS
 from cloud_registry.ga4gh.registry.service import CREATED_BY as SERVICE_CREATOR
@@ -389,6 +404,38 @@ def namespace_subjects(namespace: str, dry_run: bool = False) -> dict[str, int]:
     return counts
 
 
+def _read_only_app() -> Flask:
+    """Create an app with the config and collections only, for dry runs.
+
+    `create_app()` changes the database: FOCA creates the configured indexes and
+    replaces the configured rules, and the startup tasks change others, e.g., the
+    TTL index of invitations. With a newer image than the pods that use the
+    database, these couldn't restart then, and owners could lose access on them.
+
+    So the collections are registered by FOCA, but without their indexes, and
+    with that of the stored rules, which FOCA adds when it sets up access control.
+
+    Returns:
+        Flask app, with the collections registered.
+    """
+    config = create_foca().conf
+    app = Flask(__name__)
+    set_app_config(app, config)
+    mongo_config = cast(MongoConfig, config.db)
+    dbs = mongo_config.dbs if mongo_config.dbs is not None else {}
+    access_control = config.security.access_control
+    rules_db = dbs.setdefault(access_control.db_name, DBConfig(collections={}))
+    collections = rules_db.collections if rules_db.collections is not None else {}
+    collections[access_control.collection_name] = CollectionConfig()
+    rules_db.collections = collections
+    mongo_config.dbs = dbs
+    for database in dbs.values():
+        for collection in (database.collections or {}).values():
+            collection.indexes = None
+    register_mongodb(mongo_config)
+    return app
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Namespace the stored subjects of an issuer, with the app's config.
 
@@ -406,10 +453,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("namespace", help="namespace of the issuer's subjects")
     parser.add_argument(
-        "--dry-run", action="store_true", help="only count the subjects"
+        "--dry-run",
+        action="store_true",
+        help="only count the stored subjects, without changes or startup checks",
     )
     args = parser.parse_args(argv)
-    app = create_app().app
+    app = _read_only_app() if args.dry_run else create_app().app
     with app.app_context():
         try:
             counts = namespace_subjects(args.namespace, dry_run=args.dry_run)
