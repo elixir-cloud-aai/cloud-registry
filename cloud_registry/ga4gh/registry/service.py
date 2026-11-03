@@ -49,6 +49,10 @@ PENDING_SERVICE = "_pending"
 # `None` for services that count for nobody (e.g., registered by admins);
 # kept on updates and renames; not served
 CREATED_BY = "_createdBy"
+# Internal field of the entry of the registry among its own services (cf.
+# `cloud_registry.ga4gh.registry.self_listing`): `True`; kept on updates and
+# renames; not served
+SELF_ENTRY = "_selfEntry"
 # Projection excluding internal fields
 PROJECTION = {
     "_id": False,
@@ -56,6 +60,7 @@ PROJECTION = {
     VERIFIED: False,
     PENDING_SERVICE: False,
     CREATED_BY: False,
+    SELF_ENTRY: False,
 }
 # Fields with URLs of links, as paths of keys, with the schemes they allow
 # (cf. `foca.utils.urls.check_url_fields()`): contact URLs can be email
@@ -532,6 +537,7 @@ class RegisterService:
                     VERIFIED: True,
                     CREATED: True,
                     CREATED_BY: True,
+                    SELF_ENTRY: True,
                 },
             )
             if stored is None and not self.allow_create:
@@ -546,7 +552,7 @@ class RegisterService:
                 # the fields as read; missing if they were (e.g., services
                 # without key, cf. `add_service_keys()`, or without the user
                 # they count for, cf. `add_service_creators()`)
-                for field in ("url", KEY, VERIFIED, CREATED, CREATED_BY):
+                for field in ("url", KEY, VERIFIED, CREATED, CREATED_BY, SELF_ENTRY):
                     query[field] = stored.get(field, {"$exists": False})
                 # the user the service counts for never changes (missing
                 # until added)
@@ -554,6 +560,9 @@ class RegisterService:
                     replacement[CREATED_BY] = stored[CREATED_BY]
                 else:
                     del replacement[CREATED_BY]
+                # the entry of the registry stays marked as such
+                if SELF_ENTRY in stored:
+                    replacement[SELF_ENTRY] = stored[SELF_ENTRY]
                 # invalid ones (e.g., set by owners before timestamps were
                 # checked) are removed
                 created = stored.get(CREATED)

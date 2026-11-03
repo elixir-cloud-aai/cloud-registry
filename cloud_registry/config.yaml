@@ -149,7 +149,9 @@ security:
             # any authenticated user may get their identifier and roles
             get-me: [p, "*", /ga4gh/registry/v1/me, GET]
             # no policy for `/services/:id/verification` (PUT, DELETE):
-            # only admins may verify services
+            # only admins may verify services; nor for
+            # `/service-info/listing`: only admins may list the registry
+            # among its services
 
             # Any authenticated user may read: list services, get a service
             # or the service types (`/services/types` matches
@@ -203,6 +205,12 @@ db:
                         # counted on startup)
                         - keys:
                               _createdBy: 1
+                        # The entry of the registry among its services
+                        # (internal flag, cf. `PUT /service-info/listing`)
+                        - keys:
+                              _selfEntry: 1
+                          options:
+                            'sparse': True
                 # Service types (`GET /services/types`), unique as written
                 service_types:
                     indexes:

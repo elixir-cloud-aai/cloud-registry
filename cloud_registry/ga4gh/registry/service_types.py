@@ -691,6 +691,35 @@ def postServiceType(service_type: dict[str, Any], **kwargs: Any) -> AddedRespons
     return document, 201
 
 
+def remove_service_type(service_type: dict[str, str]) -> bool:
+    """Remove a stored service type that no registered service has.
+
+    If a service with the type is registered concurrently, after the type was
+    removed, the type is stored again, and the removal fails.
+
+    Args:
+        service_type: Service type, in its stored form.
+
+    Returns:
+        Whether the type was removed; `False` if it isn't stored.
+
+    Raises:
+        ServiceTypeInUse: A registered service has the type (also if the type
+            isn't stored, e.g., of a service registered by an older version
+            of the app during an upgrade).
+    """
+    if _type_in_use(service_type):
+        raise ServiceTypeInUse
+    removed = get_collection("service_types").find_one_and_delete(dict(service_type))
+    if removed is None:
+        return False
+    if _type_in_use(service_type):
+        # a service with the type was registered meanwhile
+        _restore_type(service_type, removed)
+        raise ServiceTypeInUse
+    return True
+
+
 # DELETE /services/types
 def deleteServiceType(
     group: str, artifact: str, version: str, **kwargs: Any
@@ -699,8 +728,7 @@ def deleteServiceType(
 
     The type is named by query parameters, as request bodies of `DELETE`
     have no defined meaning (RFC 9110), and Connexion doesn't pass them.
-    If a service with the type is registered concurrently, after the type was
-    removed, the type is stored again, and the request fails.
+    Cf. `remove_service_type()`.
 
     Args:
         group: Group of the type.
@@ -719,15 +747,11 @@ def deleteServiceType(
         cloud_registry.exceptions.NotFound: The type is not stored.
     """
     document = {"group": group, "artifact": artifact, "version": version}
-    if _type_in_use(document):
-        return problem(ServiceTypeInUse())
-    removed = get_collection("service_types").find_one_and_delete(dict(document))
-    if removed is None:
-        raise NotFound
-    if _type_in_use(document):
-        # a service with the type was registered meanwhile
-        _restore_type(document, removed)
-        return problem(ServiceTypeInUse())
+    try:
+        if not remove_service_type(document):
+            raise NotFound
+    except ServiceTypeInUse as exc:
+        return problem(exc)
     logger.info(
         "Service type %s removed by '%s'.",
         escape_log_value(describe_type(document)),

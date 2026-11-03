@@ -40,6 +40,131 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RegistryServiceInfo'
+  /service-info/listing:
+    get:
+      summary: Tell whether the registry is listed among its services.
+      description: |
+        Tell admins whether the registry itself is listed among its services
+        and, if so, under which identifier. Only for admins.
+      operationId: getSelfListing
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.self_listing
+      tags:
+        - cloud-registry
+      responses:
+        '200':
+          description: State of the listing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfListing'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      summary: List the registry among its services.
+      description: |
+        Add the registry to its own services, or bring its entry up to date
+        if it is listed. Only for admins. The entry is built from the service
+        info and the public URL of the app with the base path of the API, has
+        the identifier of the service info, has no owner, doesn't count for
+        any user's limit of services and is verified. Its service type is
+        added if it is missing. While listed, the entry is brought up to date
+        when the app starts. Nothing is changed if the request fails.
+      operationId: putSelfListing
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.self_listing
+      tags:
+        - cloud-registry
+      responses:
+        '200':
+          description: The registry is listed; its entry is up to date.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfListing'
+        '201':
+          description: The registry was added to its services.
+          headers:
+            Location:
+              description: URL of the entry (`/services/{serviceId}`).
+              schema:
+                type: string
+                format: uri
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfListing'
+        '400':
+          description: |
+            The registry can't be listed with the current config, saying why
+            in `detail`: its environment or the scheme of its public URL isn't
+            allowed for services, or its identifier or a URL can't be used
+            for services.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            Nothing was changed (`code`): another service has the same URL and
+            API type (`duplicate-service`, named in `serviceId`) or the
+            identifier of the service info (`service-id-taken`), the service
+            type of the registry is pending (`pending-service`), or the entry
+            is being renamed (`service-busy`).
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ConflictError'
+                  - type: object
+                    properties:
+                      serviceId:
+                        type: string
+                        description: Identifier of the registered service.
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      summary: Remove the registry from its services.
+      description: |
+        Remove the entry of the registry from its services, and its service
+        type, unless other services have it. Only for admins. Returns `404`
+        if the registry isn't listed, and `409` (`service-busy`) while the
+        entry is being renamed; try again.
+      operationId: deleteSelfListing
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.self_listing
+      tags:
+        - cloud-registry
+      responses:
+        '200':
+          description: The registry is no longer listed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfListing'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
   /services:
     get:
       security:
@@ -1169,11 +1294,13 @@ components:
 
                 - `duplicate-service`: a service with the same URL and API
                   type is registered (`POST /services`, `PUT
-                  /services/{serviceId}`).
+                  /services/{serviceId}`, `PUT /service-info/listing`).
                 - `pending-service`: the service is pending (see `GET
                   /approvals`), so users other than admins can't update it
                   (`PUT /services/{serviceId}`), and it can't be verified
-                  (`PUT /services/{serviceId}/verification`).
+                  (`PUT /services/{serviceId}/verification`); or the service
+                  type of the registry is pending (`PUT
+                  /service-info/listing`).
                 - `unused-types-limit`: the user has added as many service
                   types that no service has as allowed (`POST
                   /services/types`, `POST /services`, `PUT
@@ -1199,10 +1326,13 @@ components:
                   (`POST /invitations/accept`, `DELETE
                   /services/{serviceId}/invitations/{invitationId}`).
                 - `service-id-taken`: a service with the new identifier is
-                  registered (`POST /services/{serviceId}/rename`).
+                  registered (`POST /services/{serviceId}/rename`), or with
+                  the identifier of the service info (`PUT
+                  /service-info/listing`).
                 - `service-busy`: the service is being renamed (`PUT` and
-                  `DELETE` of `/services/{serviceId}` and
-                  `/services/{serviceId}/permissions/...`), or the service or
+                  `DELETE` of `/services/{serviceId}`,
+                  `/services/{serviceId}/permissions/...` and
+                  `/service-info/listing`), or the service or
                   the new identifier is being renamed or changed (`POST
                   /services/{serviceId}/rename`); try again later.
                 - `conflict`: other conflicts (e.g., changes of policy rules
@@ -1315,6 +1445,19 @@ components:
             only admins can register services. Not set if there is no limit
             (`custom.access_control.max_services_per_user: null`).
           example: 50
+    SelfListing:
+      description: Whether the registry is listed among its own services.
+      type: object
+      required:
+        - listed
+      additionalProperties: false
+      properties:
+        listed:
+          type: boolean
+          description: Whether the registry is listed.
+        service_id:
+          type: string
+          description: Identifier of its entry; only if it is listed.
     ServiceRename:
       description: New identifier of a service.
       type: object

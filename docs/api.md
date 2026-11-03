@@ -11,6 +11,7 @@ under the API base path `/ga4gh/registry/v1`:
 | Endpoint | Methods | Who |
 | --- | --- | --- |
 | `/service-info` | `GET` (GA4GH) | anyone |
+| `/service-info/listing` | `GET`, `PUT`, `DELETE` | admins |
 | `/services` | `GET` (GA4GH) | anyone |
 | `/services` | `POST` | any authenticated user |
 | `/services/types` | `GET` (GA4GH) | anyone |
@@ -384,7 +385,7 @@ unlike `detail`, codes are stable, so clients branch on them (e.g., `{"title":
 | Code | Conflict |
 |---|---|
 | `duplicate-service` | a service with the same URL and API type is registered (see [Duplicate services](#duplicate-services)) |
-| `pending-service` | the service is [pending](#pending-approvals): only admins update it, and it can't be verified |
+| `pending-service` | the service is [pending](#pending-approvals): only admins update it, and it can't be verified; or the service type of the registry is pending, so it can't be [listed](#listing-the-registry-itself) |
 | `unused-types-limit` | the user has added as many service types that no service has as allowed (see [Service types](configuration.md#service-types)) |
 | `services-limit` | the user has registered as many services as allowed (see [Services per user](configuration.md#services-per-user)) |
 | `service-type-registered` | the service type is registered, also if it is pending |
@@ -393,7 +394,7 @@ unlike `detail`, codes are stable, so clients branch on them (e.g., `{"title":
 | `last-owner` | the subject is the last owner of the service |
 | `invitations-limit` | the service has as many invitations that haven't expired as allowed; accepted ones count until they expire (see [Invitations](access-control.md#invitations)) |
 | `invitation-accepted` | the invitation was accepted already (see [Invitations](access-control.md#invitations)) |
-| `service-id-taken` | a service with the new identifier is registered (see [Renaming services](#renaming-services)) |
+| `service-id-taken` | a service with the new identifier is registered (see [Renaming services](#renaming-services)), or with the identifier of the service info (see [Listing the registry itself](#listing-the-registry-itself)) |
 | `service-busy` | the service, or the new identifier, is being renamed or changed (see [Renaming services](#renaming-services)) |
 | `conflict` | other conflicts (e.g., changes of policy rules set in the configuration via FOCA's permissions API) |
 
@@ -509,3 +510,88 @@ A verification applies to the service as it was when it was verified:
 - Deleting a service deletes its verification.
 - Admins should send the URL and API type they checked when verifying (see
   above), so that a service changed meanwhile isn't verified.
+
+## Listing the registry itself
+
+The registry doesn't list itself among its services by default. Admins can add
+it, so that clients find it like any other service, or remove it again. These
+operations are for admins only, in [admin
+mode](access-control.md#admin-mode) (`403 Forbidden` otherwise):
+
+```bash
+curl -X PUT "http://localhost:8080/ga4gh/registry/v1/service-info/listing" \
+  -H "Authorization: Bearer <admin token>" -H "X-Request-Roles: admin"
+```
+
+| Request | Response |
+| --- | --- |
+| `GET /service-info/listing` | `200 OK`, the state |
+| `PUT /service-info/listing` | `201 Created`, the state, and the URL of the entry in `Location`, if the registry was added; `200 OK` and the state if it was listed, with its entry brought up to date |
+| `DELETE /service-info/listing` | `200 OK`, the state; `404 Not Found` if the registry isn't listed; `409 Conflict`, code `service-busy`, while the entry is being [renamed](#renaming-services) |
+
+The state says whether the registry is listed, and if so, under which
+identifier: `{"listed": true, "service_id": "org.example.cloud-registry"}` or
+`{"listed": false}`.
+
+**The entry** is a service with the fields of the [service
+info](configuration.md#service-info) (`name`, `type`, `description`,
+`organization`, `contactUrl`, `documentationUrl`, `environment`, `version`) and
+its identifier (`id`). Its `url` is the [public URL](configuration.md#public-urls)
+of the app with the base path of the API, e.g.,
+`https://registry.example.org/ga4gh/registry/v1`, so set any path prefix in the
+public URL. The registry sets its timestamps as for other services. It has no
+owner, doesn't count for the [limit of services of any
+user](configuration.md#services-per-user) and is
+[verified](#verified-services). `GET /services` and the other GA4GH endpoints
+serve it like any other service, and the service info is unchanged.
+
+**The service type** of the entry is added if it is missing, whatever the mode
+of [service types](#service-types), and is approved. `DELETE` also removes the
+type, unless other services have it, whoever added it.
+
+**Refused requests** change nothing, and return, saying why:
+
+- `400 Bad Request`: the environment isn't one of the [allowed
+  values](configuration.md#service-environments), the scheme of the public URL
+  isn't an [allowed scheme](configuration.md#service-url-schemes) (e.g., an
+  `http` URL, by default), or the identifier or a URL of the service info can't
+  be used for services;
+- `409 Conflict`, code `duplicate-service`: another service has the same URL
+  and API type, e.g., the registry registered by hand (named in `serviceId`).
+  The entry doesn't take it over: delete that service first;
+- `409 Conflict`, code `service-id-taken`: another service has the identifier
+  of the service info: rename or delete it, or change the identifier;
+- `409 Conflict`, code `pending-service`: the service type of the registry is
+  [pending](#pending-approvals). Pending services can't be verified, and
+  listing the registry doesn't approve the type, as that would also approve the
+  services of other users that have it: approve it first;
+- `409 Conflict`, code `service-busy`: the entry is being
+  [renamed](#renaming-services); try again.
+
+**While it is listed,** the app brings the entry up to date when it starts, so
+that it follows the service info and the public URL (e.g., its `version` follows
+the version of the app), and writes it only if it differs. `updatedAt` changes
+then. The verification stays, and its time is renewed if the URL or API type
+changes. A new type of the entry is added; the former type stays, as when other
+services change their types. If the entry can't be brought up to date for one of
+the reasons above, it stays as it is, and the app logs a warning. `PUT` does the
+same, but returns the error.
+
+The entry can be managed like other services, within these limits:
+
+- [Renaming](#renaming-services) keeps it listed, and the identifier isn't changed
+  back, also if `service_info.service.id` changes. To use a new identifier,
+  rename the entry, or remove and add it.
+- Changes of its fields (`PUT /services/{serviceId}`), and removing its
+  verification, only last until the app next starts or `PUT` is repeated.
+- The service info isn't checked against the [maximum lengths of
+  registrations](#registrations), so sending an entry with longer fields back
+  with `PUT /services/{serviceId}` is refused (`400 Bad Request`).
+- Deleting it (`DELETE /services/{serviceId}`) ends the listing, but leaves its
+  type, as for other services: use `DELETE /service-info/listing` instead.
+
+Adding and removing are one operation each, without transactions (which need a
+replica set). If adding fails, a type it added is removed again. If the app stops
+while adding, repeat the operation. If removing fails or the app stops after the
+entry was deleted, its type may stay, without services: remove it (`DELETE
+/services/types`). The app adds the type of an entry without one when it starts.

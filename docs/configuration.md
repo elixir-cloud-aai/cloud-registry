@@ -484,5 +484,8 @@ option, and don't set `registration_rules` in `service_info.service` (not
 even to `null`), so that they are always the rules the registry enforces;
 the app refuses to start otherwise. To change the service info, change
 the config and restart the app (the Helm chart restarts it when the `config`
-value changes). Previously, service info was set via the API; see
+value changes). If admins [listed the
+registry](api.md#listing-the-registry-itself) among its services, the app then
+also brings that entry up to date.
+Previously, service info was set via the API; see
 [Upgrading](upgrading.md#service-info).
