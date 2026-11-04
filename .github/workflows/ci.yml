@@ -416,6 +416,16 @@ jobs:
           # The path of users' roles: the new one exists, the former one doesn't
           check PUT /services/SMOKE1/permissions/users/x 401 '.status == 401'
           check PUT /services/SMOKE1/permissions/x 404 '.status == 404'
+      # No pip (whose vendored packages image scans report) and no uv in
+      # the image, which installs packages in its build stages only
+      - name: Check that image has no installer
+        run: |
+          docker compose exec -T --user 0 cloud-registry sh -c '
+            if command -v pip || command -v pip3 || command -v uv ||
+              python -c "import pip" 2>/dev/null ||
+              find / -xdev -name "pip-*.dist-info" | grep .; then
+              exit 1
+            fi'
       - name: Check app version
         run: |
           actual="$(docker compose exec -T cloud-registry python -c \
@@ -470,8 +480,7 @@ jobs:
       # without network, as `--frozen` reads the lock only), then installed
       # at the exact versions of the lock, checked against its hashes, as
       # wheels only, into a virtual environment of their own (with the pip
-      # of the runner's Python, `ensurepip`, as the image build uses the
-      # pip of the base image)
+      # of the runner's Python, `ensurepip`)
       - name: Derive version
         id: version
         run: |

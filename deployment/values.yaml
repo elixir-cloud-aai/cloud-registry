@@ -27,8 +27,9 @@ publicUrl: ""
 # of the image's version); mappings are merged recursively, other values
 # (including lists) are replaced. Stored in a ConfigMap, so must not contain
 # secrets. Deployments must set the trusted token issuers
-# (`security.auth.issuers`) and `security.auth.audience` (unless
-# `security.auth.verify_audience` is false), and map an admin group to the
+# (`security.auth.issuers`) and `security.auth.audience` (unless each issuer
+# has an `audience` of its own, or `security.auth.verify_audience` is false),
+# and map an admin group to the
 # role `admin` (unless `security.access_control.require_admin` is false), with
 # the claim with the groups of users (`security.access_control.claim_groups`);
 # rendering fails without them (see deployment/README.md, Configuration).
@@ -86,6 +87,11 @@ cloudRegistry:
   # Path of the app's startup, readiness and liveness probes; change it if
   # the config disables the Swagger UI
   probePath: /ga4gh/registry/v1/ui/
+  # Probes of the app's container (Kubernetes probe specs); if set, one
+  # replaces the default on `probePath` entirely
+  startupProbe: {}
+  readinessProbe: {}
+  livenessProbe: {}
   # Number of the app's pods; with more than one, the app stays available
   # while a pod is restarted or evicted (e.g., on node drains, crashes and
   # upgrades; see deployment/README.md, Replicas)

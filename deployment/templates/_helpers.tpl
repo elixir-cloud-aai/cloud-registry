@@ -4,9 +4,9 @@ Settings of the app for the templates of the library chart foca-common (see
 YAML; the templates are called with a dict of the root context (`root`) and
 these settings (`settings`). They follow the base config in the image
 (`cloud_registry/config.yaml`): its size limit of request bodies
-(`server.max_content_length`), its token issuers (so an audience is
-required, unless each issuer has one, cf. `cloud-registry.requireAudience`),
-its database (`db.dbs`) and that of access control
+(`server.max_content_length`), its token issuers (so the library requires an
+audience, global or of each issuer: `requireAudience`), its database
+(`db.dbs`) and that of access control
 (`security.access_control.db_name`). The generated config sets the public
 URL of the app (`server.public_url`) to `publicUrl`, or else from
 `hostName`, with HTTPS, as TLS is usually terminated by the ingress, the
@@ -19,7 +19,7 @@ whichever template Helm renders first.
 {{- include "cloud-registry.validate" . -}}
 valuesKey: cloudRegistry
 maxContentLength: 1048576
-requireAudience: {{ include "cloud-registry.requireAudience" . }}
+requireAudience: true
 mongodb:
   databases: [serviceStore]
   accessControlDatabase: serviceStore
@@ -168,30 +168,6 @@ with the groups of users, as no mapping would apply
 {{- fail "config.security.access_control.group_mapping must map a group to the role admin (e.g., the admin group of the identity provider), or set config.security.access_control.require_admin to false" -}}
 {{- end -}}
 {{- $_ := required "hostName must be set" .Values.hostName -}}
-{{- end -}}
-
-{{/*
-Whether an audience is required (`requireAudience` of the settings; renders
-"true" or "false"): unless each trusted issuer has an audience of its own
-(a map with a list of non-blank `audience`s), which replaces the global one
-(`security.auth.audience`) for its tokens, as in FOCA's `IssuerConfig`.
-*/}}
-{{- define "cloud-registry.requireAudience" -}}
-{{- $issuers := dig "security" "auth" "issuers" list (.Values.config | default dict) -}}
-{{- $own := and (kindIs "slice" $issuers) (gt (len $issuers) 0) -}}
-{{- range $issuer := (ternary $issuers (list) $own) -}}
-{{- $audience := and (kindIs "map" $issuer) (get $issuer "audience") -}}
-{{- if not (and (kindIs "slice" $audience) (gt (len $audience) 0)) -}}
-{{- $own = false -}}
-{{- else -}}
-{{- range $client := $audience -}}
-{{- if not (and (kindIs "string" $client) (trim $client)) -}}
-{{- $own = false -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- not $own -}}
 {{- end -}}
 
 {{/*

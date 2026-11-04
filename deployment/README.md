@@ -4,7 +4,7 @@ The chart deploys the app and a MongoDB database on Kubernetes (and
 OpenShift). It is a thin chart over FOCA's library chart `foca-common` (the
 version in `Chart.yaml`), which renders all resources from the values
 described here and in `values.yaml` (see the [library chart's
-documentation](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.3.0/docs/helm-chart.md)).
+documentation](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.4.0/docs/helm-chart.md)).
 The chart attached to a release includes the library chart; the chart in the
 repository downloads it with `helm dependency build` (see
 [Installation](#installation)).
@@ -40,8 +40,8 @@ reads](https://cloud-registry.readthedocs.io/en/latest/access-control/#requiring
 policies by name) need images built with FOCA 0.17: any release,
 or `dev` and `sha-<commit>` images of commits since the upgrade to FOCA 0.17.
 This chart version sets the public URL (`config.server.public_url`) and
-requires images built with FOCA 0.18 (the app version of this chart or
-later, or `dev` and `sha-<commit>` images of commits since the upgrade to
+requires images built with FOCA 0.18 or later (the app version of this chart
+or later, or `dev` and `sha-<commit>` images of commits since the upgrade to
 FOCA 0.18): older images refuse to start, as they reject
 `config.server.public_url`, which the chart always sets (and
 `config.security.access_control.require_admin`).
@@ -255,7 +255,7 @@ examples to add to the values. ingress-nginx is retired (it gets no releases
 or security fixes after March 2026): prefer the Gateway API, or another
 ingress controller (e.g., Traefik). FOCA's library chart documentation has
 the values for common setups ([Exposing the
-app](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.3.0/docs/helm-chart.md#exposing-the-app):
+app](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.4.0/docs/helm-chart.md#exposing-the-app):
 Gateway API, ingress-nginx, Traefik, OpenShift and cloud load balancers),
 including how to migrate from ingress-nginx to the Gateway API without
 downtime.
@@ -292,7 +292,7 @@ cloudRegistry:
 Other ingress controllers ignore the annotation; for their limits (e.g.,
 Traefik's `buffering` middleware, Envoy Gateway's `BackendTrafficPolicy`),
 see [Exposing the
-app](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.3.0/docs/helm-chart.md#exposing-the-app).
+app](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.4.0/docs/helm-chart.md#exposing-the-app).
 OpenShift Routes don't limit request bodies; only the app's limit applies
 there.
 
@@ -383,7 +383,7 @@ The Gateway's listeners must allow routes from the release's namespace, and
 redirected. The Gateway API has no standard settings for body sizes and
 rate limits: use the policies of the implementation, or filters that the
 HTTPRoute refers to (`httpRoute.filters`); see [Gateway
-API](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.3.0/docs/helm-chart.md#gateway-api)
+API](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.4.0/docs/helm-chart.md#gateway-api)
 in FOCA's documentation for examples, e.g., for Envoy Gateway, and for the
 NetworkPolicy peers of the Gateway's proxies. Helm's notes after installing
 show how to check that the route was accepted.
@@ -474,7 +474,7 @@ allow rules) before relying on these restrictions.
   `kubernetes.io/metadata.name` (set on all namespaces from Kubernetes 1.21;
   label them on older clusters). Pick the peers of your setup (see
   [NetworkPolicy
-  peers](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.3.0/docs/helm-chart.md#networkpolicy-peers)
+  peers](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.4.0/docs/helm-chart.md#networkpolicy-peers)
   in FOCA's documentation for those of common ingress controllers, Gateway
   implementations and OpenShift), and add any other clients in the cluster
   that call the app's Service directly, e.g., for Traefik on k3s:
@@ -586,7 +586,7 @@ pods that are not ready can always be evicted, so that they don't block
 drains. The scheduler usually spreads the pods across nodes, but doesn't
 guarantee it, and a crash of a node with all of them takes the registry
 down: check with `kubectl get pods -n <namespace> -o wide`. See [Several
-replicas](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.3.0/docs/helm-chart.md#several-replicas)
+replicas](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.4.0/docs/helm-chart.md#several-replicas)
 in the library chart's documentation.
 
 The app is correct with several replicas, as it already runs as several
@@ -938,6 +938,9 @@ for all changes; for Helm releases:
   minute afterwards (liveness probe). Probes are served by the app's
   Gunicorn threads like other requests (with a timeout of 5 seconds), so
   they fail if all threads stay busy, e.g., with slow requests.
+  `cloudRegistry.startupProbe`, `cloudRegistry.readinessProbe` and
+  `cloudRegistry.livenessProbe` (Kubernetes probe specs) each replace a
+  default entirely.
 - **MongoDB:** ready once it accepts connections; up to 30 minutes are
   allowed for the start (startup probe), as MongoDB only listens on localhost
   while it initializes an empty data directory, and recovery after an
@@ -1123,7 +1126,7 @@ then change these settings, or annotate the claim first (`kubectl annotate
 pvc <app>-mongodb helm.sh/resource-policy=keep -n <namespace>`; this
 protects the claim on upgrades only, not on `helm uninstall`, which reads
 the release's manifests); see [MongoDB
-persistence](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.3.0/docs/migration-0.17.md#mongodb-persistence)
+persistence](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.4.0/docs/migration-0.17.md#mongodb-persistence)
 in FOCA's documentation. A rollback to a revision without the annotation
 removes it from the claim again.
 

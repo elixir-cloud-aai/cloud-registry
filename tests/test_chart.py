@@ -376,6 +376,25 @@ def test_probe_path_invalid(path: str) -> None:
     assert "probePath" in exc.value.stderr
 
 
+@pytest.mark.parametrize("probe", PROBES)
+def test_probe_override(probe: str) -> None:
+    """A probe of the values replaces the default one of the app's container."""
+    spec = {"tcpSocket": {"port": 8080}, "periodSeconds": 7}
+    docs = _render("--set-json", f"cloudRegistry.{probe}={json.dumps(spec)}")
+    assert _container(docs, APP)[probe] == spec
+
+
+def test_issuers_with_own_audiences() -> None:
+    """No global audience is needed if each issuer has an audience of its own."""
+    issuers = [{"issuer": "https://x.org/", "audience": ["a"]}]
+    docs = _render(
+        "--set-json",
+        f"config.security.auth.issuers={json.dumps(issuers)}",
+        audience=None,
+    )
+    assert _overlay(docs)["security"]["auth"]["issuers"] == issuers
+
+
 def test_auth_disabled() -> None:
     """Without authentication, no Secret, credentials or init script are needed."""
     docs = _render(*NO_AUTH, mongodb_secret=None)
@@ -1345,7 +1364,7 @@ def test_schema_of_library() -> None:
     image = properties["mongodb"]["properties"]["image"]
     assert "minor version" in image.pop("description")
     expected = dict(library["properties"])
-    del expected["worker"], expected["broker"]
+    del expected["worker"], expected["broker"], expected["pluginStore"]
     del expected["mongodb"]["properties"]["image"]["description"]
     assert properties == expected
     assert {key: schema[key] for key in ("$schema", "type")} == {

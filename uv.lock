@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -676,7 +676,7 @@ requires-dist = [
     { name = "build", marker = "extra == 'dev'", specifier = ">=1.6" },
     { name = "connexion", specifier = ">=2.15.1,<3.0.0" },
     { name = "coverage", marker = "extra == 'dev'", specifier = ">=7.16" },
-    { name = "foca", specifier = ">=0.18.0,<0.19" },
+    { name = "foca", specifier = ">=0.20.0,<0.21" },
     { name = "griffelib", marker = "extra == 'docs'", specifier = ">=2.4,<3" },
     { name = "gunicorn", specifier = ">=26.2.0,<27" },
     { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.6.1,<2" },
@@ -953,7 +953,7 @@ wheels = [
 
 [[package]]
 name = "foca"
-version = "0.18.0"
+version = "0.20.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "addict" },
@@ -976,9 +976,9 @@ dependencies = [
     { name = "urllib3" },
     { name = "werkzeug" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/45/86/17f0218c86d32ab0d4a6e8f0343a8510568a402c7aa6bf226cb32b19ab23/foca-0.18.0.tar.gz", hash = "sha256:b345181838a789599d33bab4163c98e3b4ace5009650c79afb45a2d80db4c9f3", size = 468292, upload-time = "2026-10-27T01:30:20.927Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f2/42/548c07b887f37e11ef6ecfc4c37e8950172f841e09dc3abef44295eacc53/foca-0.20.0.tar.gz", hash = "sha256:f5b1f46c91a2e2a015d74f85db67f1979f301490d8db48470fb431ebbc64fce9", size = 516650, upload-time = "2026-11-03T21:05:52.657Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/74/3d/59059968ccf18ca1d23110d4ce2bc3b17d010b3906ef3419c763cb9086e1/foca-0.18.0-py3-none-any.whl", hash = "sha256:e6381212f4dd39db2da7048ac175065c4a783ebb9ebe3a49dfd352accd6b9225", size = 264380, upload-time = "2026-10-27T01:30:19.194Z" },
+    { url = "https://files.pythonhosted.org/packages/b1/c4/66899bb8e7ca86953ad711845bea2c9d5b12da1eea3729dd282e0d7335ca/foca-0.20.0-py3-none-any.whl", hash = "sha256:b08c3e8303883e1b5985fb8c04571e46fde3c3d67548af0d55cb293530a07dd4", size = 282811, upload-time = "2026-11-03T21:05:50.891Z" },
 ]
 
 [[package]]
