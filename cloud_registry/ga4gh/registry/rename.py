@@ -301,16 +301,16 @@ def _move_roles(path: str, source: str, target: str) -> None:
                 escape_log_value(exc),
             )
     names = get_collection(USER_NAMES)
-    for name in names.find({"service_id": source}):
+    for name in names.find({"serviceId": source}):
         names.update_one(
-            {"service_id": target, "user_id": name["user_id"]},
+            {"serviceId": target, "userId": name["userId"]},
             {"$setOnInsert": {"name": name["name"]}},
             upsert=True,
         )
     remove_resource(resource)
-    names.delete_many({"service_id": source})
+    names.delete_many({"serviceId": source})
     get_collection(INVITATIONS).update_many(
-        {"service_id": source}, {"$set": {"service_id": target}}
+        {"serviceId": source}, {"$set": {"serviceId": target}}
     )
 
 
@@ -396,7 +396,7 @@ def _claim(lock: dict[str, Any]) -> str | None:
     token = uuid4().hex
     claimed = get_collection(LOCKS).find_one_and_update(
         {"_id": lock["_id"], "token": lock["token"]},
-        {"$set": {"token": token, "started_at": now()}},
+        {"$set": {"token": token, "startedAt": now()}},
     )
     return None if claimed is None else token
 
@@ -433,8 +433,8 @@ def _finish(path: str, source: str, target: str, token: str) -> None:
         logger.info("Interrupted rename of service '%s' to '%s' finished.", *names)
     else:
         remove_resource(f"{path}/{source}")
-        get_collection(USER_NAMES).delete_many({"service_id": source})
-        get_collection(INVITATIONS).delete_many({"service_id": source})
+        get_collection(USER_NAMES).delete_many({"serviceId": source})
+        get_collection(INVITATIONS).delete_many({"serviceId": source})
         logger.info(
             "Interrupted rename of service '%s' to '%s' ended: neither is "
             "registered; roles and invitations of '%s' removed.",

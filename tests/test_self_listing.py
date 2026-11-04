@@ -131,7 +131,7 @@ def test_admins_only(client: FlaskClient, method: str) -> None:
 def test_list(client: FlaskClient, admin: dict[str, str]) -> None:
     """Listing creates the entry from the service info, with its type."""
     response = _list(client, admin)
-    assert response.get_json() == {"listed": True, "service_id": ENTRY_ID}
+    assert response.get_json() == {"listed": True, "serviceId": ENTRY_ID}
     assert response.headers["Location"] == f"{ENTRY_URL}/services/{ENTRY_ID}"
     assert client.get(LISTING, headers=admin).get_json() == response.get_json()
     info = client.get(f"{BASE}/service-info").get_json()
@@ -143,7 +143,7 @@ def test_list(client: FlaskClient, admin: dict[str, str]) -> None:
     assert service["environment"] == info["environment"]
     assert service["documentationUrl"] == info["documentationUrl"]
     # neither the rules of the service info nor internal fields are served
-    assert not {"registration_rules", KEY, VERIFIED, CREATED_BY, SELF_ENTRY} & set(
+    assert not {"registrationRules", KEY, VERIFIED, CREATED_BY, SELF_ENTRY} & set(
         service
     )
     assert client.get(f"{BASE}/services").get_json() == [service]
@@ -185,7 +185,7 @@ def test_list_again_keeps_entry(
     stored = db["services"].find_one({"id": ENTRY_ID})
     response = client.put(LISTING, headers=admin)
     assert response.status_code == 200
-    assert response.get_json() == {"listed": True, "service_id": ENTRY_ID}
+    assert response.get_json() == {"listed": True, "serviceId": ENTRY_ID}
     assert "Location" not in response.headers
     assert db["services"].find_one({"id": ENTRY_ID}) == stored
 
@@ -330,7 +330,7 @@ def test_list_concurrently(
     monkeypatch.setattr(self_listing, "_stored_entry", read_missing_first)
     response = client.put(LISTING, headers=admin)
     assert response.status_code == 200
-    assert response.get_json() == {"listed": True, "service_id": ENTRY_ID}
+    assert response.get_json() == {"listed": True, "serviceId": ENTRY_ID}
 
 
 def test_list_removed_concurrently(
@@ -491,7 +491,7 @@ def test_rename_keeps_listing(
     assert client.post(url, json={"id": "registry"}, headers=admin).status_code == 200
     assert client.get(LISTING, headers=admin).get_json() == {
         "listed": True,
-        "service_id": "registry",
+        "serviceId": "registry",
     }
     _service_info(app)["description"] = "New"
     _refresh_entry(app)

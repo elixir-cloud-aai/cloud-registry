@@ -31,7 +31,7 @@ paths:
       description: |
         Get the service info of the registry: the GA4GH `Service`, extended
         with the rules for registrations of the deployment
-        (`registration_rules`), so that clients (e.g., forms) can check
+        (`registrationRules`), so that clients (e.g., forms) can check
         registrations as the registry does instead of configuring the rules
         themselves. Public, also if a deployment requires login for reads.
       responses:
@@ -191,7 +191,7 @@ paths:
         only have registered a limited number of the registered services
         (`409`, `code`: `services-limit`; deployments set it with
         `custom.access_control.max_services_per_user`, 50 by default, see
-        `max_services_per_user` of `GET /service-info`); a service counts
+        `maxServicesPerUser` of `GET /service-info`); a service counts
         for the user who registered it until it is deleted, whatever its
         roles. Services with a pending type
         are pending (see `GET /approvals`). A service deleted during the
@@ -244,10 +244,10 @@ paths:
         Register a service type, e.g., for clients to choose from. Any
         authenticated user can, unless the deployment lets only admins add
         types (`custom.access_control.service_types: controlled`; `403`
-        otherwise; see `may_add_service_types` of `GET /me`). If the
+        otherwise; see `mayAddServiceTypes` of `GET /me`). If the
         deployment moderates types (`moderated`), the types of users other
         than admins are pending until an admin approves them (see
-        `service_types_pending` of `GET /me` and `GET /approvals`). Types
+        `serviceTypesPending` of `GET /me` and `GET /approvals`). Types
         are unique as written: registering a type again returns `409`.
         Users other than admins may only have added a limited number of
         types that no service has (`409` above; deployments set it with
@@ -551,7 +551,7 @@ paths:
     get:
       summary: List service permissions.
       description: |
-        List the roles granted on a service, to users (`user_id`) and to
+        List the roles granted on a service, to users (`userId`) and to
         groups (`group`). Only for owners of the service and admins.
       operationId: getServicePermissions
       x-openapi-router-controller: cloud_registry.ga4gh.registry.permissions
@@ -757,7 +757,7 @@ paths:
         don't send to servers. An optional `label` says what the invitation
         is for; only those who can list the invitations see it. Invitations
         are single-use and expire after the days that the deployment sets
-        (`expires_at`; by default, 7), also once accepted. A service has at
+        (`expiresAt`; by default, 7), also once accepted. A service has at
         most as many invitations that haven't expired, open or accepted, as
         the deployment allows (by default, 20; `409` above, `code`:
         `invitations-limit`); accepted ones count until they expire, also if
@@ -810,7 +810,7 @@ paths:
         (`label`), if any. Expired invitations stay listed until they are
         removed (`DELETE`), or automatically after the days that the deployment
         sets (by default, 30), so that owners can see who didn't accept in
-        time. With `include_accepted`, also lists the accepted invitations
+        time. With `includeAccepted`, also lists the accepted invitations
         that haven't expired, with who accepted them (`accepted`). Only for
         owners of the service and admins.
       operationId: getServiceInvitations
@@ -819,7 +819,7 @@ paths:
         - cloud-registry
       parameters:
         - $ref: '#/components/parameters/ServiceId'
-        - name: include_accepted
+        - name: includeAccepted
           in: query
           description: Whether to list accepted invitations too.
           required: false
@@ -1166,7 +1166,7 @@ components:
       name: userId
       in: path
       description: |
-        Identifier of the user (`user_id` of `GET /me`), i.e., the `sub`
+        Identifier of the user (`userId` of `GET /me`), i.e., the `sub`
         claim of the user's tokens (e.g., `abc123@login.example.org`); if
         the deployment trusts several token issuers, namespaced by issuer
         (e.g., `https://login.example.org/|abc123`), URL-encoded (e.g., `|`
@@ -1359,7 +1359,7 @@ components:
       type: string
     # Extension of the GA4GH `Service` schema, as GA4GH APIs extend it for
     # their service info (e.g., `TesServiceInfo` of the TES specification);
-    # extension fields are snake_case, as the other fields the registry adds
+    # extension fields are camelCase, as the fields of that schema, and grouped
     RegistryServiceInfo:
       description: |
         Service info of the registry: a GA4GH service, with the rules for
@@ -1368,9 +1368,9 @@ components:
         - $ref: '#/components/schemas/Service'
         - type: object
           required:
-            - registration_rules
+            - registrationRules
           properties:
-            registration_rules:
+            registrationRules:
               $ref: '#/components/schemas/RegistrationRules'
     RegistrationRules:
       description: |
@@ -1382,8 +1382,8 @@ components:
       type: object
       required:
         - environments
-        - url_schemes
-        - service_types
+        - urlSchemes
+        - serviceTypes
       additionalProperties: false
       properties:
         environments:
@@ -1395,7 +1395,7 @@ components:
           items:
             type: string
           example: ['prod', 'test', 'dev', 'staging']
-        url_schemes:
+        urlSchemes:
           type: array
           description: |
             Schemes allowed in service URLs (`url`; `400` otherwise): `https`
@@ -1409,7 +1409,7 @@ components:
               - http
               - https
           example: ['https']
-        service_types:
+        serviceTypes:
           type: string
           description: |
             Who may add service types (`custom.access_control.service_types`):
@@ -1423,20 +1423,20 @@ components:
             - controlled
             - moderated
           example: 'open'
-        max_unused_service_types:
+        maxUnusedServiceTypes:
           type: integer
           minimum: 0
           description: |
             How many service types that no service has a user other than an
             admin may have added (`409` above; see `POST /services/types`);
             `0` if they can't add types (explicitly or with services): in
-            mode `controlled` (`service_types`), whatever the configured
+            mode `controlled` (`serviceTypes`), whatever the configured
             limit, or if the limit is `0`. Not set if there is no limit
             (`custom.access_control.max_unused_service_types: null`) in the
             other modes.
             Concurrent requests of a user can exceed it by their number.
           example: 10
-        max_services_per_user:
+        maxServicesPerUser:
           type: integer
           minimum: 0
           description: |
@@ -1455,7 +1455,7 @@ components:
         listed:
           type: boolean
           description: Whether the registry is listed.
-        service_id:
+        serviceId:
           type: string
           description: Identifier of its entry; only if it is listed.
     ServiceRename:
@@ -1487,11 +1487,11 @@ components:
       description: Role of a user on a service.
       type: object
       required:
-        - user_id
+        - userId
         - role
       additionalProperties: false
       properties:
-        user_id:
+        userId:
           type: string
           description: Identifier of the user.
         name:
@@ -1520,15 +1520,15 @@ components:
       description: The current user.
       type: object
       required:
-        - user_id
+        - userId
         - admin
-        - admin_available
-        - may_add_service_types
-        - service_types_pending
+        - adminAvailable
+        - mayAddServiceTypes
+        - serviceTypesPending
         - services
       additionalProperties: false
       properties:
-        user_id:
+        userId:
           type: string
           description: |
             Identifier of the user: the `sub` claim of their tokens, or, if
@@ -1542,26 +1542,26 @@ components:
             Whether the user acts as an admin on this request: in admin mode,
             i.e., if the request asks for the role in the header
             `X-Request-Roles` (e.g., `X-Request-Roles: admin`) and the user
-            may switch to it (`admin_available`). Without admin mode, admins
+            may switch to it (`adminAvailable`). Without admin mode, admins
             have the permissions of other users. Also true without the
             header for users granted the role by stored rules (from before
             admin mode) and in deployments without admin mode
             (`security.access_control.opt_in_roles: []`).
-        admin_available:
+        adminAvailable:
           type: boolean
           description: |
             Whether the user may switch to admin mode: a member of a group
             mapped to the role `admin` (with or without the header); also
             true whenever `admin` is (e.g., in deployments without admin
             mode).
-        may_add_service_types:
+        mayAddServiceTypes:
           type: boolean
           description: |
             Whether the user may add service types, explicitly (`POST
             /services/types`) or by registering a service with a new type:
             admins always, other users unless the deployment lets only admins
             add types (`custom.access_control.service_types: controlled`).
-        service_types_pending:
+        serviceTypesPending:
           type: boolean
           description: |
             Whether the types that the user adds are pending until an admin
@@ -1581,11 +1581,11 @@ components:
       description: Pending service types and services.
       type: object
       required:
-        - service_types
+        - serviceTypes
         - services
       additionalProperties: false
       properties:
-        service_types:
+        serviceTypes:
           type: array
           description: Pending service types, sorted by group, artifact and version.
           items:
@@ -1599,11 +1599,11 @@ components:
       description: Role of the current user on a service.
       type: object
       required:
-        - service_id
+        - serviceId
         - role
       additionalProperties: false
       properties:
-        service_id:
+        serviceId:
           type: string
           description: Identifier of the service.
         role:
@@ -1649,18 +1649,18 @@ components:
       type: object
       required:
         - id
-        - service_id
+        - serviceId
         - role
         - status
-        - created_by
-        - created_at
-        - expires_at
+        - createdBy
+        - createdAt
+        - expiresAt
       additionalProperties: false
       properties:
         id:
           type: string
           description: Identifier of the invitation.
-        service_id:
+        serviceId:
           type: string
           description: Identifier of the service.
         role:
@@ -1669,15 +1669,15 @@ components:
           $ref: '#/components/schemas/InvitationLabel'
         status:
           $ref: '#/components/schemas/InvitationStatus'
-        created_by:
+        createdBy:
           type: string
           description: Identifier of the user who created the invitation.
-        created_at:
+        createdAt:
           type: string
           format: date-time
           description: When the invitation was created (RFC 3339 format, UTC).
           example: '2026-10-28T12:34:56.789Z'
-        expires_at:
+        expiresAt:
           type: string
           format: date-time
           description: |
@@ -1693,19 +1693,19 @@ components:
       type: object
       required:
         - id
-        - service_id
+        - serviceId
         - role
         - status
-        - created_by
-        - created_at
-        - expires_at
+        - createdBy
+        - createdAt
+        - expiresAt
         - token
       additionalProperties: false
       properties:
         id:
           type: string
           description: Identifier of the invitation.
-        service_id:
+        serviceId:
           type: string
           description: Identifier of the service.
         role:
@@ -1714,15 +1714,15 @@ components:
           $ref: '#/components/schemas/InvitationLabel'
         status:
           $ref: '#/components/schemas/InvitationStatus'
-        created_by:
+        createdBy:
           type: string
           description: Identifier of the user who created the invitation.
-        created_at:
+        createdAt:
           type: string
           format: date-time
           description: When the invitation was created (RFC 3339 format, UTC).
           example: '2026-10-28T12:34:56.789Z'
-        expires_at:
+        expiresAt:
           type: string
           format: date-time
           description: |
@@ -1754,11 +1754,11 @@ components:
         Who accepted an invitation, and when; not set for others.
       type: object
       required:
-        - user_id
-        - accepted_at
+        - userId
+        - acceptedAt
       additionalProperties: false
       properties:
-        user_id:
+        userId:
           type: string
           description: |
             Identifier of the user who accepted the invitation; the only
@@ -1774,7 +1774,7 @@ components:
             Email address of the user, if the identity provider released it
             as verified (`email_verified`; e.g., if the deployment adds
             `email` and `email_verified` to `security.auth.userinfo_claims`).
-        accepted_at:
+        acceptedAt:
           type: string
           format: date-time
           description: When the invitation was accepted (RFC 3339 format, UTC).
@@ -1815,14 +1815,14 @@ components:
       required:
         - url
         - type
-        - verified_at
+        - verifiedAt
       additionalProperties: false
       properties:
         url:
           $ref: '#/components/schemas/VerifiedUrl'
         type:
           $ref: '#/components/schemas/ServiceType'
-        verified_at:
+        verifiedAt:
           $ref: '#/components/schemas/VerifiedAt'
     VerifiedUrl:
       description: URL of the verified service, as registered.
@@ -1838,19 +1838,19 @@ components:
       description: Verification of a service, with its identifier.
       type: object
       required:
-        - service_id
+        - serviceId
         - url
         - type
-        - verified_at
+        - verifiedAt
       additionalProperties: false
       properties:
-        service_id:
+        serviceId:
           $ref: '#/components/schemas/ServiceId'
         url:
           $ref: '#/components/schemas/VerifiedUrl'
         type:
           $ref: '#/components/schemas/ServiceType'
-        verified_at:
+        verifiedAt:
           $ref: '#/components/schemas/VerifiedAt'
     Role:
       description: |

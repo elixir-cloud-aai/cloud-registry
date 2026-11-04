@@ -12,14 +12,14 @@ form:
   rules (`security.access_control.policies`) are left as they are, as the
   app replaces them with those of the config on startup, so change the
   config instead;
-- the users who added service types (`created_by` of `service_types`), for
+- the users who added service types (`createdBy` of `service_types`), for
   the limit of unused types and the visibility of pending types;
 - the users who registered services (`_createdBy` of `services`), and their
   numbers of services (`service_counts`), for the limit of services per
   user;
-- the users of the stored display names (`user_id` of `user_names`);
-- the users who created invitations to services, as whom (`created_by`,
-  `created_as.user`), and who accepted them (`accepted.user_id` of
+- the users of the stored display names (`userId` of `user_names`);
+- the users who created invitations to services, as whom (`createdBy`,
+  `createdAs.user`), and who accepted them (`accepted.userId` of
   `invitations`), so that open invitations of owners stay valid.
 
 Subjects that are already namespaced (with `|`) are kept, so the migration
@@ -38,9 +38,8 @@ in the database). Until then, the issuer's stored users lose their roles. Prefer
 Without `--dry-run`, it sets up the app as on startup (e.g., its indexes and
 configured rules), so run it with the image of the deployed version. A dry run
 does none of this, so it only counts what is stored: configured rules as the
-running app stored them, not those of the config, and no services that startup
-would still give a creator. Nor does it check the config as startup does, so it
-can succeed where the migration then fails to start.
+running app stored them, not those of the config. Nor does it check the config
+as startup does, so it can succeed where the migration then fails to start.
 """
 
 import argparse
@@ -289,15 +288,15 @@ def _namespace_user_names(namespace: str, dry_run: bool) -> int:
     """
     collection = get_collection("user_names")
     count = 0
-    for name in collection.find({"user_id": {"$type": "string"}}):
-        if not _is_bare(name["user_id"]):
+    for name in collection.find({"userId": {"$type": "string"}}):
+        if not _is_bare(name["userId"]):
             continue
         count += 1
         if dry_run:
             continue
-        user_id = _namespaced(namespace, name["user_id"])
+        user_id = _namespaced(namespace, name["userId"])
         try:
-            collection.update_one({"_id": name["_id"]}, {"$set": {"user_id": user_id}})
+            collection.update_one({"_id": name["_id"]}, {"$set": {"userId": user_id}})
         except DuplicateKeyError:
             collection.delete_one({"_id": name["_id"]})
     return count
@@ -306,8 +305,8 @@ def _namespace_user_names(namespace: str, dry_run: bool) -> int:
 def _namespace_invitations(namespace: str, dry_run: bool) -> int:
     """Namespace the users who created and accepted invitations.
 
-    Only the users are rewritten (`created_by`, `created_as.user`,
-    `accepted.user_id`), not groups (`created_as.group`); each field only if
+    Only the users are rewritten (`createdBy`, `createdAs.user`,
+    `accepted.userId`), not groups (`createdAs.group`); each field only if
     it is bare, so that runs can be repeated.
 
     Args:
@@ -320,7 +319,7 @@ def _namespace_invitations(namespace: str, dry_run: bool) -> int:
         another run rewrites).
     """
     collection = get_collection(INVITATIONS)
-    fields = ("created_by", f"{CREATED_AS}.user", f"{ACCEPTED}.user_id")
+    fields = ("createdBy", f"{CREATED_AS}.user", f"{ACCEPTED}.userId")
     count = 0
     for invitation in collection.find(
         {"$or": [{field: {"$type": "string"}} for field in fields]}

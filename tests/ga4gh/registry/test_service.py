@@ -9,7 +9,6 @@ from typing import Any, NoReturn
 from flask import Flask
 from foca import get_custom_config
 from pymongo.collection import Collection
-from pymongo.cursor import Cursor
 from pymongo.errors import DuplicateKeyError
 from pymongo.results import UpdateResult
 import pytest
@@ -27,15 +26,12 @@ from cloud_registry.ga4gh.registry.service import (
     DuplicateService,
     InvalidService,
     RegisterService,
-    add_service_keys,
     check_environment,
     check_links,
     check_strings,
     normalize_url,
     service_key,
     warn_environments,
-    warn_invalid_urls,
-    warn_organization_fields,
     warn_url_schemes,
 )
 from cloud_registry.service_models.custom_config import CustomConfig
@@ -766,112 +762,6 @@ class TestDuplicates:
                 obj.register_metadata(retries=2)
 
 
-class TestAddServiceKeys:
-    """Tests for adding keys to services registered without one."""
-
-    def test_add(self, unit_app: Flask, services: Collection[dict[str, Any]]) -> None:
-        """Keys are added to services without one."""
-        services.insert_one({**MOCK_SERVICE, "id": "OLD"})
-        existing = {**MOCK_SERVICE, "id": "NEW", "url": "https://new.example.org"}
-        services.insert_one({**existing, KEY: "kept"})
-        with unit_app.app_context():
-            add_service_keys()
-        assert _find(services, "OLD")[KEY] == service_key(MOCK_SERVICE)
-        assert _find(services, "NEW")[KEY] == "kept"
-
-    def test_concurrent(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        unit_app: Flask,
-        services: Collection[dict[str, Any]],
-    ) -> None:
-        """Services registered concurrently with the same key are named."""
-        services.insert_one({**MOCK_SERVICE, "id": "OLD"})
-
-        def fail(*args: Any, **kwargs: Any) -> NoReturn:
-            """Fail with a duplicate key error."""
-            raise DuplicateKeyError(KEY)
-
-        monkeypatch.setattr(services, "update_one", fail)
-        with (
-            unit_app.app_context(),
-            pytest.raises(RuntimeError, match="'OLD': same URL and API type"),
-        ):
-            add_service_keys()
-
-    def test_replaced_concurrently(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        unit_app: Flask,
-        services: Collection[dict[str, Any]],
-    ) -> None:
-        """Keys written concurrently, e.g., by a replacement, are kept."""
-        services.insert_one({**MOCK_SERVICE, "id": "OLD", KEY: "newer"})
-        find = services.find
-
-        def find_without_key(
-            filter: Any = None, *args: Any, **kwargs: Any
-        ) -> Cursor[dict[str, Any]]:
-            """Find services, serving the service without its key."""
-            # serve the service as read before its replacement
-            if filter == {KEY: {"$exists": False}}:
-                return find({}, {"_id": False, KEY: False})
-            return find(filter, *args, **kwargs)
-
-        monkeypatch.setattr(services, "find", find_without_key)
-        with unit_app.app_context():
-            add_service_keys()
-        assert _find(services, "OLD")[KEY] == "newer"
-
-    def test_added_concurrently(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        unit_app: Flask,
-        services: Collection[dict[str, Any]],
-    ) -> None:
-        """Keys added concurrently are not reported as duplicates.
-
-        E.g., keys added by another worker starting at the same time.
-        """
-        key = service_key(MOCK_SERVICE)
-        services.insert_one({**MOCK_SERVICE, "id": "OLD", KEY: key})
-        find = services.find
-
-        def find_without_key(
-            filter: Any = None, *args: Any, **kwargs: Any
-        ) -> Cursor[dict[str, Any]]:
-            """Find services, serving the service without its key."""
-            # serve the service as read before the key was added
-            if filter == {KEY: {"$exists": False}}:
-                return find({}, {"_id": False, KEY: False})
-            return find(filter, *args, **kwargs)
-
-        monkeypatch.setattr(services, "find", find_without_key)
-        with unit_app.app_context():
-            add_service_keys()
-        assert _find(services, "OLD")[KEY] == key
-
-    def test_problems(
-        self, unit_app: Flask, services: Collection[dict[str, Any]]
-    ) -> None:
-        """All services that are duplicates or have invalid URLs are named.
-
-        I.e., services with the same URL and API type as another one, or with
-        invalid URLs.
-        """
-        other = {**MOCK_SERVICE, "url": "https://other.example.org"}
-        for id, data in [("A", MOCK_SERVICE), ("B", MOCK_SERVICE), ("C", other)]:
-            services.insert_one({**data, "id": id})
-        services.insert_one({**other, "id": "D"})
-        services.insert_one({**MOCK_SERVICE, "id": "BAD", "url": "bad"})
-        with unit_app.app_context(), pytest.raises(RuntimeError) as exc_info:
-            add_service_keys()
-        message = str(exc_info.value)
-        assert "'B': same URL and API type as 'A'" in message
-        assert "'D': same URL and API type as 'C'" in message
-        assert "'BAD': Service URLs need a scheme and a host." in message
-
-
 class TestWarnUrlSchemes:
     """Tests for warning of stored services with schemes not allowed."""
 
@@ -991,103 +881,6 @@ class TestWarnEnvironments:
         assert not caplog.records
 
 
-class TestWarnInvalidUrls:
-    """Tests for warning of stored services with keys and invalid URLs."""
-
-    def test_warned(
-        self,
-        unit_app: Flask,
-        services: Collection[dict[str, Any]],
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """Services with keys and invalid URLs are named, others not.
-
-        E.g., URLs accepted before stricter checks; services without keys are
-        checked when their keys are added.
-        """
-        for id, url in [
-            ("PIPE", "https://beacon.example.org/a|b"),
-            ("SHORT", "https://127.1"),
-            ("NOSTR", 1),
-            ("VALID", " https://third.example.org"),
-            ("HTTP", "http://fourth.example.org"),
-        ]:
-            services.insert_one({**MOCK_SERVICE, "id": id, "url": url, KEY: id})
-        services.insert_one({**MOCK_SERVICE, "id": "NOKEY", "url": "https://1.1"})
-        with unit_app.app_context(), caplog.at_level(logging.WARNING):
-            warn_invalid_urls()
-        assert len(caplog.records) == 1
-        message = caplog.records[0].getMessage()
-        assert message.endswith("'NOSTR', 'PIPE', 'SHORT'")
-        assert "duplicates" in message
-
-    def test_none(
-        self,
-        unit_app: Flask,
-        services: Collection[dict[str, Any]],
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """Without such services, nothing is logged."""
-        services.insert_one({**MOCK_SERVICE, "id": MOCK_ID, KEY: MOCK_ID})
-        with unit_app.app_context(), caplog.at_level(logging.WARNING):
-            warn_invalid_urls()
-        assert not caplog.records
-
-
-class TestWarnOrganizationFields:
-    """Tests for warning of stored services with extra organization fields."""
-
-    def test_warned(
-        self,
-        unit_app: Flask,
-        services: Collection[dict[str, Any]],
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """Services with organization fields other than name and URL are named.
-
-        E.g., registered before extra fields were rejected; services with
-        only these fields (or some of them), or without an organization
-        object (e.g., with an array of objects, which MongoDB's `$type:
-        object` also matches), are not named.
-        """
-        organization = {"name": "Org", "url": "https://example.org"}
-        for id, value in [
-            ("BLOB", {**organization, "blob": "x"}),
-            ("NESTED", {"name": "Org", "a": {"b": [1]}}),
-            ("VALID", organization),
-            ("PARTIAL", {"name": "Org"}),
-            ("STRING", "organization"),
-            ("ARRAY", [{**organization, "blob": "x"}]),
-        ]:
-            services.insert_one({**MOCK_SERVICE, "id": id, "organization": value})
-        without = {k: v for k, v in MOCK_SERVICE.items() if k != "organization"}
-        services.insert_one({**without, "id": "NONE"})
-        with unit_app.app_context(), caplog.at_level(logging.WARNING):
-            warn_organization_fields()
-        assert len(caplog.records) == 1
-        message = caplog.records[0].getMessage()
-        assert message.endswith("'BLOB', 'NESTED'")
-        assert "organization" in message
-
-    def test_none(
-        self,
-        unit_app: Flask,
-        services: Collection[dict[str, Any]],
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """Without such services, nothing is logged."""
-        services.insert_one(
-            {
-                **MOCK_SERVICE,
-                "id": MOCK_ID,
-                "organization": {"name": "Org", "url": "https://example.org"},
-            }
-        )
-        with unit_app.app_context(), caplog.at_level(logging.WARNING):
-            warn_organization_fields()
-        assert not caplog.records
-
-
 def test_organization_fields_of_schema() -> None:
     """The organization fields allowed are those of the registration schema.
 
@@ -1175,18 +968,6 @@ class TestVerificationReset:
         self._replace(unit_app, data)
         stored = _without_db_id(services.find_one({"id": MOCK_ID}))
         assert stored == _stored(data, MOCK_ID, created=False)
-
-    def test_without_key(
-        self, unit_app: Flask, services: Collection[dict[str, Any]]
-    ) -> None:
-        """Services without a key are replaced, without their verification.
-
-        Cf. `add_service_keys()`.
-        """
-        services.insert_one({**MOCK_SERVICE, "id": MOCK_ID, VERIFIED: self.TIME})
-        self._replace(unit_app, MOCK_SERVICE)
-        stored = _without_db_id(services.find_one({"id": MOCK_ID}))
-        assert stored == _stored(MOCK_SERVICE, MOCK_ID, created=False)
 
     @pytest.mark.parametrize(
         "concurrent, kept",

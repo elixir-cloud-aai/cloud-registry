@@ -98,29 +98,29 @@ def client(
         )
         get_collection("user_names").insert_many(
             [
-                {"service_id": "S1", "user_id": BARE, "name": "Alice"},
-                {"service_id": "S2", "user_id": BARE, "name": "Alice (old)"},
-                {"service_id": "S2", "user_id": NAMESPACED_ALICE, "name": "Alice"},
+                {"serviceId": "S1", "userId": BARE, "name": "Alice"},
+                {"serviceId": "S2", "userId": BARE, "name": "Alice (old)"},
+                {"serviceId": "S2", "userId": NAMESPACED_ALICE, "name": "Alice"},
             ]
         )
         # unique hashes of tokens (indexed)
         get_collection(INVITATIONS).insert_many(
             {**invitation, TOKEN_HASH: invitation["_id"]}
             for invitation in [
-                {"_id": "I1", "created_by": BARE, CREATED_AS: {"user": BARE}},
+                {"_id": "I1", "createdBy": BARE, CREATED_AS: {"user": BARE}},
                 {
                     "_id": "I2",
-                    "created_by": OTHER,
+                    "createdBy": OTHER,
                     CREATED_AS: {"group": "team"},
-                    ACCEPTED: {"user_id": BARE, "name": "Alice"},
+                    ACCEPTED: {"userId": BARE, "name": "Alice"},
                 },
                 {
                     "_id": "I3",
-                    "created_by": NAMESPACED_ALICE,
+                    "createdBy": NAMESPACED_ALICE,
                     CREATED_AS: {"admin": True},
-                    ACCEPTED: {"user_id": OTHER},
+                    ACCEPTED: {"userId": OTHER},
                 },
-                {"_id": "I4", "created_by": BARE, CREATED_AS: {"group": "team"}},
+                {"_id": "I4", "createdBy": BARE, CREATED_AS: {"group": "team"}},
             ]
         )
     return client
@@ -152,9 +152,9 @@ def _invitations() -> dict[str, tuple[Any, ...]]:
     """
     return {
         invitation["_id"]: (
-            invitation["created_by"],
+            invitation["createdBy"],
             invitation[CREATED_AS],
-            invitation.get(ACCEPTED, {}).get("user_id"),
+            invitation.get(ACCEPTED, {}).get("userId"),
         )
         for invitation in get_collection(INVITATIONS).find()
     }
@@ -206,7 +206,7 @@ def test_namespace_subjects(
         }
         assert counters == {NAMESPACED_ALICE: 3, OTHER: 1}
         names = sorted(
-            (name["service_id"], name["user_id"], name["name"])
+            (name["serviceId"], name["userId"], name["name"])
             for name in get_collection("user_names").find()
         )
         # the namespaced user's name is kept
@@ -331,7 +331,7 @@ def test_dry_run(client: FlaskClient) -> None:
             "invitations": 3,
         }
         assert _rules() == before
-        assert get_collection("user_names").count_documents({"user_id": BARE}) == 2
+        assert get_collection("user_names").count_documents({"userId": BARE}) == 2
         assert get_collection("services").count_documents({SERVICE_CREATOR: BARE}) == 2
         assert get_collection(SERVICE_COUNTS).count_documents({"_id": BARE}) == 1
         assert _invitations()["I1"] == (BARE, {"user": BARE}, None)
@@ -445,9 +445,9 @@ def test_main_dry_run_read_only(
     replace the configured rules they need. The fixture `client` stores the data.
     """
     invitations = mongo_client[DB][INVITATIONS]
-    invitations.drop_index("expires_at_1")
-    invitations.drop_index("accepted_expires_at")
-    invitations.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    invitations.drop_index("expiresAt_1")
+    invitations.drop_index("acceptedExpiresAt")
+    invitations.create_index([("expiresAt", 1)], expireAfterSeconds=0)
     mongo_client[DB]["policy_rules"].update_one(
         {CONFIGURED_FIELD: True, "ptype": "p", "v0": "owner"},
         {"$set": {"v1": USERS_RULE_RC1[2]}},

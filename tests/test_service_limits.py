@@ -22,13 +22,11 @@ from pymongo.errors import DuplicateKeyError
 import pytest
 from werkzeug.test import TestResponse
 
-from cloud_registry.app import create_app
 from cloud_registry.ga4gh.registry import server, service_limits
 from cloud_registry.ga4gh.registry.service import CREATED_BY
 from cloud_registry.ga4gh.registry.service_limits import (
     COUNT,
     SERVICE_COUNTS,
-    add_service_creators,
     reconcile_service_counts,
     release_service,
     reserve_service,
@@ -641,59 +639,6 @@ def stored(
     mongo_client[DB]["services"].update_many({}, {"$unset": {CREATED_BY: ""}})
     mongo_client[DB][SERVICE_COUNTS].delete_many({})
     yield ids
-
-
-def test_creators_added_on_startup(
-    stored: dict[str, str], mongo_client: MongoClient[dict[str, Any]]
-) -> None:
-    """On startup, services count for their only user owner, if any.
-
-    Services already counted keep their user; counters are set.
-    """
-    mongo_client[DB]["services"].update_one(
-        {"id": stored["admin"]}, {"$set": {CREATED_BY: BOB}}
-    )
-    create_app()
-    creators = {name: _creator(mongo_client, id) for name, id in stored.items()}
-    assert creators == {"alice": ALICE, "two": None, "group": None, "admin": BOB}
-    assert _counts(mongo_client) == {ALICE: 1, BOB: 1}
-    create_app()
-    assert _counts(mongo_client) == {ALICE: 1, BOB: 1}
-
-
-def test_creators_added_concurrently(
-    app: App,
-    stored: dict[str, str],
-    mongo_client: MongoClient[dict[str, Any]],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Users added by a concurrent run (e.g., another worker) are kept.
-
-    Here, another run sets the user of alice's service while it is looked up;
-    the other services get theirs (the admin owns the service they registered).
-    """
-    owner = service_limits._single_user_owner
-
-    def set_meanwhile(path: str) -> str | None:
-        """Let another run set the user of alice's service meanwhile.
-
-        Args:
-            path: Path of the service.
-
-        Returns:
-            The only user owner.
-        """
-        if path.endswith(f"/{stored['alice']}"):
-            mongo_client[DB]["services"].update_one(
-                {"id": stored["alice"]}, {"$set": {CREATED_BY: "other"}}
-            )
-        return owner(path)
-
-    monkeypatch.setattr(service_limits, "_single_user_owner", set_meanwhile)
-    with app.app.app_context():
-        add_service_creators()
-    creators = {name: _creator(mongo_client, id) for name, id in stored.items()}
-    assert creators == {"alice": "other", "two": None, "group": None, "admin": ADMIN}
 
 
 def test_counters_reconciled(

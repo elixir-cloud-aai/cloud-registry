@@ -30,7 +30,6 @@ import yaml
 
 import cloud_registry.app
 import cloud_registry.ga4gh.registry.server
-from cloud_registry.ga4gh.registry.service import KEY, service_key
 from cloud_registry.service_models.custom_config import CustomConfig
 from tests.conftest import (
     ADMIN_GROUP,
@@ -47,7 +46,7 @@ from tests.conftest import (
 from tests.conftest import (
     KEY as SIGNING_KEY,
 )
-from tests.mock_data import ERROR_MEDIA_TYPE, MAX_CONTENT_LENGTH
+from tests.mock_data import DB, ERROR_MEDIA_TYPE, MAX_CONTENT_LENGTH
 
 BASE = "/ga4gh/registry/v1"
 # Fields of OpenAPI Path Item Objects holding Operation Objects
@@ -59,10 +58,10 @@ TIMESTAMPS = {"createdAt", "updatedAt"}
 # Registration rules in the service info, with the defaults of `config.yaml`
 DEFAULT_RULES: dict[str, Any] = {
     "environments": ["prod", "test", "dev", "staging"],
-    "url_schemes": ["https"],
-    "service_types": "open",
-    "max_unused_service_types": 10,
-    "max_services_per_user": 50,
+    "urlSchemes": ["https"],
+    "serviceTypes": "open",
+    "maxUnusedServiceTypes": 10,
+    "maxServicesPerUser": 50,
 }
 # Times of registrations and updates of services (cf. `_set_service_clock()`)
 TIME = datetime(2026, 10, 20, 12, 34, 56, 789000, tzinfo=UTC)
@@ -1240,7 +1239,7 @@ def test_service_info(app: App, client: FlaskClient) -> None:
     assert response.get_json() == {
         **config,
         "version": version("cloud-registry"),
-        "registration_rules": DEFAULT_RULES,
+        "registrationRules": DEFAULT_RULES,
     }
     assert not TIMESTAMPS & response.get_json().keys()
 
@@ -1251,8 +1250,8 @@ def test_registration_rules_configured(
     """The service info serves the registration rules of the config in effect.
 
     Set in a config overlay; without limits of unused types and services
-    per user (`null`), `max_unused_service_types` and
-    `max_services_per_user` are left out.
+    per user (`null`), `maxUnusedServiceTypes` and
+    `maxServicesPerUser` are left out.
     """
     overlay = yaml.safe_load(CONFIG_OVERLAY.read_text())
     overlay["custom"] = {
@@ -1269,10 +1268,10 @@ def test_registration_rules_configured(
     client = cloud_registry.app.create_app().app.test_client()
     response = client.get(f"{BASE}/service-info")
     assert response.status_code == 200
-    assert response.get_json()["registration_rules"] == {
+    assert response.get_json()["registrationRules"] == {
         "environments": [],
-        "url_schemes": ["http", "https"],
-        "service_types": "moderated",
+        "urlSchemes": ["http", "https"],
+        "serviceTypes": "moderated",
     }
 
 
@@ -1286,13 +1285,13 @@ def test_registration_rules_follow_config(app: App, client: FlaskClient) -> None
     custom.access_control.service_types = "controlled"
     custom.access_control.max_services_per_user = 0
     custom.endpoints.services.environments = ["production"]
-    rules = client.get(f"{BASE}/service-info").get_json()["registration_rules"]
+    rules = client.get(f"{BASE}/service-info").get_json()["registrationRules"]
     assert rules == {
         **DEFAULT_RULES,
         "environments": ["production"],
-        "service_types": "controlled",
-        "max_unused_service_types": 0,
-        "max_services_per_user": 0,
+        "serviceTypes": "controlled",
+        "maxUnusedServiceTypes": 0,
+        "maxServicesPerUser": 0,
     }
 
 
@@ -1311,8 +1310,8 @@ def test_registration_rules_in_spec(client: FlaskClient) -> None:
     rules = spec["components"]["schemas"]["RegistrationRules"]
     assert set(rules["properties"]) == set(DEFAULT_RULES)
     assert set(rules["required"]) == set(DEFAULT_RULES) - {
-        "max_unused_service_types",
-        "max_services_per_user",
+        "maxUnusedServiceTypes",
+        "maxServicesPerUser",
     }
 
 
@@ -1329,8 +1328,8 @@ def test_registration_rules_validated(app: App, client: FlaskClient) -> None:
 @pytest.mark.parametrize(
     "service_info",
     [
-        {"service": {"registration_rules": {"environments": []}}},
-        {"service": {"registration_rules": None}},
+        {"service": {"registrationRules": {"environments": []}}},
+        {"service": {"registrationRules": None}},
         {"runtime_fields": None},
     ],
 )
@@ -1345,7 +1344,7 @@ def test_create_app_registration_rules_configured(
     They must match the rules the registry enforces.
     """
     _set_overlay(monkeypatch, tmp_path, _service_info_overlay(service_info))
-    with pytest.raises(RuntimeError, match="registration_rules"):
+    with pytest.raises(RuntimeError, match="registrationRules"):
         cloud_registry.app.create_app()
 
 
@@ -1591,22 +1590,13 @@ def test_create_app_checks(
     app_env: None,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`create_app()` logs admin groups and service info, and adds keys.
+    """`create_app()` logs admin groups and service info.
 
     Logging the admin groups and warning of placeholders of the service info
     is FOCA's.
-
-    That is, it adds missing keys of services (in each Gunicorn worker).
     """
-    # registered without a key, e.g., before keys were introduced
-    services = mongo_client["serviceStore"]["services"]
-    services.insert_one({**SERVICE, "id": "OLD"})
-
     cloud_registry.app.create_app()
 
-    stored = services.find_one({"id": "OLD"})
-    assert stored is not None
-    assert stored[KEY] == service_key(SERVICE)
     # FOCA configures logging to stderr
     err = capsys.readouterr().err
     assert f"mapped to the role 'admin': {ADMIN_GROUP}" in err
@@ -1652,56 +1642,6 @@ def test_create_app_environments(
     assert "custom.endpoints.services.environments" in err
     assert "'PROD'" in err
     response = app.app.test_client().get(f"{BASE}/services/PROD")
-    assert response.status_code == 200
-
-
-def test_create_app_organization_fields(
-    mongo_client: MongoClient[dict[str, Any]],
-    app_env: None,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """`create_app()` warns of stored services with extra organization fields.
-
-    They are still served, but can't be updated unchanged.
-    """
-    organization = {**SERVICE["organization"], "blob": "x"}
-    services = mongo_client["serviceStore"]["services"]
-    services.insert_one({**_service(organization=organization), "id": "BLOB"})
-    app = cloud_registry.app.create_app()
-    err = capsys.readouterr().err
-    assert "organization fields other than `name` and `url`" in err
-    assert "'BLOB'" in err
-    client = app.app.test_client()
-    response = client.get(f"{BASE}/services/BLOB")
-    assert response.status_code == 200
-    assert response.get_json()["organization"] == organization
-    response = client.put(
-        f"{BASE}/services/BLOB",
-        json=_service(organization=organization),
-        headers=make_headers(),
-    )
-    _assert_error(response, 400)
-    assert "'blob' was unexpected" in response.get_json()["detail"]
-
-
-def test_create_app_invalid_urls(
-    mongo_client: MongoClient[dict[str, Any]],
-    app_env: None,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """`create_app()` warns of stored services with keys and invalid URLs.
-
-    They are still served.
-    """
-    services = mongo_client["serviceStore"]["services"]
-    services.insert_one(
-        {**_service(url="https://tes.example.org/a|b"), "id": "PIPE", KEY: "PIPE"}
-    )
-    app = cloud_registry.app.create_app()
-    err = capsys.readouterr().err
-    assert "Services with invalid URLs" in err
-    assert "'PIPE'" in err
-    response = app.app.test_client().get(f"{BASE}/services/PIPE")
     assert response.status_code == 200
 
 
@@ -1899,16 +1839,6 @@ def test_create_app_invalid_public_url(
         cloud_registry.app.create_app()
 
 
-def test_create_app_duplicate_services(
-    mongo_client: MongoClient[dict[str, Any]], app_env: None
-) -> None:
-    """`create_app()` fails if services have the same URL and API type."""
-    services = mongo_client["serviceStore"]["services"]
-    services.insert_many([{**SERVICE, "id": "FIRST"}, {**SERVICE, "id": "SECOND"}])
-    with pytest.raises(RuntimeError, match="same URL and API type"):
-        cloud_registry.app.create_app()
-
-
 def test_create_app_requires_admin(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: None
 ) -> None:
@@ -2072,6 +2002,54 @@ def test_create_app_invalid_service_info(
     )
     with pytest.raises(ValidationError, match=r"`service_info\.service\.contactUrl`"):
         cloud_registry.app.create_app()
+
+
+@pytest.mark.parametrize(
+    ("collection", "document"),
+    [
+        ("invitations", {"service_id": "A", "token_hash": "a"}),
+        ("user_names", {"service_id": "A", "user_id": "a", "name": "A"}),
+        (
+            "service_types",
+            {"group": "g", "artifact": "a", "version": "1", "created_by": None},
+        ),
+    ],
+)
+def test_create_app_old_format(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    db_client: MongoClient[dict[str, Any]],
+    collection: str,
+    document: dict[str, Any],
+) -> None:
+    """`create_app()` refuses data of earlier versions, naming the collection.
+
+    Before FOCA creates its indexes, which would fail on several such documents
+    (e.g., the unique one of `tokenHash`).
+    """
+    db_client[DB][collection].insert_one(document)
+    _set_overlay(monkeypatch, tmp_path, _service_info_overlay({}))
+    with pytest.raises(RuntimeError, match=f"`{collection}`.*fresh database"):
+        cloud_registry.app.create_app()
+    assert "tokenHash_1" not in db_client[DB]["invitations"].index_information()
+
+
+def test_create_app_new_format(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    db_client: MongoClient[dict[str, Any]],
+) -> None:
+    """`create_app()` starts on data in the format of this version."""
+    db_client[DB]["user_names"].insert_one(
+        {"serviceId": "A", "userId": "a", "name": "A"}
+    )
+    db_client[DB]["service_types"].insert_one(
+        {"group": "g", "artifact": "a", "version": "1", "createdBy": None}
+    )
+    _set_overlay(monkeypatch, tmp_path, _service_info_overlay({}))
+    assert cloud_registry.app.create_app() is not None
 
 
 def test_create_app_service_info_in_custom(

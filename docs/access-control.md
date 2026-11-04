@@ -206,7 +206,7 @@ while no rule lets them grant roles to users. More on the two rules of roles:
   user](configuration.md#services-per-user)).
 - Owners can update (`PUT`) and delete (`DELETE`) their services, and grant
   other users the roles `owner` or `maintainer` on them, by their user
-  identifier (`sub` claim; `user_id` of `GET /me`, with [several token
+  identifier (`sub` claim; `userId` of `GET /me`, with [several token
   issuers](configuration.md#several-token-issuers) namespaced by issuer, as
   `<namespace>|<sub>`: encode it in URLs, slashes may also be kept):
 
@@ -263,7 +263,7 @@ Forbidden`), as owners could otherwise hand a service to any group; admins can
 grant roles to any group. Any owner can revoke the roles of a group
 (`DELETE /services/<id>/permissions/groups/<group>`).
 `GET /services/<id>/permissions` lists the roles of groups together with those
-of users, as `{"group": <group>, "role": <role>}` (users: `user_id`,
+of users, as `{"group": <group>, "role": <role>}` (users: `userId`,
 `name`, `role`). Groups count as owners: the last user owner can be removed
 while a group is owner, and the last owner group can't be removed or
 downgraded (`409 Conflict`). A service whose only owner is a group then
@@ -367,11 +367,11 @@ curl -X POST "http://localhost:8080/ga4gh/registry/v1/invitations/accept" \
   created through it stay valid (only the member can't accept them
   themselves): when a member leaves an owner group, the other owners should
   revoke the member's open invitations (listed with their identifier in
-  `created_by`). Invitations of
+  `createdBy`). Invitations of
   admins don't depend on their role, as the registry can't check admin groups
   without the admin's token: when removing an admin, delete the open
   invitations they created (no endpoint lists them across services: query
-  the collection `invitations` by `created_by`).
+  the collection `invitations` by `createdBy`).
 - **Identifiers:** users whose roles the permissions API couldn't revoke
   (identifiers that start with a slash, or contain
   the segments `.` or `..`; see [Roles on services](#roles-on-services))
@@ -379,7 +379,7 @@ curl -X POST "http://localhost:8080/ga4gh/registry/v1/invitations/accept" \
 - **Listing and revoking:** `GET /services/<id>/invitations` lists the
   invitations that weren't accepted, never with a token, with their `status`:
   `open`, or `expired` if they weren't accepted in time, so that owners see who
-  needs a nudge. With `?include_accepted=true`, it also lists those that were
+  needs a nudge. With `?includeAccepted=true`, it also lists those that were
   accepted (`status` `accepted`) and haven't expired, with who accepted them
   (`accepted`: user identifier, and the name and verified email address if
   the identity provider releases them, e.g., with `name`, `email` and
@@ -400,7 +400,7 @@ curl -X POST "http://localhost:8080/ga4gh/registry/v1/invitations/accept" \
   (default: 30, at most 365; `0` removes them when they expire), in both cases
   within about a minute. Owners can remove expired ones earlier. Until then,
   invitations that weren't accepted keep their label, and who created them and
-  when (`created_by`, `created_as`, `created_at`), and current owners see the
+  when (`createdBy`, `createdAs`, `createdAt`), and current owners see the
   creators. Revoking a role only cleans the invitations that the user accepted,
   not those they created: these stay listed. Those whose creator lost the owner
   role that allowed them show `open` until they expire, although accepting them
@@ -476,7 +476,7 @@ curl -X DELETE "http://localhost:8080/ga4gh/registry/v1/services/<id>" \
 
 The header grants nothing to users who aren't admins. [`GET /me`](#current-user)
 tells clients whether the user may switch to admin mode
-(`admin_available`) and whether the request is in admin mode (`admin`).
+(`adminAvailable`) and whether the request is in admin mode (`admin`).
 Responses vary by the header (`Vary: X-Request-Roles`), so that caches keep
 them apart. Browser apps on other origins can send the header if CORS allows
 it (`security.cors.allow_headers`; FOCA's default allows all headers); the
@@ -493,9 +493,9 @@ UI.
 
 `GET /me` returns the current user's identifier (to give to owners), whether
 the request is in [admin mode](#admin-mode) (`admin`) and whether they may
-switch to it (`admin_available`), whether they may add [service
-types](api.md#service-types) (`may_add_service_types`) and whether these
-are pending (`service_types_pending`), and their roles on
+switch to it (`adminAvailable`), whether they may add [service
+types](api.md#service-types) (`mayAddServiceTypes`) and whether these
+are pending (`serviceTypesPending`), and their roles on
 services, also those through groups
 (with `group`; a service is listed once per role); it also stores their name
 for the services with roles granted to them. Owners are not shown in the

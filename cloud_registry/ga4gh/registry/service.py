@@ -549,13 +549,10 @@ class RegisterService:
             if stored is None:
                 replacement.setdefault(CREATED, timestamp)
             else:
-                # the fields as read; missing if they were (e.g., services
-                # without key, cf. `add_service_keys()`, or without the user
-                # they count for, cf. `add_service_creators()`)
+                # the fields as read; missing if they were
                 for field in ("url", KEY, VERIFIED, CREATED, CREATED_BY, SELF_ENTRY):
                     query[field] = stored.get(field, {"$exists": False})
-                # the user the service counts for never changes (missing
-                # until added)
+                # the user the service counts for never changes
                 if CREATED_BY in stored:
                     replacement[CREATED_BY] = stored[CREATED_BY]
                 else:
@@ -620,65 +617,15 @@ class RegisterService:
             raise DuplicateService(existing_id=existing["id"])
 
 
-def add_service_keys() -> None:
-    """Add keys to services registered without one.
-
-    For example, to services registered before keys were introduced.
-
-    Concurrent runs of this function are safe (e.g., in each worker of the
-    app on startup): keys added by another run are kept. Services registered
-    without keys while it runs (e.g., by an app of an older version) are not
-    safe: they may be missed or reported as duplicates.
-
-    Raises:
-        RuntimeError: Services have invalid URLs or types, or the same URL
-            and API type; the message names all of them.
-    """
-    collection = get_collection("services")
-    problems = []
-    for service in collection.find({KEY: {"$exists": False}}, {"_id": False}):
-        try:
-            key = service_key(service)
-        except InvalidService as exc:
-            problems.append(f"'{service['id']}': {exc.description}")
-            continue
-        existing = collection.find_one({KEY: key}, {"_id": False, "id": True})
-        if existing is not None and existing["id"] == service["id"]:
-            continue  # added concurrently, e.g., by another worker
-        if existing is not None:
-            problems.append(
-                f"'{service['id']}': same URL and API type as '{existing['id']}'"
-            )
-            continue
-        try:
-            # unless the service was replaced concurrently, with a new key
-            result = collection.update_one(
-                {"id": service["id"], KEY: {"$exists": False}}, {"$set": {KEY: key}}
-            )
-        except DuplicateKeyError:
-            # registered concurrently, e.g., by an app of an older version
-            problems.append(f"'{service['id']}': same URL and API type as another")
-            continue
-        if result.modified_count:
-            logger.info("Added key to service '%s'.", escape_log_value(service["id"]))
-    if problems:
-        raise RuntimeError(
-            "Fix or delete these services (cf. https://cloud-registry.readthedocs.io"
-            f"/en/latest/upgrading/#stored-services): {'; '.join(problems)}"
-        )
-
-
-def _is_valid_url(url: object) -> bool:
+def _is_valid_url(url: str) -> bool:
     """Check whether a stored service URL is valid.
 
     Args:
         url: Stored service URL.
 
     Returns:
-        Whether the URL is a string that `normalize_url()` accepts.
+        Whether `normalize_url()` accepts the URL.
     """
-    if not isinstance(url, str):
-        return False
     try:
         normalize_url(url)
     except InvalidService:
@@ -686,65 +633,9 @@ def _is_valid_url(url: object) -> bool:
     return True
 
 
-def warn_invalid_urls() -> None:
-    """Warn of stored services with keys whose URLs are invalid.
-
-    For example, URLs accepted before stricter checks were introduced (cf.
-    "Stored services" in `docs/upgrading.md`). Such services are still
-    served, but can only be updated with a valid URL, and their keys may
-    differ from those of the same URL spelled validly, so registrations of
-    the service with such a spelling are not detected as duplicates.
-    Services without keys are checked when keys are added (cf.
-    `add_service_keys()`).
-    """
-    ids = []
-    for service in get_collection("services").find(
-        {KEY: {"$exists": True}},
-        {"_id": False, "id": True, "url": True},
-        sort=[("id", 1)],
-    ):
-        if not _is_valid_url(service.get("url")):
-            ids.append(f"'{service['id']}'")
-    if ids:
-        logger.warning(
-            "Services with invalid URLs are still served, but can only be "
-            "updated with a valid URL, and duplicates of them may not be "
-            "detected; update or delete them: %s",
-            escape_log_value(", ".join(ids)),
-        )
-
-
 # Fields of the organization of a service (cf. `ExternalServiceRegister` in
 # `api/additions.openapi.yaml`, which rejects others)
 ORGANIZATION_FIELDS = frozenset({"name", "url"})
-
-
-def warn_organization_fields() -> None:
-    """Warn of stored services whose organizations have extra fields.
-
-    For example, of services registered before fields other than `name` and
-    `url` were rejected in organizations (cf. "Stored services" in
-    `docs/upgrading.md`). Such services are still served, but can only be
-    updated without these fields. Organizations that aren't objects are
-    skipped (e.g., arrays, which MongoDB's `$type: object` also matches if
-    they have objects).
-    """
-    ids = []
-    for service in get_collection("services").find(
-        {"organization": {"$type": "object"}},
-        {"_id": False, "id": True, "organization": True},
-        sort=[("id", 1)],
-    ):
-        organization = service["organization"]
-        if isinstance(organization, dict) and organization.keys() - ORGANIZATION_FIELDS:
-            ids.append(f"'{service['id']}'")
-    if ids:
-        logger.warning(
-            "Services with organization fields other than `name` and `url` "
-            "are still served, but can only be updated without them; update "
-            "or delete them: %s",
-            escape_log_value(", ".join(ids)),
-        )
 
 
 def warn_environments() -> None:
@@ -791,8 +682,7 @@ def warn_url_schemes() -> None:
         {}, {"_id": False, "id": True, "url": True}
     ):
         url = service.get("url")
-        # invalid URLs can't be updated unchanged anyway (cf.
-        # `warn_invalid_urls()`)
+        # invalid URLs can't be updated unchanged anyway
         if not isinstance(url, str) or not _is_valid_url(url):
             continue
         try:

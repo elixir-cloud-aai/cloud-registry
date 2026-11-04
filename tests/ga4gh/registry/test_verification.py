@@ -39,7 +39,7 @@ def _expected(verified_at: str = FORMATTED) -> dict[str, Any]:
     Returns:
         Verification of the mock service.
     """
-    return {**CHECKED, "verified_at": verified_at}
+    return {**CHECKED, "verifiedAt": verified_at}
 
 
 def _insert(
@@ -141,7 +141,7 @@ def test_putServiceVerification(
     stored = _stored(services)[VERIFIED]
     assert stored > TIME
     assert res == _expected(format_time(stored))
-    assert stored == datetime.fromisoformat(res["verified_at"][:-1])
+    assert stored == datetime.fromisoformat(res["verifiedAt"][:-1])
 
 
 @pytest.mark.parametrize(
@@ -269,8 +269,8 @@ def test_getVerifications(
     _insert(services, id="a", verified_at=datetime(2026, 1, 1))
     with unit_app.app_context():
         assert getVerifications() == [
-            {"service_id": "a", **_expected("2026-01-01T00:00:00.000Z")},
-            {"service_id": "b", **_expected()},
+            {"serviceId": "a", **_expected("2026-01-01T00:00:00.000Z")},
+            {"serviceId": "b", **_expected()},
         ]
 
 

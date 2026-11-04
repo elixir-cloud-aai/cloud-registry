@@ -166,11 +166,11 @@ def _listing(service_id: str | None) -> dict[str, Any]:
 
     Returns:
         Whether the registry is listed (`listed`), and if so, the identifier
-        of its entry (`service_id`).
+        of its entry (`serviceId`).
     """
     if service_id is None:
         return {"listed": False}
-    return {"listed": True, "service_id": service_id}
+    return {"listed": True, "serviceId": service_id}
 
 
 def _entry_data() -> dict[str, Any]:

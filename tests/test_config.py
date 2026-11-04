@@ -378,11 +378,7 @@ def test_config_resource_roles(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_service_key_index(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Service keys are unique, and the index is sparse.
-
-    Being sparse, the index can be created before keys are added to services
-    stored without one.
-    """
+    """Service keys are unique, and every service has one."""
     monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(CONFIG_OVERLAY))
     db = _parse_config().db
     assert db is not None and db.dbs is not None
@@ -391,7 +387,7 @@ def test_service_key_index(monkeypatch: pytest.MonkeyPatch) -> None:
     indexes = collections["services"].indexes
     assert indexes is not None
     key_index = next(index for index in indexes if _keys(index) == {KEY: 1})
-    assert key_index.options == {"unique": True, "sparse": True}
+    assert key_index.options == {"unique": True}
 
 
 def test_service_type_index(monkeypatch: pytest.MonkeyPatch) -> None:

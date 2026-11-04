@@ -150,9 +150,9 @@ def permissions(
         User identifiers and roles, sorted.
     """
     return sorted(
-        (p["user_id"], p["role"])
+        (p["userId"], p["role"])
         for p in permission_list(client, service_id, user)
-        if "user_id" in p
+        if "userId" in p
     )
 
 
@@ -393,30 +393,30 @@ def test_me(client: FlaskClient) -> None:
     first, second = register(client), register(client)
     assert grant(client, first, BOB, "maintainer") == 200
     assert me(client, ALICE) == {
-        "user_id": ALICE,
+        "userId": ALICE,
         "admin": False,
-        "admin_available": False,
-        "may_add_service_types": True,
-        "service_types_pending": False,
+        "adminAvailable": False,
+        "mayAddServiceTypes": True,
+        "serviceTypesPending": False,
         "services": sorted(
             [
-                {"service_id": first, "role": "owner"},
-                {"service_id": second, "role": "owner"},
+                {"serviceId": first, "role": "owner"},
+                {"serviceId": second, "role": "owner"},
             ],
-            key=lambda service: service["service_id"],
+            key=lambda service: service["serviceId"],
         ),
     }
-    assert me(client, BOB)["services"] == [{"service_id": first, "role": "maintainer"}]
+    assert me(client, BOB)["services"] == [{"serviceId": first, "role": "maintainer"}]
     assert me(client, CAROL)["services"] == []
     admin = me(client, ADMIN)
-    assert (admin["admin"], admin["admin_available"], admin["services"]) == (
+    assert (admin["admin"], admin["adminAvailable"], admin["services"]) == (
         True,
         True,
         [],
     )
     # without admin mode, admins are reported as such, but not active
     admin = me(client, ADMIN, admin_mode=False)
-    assert (admin["admin"], admin["admin_available"]) == (False, True)
+    assert (admin["admin"], admin["adminAvailable"]) == (False, True)
     assert delete(client, first, ALICE) == 200
     assert me(client, BOB)["services"] == []
 
@@ -435,7 +435,7 @@ def _names(client: FlaskClient, service_id: str) -> dict[str, str | None]:
         f"{BASE}/services/{service_id}/permissions",
         headers=headers(ADMIN),
     )
-    return {p["user_id"]: p.get("name") for p in response.get_json() if "user_id" in p}
+    return {p["userId"]: p.get("name") for p in response.get_json() if "userId" in p}
 
 
 def test_permission_names(client: FlaskClient) -> None:
@@ -542,7 +542,7 @@ def test_stale_name_not_shown(app: App, client: FlaskClient) -> None:
     service_id = register(client)
     with app.app.app_context():
         get_collection("user_names").insert_one(
-            {"service_id": service_id, "user_id": BOB, "name": "Stale"}
+            {"serviceId": service_id, "userId": BOB, "name": "Stale"}
         )
     assert grant(client, service_id, BOB, "maintainer") == 200
     assert _names(client, service_id)[BOB] is None
@@ -851,7 +851,7 @@ def test_create_racing_delete(
     assert _roles(app, "MYSERV") == [(BOB, "owner")]
     with app.app.app_context():
         names = get_collection("user_names")
-        assert names.count_documents({"service_id": "MYSERV"}) == 0
+        assert names.count_documents({"serviceId": "MYSERV"}) == 0
     assert client.get(f"{BASE}/services/MYSERV").status_code == 404
 
 
@@ -992,7 +992,7 @@ def test_admin_via_permissions_api(client: FlaskClient) -> None:
     response = client.post(PERMISSIONS_API, json=rule, headers=headers(ADMIN))
     assert response.status_code == 400
     me_carol = me(client, CAROL)
-    assert (me_carol["admin"], me_carol["admin_available"]) == (False, False)
+    assert (me_carol["admin"], me_carol["adminAvailable"]) == (False, False)
     assert update(client, service_id, CAROL) == 403
 
 
@@ -1071,7 +1071,7 @@ def test_admin_mode_off(
     client = _create_app(monkeypatch, tmp_path, overlay)
     for admin_mode in (False, True):
         admin = me(client, ADMIN, admin_mode)
-        assert (admin["admin"], admin["admin_available"]) == (True, True)
+        assert (admin["admin"], admin["adminAvailable"]) == (True, True)
     service_id = register(client)
     response = client.put(
         f"{BASE}/services/{service_id}",
@@ -1196,7 +1196,7 @@ def test_group_roles(client: FlaskClient) -> None:
     assert response.get_json() == {"group": TEAM_GROUP, "role": "owner"}
     # user and group roles are listed together, and distinguishable
     assert permission_list(client, service_id) == [
-        {"user_id": ALICE, "name": NAMES[ALICE], "role": "owner"},
+        {"userId": ALICE, "name": NAMES[ALICE], "role": "owner"},
         {"group": TEAM_GROUP, "role": "owner"},
     ]
     # members of an owner group are owners; others are not
@@ -1260,7 +1260,7 @@ def test_invalid_group_permissions(client: FlaskClient) -> None:
     assert revoke_group(client, service_id, TEAM_GROUP) == 404
     assert revoke_group(client, service_id, "a,b") == 404
     assert permission_list(client, service_id) == [
-        {"user_id": ALICE, "name": NAMES[ALICE], "role": "owner"}
+        {"userId": ALICE, "name": NAMES[ALICE], "role": "owner"}
     ]
 
 
@@ -1274,7 +1274,7 @@ def test_permissions_without_subject(client: FlaskClient, path: str) -> None:
         assert response.status_code == 404
         assert response.get_json()["status"] == 404
     assert permission_list(client, service_id) == [
-        {"user_id": ALICE, "name": NAMES[ALICE], "role": "owner"}
+        {"userId": ALICE, "name": NAMES[ALICE], "role": "owner"}
     ]
 
 
@@ -1310,7 +1310,7 @@ def test_users_named_like_paths(client: FlaskClient, user: str) -> None:
     url = f"{BASE}/services/{service_id}/permissions/users/{user}"
     response = client.put(url, json={"role": "owner"}, headers=headers(ALICE))
     assert response.status_code == 200, response.get_json()
-    assert response.get_json() == {"user_id": decoded, "role": "owner"}
+    assert response.get_json() == {"userId": decoded, "role": "owner"}
     assert (decoded, "owner") in permissions(client, service_id)
     assert group_permissions(client, service_id) == []
     response = client.delete(url, headers=headers(ALICE))
@@ -1343,7 +1343,7 @@ def test_dot_segment_principals(client: FlaskClient, kind: str, principal: str) 
     assert response.status_code == 400
     assert client.delete(url, headers=headers(ADMIN)).status_code == 400
     assert permission_list(client, service_id) == [
-        {"user_id": ALICE, "name": NAMES[ALICE], "role": "owner"}
+        {"userId": ALICE, "name": NAMES[ALICE], "role": "owner"}
     ]
 
 
@@ -1439,7 +1439,7 @@ def test_group_last_owner(client: FlaskClient) -> None:
     assert grant(client, service_id, ERIN, "owner", as_user=ERIN) == 200
     assert revoke_group(client, service_id, TEAM_GROUP, as_user=ERIN) == 200
     assert revoke(client, service_id, ERIN, as_user=ERIN) == 409
-    assert permission_list(client, service_id) == [{"user_id": ERIN, "role": "owner"}]
+    assert permission_list(client, service_id) == [{"userId": ERIN, "role": "owner"}]
 
 
 @pytest.mark.parametrize("change", ["revoke", "downgrade"])
@@ -1478,20 +1478,20 @@ def test_me_group_roles(client: FlaskClient) -> None:
     assert grant_group(client, first, TEAM_GROUP, "maintainer") == 200
     assert grant_group(client, second, OTHER_GROUP, "owner", ADMIN) == 200
     assert me(client, ERIN)["services"] == [
-        {"service_id": first, "role": "maintainer", "group": TEAM_GROUP}
+        {"serviceId": first, "role": "maintainer", "group": TEAM_GROUP}
     ]
     assert me(client, BOB)["services"] == [
-        {"service_id": second, "role": "owner", "group": OTHER_GROUP}
+        {"serviceId": second, "role": "owner", "group": OTHER_GROUP}
     ]
     # sorted by service identifier, roles of the user first
     expected = [
-        {"service_id": first, "role": "owner"},
-        {"service_id": first, "role": "maintainer", "group": TEAM_GROUP},
+        {"serviceId": first, "role": "owner"},
+        {"serviceId": first, "role": "maintainer", "group": TEAM_GROUP},
     ]
     if second < first:
-        expected.insert(0, {"service_id": second, "role": "owner"})
+        expected.insert(0, {"serviceId": second, "role": "owner"})
     else:
-        expected.append({"service_id": second, "role": "owner"})
+        expected.append({"serviceId": second, "role": "owner"})
     assert me(client, ALICE)["services"] == expected
     # names are only stored for roles granted to users
     assert _names(client, first) == {ALICE: NAMES[ALICE]}

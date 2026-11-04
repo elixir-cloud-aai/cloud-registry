@@ -147,7 +147,7 @@ namespaces the identifiers of users (`sub`) by issuer, as
 `https://login.example.org/oidc/|abc123`), so equal identifiers of
 different issuers are different users, also as owners and maintainers of
 services and as the users who added service types. `GET /me` returns the
-namespaced identifier (`user_id`), which owners use to grant roles (see
+namespaced identifier (`userId`), which owners use to grant roles (see
 [Roles on services](access-control.md#roles-on-services)).
 
 Issuers can be listed with settings of their own (FOCA's `IssuerConfig`),
@@ -328,7 +328,7 @@ limits](deployment.md#rate-limits)), and remove unwanted types as an admin
 Only admins can remove types, in every mode. Set this option rather than
 removing the policy `add-service-types` (in `security.access_control.policies`),
 which only applies to `POST /services/types`: users also add types by
-registering services, and `GET /me` (`may_add_service_types`) only reflects
+registering services, and `GET /me` (`mayAddServiceTypes`) only reflects
 this option. Overlays that give the policies as a list must include that
 rule, and `list-approvals` for `GET /approvals`. For example, in a config
 overlay (with the Helm chart, in `config`):
@@ -478,9 +478,9 @@ e.g., in reverse domain name notation), `name`, `description`, `organization`,
 warning on startup, naming the fields to set (also with Docker Compose, whose
 development config keeps them). Fields and list items set to `null`
 (e.g., in a config overlay) are not served. The app adds the [registration
-rules](api.md#registration-rules) (`registration_rules`), built from the
+rules](api.md#registration-rules) (`registrationRules`), built from the
 `custom` config on each request (`service_info.runtime_fields`): keep that
-option, and don't set `registration_rules` in `service_info.service` (not
+option, and don't set `registrationRules` in `service_info.service` (not
 even to `null`), so that they are always the rules the registry enforces;
 the app refuses to start otherwise. To change the service info, change
 the config and restart the app (the Helm chart restarts it when the `config`

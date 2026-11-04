@@ -148,7 +148,7 @@ def expected(verified_at: str, service: dict[str, Any] = SERVICE) -> dict[str, A
     Returns:
         Verification of the service.
     """
-    return {**checked(service), "verified_at": verified_at}
+    return {**checked(service), "verifiedAt": verified_at}
 
 
 def unverify(
@@ -178,7 +178,7 @@ def verified(client: FlaskClient) -> list[str]:
     """
     response = client.get(f"{BASE}/verifications")
     assert response.status_code == 200
-    return [item["service_id"] for item in response.get_json()]
+    return [item["serviceId"] for item in response.get_json()]
 
 
 @pytest.fixture
@@ -200,7 +200,7 @@ def test_verify(client: FlaskClient, service: str) -> None:
     before = datetime.now(UTC).replace(microsecond=0)
     response = verify(client)
     assert response.status_code == 200
-    verified_at = response.get_json()["verified_at"]
+    verified_at = response.get_json()["verifiedAt"]
     assert datetime.fromisoformat(verified_at.replace("Z", "+00:00")) >= before
 
     assert response.get_json() == expected(verified_at)
@@ -209,7 +209,7 @@ def test_verify(client: FlaskClient, service: str) -> None:
     assert response.status_code == 200
     assert response.get_json() == expected(verified_at)
     response = client.get(f"{BASE}/verifications")
-    assert response.get_json() == [{"service_id": service, **expected(verified_at)}]
+    assert response.get_json() == [{"serviceId": service, **expected(verified_at)}]
 
 
 @pytest.mark.parametrize(
@@ -227,7 +227,7 @@ def test_verify_checked(
     """Services are verified if they have the URL and API type checked."""
     response = verify(client, checked=body)
     assert response.status_code == 200
-    assert response.get_json() == expected(response.get_json()["verified_at"])
+    assert response.get_json() == expected(response.get_json()["verifiedAt"])
     assert verified(client) == [service]
 
 
@@ -254,7 +254,7 @@ def test_verify_checked_conflict(
     assert response.content_type == ERROR_MEDIA_TYPE
     assert "another URL or API type" in response.get_json()["detail"]
     assert verified(client) == []
-    verified_at = verify(client).get_json()["verified_at"]
+    verified_at = verify(client).get_json()["verifiedAt"]
     assert verify(client, checked=body).status_code == 409
     assert verification(client).get_json() == expected(verified_at)
 
@@ -377,10 +377,10 @@ def test_verify_again(
         datetime(2026, 10, 20, 12, tzinfo=UTC),
         datetime(2026, 10, 20, 13, tzinfo=UTC),
     )
-    assert verify(client).get_json()["verified_at"] == "2026-10-20T12:00:00.000Z"
+    assert verify(client).get_json()["verifiedAt"] == "2026-10-20T12:00:00.000Z"
     second = verify(client)
     assert second.status_code == 200
-    assert second.get_json()["verified_at"] == "2026-10-20T13:00:00.000Z"
+    assert second.get_json()["verifiedAt"] == "2026-10-20T13:00:00.000Z"
     assert verification(client).get_json() == second.get_json()
     assert verified(client) == [service]
 
@@ -513,7 +513,7 @@ def test_kept_on_update(
 
     The verification is served with the URL and API type as updated.
     """
-    verified_at = verify(client).get_json()["verified_at"]
+    verified_at = verify(client).get_json()["verifiedAt"]
     assert put_service(client, _service(**change), user=USER) == 200
     assert verification(client).get_json() == expected(verified_at, _service(**change))
     stored = client.get(f"{BASE}/services/{service}").get_json()

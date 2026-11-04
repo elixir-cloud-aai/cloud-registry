@@ -85,7 +85,7 @@ TYPE_FIELDS = ("group", "artifact", "version")
 TYPE_PROJECTION = {"_id": False} | dict.fromkeys(TYPE_FIELDS, True)
 # Internal field of stored service types: the user who added the type, or
 # `None` for types added on startup (cf. `add_service_types()`); not served
-CREATED_BY = "created_by"
+CREATED_BY = "createdBy"
 # Internal field of stored service types: `True` while the type is pending,
 # i.e., until an admin approves it (mode `moderated`); not set for approved
 # types
@@ -821,4 +821,4 @@ def getApprovals(**kwargs: Any) -> dict[str, list[dict[str, Any]]]:
         PROJECTION,
         sort=[("id", 1)],
     )
-    return {"service_types": types, "services": list(records)}
+    return {"serviceTypes": types, "services": list(records)}

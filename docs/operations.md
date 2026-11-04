@@ -24,8 +24,8 @@ registrations refused by the [limit of services per
 user](configuration.md#services-per-user) and corrections of the counters on
 startup. A role granted by invitation appears in FOCA's log as granted by
 the user who accepted it: the app's log line of the acceptance names the
-invitation, whose creator the invitations of the service list (`created_by`,
-with `?include_accepted=true`) until it expires.
+invitation, whose creator the invitations of the service list (`createdBy`,
+with `?includeAccepted=true`) until it expires.
 Changes via the [permissions API](#permissions-api) are not logged by
 the app itself: FOCA logs the requests (method, path and client address) and
 the identifiers of the added, updated or deleted policy rules, but not who

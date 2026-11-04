@@ -32,10 +32,10 @@ def test_registration_rules_defaults(unit_app: Flask) -> None:
     with unit_app.app_context():
         assert registration_rules() == {
             "environments": ["prod", "test", "dev", "staging"],
-            "url_schemes": ["https"],
-            "service_types": "open",
-            "max_unused_service_types": 10,
-            "max_services_per_user": 50,
+            "urlSchemes": ["https"],
+            "serviceTypes": "open",
+            "maxUnusedServiceTypes": 10,
+            "maxServicesPerUser": 50,
         }
 
 
@@ -43,7 +43,7 @@ def test_registration_rules_configured(unit_app: Flask) -> None:
     """The rules are those of the config in effect.
 
     No limits of unused types and services per user (`null`) leave out
-    `max_unused_service_types` and `max_services_per_user`;
+    `maxUnusedServiceTypes` and `maxServicesPerUser`;
     an empty list of environments (any value) is served as it is.
     """
     with unit_app.app_context():
@@ -55,13 +55,13 @@ def test_registration_rules_configured(unit_app: Flask) -> None:
         custom.access_control.max_services_per_user = None
         assert registration_rules() == {
             "environments": [],
-            "url_schemes": ["http", "https"],
-            "service_types": "moderated",
+            "urlSchemes": ["http", "https"],
+            "serviceTypes": "moderated",
         }
         custom.access_control.max_unused_service_types = 0
-        assert registration_rules()["max_unused_service_types"] == 0
+        assert registration_rules()["maxUnusedServiceTypes"] == 0
         custom.access_control.max_services_per_user = 0
-        assert registration_rules()["max_services_per_user"] == 0
+        assert registration_rules()["maxServicesPerUser"] == 0
 
 
 def test_registration_rules_controlled(unit_app: Flask) -> None:
@@ -72,9 +72,9 @@ def test_registration_rules_controlled(unit_app: Flask) -> None:
     with unit_app.app_context():
         custom = get_custom_config(CustomConfig)
         custom.access_control.service_types = "controlled"
-        assert registration_rules()["max_unused_service_types"] == 0
+        assert registration_rules()["maxUnusedServiceTypes"] == 0
         custom.access_control.max_unused_service_types = None
-        assert registration_rules()["max_unused_service_types"] == 0
+        assert registration_rules()["maxUnusedServiceTypes"] == 0
 
 
 def test_registration_rules_copied(unit_app: Flask) -> None:
@@ -82,14 +82,14 @@ def test_registration_rules_copied(unit_app: Flask) -> None:
     with unit_app.app_context():
         rules = registration_rules()
         rules["environments"].append("x")
-        rules["url_schemes"].append("http")
+        rules["urlSchemes"].append("http")
         assert registration_rules()["environments"] == [
             "prod",
             "test",
             "dev",
             "staging",
         ]
-        assert registration_rules()["url_schemes"] == ["https"]
+        assert registration_rules()["urlSchemes"] == ["https"]
 
 
 def test_runtime_fields(unit_app: Flask) -> None:
@@ -140,7 +140,7 @@ def test_check_service_info_fields_invalid(
     _set_service_info(unit_app, service, runtime)
     with (
         unit_app.app_context(),
-        pytest.raises(RuntimeError, match="registration_rules"),
+        pytest.raises(RuntimeError, match="registrationRules"),
     ):
         check_service_info_fields()
 
@@ -149,7 +149,7 @@ def test_check_service_info_fields_none(unit_app: Flask) -> None:
     """The service info fails if none is configured."""
     with (
         unit_app.app_context(),
-        pytest.raises(RuntimeError, match="registration_rules"),
+        pytest.raises(RuntimeError, match="registrationRules"),
     ):
         check_service_info_fields()
 

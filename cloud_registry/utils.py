@@ -7,6 +7,8 @@ import time
 from typing import Any
 
 from foca import get_collection as get_foca_collection
+from foca.database.register_mongodb import get_mongo_client, get_mongo_db_name
+from foca.models.config import MongoConfig
 from pymongo.collection import Collection
 from pymongo.errors import OperationFailure
 
@@ -19,6 +21,13 @@ TTL_INDEX_RACES = frozenset({26, 27, 85, 86, 276})
 TTL_INDEX_ATTEMPTS = 5
 # Time to wait after the first attempt, in seconds; then longer each time
 TTL_INDEX_WAIT = 0.2
+# A field of each collection that versions before 1.0.0rc2 stored under another
+# name, in documents they always stored it in (cf. `refuse_old_format()`)
+OLD_FORMAT_FIELDS = {
+    "invitations": "service_id",
+    "user_names": "service_id",
+    "service_types": "created_by",
+}
 # RFC 3339, section 5.6 (ASCII digits only; the RFC allows a space instead of
 # `T` in a note only)
 DATE_TIME = re.compile(
@@ -39,6 +48,37 @@ def get_collection(name: str) -> Collection[dict[str, Any]]:
         MongoDB collection.
     """
     return get_foca_collection(db=DB, collection=name)
+
+
+def refuse_old_format(conf: MongoConfig) -> None:
+    """Refuse to start on data stored by versions before 1.0.0rc2.
+
+    These stored fields in `snake_case`, and there is no migration, so the app
+    needs a fresh database (cf. "From 1.0.0rc1" in `docs/upgrading.md`). Only
+    checks whether a document with an old field exists in the collections that
+    have such fields, so call this on startup, before FOCA creates its indexes.
+
+    Args:
+        conf: Configuration of the app's MongoDB.
+
+    Raises:
+        RuntimeError: The database has data in the old format; the message
+            names the collections.
+    """
+    database = get_mongo_client(conf)[get_mongo_db_name(DB)]
+    found = [
+        f"`{name}`"
+        for name, field in OLD_FORMAT_FIELDS.items()
+        if database[name].find_one({field: {"$exists": True}}, {"_id": True})
+    ]
+    if found:
+        raise RuntimeError(
+            f"The database '{DB}' has data stored by a version before 1.0.0rc2 "
+            f"in {', '.join(found)}, which this version can't read. There is no "
+            "migration: start with a fresh database (see "
+            "https://cloud-registry.readthedocs.io/en/latest/upgrading/"
+            "#from-100rc1)"
+        )
 
 
 def set_ttl_index(

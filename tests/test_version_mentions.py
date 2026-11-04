@@ -32,13 +32,11 @@ assert _spec and _spec.loader
 chart_readme = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(chart_readme)
 
-# Files that may name the release version: its source, the release notes,
-# the script that captures the data of that release, and the tests of the
-# release tooling, whose versions are test data (if one is the release version,
-# it means no other)
+# Files that may name the release version: its source, the release notes and
+# the tests of the release tooling, whose versions are test data (if one is the
+# release version, it means no other)
 ALLOWED_FILES = (
     "CITATION.cff",
-    "tests/data/capture_rc1.py",
     "tests/test_chart_readme.py",
     "tests/test_check_release_pins.py",
     "tests/test_citation.py",

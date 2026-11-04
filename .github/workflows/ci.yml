@@ -380,7 +380,7 @@ jobs:
               _verifiedAt: ISODate("2026-10-20T12:34:56.789Z")
             });
             db.service_types.insertOne({
-              group: "org.ga4gh", artifact: "tes", version: "1.1.0", created_by: null
+              group: "org.ga4gh", artifact: "tes", version: "1.1.0", createdBy: null
             })'
           api="${PROBE_ENDPOINT%/ui/}"
           body="${RUNNER_TEMP}/body.json"
@@ -404,9 +404,9 @@ jobs:
           check GET /services/SMOKE1 200 '.id == "SMOKE1" and (has("_verifiedAt") | not)'
           check GET /services/types 200 \
             '. == [{"group": "org.ga4gh", "artifact": "tes", "version": "1.1.0"}]'
-          check GET /services/SMOKE1/verification 200 ".verified_at == ${verified_at}"
+          check GET /services/SMOKE1/verification 200 ".verifiedAt == ${verified_at}"
           check GET /verifications 200 \
-            "map(.service_id) == [\"SMOKE1\"] and .[0].verified_at == ${verified_at}"
+            "map(.serviceId) == [\"SMOKE1\"] and .[0].verifiedAt == ${verified_at}"
           check GET /services/UNKNWN 404 '.status == 404'
           check GET /service-info 200 '.type.artifact == "service-registry"'
           check POST /services 401 '.status == 401'
