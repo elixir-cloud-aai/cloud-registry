@@ -2058,8 +2058,8 @@ def test_create_app_old_indexes(
 ) -> None:
     """`create_app()` refuses a database of earlier versions that was emptied.
 
-    Its unique indexes would index the new documents as null, and fail on the
-    second one.
+    Its indexes mark it; unique ones would index new documents as null, and
+    fail on the second one.
     """
     db_client[DB][collection].create_index(keys)
     _set_overlay(monkeypatch, tmp_path, _service_info_overlay({}))

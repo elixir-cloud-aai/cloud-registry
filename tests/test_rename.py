@@ -110,7 +110,7 @@ def roles(client: FlaskClient, service_id: str) -> list[dict[str, Any]]:
     return sorted(permission_list(client, service_id), key=repr)
 
 
-def stored_service(app: App, service_id: str) -> dict[str, Any] | None:
+def read_service(app: App, service_id: str) -> dict[str, Any] | None:
     """Read a stored service, with its internal fields.
 
     Args:
@@ -262,12 +262,12 @@ def test_rename(app: App, client: FlaskClient, service_id: str) -> None:
         get_collection("services").update_one(
             {"id": service_id}, {"$set": {"updatedAt": "2020-01-01T00:00:00Z"}}
         )
-    before = stored_service(app, service_id)
+    before = read_service(app, service_id)
     assert before is not None
     response = rename(client, service_id)
     assert response.status_code == 200, response.get_json()
     assert response.get_json() == NEW_ID
-    after = stored_service(app, NEW_ID)
+    after = read_service(app, NEW_ID)
     assert after is not None
     assert after["createdAt"] == before["createdAt"]
     assert after["updatedAt"] > before["updatedAt"]

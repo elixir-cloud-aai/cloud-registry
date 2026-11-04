@@ -622,7 +622,7 @@ ORGANIZATION_FIELDS = frozenset({"name", "url"})
 def warn_environments() -> None:
     """Warn of stored services whose environments are not allowed.
 
-    For example, of services registered before the environments were checked
+    For example, after the environments allowed changed
     (`custom.endpoints.services.environments`). Such services are still
     served, but can only be updated with an allowed environment (or none).
     """
@@ -651,8 +651,8 @@ def warn_environments() -> None:
 def warn_url_schemes() -> None:
     """Warn of stored services whose URLs use schemes that are not allowed.
 
-    For example, `http` URLs registered before `https` became the only
-    scheme allowed by default (`custom.endpoints.services.url_schemes`).
+    For example, `http` URLs registered while `http` was allowed
+    (`custom.endpoints.services.url_schemes`).
     Such services are still served, but can only be updated with an allowed
     scheme.
     """

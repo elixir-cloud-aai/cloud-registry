@@ -39,7 +39,8 @@ Without `--dry-run`, it sets up the app as on startup (e.g., its indexes and
 configured rules), so run it with the image of the deployed version. A dry run
 does none of this, so it only counts what is stored: configured rules as the
 running app stored them, not those of the config. Nor does it check the config
-as startup does, so it can succeed where the migration then fails to start.
+as startup does, so it can succeed where the migration then fails to start. Like
+startup, it refuses databases of versions before 1.0.0rc2.
 """
 
 import argparse
@@ -450,6 +451,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     Returns:
         The exit status: 0 on success, 1 if the namespace is not that of a
         trusted issuer.
+
+    Raises:
+        RuntimeError: The database has data in the format of earlier versions
+            (cf. `refuse_old_format()`).
     """
     parser = argparse.ArgumentParser(
         prog="python -m cloud_registry.namespace_subjects",
@@ -459,7 +464,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="only count the stored subjects, without changes or startup checks",
+        help="only count the stored subjects, without changes or config checks",
     )
     args = parser.parse_args(argv)
     app = _read_only_app() if args.dry_run else create_app().app

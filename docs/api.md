@@ -312,8 +312,7 @@ delete all services that depend on it."). The registry stores who added each
 type (not served).
 
 On startup, the app registers the types of the registered services that
-aren't registered (e.g., when upgrading from a version that didn't store
-types; see [Upgrading](upgrading.md#service-types)).
+aren't registered (e.g., after a failed change of the registry's own entry).
 
 ### Pending approvals
 

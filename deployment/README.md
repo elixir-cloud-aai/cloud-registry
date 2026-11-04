@@ -886,7 +886,7 @@ kubectl rollout restart deployment/cloud-registry -n <namespace>
 ### To app version 1.0.0rc2
 
 **This version needs a fresh database: data is not kept, and there is no
-migration.** The app refuses to start on data stored by earlier versions. All
+migration.** The app refuses to start on data or indexes of earlier versions. All
 fields and query parameters that the registry adds move to camelCase, and the
 roles of users move to `/services/<id>/permissions/users/<user-id>`, without
 aliases, so move API clients in the same upgrade. See [From

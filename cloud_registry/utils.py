@@ -23,16 +23,17 @@ TTL_INDEX_ATTEMPTS = 5
 TTL_INDEX_WAIT = 0.2
 # Query for documents of each collection in the format of versions before
 # 1.0.0rc2 (cf. `refuse_old_format()`): fields stored under another name, in
-# documents that always had them, and services of versions before 0.5.0, which
-# have no key (`KEY` of `ga4gh.registry.service`)
+# documents that always had them, and services stored before keys were
+# introduced (`KEY` of `ga4gh.registry.service`)
 OLD_FORMAT = {
     "invitations": {"service_id": {"$exists": True}},
     "user_names": {"service_id": {"$exists": True}},
     "service_types": {"created_by": {"$exists": True}},
     "services": {"_serviceKey": {"$exists": False}},
 }
-# Indexes of old fields, also if no document has them, which would conflict with
-# the indexes of the app or its writes (cf. `refuse_old_format()`)
+# Indexes of old fields, which mark such a database also if no document is left;
+# the first two are unique, so new documents would fail on them
+# (cf. `refuse_old_format()`)
 OLD_FORMAT_INDEXES = {
     "invitations": "token_hash_1",
     "user_names": "service_id_1_user_id_1",
@@ -86,7 +87,7 @@ def refuse_old_format(conf: MongoConfig) -> None:
     ]
     if found:
         raise RuntimeError(
-            f"The database '{DB}' has data stored by a version before 1.0.0rc2 "
+            f"The database '{DB}' has data or indexes of a version before 1.0.0rc2 "
             f"in {', '.join(found)}, which this version can't read. There is no "
             "migration: start with a fresh database (see "
             "https://cloud-registry.readthedocs.io/en/latest/upgrading/"

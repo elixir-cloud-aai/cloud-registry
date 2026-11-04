@@ -8,10 +8,10 @@ the rules for registrations (`registrationRules`), an extension of the GA4GH
 They are built from the config in effect, so that clients (e.g., UIs) can
 read them instead of configuring them: the environments
 (`custom.endpoints.services.environments`) and service URL schemes
-(`urlSchemes`) allowed, who may add service types
+(`url_schemes`) allowed, who may add service types
 (`custom.access_control.service_types`), how many unused types users
-other than admins may have added (`maxUnusedServiceTypes`), and how many
-services they may have registered (`maxServicesPerUser`).
+other than admins may have added (`max_unused_service_types`), and how many
+services they may have registered (`max_services_per_user`).
 """
 
 from typing import Any

@@ -377,6 +377,8 @@ jobs:
               organization: {name: "Example", url: "https://example.org"},
               version: "1.0.0",
               url: "https://tes.example.org/ga4gh/tes/v1",
+              _serviceKey: "smoke1",
+              _createdBy: null,
               _verifiedAt: ISODate("2026-10-20T12:34:56.789Z")
             });
             db.service_types.insertOne({
