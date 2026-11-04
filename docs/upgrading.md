@@ -10,16 +10,17 @@ The steps add up: when skipping versions, apply the sections of all versions in
 between, starting with the oldest, which is the lowest on this page. Where
 sections advise different rollouts, follow the strictest (e.g., upgrade with the
 app scaled to 0 replicas). 1.0.0rc2 starts with a fresh database (see [From
-1.0.0rc1](#from-100rc1)), so what the sections below say about keeping data only
-applies to upgrades up to 1.0.0rc1.
+1.0.0rc1](#from-100rc1)): when upgrading to it or later, skip what the sections
+below say about stored data (e.g., fixes with `mongosh` or migrations of stored
+subjects). Their steps for the config, the deployment and clients still apply.
 
 ## From 1.0.0rc1
 
 **This version needs a fresh database: data is not kept, and there is no
 migration.** The fields that the registry adds to the API and stores moved to
 camelCase (see [API style](api.md#api-style)), so this version can't read what
-earlier versions stored. It refuses to start if it finds such data, naming the
-collections. This also holds for upgrades from any earlier version:
+earlier versions stored. It refuses to start if it finds such data or indexes
+(also after only emptying the collections), naming the collections. This also holds for upgrades from any earlier version:
 
 1. Scale the app to 0 replicas.
 2. Point it to an empty database (e.g., a new volume), or delete the database
@@ -512,7 +513,8 @@ they are accepted, as their creators seem to be no longer owners):
 This section describes services stored by versions up to 1.0.0rc1. From 1.0.0rc2,
 which starts with a fresh database, the app no longer adds keys or creators to
 stored services on startup, and no longer warns of invalid URLs or further
-fields of organizations.
+fields of organizations. It still warns of URL schemes and environments that
+are not allowed, e.g., after the config changed.
 
 Services stored before the registry set the [timestamps](api.md#timestamps)
 (`createdAt`, `updatedAt`) keep those they were registered with, which
@@ -601,13 +603,13 @@ db.getSiblingDB("serviceStore").services.deleteOne({id: "<id>"})
 db.getSiblingDB("serviceStore").services.updateOne({id: "<id>"}, {$set: {url: "<URL>"}})
 ```
 
-Then start the app again; it adds the missing keys.
+Then start the app again; versions up to 1.0.0rc1 add the missing keys.
 
 Services that already have a key (stored by `dev` images built before URLs
 were checked, or before the stricter checks above) are not checked again: if
 their URLs are now invalid, they are still served, but can only be updated
 with a valid URL, and registrations of the same service with a validly spelled
-URL may not be detected as duplicates. The app warns of them on startup,
+URL may not be detected as duplicates. Versions up to 1.0.0rc1 warn of them on startup,
 naming them; update or delete them as above.
 
 Services stored with `http` URLs (accepted before `https` became the only

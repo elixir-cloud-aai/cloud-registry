@@ -553,10 +553,7 @@ class RegisterService:
                 for field in ("url", KEY, VERIFIED, CREATED, CREATED_BY, SELF_ENTRY):
                     query[field] = stored.get(field, {"$exists": False})
                 # the user the service counts for never changes
-                if CREATED_BY in stored:
-                    replacement[CREATED_BY] = stored[CREATED_BY]
-                else:
-                    del replacement[CREATED_BY]
+                replacement[CREATED_BY] = stored[CREATED_BY]
                 # the entry of the registry stays marked as such
                 if SELF_ENTRY in stored:
                     replacement[SELF_ENTRY] = stored[SELF_ENTRY]
@@ -617,22 +614,6 @@ class RegisterService:
             raise DuplicateService(existing_id=existing["id"])
 
 
-def _is_valid_url(url: str) -> bool:
-    """Check whether a stored service URL is valid.
-
-    Args:
-        url: Stored service URL.
-
-    Returns:
-        Whether `normalize_url()` accepts the URL.
-    """
-    try:
-        normalize_url(url)
-    except InvalidService:
-        return False
-    return True
-
-
 # Fields of the organization of a service (cf. `ExternalServiceRegister` in
 # `api/additions.openapi.yaml`, which rejects others)
 ORGANIZATION_FIELDS = frozenset({"name", "url"})
@@ -673,20 +654,15 @@ def warn_url_schemes() -> None:
     For example, `http` URLs registered before `https` became the only
     scheme allowed by default (`custom.endpoints.services.url_schemes`).
     Such services are still served, but can only be updated with an allowed
-    scheme. Services with URLs that aren't strings or valid URLs (cf.
-    `normalize_url()`) are skipped.
+    scheme.
     """
     schemes = frozenset(get_custom_config(CustomConfig).endpoints.services.url_schemes)
     ids = []
     for service in get_collection("services").find(
         {}, {"_id": False, "id": True, "url": True}
     ):
-        url = service.get("url")
-        # invalid URLs can't be updated unchanged anyway
-        if not isinstance(url, str) or not _is_valid_url(url):
-            continue
         try:
-            check_url_scheme(url, schemes=schemes)
+            check_url_scheme(service["url"], schemes=schemes)
         except InvalidService:
             ids.append(f"'{service['id']}'")
     if ids:

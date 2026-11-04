@@ -21,7 +21,13 @@ from cloud_registry.ga4gh.registry.verification import (
     putServiceVerification,
 )
 from cloud_registry.utils import format_time
-from tests.mock_data import ERROR_MEDIA_TYPE, MOCK_ID, MOCK_SERVICE, MOCK_TYPE
+from tests.mock_data import (
+    ERROR_MEDIA_TYPE,
+    MOCK_ID,
+    MOCK_SERVICE,
+    MOCK_TYPE,
+    stored_service,
+)
 
 # Time as read from the database (naive, UTC, in milliseconds)
 TIME = datetime(2026, 10, 20, 12, 34, 56, 789000)
@@ -61,7 +67,7 @@ def _insert(
         doc[KEY] = service_key(MOCK_SERVICE)
     if verified_at is not None:
         doc[VERIFIED] = verified_at
-    services.insert_one(doc)
+    services.insert_one(stored_service(doc))
 
 
 def _stored(services: Collection[dict[str, Any]]) -> dict[str, Any]:
@@ -245,7 +251,9 @@ def test_deleteServiceVerification(
     with unit_app.test_request_context():
         assert deleteServiceVerification(MOCK_ID) == MOCK_ID
     stored = services.find_one({"id": MOCK_ID}, {"_id": False})
-    assert stored == {**MOCK_SERVICE, "id": MOCK_ID, KEY: service_key(MOCK_SERVICE)}
+    assert stored == stored_service(
+        {**MOCK_SERVICE, "id": MOCK_ID, KEY: service_key(MOCK_SERVICE)}
+    )
 
 
 @pytest.mark.parametrize("insert", [False, True])

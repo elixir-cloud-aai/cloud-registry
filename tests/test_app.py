@@ -46,7 +46,7 @@ from tests.conftest import (
 from tests.conftest import (
     KEY as SIGNING_KEY,
 )
-from tests.mock_data import DB, ERROR_MEDIA_TYPE, MAX_CONTENT_LENGTH
+from tests.mock_data import DB, ERROR_MEDIA_TYPE, MAX_CONTENT_LENGTH, stored_service
 
 BASE = "/ga4gh/registry/v1"
 # Fields of OpenAPI Path Item Objects holding Operation Objects
@@ -1617,7 +1617,9 @@ def test_create_app_url_schemes(
     They are still served.
     """
     services = mongo_client["serviceStore"]["services"]
-    services.insert_one({**_service(url="http://tes.example.org"), "id": "PLAIN"})
+    services.insert_one(
+        stored_service({**_service(url="http://tes.example.org"), "id": "PLAIN"})
+    )
     app = cloud_registry.app.create_app()
     err = capsys.readouterr().err
     assert "url_schemes" in err
@@ -1636,7 +1638,9 @@ def test_create_app_environments(
     They are still served.
     """
     services = mongo_client["serviceStore"]["services"]
-    services.insert_one({**_service(environment="production"), "id": "PROD"})
+    services.insert_one(
+        stored_service({**_service(environment="production"), "id": "PROD"})
+    )
     app = cloud_registry.app.create_app()
     err = capsys.readouterr().err
     assert "custom.endpoints.services.environments" in err
@@ -2013,6 +2017,7 @@ def test_create_app_invalid_service_info(
             "service_types",
             {"group": "g", "artifact": "a", "version": "1", "created_by": None},
         ),
+        ("services", {"id": "A", "url": "https://a.example.org"}),
     ],
 )
 def test_create_app_old_format(
@@ -2033,6 +2038,33 @@ def test_create_app_old_format(
     with pytest.raises(RuntimeError, match=f"`{collection}`.*fresh database"):
         cloud_registry.app.create_app()
     assert "tokenHash_1" not in db_client[DB]["invitations"].index_information()
+
+
+@pytest.mark.parametrize(
+    ("collection", "keys"),
+    [
+        ("invitations", [("token_hash", 1)]),
+        ("user_names", [("service_id", 1), ("user_id", 1)]),
+        ("service_types", [("created_by", 1)]),
+    ],
+)
+def test_create_app_old_indexes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: None,
+    db_client: MongoClient[dict[str, Any]],
+    collection: str,
+    keys: list[tuple[str, int]],
+) -> None:
+    """`create_app()` refuses a database of earlier versions that was emptied.
+
+    Its unique indexes would index the new documents as null, and fail on the
+    second one.
+    """
+    db_client[DB][collection].create_index(keys)
+    _set_overlay(monkeypatch, tmp_path, _service_info_overlay({}))
+    with pytest.raises(RuntimeError, match=f"`{collection}`.*fresh database"):
+        cloud_registry.app.create_app()
 
 
 def test_create_app_new_format(

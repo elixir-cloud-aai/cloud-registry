@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from cloud_registry.ga4gh.registry.service import CREATED_BY, KEY
+
 DB = "serviceStore"
 # Media type of error responses, as in `config.yaml` (`exceptions.media_type`)
 ERROR_MEDIA_TYPE = "application/json"
@@ -62,3 +64,15 @@ MOCK_SERVICE: dict[str, Any] = {
     "version": "version",
     "url": "https://beacon.example.org/api",
 }
+
+
+def stored_service(service: dict[str, Any]) -> dict[str, Any]:
+    """Add the internal fields that every stored service has.
+
+    Args:
+        service: Service with an identifier; internal fields it has are kept.
+
+    Returns:
+        Service as to store it, with the identifier as key, counting for nobody.
+    """
+    return {KEY: service["id"], CREATED_BY: None, **service}

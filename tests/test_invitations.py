@@ -622,11 +622,10 @@ def _overlay(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, days: int) -> None
 
 
 @pytest.mark.usefixtures("app_env")
-def test_upgrade_from_old_index(mongo_client: MongoClient[dict[str, Any]]) -> None:
-    """The app starts with the index of older versions, and replaces it.
+def test_ttl_index_replaced(mongo_client: MongoClient[dict[str, Any]]) -> None:
+    """The app replaces a TTL index with other seconds.
 
-    Older versions deleted all invitations when they expired. Data is kept,
-    and starting again changes nothing.
+    Data is kept, and starting again changes nothing.
     """
     collection = mongo_client[DB][INVITATIONS]
     collection.create_index([("tokenHash", 1)], unique=True)

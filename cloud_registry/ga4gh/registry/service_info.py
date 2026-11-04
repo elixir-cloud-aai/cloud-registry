@@ -8,10 +8,10 @@ the rules for registrations (`registrationRules`), an extension of the GA4GH
 They are built from the config in effect, so that clients (e.g., UIs) can
 read them instead of configuring them: the environments
 (`custom.endpoints.services.environments`) and service URL schemes
-(`url_schemes`) allowed, who may add service types
+(`urlSchemes`) allowed, who may add service types
 (`custom.access_control.service_types`), how many unused types users
-other than admins may have added (`max_unused_service_types`), and how many
-services they may have registered (`max_services_per_user`).
+other than admins may have added (`maxUnusedServiceTypes`), and how many
+services they may have registered (`maxServicesPerUser`).
 """
 
 from typing import Any
@@ -33,13 +33,13 @@ def registration_rules() -> dict[str, Any]:
 
     Returns:
         Environments allowed for services (`environments`; empty if any
-        value is), schemes allowed in service URLs (`url_schemes`), who may
-        add service types (`service_types`: `open`, `controlled` or
+        value is), schemes allowed in service URLs (`urlSchemes`), who may
+        add service types (`serviceTypes`: `open`, `controlled` or
         `moderated`), how many types that no service has users other
-        than admins may have added (`max_unused_service_types`; left out if
+        than admins may have added (`maxUnusedServiceTypes`; left out if
         there is no limit; `0` if they can't add types, always in mode
         `controlled`), and how many services they may have registered
-        (`max_services_per_user`; left out if there is no limit; `0` if
+        (`maxServicesPerUser`; left out if there is no limit; `0` if
         they can't register services).
         Lists are copies.
     """
@@ -83,7 +83,7 @@ def check_service_info_fields() -> None:
         RuntimeError: No service info is configured, its fields aren't
             computed by `runtime_fields()` (`service_info.runtime_fields`),
             or the config sets the registration rules
-            (`service_info.service.registration_rules`, also to `null`),
+            (`service_info.service.registrationRules`, also to `null`),
             which would take precedence over those of the app, so that they
             could differ from the rules the registry enforces.
     """

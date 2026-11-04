@@ -862,8 +862,8 @@ def getMe(**kwargs: Any) -> dict[str, Any]:
         switch to admin mode (`adminAvailable`; cf. FOCA's
         `get_available_opt_in_roles()`; always if `admin` is true, e.g.,
         without opt-in), whether they may add service types
-        (`may_add_service_types`; cf. `may_add_service_types()`) and
-        whether these are pending (`service_types_pending`; cf.
+        (`mayAddServiceTypes`; cf. `may_add_service_types()`) and
+        whether these are pending (`serviceTypesPending`; cf.
         `service_types_pending()`), and the user's roles on services (cf.
         FOCA's `list_subject_roles()`): granted to the user, and granted to
         groups the user is a member of (with `group`), sorted by service

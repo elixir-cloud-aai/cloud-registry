@@ -82,11 +82,36 @@ def client(
         )
         get_collection("services").insert_many(
             [
-                {"id": "S1", KEY: "S1", SERVICE_CREATOR: BARE},
-                {"id": "S2", KEY: "S2", SERVICE_CREATOR: BARE},
-                {"id": "S3", KEY: "S3", SERVICE_CREATOR: OTHER},
-                {"id": "S4", KEY: "S4", SERVICE_CREATOR: None},
-                {"id": "S5", KEY: "S5", SERVICE_CREATOR: NAMESPACED_ALICE},
+                {
+                    "id": "S1",
+                    "url": "https://s1.example.org",
+                    KEY: "S1",
+                    SERVICE_CREATOR: BARE,
+                },
+                {
+                    "id": "S2",
+                    "url": "https://s2.example.org",
+                    KEY: "S2",
+                    SERVICE_CREATOR: BARE,
+                },
+                {
+                    "id": "S3",
+                    "url": "https://s3.example.org",
+                    KEY: "S3",
+                    SERVICE_CREATOR: OTHER,
+                },
+                {
+                    "id": "S4",
+                    "url": "https://s4.example.org",
+                    KEY: "S4",
+                    SERVICE_CREATOR: None,
+                },
+                {
+                    "id": "S5",
+                    "url": "https://s5.example.org",
+                    KEY: "S5",
+                    SERVICE_CREATOR: NAMESPACED_ALICE,
+                },
             ]
         )
         get_collection(SERVICE_COUNTS).insert_many(
@@ -432,15 +457,25 @@ def _snapshot(mongo_client: MongoClient[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+@pytest.mark.usefixtures("app_env")
+def test_main_dry_run_old_format(
+    mongo_client: MongoClient[dict[str, Any]],
+) -> None:
+    """A dry run refuses data of earlier versions, which it would miscount."""
+    mongo_client[DB][INVITATIONS].insert_one({"service_id": "A"})
+    with pytest.raises(RuntimeError, match="fresh database"):
+        main([ISSUER, "--dry-run"])
+
+
 def test_main_dry_run_read_only(
     monkeypatch: pytest.MonkeyPatch,
     client: FlaskClient,
     mongo_client: MongoClient[dict[str, Any]],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A dry run on the data of an older version leaves all of it as it is.
+    """A dry run leaves indexes and rules as they are.
 
-    It is possible with a newer image than the pods that use the database, so
+    It is possible with another image than the pods that use the database, so
     it must neither change the indexes that keep them from restarting, nor
     replace the configured rules they need. The fixture `client` stores the data.
     """

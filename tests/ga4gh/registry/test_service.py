@@ -41,6 +41,7 @@ from tests.mock_data import (
     MOCK_ID_ONE_CHAR,
     MOCK_SERVICE,
     MOCK_TYPE,
+    stored_service,
 )
 
 # Time of registrations and updates in the tests (cf. `_fixed_clock()`)
@@ -113,20 +114,20 @@ def _stored(data: dict[str, Any], id: str, created: bool = True) -> dict[str, An
         data: Service as registered.
         id: Identifier of the service.
         created: Whether the service was registered by the test (with
-            `createdAt`, and counting for nobody), not stored before without
-            these.
+            `createdAt`), not stored before without it.
 
     Returns:
         The service with its identifier, key, timestamps (at `NOW`) and the
         user it counts for.
     """
-    timestamps = {CREATED: FORMATTED_NOW, CREATED_BY: None} if created else {}
+    timestamps = {CREATED: FORMATTED_NOW} if created else {}
     return {
         **data,
         **timestamps,
         UPDATED: FORMATTED_NOW,
         "id": id,
         KEY: service_key(data),
+        CREATED_BY: None,
     }
 
 
@@ -198,7 +199,7 @@ class TestRegisterService:
         self, unit_app: Flask, services: Collection[dict[str, Any]]
     ) -> None:
         """Test for updating an existing service."""
-        services.insert_one({**MOCK_SERVICE, "id": MOCK_ID})
+        services.insert_one(stored_service({**MOCK_SERVICE, "id": MOCK_ID}))
 
         data = {**MOCK_SERVICE, "name": "new name"}
         with unit_app.app_context():
@@ -218,7 +219,7 @@ class TestRegisterService:
 
         A new identifier is generated after the error.
         """
-        services.insert_one({"id": "AAAAAA"})
+        services.insert_one(stored_service({"id": "AAAAAA"}))
         ids = iter(["AAAAAA", "BBBBBB"])
         monkeypatch.setattr(
             "cloud_registry.ga4gh.registry.service.generate_id",
@@ -239,7 +240,7 @@ class TestRegisterService:
             id_conf = get_custom_config(CustomConfig).endpoints.services.id
         id_conf.charset = MOCK_ID_ONE_CHAR
         id_conf.length = 1
-        services.insert_one({"id": MOCK_ID_ONE_CHAR})
+        services.insert_one(stored_service({"id": MOCK_ID_ONE_CHAR}))
 
         with unit_app.app_context():
             obj = RegisterService(data=deepcopy(MOCK_SERVICE))
@@ -702,7 +703,9 @@ class TestDuplicates:
                 check(self, key)
 
         services.insert_one(
-            {**MOCK_SERVICE, "id": "OTHER", KEY: service_key(MOCK_SERVICE)}
+            stored_service(
+                {**MOCK_SERVICE, "id": "OTHER", KEY: service_key(MOCK_SERVICE)}
+            )
         )
         monkeypatch.setattr(RegisterService, "_check_duplicate", check_later)
         with pytest.raises(DuplicateService) as exc_info:
@@ -728,7 +731,9 @@ class TestDuplicates:
             # the service is added concurrently before the first upsert
             calls.append(kwargs["upsert"])
             if len(calls) == 1:
-                services.insert_one({**MOCK_SERVICE, "id": MOCK_ID, "name": "old"})
+                services.insert_one(
+                    stored_service({**MOCK_SERVICE, "id": MOCK_ID, "name": "old"})
+                )
                 raise DuplicateKeyError("id")
             return replace_one(*args, **kwargs)
 
@@ -776,12 +781,8 @@ class TestWarnUrlSchemes:
             ("HTTP", "http://beacon.example.org"),
             ("UPPER", " HTTP://other.example.org"),
             ("HTTPS", "https://third.example.org"),
-            ("BAD", 1),
-            ("INVALID", "http://[::1/v1"),
-            ("NOHOST", "http://"),
         ]:
-            services.insert_one({**MOCK_SERVICE, "id": id, "url": url})
-        services.insert_one({"id": "NOURL"})
+            services.insert_one(stored_service({**MOCK_SERVICE, "id": id, "url": url}))
         with unit_app.app_context(), caplog.at_level(logging.WARNING):
             warn_url_schemes()
         assert len(caplog.records) == 1
@@ -789,9 +790,6 @@ class TestWarnUrlSchemes:
         assert "'HTTP', 'UPPER'" in message
         assert "url_schemes" in message
         assert "HTTPS" not in message
-        assert "BAD" not in message
-        assert "INVALID" not in message
-        assert "NOHOST" not in message
 
     def test_none(
         self,
@@ -803,11 +801,13 @@ class TestWarnUrlSchemes:
 
         Also not for `http` URLs if `http` is allowed.
         """
-        services.insert_one({**MOCK_SERVICE, "id": MOCK_ID})
+        services.insert_one(stored_service({**MOCK_SERVICE, "id": MOCK_ID}))
         with unit_app.app_context(), caplog.at_level(logging.WARNING):
             warn_url_schemes()
             services.insert_one(
-                {**MOCK_SERVICE, "id": "HTTP", "url": "http://beacon.example.org"}
+                stored_service(
+                    {**MOCK_SERVICE, "id": "HTTP", "url": "http://beacon.example.org"}
+                )
             )
             get_custom_config(CustomConfig).endpoints.services.url_schemes = [
                 "http",
@@ -854,8 +854,10 @@ class TestWarnEnvironments:
             ("NUM", 1),
             ("LIST", ["prod", "x"]),
         ]:
-            services.insert_one({**MOCK_SERVICE, "id": id, "environment": environment})
-        services.insert_one({**MOCK_SERVICE, "id": "NONE"})
+            services.insert_one(
+                stored_service({**MOCK_SERVICE, "id": id, "environment": environment})
+            )
+        services.insert_one(stored_service({**MOCK_SERVICE, "id": "NONE"}))
         with unit_app.app_context(), caplog.at_level(logging.WARNING):
             warn_environments()
         assert len(caplog.records) == 1
@@ -872,10 +874,14 @@ class TestWarnEnvironments:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Without such services, nothing is logged; nor if any is allowed."""
-        services.insert_one({**MOCK_SERVICE, "id": MOCK_ID, "environment": "prod"})
+        services.insert_one(
+            stored_service({**MOCK_SERVICE, "id": MOCK_ID, "environment": "prod"})
+        )
         with unit_app.app_context(), caplog.at_level(logging.WARNING):
             warn_environments()
-            services.insert_one({**MOCK_SERVICE, "id": "X", "environment": "x"})
+            services.insert_one(
+                stored_service({**MOCK_SERVICE, "id": "X", "environment": "x"})
+            )
             get_custom_config(CustomConfig).endpoints.services.environments = []
             warn_environments()
         assert not caplog.records
@@ -884,7 +890,7 @@ class TestWarnEnvironments:
 def test_organization_fields_of_schema() -> None:
     """The organization fields allowed are those of the registration schema.
 
-    So that the startup warning names no services that pass the schema.
+    So that the entry of the registry itself passes the schema.
     """
     spec = yaml.safe_load(SPEC.read_text())
     schema = spec["components"]["schemas"]["ExternalServiceRegister"]
@@ -908,7 +914,9 @@ class TestVerificationReset:
             data: Service to insert.
         """
         services.insert_one(
-            {**data, "id": MOCK_ID, KEY: service_key(data), VERIFIED: self.TIME}
+            stored_service(
+                {**data, "id": MOCK_ID, KEY: service_key(data), VERIFIED: self.TIME}
+            )
         )
 
     def _replace(self, unit_app: Flask, data: dict[str, Any]) -> None:
@@ -1144,7 +1152,7 @@ class TestTimestamps:
         expected: tuple[str, str],
     ) -> None:
         """Updates keep `createdAt` and set `updatedAt`, unless they are kept."""
-        services.insert_one({**MOCK_SERVICE, **SENT, "id": MOCK_ID})
+        services.insert_one(stored_service({**MOCK_SERVICE, **SENT, "id": MOCK_ID}))
         self._register(
             unit_app,
             {**MOCK_SERVICE, **sent},
@@ -1158,7 +1166,9 @@ class TestTimestamps:
         self, unit_app: Flask, services: Collection[dict[str, Any]]
     ) -> None:
         """Stored `createdAt` values that aren't RFC 3339 date-times are removed."""
-        services.insert_one({**MOCK_SERVICE, CREATED: "yesterday", "id": MOCK_ID})
+        services.insert_one(
+            stored_service({**MOCK_SERVICE, CREATED: "yesterday", "id": MOCK_ID})
+        )
         self._register(unit_app, MOCK_SERVICE, id=MOCK_ID)
         stored = _find(services, MOCK_ID)
         assert CREATED not in stored
@@ -1168,7 +1178,7 @@ class TestTimestamps:
         self, unit_app: Flask, services: Collection[dict[str, Any]]
     ) -> None:
         """Services stored without `createdAt` are kept without it."""
-        services.insert_one({**MOCK_SERVICE, "id": MOCK_ID})
+        services.insert_one(stored_service({**MOCK_SERVICE, "id": MOCK_ID}))
         self._register(unit_app, MOCK_SERVICE, id=MOCK_ID)
         stored = _find(services, MOCK_ID)
         assert CREATED not in stored
@@ -1181,7 +1191,7 @@ class TestTimestamps:
         services: Collection[dict[str, Any]],
     ) -> None:
         """A `createdAt` changed after the service was read is kept."""
-        services.insert_one({**MOCK_SERVICE, **SENT, "id": MOCK_ID})
+        services.insert_one(stored_service({**MOCK_SERVICE, **SENT, "id": MOCK_ID}))
         find_one = services.find_one
         reads: list[dict[str, Any] | None] = []
         changed = "2020-01-01T00:00:00Z"

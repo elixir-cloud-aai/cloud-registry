@@ -71,7 +71,7 @@ from cloud_registry.ga4gh.registry.permissions import INVITATIONS
 from cloud_registry.ga4gh.registry.service import CREATED_BY as SERVICE_CREATOR
 from cloud_registry.ga4gh.registry.service_limits import COUNT, SERVICE_COUNTS
 from cloud_registry.ga4gh.registry.service_types import CREATED_BY
-from cloud_registry.utils import get_collection
+from cloud_registry.utils import get_collection, refuse_old_format
 
 logger = logging.getLogger(__name__)
 
@@ -416,11 +416,16 @@ def _read_only_app() -> Flask:
 
     Returns:
         Flask app, with the collections registered.
+
+    Raises:
+        RuntimeError: The database has data in the format of earlier versions
+            (cf. `refuse_old_format()`), which a dry run would miscount.
     """
     config = create_foca().conf
     app = Flask(__name__)
     set_app_config(app, config)
     mongo_config = cast(MongoConfig, config.db)
+    refuse_old_format(mongo_config)
     dbs = mongo_config.dbs if mongo_config.dbs is not None else {}
     access_control = config.security.access_control
     rules_db = dbs.setdefault(access_control.db_name, DBConfig(collections={}))

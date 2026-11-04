@@ -132,7 +132,8 @@ parameters that the registry adds are camelCase, as in the GA4GH Service Info
 and Service Registry specifications (`createdAt`, `contactUrl`). Additions to
 spec objects are kept to a minimum and grouped under one key (e.g.,
 `registrationRules` of the service info). Keys of the config stay `snake_case`,
-FOCA's style, also where the service info publishes them.
+FOCA's style; where the service info publishes a setting, its field is camelCase
+(`url_schemes` as `urlSchemes`).
 
 ## Registrations
 
@@ -188,9 +189,6 @@ verifications (`PUT /services/{serviceId}/verification`) are limited in length
 
 Organizations (`organization`) may only have a `name` and a `url`; other
 fields are rejected (`400 Bad Request`), so that their size is limited too.
-
-Services stored before the checks of lengths and of organization fields were
-introduced may not pass them; see [Upgrading](upgrading.md#stored-services).
 
 Users other than admins may only have registered a limited number of the
 registered services (50 by default; `409 Conflict` with code `services-limit`
@@ -265,11 +263,7 @@ Verifying a service doesn't change its timestamps.
 
 This differs from the GA4GH specification, where the timestamps describe
 the deployment of the service (when it was first deployed, and last
-updated): in the registry, they describe its entry. Services registered
-before the registry set the timestamps keep those they were registered
-with, and services registered without a valid `createdAt` (an RFC 3339
-date-time) don't get one (see
-[Upgrading](upgrading.md#stored-services)).
+updated): in the registry, they describe its entry.
 
 ## Service types
 
@@ -446,9 +440,6 @@ need trustworthy entries should rely on entries checked by admins (see
 URL (e.g., by fetching `{url}/service-info` on registration) was rejected:
 the identifier in service info is self-declared, and fetching user-supplied
 URLs would allow server-side request forgery.
-
-Services stored before this check are checked on startup (see
-[Upgrading](upgrading.md#stored-services)).
 
 ## Verified services
 

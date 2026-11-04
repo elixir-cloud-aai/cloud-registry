@@ -6,7 +6,6 @@ concurrent registrations need a MongoDB (`MONGODB_TEST_URI`), as mongomock
 doesn't make writes atomic across threads.
 """
 
-from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from itertools import count
 import logging
@@ -16,7 +15,6 @@ from typing import Any
 from connexion import App
 from flask.testing import FlaskClient
 from foca import get_custom_config
-from foca.security.access_control import remove_resource_role
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 import pytest
@@ -609,36 +607,6 @@ def test_limit_logged(
     with caplog.at_level(logging.INFO):
         _post(client)
     assert f"'{ALICE}' is at the limit of 0 services" in caplog.text
-
-
-@pytest.fixture
-def stored(
-    app: App, client: FlaskClient, mongo_client: MongoClient[dict[str, Any]]
-) -> Iterator[dict[str, str]]:
-    """Services stored before the users who registered them were stored.
-
-    Registered by alice and bob, owned by alice alone (`alice`), by bob and
-    alice (`two`), by alice's team only (`group`), and with an admin's service
-    (`admin`); then the internal field and the counters are removed.
-
-    Yields:
-        Service identifiers, by name.
-    """
-    ids = {
-        "alice": register(client),
-        "two": register(client, BOB),
-        "group": register(client),
-        "admin": _post(client, ADMIN).get_json(),
-    }
-    assert grant(client, ids["two"], ALICE, "owner", as_user=BOB) == 200
-    assert grant_group(client, ids["group"], TEAM_GROUP, "owner") == 200
-    with app.app.app_context():
-        assert remove_resource_role(
-            subject=ALICE, role="owner", resource=f"{BASE}/services/{ids['group']}"
-        )
-    mongo_client[DB]["services"].update_many({}, {"$unset": {CREATED_BY: ""}})
-    mongo_client[DB][SERVICE_COUNTS].delete_many({})
-    yield ids
 
 
 def test_counters_reconciled(
