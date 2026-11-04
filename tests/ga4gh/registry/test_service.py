@@ -260,7 +260,7 @@ class TestRegisterService:
 
     @pytest.mark.parametrize("service_id", [None, MOCK_ID])
     @pytest.mark.parametrize(
-        "url", ["http://beacon.example.org/api", " HTTP://beacon.example.org"]
+        "url", ["http://beacon.example.org/api", "HTTP://beacon.example.org"]
     )
     def test_register_metadata_http_rejected(
         self,
@@ -293,6 +293,24 @@ class TestRegisterService:
                 obj.register_metadata()
                 assert _find(services, obj.data["id"])["url"] == url
 
+    @pytest.mark.parametrize("service_id", [None, MOCK_ID])
+    @pytest.mark.parametrize(
+        "url", [" https://tes.example.org", "https://tes.example.org "]
+    )
+    def test_register_metadata_url_spaces(
+        self,
+        unit_app: Flask,
+        services: Collection[dict[str, Any]],
+        service_id: str | None,
+        url: str,
+    ) -> None:
+        """Service URLs with surrounding spaces are not stored (POST, PUT)."""
+        with unit_app.app_context():
+            obj = RegisterService(data={**MOCK_SERVICE, "url": url}, id=service_id)
+            with pytest.raises(InvalidService, match="must not contain whitespace"):
+                obj.register_metadata()
+        assert services.count_documents({}) == 0
+
     def test_register_metadata_https_disallowed(self, unit_app: Flask) -> None:
         """Only the allowed schemes are accepted, e.g., `http` only."""
         with unit_app.app_context():
@@ -314,7 +332,6 @@ class TestRegisterService:
         ("https://tes.example.org:8443/V1", "https://tes.example.org:8443/V1"),
         ("https://[::1]:443/v1", "https://[::1]/v1"),
         ("https://[::1]:8443/v1", "https://[::1]:8443/v1"),
-        (" https://tes.example.org ", "https://tes.example.org"),
         ("https://tes.example.org./v1", "https://tes.example.org/v1"),
         (
             "https://tes.example.org//ga4gh/./tes/x/../v1",
@@ -390,14 +407,17 @@ def test_normalize_url(url: str, normalized: str) -> None:
         "https://a..example.org",
         "https://ex%61mple.org",
         "https://tes.example.org/a|b",
+        # stored as written, so not tolerated around the URL either
+        " https://tes.example.org",
+        "https://tes.example.org ",
     ],
 )
 def test_normalize_url_invalid(url: str) -> None:
     """Invalid URLs are rejected.
 
     Also URLs without scheme or host, with schemes other than `http` and
-    `https`, user info, invalid ports or hosts, whitespace other than
-    surrounding spaces, or control characters.
+    `https`, user info, invalid ports or hosts, whitespace, or control
+    characters.
     """
     with pytest.raises(InvalidService):
         normalize_url(url)

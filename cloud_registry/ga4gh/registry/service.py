@@ -137,7 +137,7 @@ def normalize_url(url: str) -> str:
     services.
 
     Args:
-        url: Service URL; leading and trailing spaces are ignored.
+        url: Service URL.
 
     Returns:
         Normalized URL.
@@ -145,10 +145,8 @@ def normalize_url(url: str) -> str:
     Raises:
         InvalidService: The URL is invalid, or not an HTTP(S) URL.
     """
-    # surrounding spaces are tolerated for backward compatibility; links are
-    # stored as written and must not have any (cf. `check_links()`)
     try:
-        return normalize_http_url(url.strip(" "), name="Service URLs")
+        return normalize_http_url(url, name="Service URLs")
     except InvalidURL as exc:
         raise InvalidService(str(exc)) from exc
 
@@ -161,7 +159,7 @@ def check_url_scheme(url: str, schemes: Collection[str]) -> None:
     scheme can fail the check.
 
     Args:
-        url: Service URL; leading and trailing spaces are ignored.
+        url: Service URL.
         schemes: Allowed schemes, lowercase (cf.
             `custom.endpoints.services.url_schemes`).
 
@@ -170,7 +168,7 @@ def check_url_scheme(url: str, schemes: Collection[str]) -> None:
             `schemes` (case-insensitive).
     """
     try:
-        check_url(url.strip(" "), schemes=schemes, name="Service URLs")
+        check_url(url, schemes=schemes, name="Service URLs")
     except InvalidURL as exc:
         raise InvalidService(str(exc)) from exc
 

@@ -154,13 +154,12 @@ URLs in registrations must be HTTP(S) URLs with a host: the service `url`,
 email address (`mailto:`); other URLs are rejected (`400 Bad Request`, saying
 why). Service URLs must be `https` URLs by default, as clients send access
 tokens to the services; deployments can allow `http` (see [Service URL
-schemes](configuration.md#service-url-schemes)). Links are stored as written,
-so they must not contain whitespace (unlike service URLs, which may have
-leading and trailing spaces), control or format characters (except joiners in
-international host names), and no URLs may contain malformed
-percent-encodings, or ASCII characters that URLs only allow percent-encoded
-(e.g., `<`, `|`, `\`). Hosts must be domain or registered names (without
-percent-encodings or empty labels; international names valid as per IDNA
+schemes](configuration.md#service-url-schemes)). URLs are stored as written,
+so they must not contain whitespace (also not around them), control or format
+characters (except joiners in international host names), and no URLs may
+contain malformed percent-encodings, or ASCII characters that URLs only allow
+percent-encoded (e.g., `<`, `|`, `\`). Hosts must be domain or registered names
+(without percent-encodings or empty labels; international names valid as per IDNA
 2008), IPv4 addresses in dotted-decimal form (not, e.g., `127.1`) or IPv6
 addresses in brackets. URLs are checked and normalized with FOCA's [URL
 helpers](https://foca.readthedocs.io/en/latest/utilities/#checking-and-normalizing-urls).
@@ -418,9 +417,8 @@ non-ASCII characters in paths, and without trailing dots of hosts, default
 ports, dot segments (`/./`, `/../`), repeated and trailing slashes, needless
 percent-encoding in paths, queries and fragments. `http` and `https` URLs are
 different services. Invalid URLs, URLs without scheme or host, with schemes
-other than `http` and `https`, user info (`user:password@`), whitespace (other
-than leading and trailing spaces), control or format characters are rejected
-(`400 Bad Request`, saying why).
+other than `http` and `https`, user info (`user:password@`), whitespace, control
+or format characters are rejected (`400 Bad Request`, saying why).
 
 Registering a service again (`POST /services`), or changing a service to the
 URL and API type of another one (`PUT`), returns `409 Conflict`, with the
