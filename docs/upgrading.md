@@ -98,7 +98,8 @@ groups, which API clients and overlays with their own policy rules must follow:
 **FOCA 0.20:** the app now builds on FOCA 0.20 (see [FOCA's migration
 guide](https://foca.readthedocs.io/en/v0.20.0/migration-0.20/)), whose image has
 no pip. Images derived from the app's image that run `pip install` must use uv
-instead. The app has no gateway plugins, so the plugin store and its secret
+instead, mounted from a pinned stage, as the image has none either (see the
+guide). The app has no gateway plugins, so the plugin store and its secret
 don't apply. The Helm chart is now on foca-common 0.4.0, which checks audiences:
 the chart no longer accepts an invalid global `config.security.auth.audience` if
 each issuer has its own, which it used to ignore. New values are optional:
