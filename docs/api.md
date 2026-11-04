@@ -71,7 +71,7 @@ semantics differ, so that clients can rely on the registry's data:
 - In mode `moderated`, the reads don't list pending services and types to
   other users (see [Pending approvals](#pending-approvals)).
 - `GET /service-info` serves the registration rules of the deployment
-  (`registration_rules`) besides the fields of the GA4GH `Service` (see
+  (`registrationRules`) besides the fields of the GA4GH `Service` (see
   [Registration rules](#registration-rules)).
 
 ## Registration rules
@@ -80,19 +80,19 @@ Registrations must follow rules that each deployment configures. So that
 clients (e.g., UIs, the [Cloud
 Components](https://github.com/elixir-cloud-aai/cloud-components)) can check
 registrations as the registry does, e.g., offer only the allowed values in
-forms, `GET /service-info` serves them in `registration_rules`:
+forms, `GET /service-info` serves them in `registrationRules`:
 
 ```json
 {
   "id": "org.example.cloud-registry",
   "name": "Cloud Registry",
   "...": "...",
-  "registration_rules": {
+  "registrationRules": {
     "environments": ["prod", "test", "dev", "staging"],
-    "url_schemes": ["https"],
-    "service_types": "open",
-    "max_unused_service_types": 10,
-    "max_services_per_user": 50
+    "urlSchemes": ["https"],
+    "serviceTypes": "open",
+    "maxUnusedServiceTypes": 10,
+    "maxServicesPerUser": 50
   }
 }
 ```
@@ -100,17 +100,17 @@ forms, `GET /service-info` serves them in `registration_rules`:
 - `environments`: the values allowed for the environment of services
   (`environment`, case-sensitive); empty if any value is allowed (see
   [Service environments](configuration.md#service-environments));
-- `url_schemes`: the schemes allowed in service URLs (`url`): `https`, and
+- `urlSchemes`: the schemes allowed in service URLs (`url`): `https`, and
   `http` if the deployment allows it (see [Service URL
   schemes](configuration.md#service-url-schemes));
-- `service_types`: who may add service types, `open`, `controlled` or
+- `serviceTypes`: who may add service types, `open`, `controlled` or
   `moderated` (see [Service types](#service-types));
-- `max_unused_service_types`: how many types that no service has users other
+- `maxUnusedServiceTypes`: how many types that no service has users other
   than admins may have added (`409 Conflict` for further ones); `0` if they
   can't add types (always in mode `controlled`), and not set if there is no
   limit; concurrent requests of a user can exceed it by their number (see
   [Service types](configuration.md#service-types));
-- `max_services_per_user`: how many of the registered services users other
+- `maxServicesPerUser`: how many of the registered services users other
   than admins may have registered (`409 Conflict` for further ones); `0` if
   only admins can register services, and not set if there is no limit (see
   [Services per user](configuration.md#services-per-user)).
@@ -123,8 +123,17 @@ deployment changes them. Like all of the service info, they are public, also
 if the deployment [requires login](access-control.md#requiring-login-for-reads)
 for other reads. The OpenAPI specification describes them as an extension of
 the GA4GH `Service` schema (`RegistryServiceInfo`), as GA4GH APIs extend it
-for their service info (e.g., `TesServiceInfo` of the TES specification);
-their fields are `snake_case`, like the other fields the registry adds.
+for their service info (e.g., `TesServiceInfo` of the TES specification).
+
+## API style
+
+Additions follow the style of the spec they extend: the fields and query
+parameters that the registry adds are camelCase, as in the GA4GH Service Info
+and Service Registry specifications (`createdAt`, `contactUrl`). Additions to
+spec objects are kept to a minimum and grouped under one key (e.g.,
+`registrationRules` of the service info). Keys of the config stay `snake_case`,
+FOCA's style; where the service info publishes a setting, its field is camelCase
+(`url_schemes` as `urlSchemes`).
 
 ## Registrations
 
@@ -180,9 +189,6 @@ verifications (`PUT /services/{serviceId}/verification`) are limited in length
 
 Organizations (`organization`) may only have a `name` and a `url`; other
 fields are rejected (`400 Bad Request`), so that their size is limited too.
-
-Services stored before the checks of lengths and of organization fields were
-introduced may not pass them; see [Upgrading](upgrading.md#stored-services).
 
 Users other than admins may only have registered a limited number of the
 registered services (50 by default; `409 Conflict` with code `services-limit`
@@ -257,11 +263,7 @@ Verifying a service doesn't change its timestamps.
 
 This differs from the GA4GH specification, where the timestamps describe
 the deployment of the service (when it was first deployed, and last
-updated): in the registry, they describe its entry. Services registered
-before the registry set the timestamps keep those they were registered
-with, and services registered without a valid `createdAt` (an RFC 3339
-date-time) don't get one (see
-[Upgrading](upgrading.md#stored-services)).
+updated): in the registry, they describe its entry.
 
 ## Service types
 
@@ -295,8 +297,8 @@ types](configuration.md#service-types)):
   approvals](#pending-approvals)); admins' types are approved at once.
 
 `GET /me` tells clients whether the current user may add types
-(`may_add_service_types`), e.g., to offer "Add new service type" only then,
-and whether their new types are pending (`service_types_pending`); `GET
+(`mayAddServiceTypes`), e.g., to offer "Add new service type" only then,
+and whether their new types are pending (`serviceTypesPending`); `GET
 /service-info` tells them the mode and the limit of unused types (see
 [Registration rules](#registration-rules)).
 
@@ -310,8 +312,7 @@ delete all services that depend on it."). The registry stores who added each
 type (not served).
 
 On startup, the app registers the types of the registered services that
-aren't registered (e.g., when upgrading from a version that didn't store
-types; see [Upgrading](upgrading.md#service-types)).
+aren't registered (e.g., after a failed change of the registry's own entry).
 
 ### Pending approvals
 
@@ -327,7 +328,7 @@ users who added them (for services: users with a role on them):
   user, so these reads list pending types and services to nobody then;
   send a token to see them.
 - `GET /approvals` (login required) lists the pending types
-  (`service_types`) and services (`services`) the user may see: all for
+  (`serviceTypes`) and services (`services`) the user may see: all for
   admins.
 - Only admins can update pending services (`409 Conflict` for others, so
   that a service doesn't change while an admin reviews it), other users only
@@ -439,9 +440,6 @@ URL (e.g., by fetching `{url}/service-info` on registration) was rejected:
 the identifier in service info is self-declared, and fetching user-supplied
 URLs would allow server-side request forgery.
 
-Services stored before this check are checked on startup (see
-[Upgrading](upgrading.md#stored-services)).
-
 ## Verified services
 
 Admins mark services as **verified** once they have checked them, e.g., that
@@ -471,7 +469,7 @@ The request returns the verification, with the URL and API type of the
 service:
 
 ```json
-{"url": "https://tes.example.org/ga4gh/tes/v1", "type": {"group": "org.ga4gh", "artifact": "tes", "version": "1.1.0"}, "verified_at": "2026-10-20T12:34:56.789Z"}
+{"url": "https://tes.example.org/ga4gh/tes/v1", "type": {"group": "org.ga4gh", "artifact": "tes", "version": "1.1.0"}, "verifiedAt": "2026-10-20T12:34:56.789Z"}
 ```
 
 Verifying a service again renews it. `DELETE` on the same path removes it.
@@ -483,7 +481,7 @@ login](access-control.md#requiring-login-for-reads)):
 `GET /services/<id>/verification`
 returns the verification of a service (`404 Not Found` if it is not
 verified), and `GET /verifications` lists all verified services, sorted by
-identifier, each with its identifier as `service_id` and the fields above.
+identifier, each with its identifier as `serviceId` and the fields above.
 
 The GA4GH endpoints are unchanged: `GET /services` and
 `GET /services/<id>` don't show verifications. Clients that should only use
@@ -530,7 +528,7 @@ curl -X PUT "http://localhost:8080/ga4gh/registry/v1/service-info/listing" \
 | `DELETE /service-info/listing` | `200 OK`, the state; `404 Not Found` if the registry isn't listed; `409 Conflict`, code `service-busy`, while the entry is being [renamed](#renaming-services) |
 
 The state says whether the registry is listed, and if so, under which
-identifier: `{"listed": true, "service_id": "org.example.cloud-registry"}` or
+identifier: `{"listed": true, "serviceId": "org.example.cloud-registry"}` or
 `{"listed": false}`.
 
 **The entry** is a service with the fields of the [service

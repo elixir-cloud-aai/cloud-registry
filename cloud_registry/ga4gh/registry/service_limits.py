@@ -23,8 +23,7 @@ without a limit, so that one can be set later.
 A counter can drift if the app stops between storing (or deleting) a service
 and updating it, or if a registration or deletion runs while the app starts
 on another instance; the app reconciles the counters with the stored services
-on startup (cf. `reconcile_service_counts()`), after adding the user to
-services registered before it was stored (cf. `add_service_creators()`).
+on startup (cf. `reconcile_service_counts()`).
 """
 
 import logging
@@ -32,7 +31,6 @@ from typing import Any
 
 from flask import current_app
 from foca import get_custom_config
-from foca.security.access_control import list_resource_roles
 from foca.utils.logging import escape_log_value
 from pymongo.errors import DuplicateKeyError
 
@@ -169,51 +167,6 @@ def services_path_on_startup() -> str:
     raise RuntimeError("The app has no route of 'POST /services'")
 
 
-def _single_user_owner(path: str) -> str | None:
-    """Get the only user with the role `owner` on a service.
-
-    Args:
-        path: Path of the service, under which roles are granted.
-
-    Returns:
-        The user, if exactly one user (not group) is granted `owner`;
-        otherwise `None`.
-    """
-    owners = [
-        subject
-        for subject, role in list_resource_roles(path, subject_type="user")
-        if role == "owner"
-    ]
-    return owners[0] if len(owners) == 1 else None
-
-
-def add_service_creators() -> None:
-    """Add the user who registered a service to services without one.
-
-    For services registered before the user was stored (cf. `CREATED_BY`):
-    the user who is the only user granted `owner` on the service, usually
-    the one who registered it; services with no or several such users count
-    for nobody (`None`). Services that already have the field (also `None`)
-    are kept, so the function is idempotent and safe to run concurrently
-    (e.g., in each worker of the app on startup). Must be called in an app
-    context.
-    """
-    services = get_collection("services")
-    path = services_path_on_startup()
-    for service in services.find({CREATED_BY: {"$exists": False}}, {"id": True}):
-        creator = _single_user_owner(f"{path}/{service['id']}")
-        result = services.update_one(
-            {"_id": service["_id"], CREATED_BY: {"$exists": False}},
-            {"$set": {CREATED_BY: creator}},
-        )
-        if result.modified_count and creator is not None:
-            logger.info(
-                "Service '%s' counts for its owner '%s' (registration limit).",
-                escape_log_value(service["id"]),
-                escape_log_value(creator),
-            )
-
-
 def reconcile_service_counts() -> None:
     """Set the counters of services per user to the stored services.
 
@@ -221,7 +174,7 @@ def reconcile_service_counts() -> None:
     counter is only set if it didn't change since it was read, so
     registrations and deletions while the app starts are not overwritten;
     they may still make the counter differ by one each, until the next
-    start. Must be called in an app context, after `add_service_creators()`.
+    start. Must be called in an app context.
     """
     counts = get_collection(SERVICE_COUNTS)
     stored: dict[str, int] = {

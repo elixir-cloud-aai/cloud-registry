@@ -94,8 +94,7 @@ def test_delete_type_in_use_not_stored(
 ) -> None:
     """Types that services have can't be removed, also if they aren't stored.
 
-    E.g., of services registered by an older version of the app during an
-    upgrade.
+    E.g., after a failed change of the registry's own entry.
     """
     services.insert_one({**MOCK_SERVICE, "id": "A", "type": MOCK_TYPE})
     with unit_app.app_context():

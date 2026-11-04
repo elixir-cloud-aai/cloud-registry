@@ -24,6 +24,7 @@ from tests.mock_data import (
     MOCK_PUBLIC_URL,
     MOCK_SERVICE,
     MOCK_TYPE,
+    stored_service,
 )
 
 
@@ -59,8 +60,7 @@ def _insert_services(
     for i in ids:
         mock_resp = deepcopy(MOCK_SERVICE)
         mock_resp["id"] = i
-        services.insert_one(mock_resp)
-        del mock_resp["_id"]
+        services.insert_one(stored_service(mock_resp))
         data.append(mock_resp)
     return data
 
@@ -116,7 +116,7 @@ def test_getServiceTypes_distinct(
         mock_resp = deepcopy(MOCK_SERVICE)
         mock_resp["id"] = i
         mock_resp["type"]["artifact"] = i
-        services.insert_one(mock_resp)
+        services.insert_one(stored_service(mock_resp))
 
     with unit_app.app_context():
         add_service_types()
@@ -137,7 +137,9 @@ def test_getServiceTypes_sort_order(
         {"group": "b", "artifact": "a", "version": "1"},
     ]
     for i, service_type in enumerate(reversed(expected * 2)):
-        services.insert_one({**MOCK_SERVICE, "id": f"serv{i}", "type": service_type})
+        services.insert_one(
+            stored_service({**MOCK_SERVICE, "id": f"serv{i}", "type": service_type})
+        )
 
     with unit_app.app_context():
         add_service_types()
@@ -205,7 +207,7 @@ def test_deleteService_NotFound(
     unit_app: Flask, services: Collection[dict[str, Any]]
 ) -> None:
     """Test for deleting a service if no service has the identifier."""
-    services.insert_one(deepcopy(MOCK_SERVICE))
+    services.insert_one(stored_service({**MOCK_SERVICE, "id": "OTHER"}))
 
     with unit_app.app_context(), pytest.raises(NotFound):
         inspect.unwrap(deleteService)(serviceId=MOCK_ID)

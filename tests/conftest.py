@@ -468,7 +468,7 @@ def unit_app(db_client: MongoClient[dict[str, Any]]) -> Flask:
         for index in coll_conf.indexes or []:
             assert index.keys is not None
             coll_conf.client.create_index(index.keys, **(index.options or {}))
-    db["services"].create_index(SERVICE_KEY, unique=True, sparse=True)
+    db["services"].create_index(SERVICE_KEY, unique=True)
     return app
 
 

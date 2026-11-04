@@ -12,14 +12,14 @@ form:
   rules (`security.access_control.policies`) are left as they are, as the
   app replaces them with those of the config on startup, so change the
   config instead;
-- the users who added service types (`created_by` of `service_types`), for
+- the users who added service types (`createdBy` of `service_types`), for
   the limit of unused types and the visibility of pending types;
 - the users who registered services (`_createdBy` of `services`), and their
   numbers of services (`service_counts`), for the limit of services per
   user;
-- the users of the stored display names (`user_id` of `user_names`);
-- the users who created invitations to services, as whom (`created_by`,
-  `created_as.user`), and who accepted them (`accepted.user_id` of
+- the users of the stored display names (`userId` of `user_names`);
+- the users who created invitations to services, as whom (`createdBy`,
+  `createdAs.user`), and who accepted them (`accepted.userId` of
   `invitations`), so that open invitations of owners stay valid.
 
 Subjects that are already namespaced (with `|`) are kept, so the migration
@@ -38,9 +38,9 @@ in the database). Until then, the issuer's stored users lose their roles. Prefer
 Without `--dry-run`, it sets up the app as on startup (e.g., its indexes and
 configured rules), so run it with the image of the deployed version. A dry run
 does none of this, so it only counts what is stored: configured rules as the
-running app stored them, not those of the config, and no services that startup
-would still give a creator. Nor does it check the config as startup does, so it
-can succeed where the migration then fails to start.
+running app stored them, not those of the config. Nor does it check the config
+as startup does, so it can succeed where the migration then fails to start. Like
+startup, it refuses databases of versions before 1.0.0rc2.
 """
 
 import argparse
@@ -72,7 +72,7 @@ from cloud_registry.ga4gh.registry.permissions import INVITATIONS
 from cloud_registry.ga4gh.registry.service import CREATED_BY as SERVICE_CREATOR
 from cloud_registry.ga4gh.registry.service_limits import COUNT, SERVICE_COUNTS
 from cloud_registry.ga4gh.registry.service_types import CREATED_BY
-from cloud_registry.utils import get_collection
+from cloud_registry.utils import get_collection, refuse_old_format
 
 logger = logging.getLogger(__name__)
 
@@ -289,15 +289,15 @@ def _namespace_user_names(namespace: str, dry_run: bool) -> int:
     """
     collection = get_collection("user_names")
     count = 0
-    for name in collection.find({"user_id": {"$type": "string"}}):
-        if not _is_bare(name["user_id"]):
+    for name in collection.find({"userId": {"$type": "string"}}):
+        if not _is_bare(name["userId"]):
             continue
         count += 1
         if dry_run:
             continue
-        user_id = _namespaced(namespace, name["user_id"])
+        user_id = _namespaced(namespace, name["userId"])
         try:
-            collection.update_one({"_id": name["_id"]}, {"$set": {"user_id": user_id}})
+            collection.update_one({"_id": name["_id"]}, {"$set": {"userId": user_id}})
         except DuplicateKeyError:
             collection.delete_one({"_id": name["_id"]})
     return count
@@ -306,8 +306,8 @@ def _namespace_user_names(namespace: str, dry_run: bool) -> int:
 def _namespace_invitations(namespace: str, dry_run: bool) -> int:
     """Namespace the users who created and accepted invitations.
 
-    Only the users are rewritten (`created_by`, `created_as.user`,
-    `accepted.user_id`), not groups (`created_as.group`); each field only if
+    Only the users are rewritten (`createdBy`, `createdAs.user`,
+    `accepted.userId`), not groups (`createdAs.group`); each field only if
     it is bare, so that runs can be repeated.
 
     Args:
@@ -320,7 +320,7 @@ def _namespace_invitations(namespace: str, dry_run: bool) -> int:
         another run rewrites).
     """
     collection = get_collection(INVITATIONS)
-    fields = ("created_by", f"{CREATED_AS}.user", f"{ACCEPTED}.user_id")
+    fields = ("createdBy", f"{CREATED_AS}.user", f"{ACCEPTED}.userId")
     count = 0
     for invitation in collection.find(
         {"$or": [{field: {"$type": "string"}} for field in fields]}
@@ -417,11 +417,16 @@ def _read_only_app() -> Flask:
 
     Returns:
         Flask app, with the collections registered.
+
+    Raises:
+        RuntimeError: The database has data in the format of earlier versions
+            (cf. `refuse_old_format()`), which a dry run would miscount.
     """
     config = create_foca().conf
     app = Flask(__name__)
     set_app_config(app, config)
     mongo_config = cast(MongoConfig, config.db)
+    refuse_old_format(mongo_config)
     dbs = mongo_config.dbs if mongo_config.dbs is not None else {}
     access_control = config.security.access_control
     rules_db = dbs.setdefault(access_control.db_name, DBConfig(collections={}))
@@ -446,6 +451,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     Returns:
         The exit status: 0 on success, 1 if the namespace is not that of a
         trusted issuer.
+
+    Raises:
+        RuntimeError: The database has data in the format of earlier versions
+            (cf. `refuse_old_format()`).
     """
     parser = argparse.ArgumentParser(
         prog="python -m cloud_registry.namespace_subjects",
@@ -455,7 +464,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="only count the stored subjects, without changes or startup checks",
+        help="only count the stored subjects, without changes or config checks",
     )
     args = parser.parse_args(argv)
     app = _read_only_app() if args.dry_run else create_app().app

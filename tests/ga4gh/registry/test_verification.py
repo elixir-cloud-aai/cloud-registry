@@ -21,7 +21,13 @@ from cloud_registry.ga4gh.registry.verification import (
     putServiceVerification,
 )
 from cloud_registry.utils import format_time
-from tests.mock_data import ERROR_MEDIA_TYPE, MOCK_ID, MOCK_SERVICE, MOCK_TYPE
+from tests.mock_data import (
+    ERROR_MEDIA_TYPE,
+    MOCK_ID,
+    MOCK_SERVICE,
+    MOCK_TYPE,
+    stored_service,
+)
 
 # Time as read from the database (naive, UTC, in milliseconds)
 TIME = datetime(2026, 10, 20, 12, 34, 56, 789000)
@@ -39,7 +45,7 @@ def _expected(verified_at: str = FORMATTED) -> dict[str, Any]:
     Returns:
         Verification of the mock service.
     """
-    return {**CHECKED, "verified_at": verified_at}
+    return {**CHECKED, "verifiedAt": verified_at}
 
 
 def _insert(
@@ -61,7 +67,7 @@ def _insert(
         doc[KEY] = service_key(MOCK_SERVICE)
     if verified_at is not None:
         doc[VERIFIED] = verified_at
-    services.insert_one(doc)
+    services.insert_one(stored_service(doc))
 
 
 def _stored(services: Collection[dict[str, Any]]) -> dict[str, Any]:
@@ -141,7 +147,7 @@ def test_putServiceVerification(
     stored = _stored(services)[VERIFIED]
     assert stored > TIME
     assert res == _expected(format_time(stored))
-    assert stored == datetime.fromisoformat(res["verified_at"][:-1])
+    assert stored == datetime.fromisoformat(res["verifiedAt"][:-1])
 
 
 @pytest.mark.parametrize(
@@ -245,7 +251,9 @@ def test_deleteServiceVerification(
     with unit_app.test_request_context():
         assert deleteServiceVerification(MOCK_ID) == MOCK_ID
     stored = services.find_one({"id": MOCK_ID}, {"_id": False})
-    assert stored == {**MOCK_SERVICE, "id": MOCK_ID, KEY: service_key(MOCK_SERVICE)}
+    assert stored == stored_service(
+        {**MOCK_SERVICE, "id": MOCK_ID, KEY: service_key(MOCK_SERVICE)}
+    )
 
 
 @pytest.mark.parametrize("insert", [False, True])
@@ -269,8 +277,8 @@ def test_getVerifications(
     _insert(services, id="a", verified_at=datetime(2026, 1, 1))
     with unit_app.app_context():
         assert getVerifications() == [
-            {"service_id": "a", **_expected("2026-01-01T00:00:00.000Z")},
-            {"service_id": "b", **_expected()},
+            {"serviceId": "a", **_expected("2026-01-01T00:00:00.000Z")},
+            {"serviceId": "b", **_expected()},
         ]
 
 

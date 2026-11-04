@@ -147,7 +147,7 @@ namespaces the identifiers of users (`sub`) by issuer, as
 `https://login.example.org/oidc/|abc123`), so equal identifiers of
 different issuers are different users, also as owners and maintainers of
 services and as the users who added service types. `GET /me` returns the
-namespaced identifier (`user_id`), which owners use to grant roles (see
+namespaced identifier (`userId`), which owners use to grant roles (see
 [Roles on services](access-control.md#roles-on-services)).
 
 Issuers can be listed with settings of their own (FOCA's `IssuerConfig`),
@@ -234,9 +234,8 @@ e.g., for services running locally; the Helm chart keeps the default (set
 `config.custom.endpoints.services.url_schemes` to change it).
 
 On startup, the app warns of stored services whose URLs use other schemes
-(e.g., `http` URLs registered while `http` was allowed, or before this
-check): they are still served, but can only be updated with an allowed
-scheme (see [Upgrading](upgrading.md#stored-services)).
+(e.g., `http` URLs registered while `http` was allowed): they are still
+served, but can only be updated with an allowed scheme.
 
 ## Service environments
 
@@ -268,8 +267,7 @@ Clients that let users choose an environment (e.g., UIs) must offer the
 same values: they read them from the service info rather than configuring
 them (see [Registration rules](api.md#registration-rules)). Stored services
 with other values are served as they are, and only checked when they are
-next written; the app logs a warning on startup that names them (see
-[Upgrading](upgrading.md#stored-services)).
+next written; the app logs a warning on startup that names them.
 
 The registry must describe itself with an allowed value, too: the app refuses
 to start if the environment of its [service info](#service-info)
@@ -293,10 +291,6 @@ types](api.md#service-types):
   admins, and the services that have them, are pending until an admin
   approves them (see [Pending approvals](api.md#pending-approvals)), so that
   admins curate the list without being asked for each type.
-  Switch to this mode only once all instances of the app support it (e.g.,
-  after a rolling update): older versions (0.4.0) store no types, so the
-  services they register are served at once, and their types are added as
-  approved when the app next starts (with the types of all stored services).
 
 Users other than admins may only have added
 `custom.access_control.max_unused_service_types` types that no service has
@@ -328,7 +322,7 @@ limits](deployment.md#rate-limits)), and remove unwanted types as an admin
 Only admins can remove types, in every mode. Set this option rather than
 removing the policy `add-service-types` (in `security.access_control.policies`),
 which only applies to `POST /services/types`: users also add types by
-registering services, and `GET /me` (`may_add_service_types`) only reflects
+registering services, and `GET /me` (`mayAddServiceTypes`) only reflects
 this option. Overlays that give the policies as a list must include that
 rule, and `list-approvals` for `GET /approvals`. For example, in a config
 overlay (with the Helm chart, in `config`):
@@ -359,9 +353,7 @@ from the service info (see [Registration rules](api.md#registration-rules)).
 
 The app stores who registered each service with the service (not served),
 and keeps a counter per user (collection `service_counts`). On startup, it
-adds the user to services registered before (the only user who is `owner`
-of the service; services with no or several such owners count for nobody),
-and corrects the counters (e.g., after a crash between storing a service and
+corrects the counters (e.g., after a crash between storing a service and
 counting it). For example, in a config overlay (with the Helm chart, in
 `config`):
 
@@ -478,9 +470,9 @@ e.g., in reverse domain name notation), `name`, `description`, `organization`,
 warning on startup, naming the fields to set (also with Docker Compose, whose
 development config keeps them). Fields and list items set to `null`
 (e.g., in a config overlay) are not served. The app adds the [registration
-rules](api.md#registration-rules) (`registration_rules`), built from the
+rules](api.md#registration-rules) (`registrationRules`), built from the
 `custom` config on each request (`service_info.runtime_fields`): keep that
-option, and don't set `registration_rules` in `service_info.service` (not
+option, and don't set `registrationRules` in `service_info.service` (not
 even to `null`), so that they are always the rules the registry enforces;
 the app refuses to start otherwise. To change the service info, change
 the config and restart the app (the Helm chart restarts it when the `config`

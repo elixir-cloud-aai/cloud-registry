@@ -37,7 +37,7 @@ from cloud_registry.exceptions import ServiceBusy
 from cloud_registry.utils import get_collection, now
 
 # Collection of the locks (cf. the module docstring), with an index of
-# `service` and `started_at` (cf. `config.yaml`)
+# `service` and `startedAt` (cf. `config.yaml`)
 LOCKS = "service_locks"
 # Age after which locks are stale; renames and changes take a few writes, so
 # they are done by then unless they failed. Keep in sync with "a minute" in
@@ -64,7 +64,7 @@ def stale() -> dict[str, Any]:
     Returns:
         Filter of locks that started at or before `stale_before()`.
     """
-    return {"started_at": {"$lte": stale_before()}}
+    return {"startedAt": {"$lte": stale_before()}}
 
 
 @contextmanager
@@ -87,7 +87,7 @@ def changing(service_id: str) -> Iterator[None]:
     lock_id = {"change": uuid4().hex}
     for _ in range(LOCK_ATTEMPTS):
         collection.insert_one(
-            {"_id": lock_id, "service": service_id, "started_at": now()}
+            {"_id": lock_id, "service": service_id, "startedAt": now()}
         )
         if not collection.count_documents({"_id": service_id}, limit=1):
             break
@@ -120,12 +120,12 @@ def lock_exclusive(service_id: str, **fields: Any) -> str | None:
     token = uuid4().hex
     try:
         collection.insert_one(
-            {"_id": service_id, "token": token, "started_at": now(), **fields}
+            {"_id": service_id, "token": token, "startedAt": now(), **fields}
         )
     except DuplicateKeyError:
         return None
     for _ in range(LOCK_ATTEMPTS):
-        changes = {"service": service_id, "started_at": {"$gt": stale_before()}}
+        changes = {"service": service_id, "startedAt": {"$gt": stale_before()}}
         if not collection.count_documents(changes, limit=1):
             return token
         time.sleep(LOCK_WAIT)

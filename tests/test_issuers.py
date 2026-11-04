@@ -70,7 +70,7 @@ def test_equal_subjects_different_users(two_issuers: FlaskClient) -> None:
     response = client.get(f"{BASE}/me", headers=_alice2())
     assert response.status_code == 200
     me = response.get_json()
-    assert (me["user_id"], me["services"]) == (ALICE2, [])
+    assert (me["userId"], me["services"]) == (ALICE2, [])
 
 
 @pytest.mark.parametrize("encode", [False, True])
@@ -86,10 +86,10 @@ def test_namespaced_permissions(two_issuers: FlaskClient, encode: bool) -> None:
     owner = make_headers(ALICE)
     response = client.put(url, json={"role": "maintainer"}, headers=owner)
     assert response.status_code == 200, response.get_json()
-    assert response.get_json() == {"user_id": ALICE2, "role": "maintainer"}
+    assert response.get_json() == {"userId": ALICE2, "role": "maintainer"}
     assert _update(client, service_id, _alice2()) == 200
     listed = client.get(f"{BASE}/services/{service_id}/permissions", headers=owner)
-    assert {"user_id": ALICE2, "role": "maintainer"} in listed.get_json()
+    assert {"userId": ALICE2, "role": "maintainer"} in listed.get_json()
     assert client.delete(url, headers=owner).status_code == 200
     assert _update(client, service_id, _alice2()) == 403
 
@@ -168,9 +168,9 @@ def test_namespaces_named_like_paths(
     owner = make_headers(ALICE)
     response = client.put(url, json={"role": "maintainer"}, headers=owner)
     assert response.status_code == 200, response.get_json()
-    assert response.get_json() == {"user_id": user, "role": "maintainer"}
+    assert response.get_json() == {"userId": user, "role": "maintainer"}
     roles = f"{BASE}/services/{service_id}/permissions"
-    role = {"user_id": user, "role": "maintainer"}
+    role = {"userId": user, "role": "maintainer"}
     assert role in client.get(roles, headers=owner).get_json()
     assert client.delete(url, headers=owner).status_code == 200
     assert role not in client.get(roles, headers=owner).get_json()
@@ -236,6 +236,6 @@ def test_upgrade_namespaced(
     # running instances reload the rules (`mark_changed()`)
     assert _update(client, service_id, make_headers(ALICE)) == 200
     me = client.get(f"{BASE}/me", headers=make_headers(ALICE)).get_json()
-    assert me["user_id"] == f"{ISSUER}|{ALICE}"
-    assert {"service_id": service_id, "role": "owner"} in me["services"]
+    assert me["userId"] == f"{ISSUER}|{ALICE}"
+    assert {"serviceId": service_id, "role": "owner"} in me["services"]
     assert _update(client, service_id, _alice2()) == 403

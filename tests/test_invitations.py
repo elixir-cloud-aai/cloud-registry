@@ -125,7 +125,7 @@ def invitations(
     client: FlaskClient,
     service_id: str,
     user: str = ALICE,
-    include_accepted: bool = False,
+    includeAccepted: bool = False,
 ) -> list[dict[str, Any]]:
     """List the invitations to a service.
 
@@ -133,7 +133,7 @@ def invitations(
         client: Test client of the app.
         service_id: Service identifier.
         user: User who lists them.
-        include_accepted: Whether to ask for accepted invitations too.
+        includeAccepted: Whether to ask for accepted invitations too.
 
     Returns:
         Invitations, as listed.
@@ -141,7 +141,7 @@ def invitations(
     response = client.get(
         f"{BASE}/services/{service_id}/invitations",
         headers=headers(user),
-        query_string={"include_accepted": "true"} if include_accepted else None,
+        query_string={"includeAccepted": "true"} if includeAccepted else None,
     )
     assert response.status_code == 200, response.get_json()
     listed: list[dict[str, Any]] = response.get_json()
@@ -178,7 +178,7 @@ def stored(app: App) -> list[dict[str, Any]]:
         Stored invitations, sorted by creation.
     """
     with app.app.app_context():
-        return list(get_collection(INVITATIONS).find({}, sort=[("created_at", 1)]))
+        return list(get_collection(INVITATIONS).find({}, sort=[("createdAt", 1)]))
 
 
 def set_invitations_config(app: App, **kwargs: Any) -> None:
@@ -203,7 +203,7 @@ def expire(app: App, query: dict[str, Any] | None = None) -> None:
     """
     with app.app.app_context():
         get_collection(INVITATIONS).update_many(
-            query or {}, {"$set": {"expires_at": now() - timedelta(seconds=1)}}
+            query or {}, {"$set": {"expiresAt": now() - timedelta(seconds=1)}}
         )
 
 
@@ -229,33 +229,33 @@ def test_invite_and_accept(client: FlaskClient) -> None:
     response = invite(client, service_id)
     assert response.status_code == 201, response.get_json()
     created = response.get_json()
-    assert created["service_id"] == service_id
+    assert created["serviceId"] == service_id
     assert created["role"] == "maintainer"
-    assert created["created_by"] == ALICE
+    assert created["createdBy"] == ALICE
     assert len(created["token"]) >= TOKEN_BYTES
-    expiry = _parse(created["expires_at"]) - _parse(created["created_at"])
+    expiry = _parse(created["expiresAt"]) - _parse(created["createdAt"])
     assert expiry == timedelta(days=7)
     listed = invitations(client, service_id)
     assert listed == [{k: v for k, v in created.items() if k != "token"}]
     assert update(client, service_id, BOB) == 403
     response = accept(client, created["token"])
     assert response.status_code == 200, response.get_json()
-    assert response.get_json() == {"service_id": service_id, "role": "maintainer"}
+    assert response.get_json() == {"serviceId": service_id, "role": "maintainer"}
     assert permissions(client, service_id) == [(ALICE, "owner"), (BOB, "maintainer")]
-    assert {"user_id": BOB, "name": NAMES[BOB], "role": "maintainer"} in (
+    assert {"userId": BOB, "name": NAMES[BOB], "role": "maintainer"} in (
         permission_list(client, service_id)
     )
     assert update(client, service_id, BOB) == 200
     assert invitations(client, service_id) == []
-    (accepted,) = invitations(client, service_id, include_accepted=True)
+    (accepted,) = invitations(client, service_id, includeAccepted=True)
     acceptance = accepted.pop("accepted")
     assert accepted.pop("status") == "accepted"
     assert listed[0].pop("status") == "open"
     assert accepted == listed[0]
-    assert acceptance["user_id"] == BOB
+    assert acceptance["userId"] == BOB
     assert acceptance["name"] == NAMES[BOB]
     assert "email" not in acceptance
-    assert _parse(acceptance["accepted_at"]) >= _parse(created["created_at"])
+    assert _parse(acceptance["acceptedAt"]) >= _parse(created["createdAt"])
 
 
 def test_owner_invitation(client: FlaskClient) -> None:
@@ -275,9 +275,9 @@ def test_token_stored_as_hash(app: App, client: FlaskClient) -> None:
     created = response.get_json()
     (document,) = stored(app)
     assert (
-        document["token_hash"] == hashlib.sha256(created["token"].encode()).hexdigest()
+        document["tokenHash"] == hashlib.sha256(created["token"].encode()).hexdigest()
     )
-    assert document["token_hash"] == hash_token(created["token"])
+    assert document["tokenHash"] == hash_token(created["token"])
     assert created["token"] not in repr(document)
     assert document["_id"] == created["id"]
 
@@ -371,7 +371,7 @@ def test_expired_open(app: App, client: FlaskClient) -> None:
 def test_expired_at_expiry(
     app: App, client: FlaskClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Invitations are expired from the moment of `expires_at`.
+    """Invitations are expired from the moment of `expiresAt`.
 
     So that the status agrees with what can be done with them.
     """
@@ -379,7 +379,7 @@ def test_expired_at_expiry(
     token = token_of(client, service_id)
     moment = now()
     with app.app.app_context():
-        get_collection(INVITATIONS).update_many({}, {"$set": {"expires_at": moment}})
+        get_collection(INVITATIONS).update_many({}, {"$set": {"expiresAt": moment}})
     monkeypatch.setattr(invitations_module, "now", lambda: moment)
     assert invitations(client, service_id)[0]["status"] == "expired"
     assert accept(client, token).status_code == 404
@@ -393,13 +393,13 @@ def test_listings_without_tokens(app: App, client: FlaskClient) -> None:
     old = invite(client, service_id).get_json()
     expire(app, {"accepted": {"$exists": False}})
     fresh = invite(client, service_id).get_json()
-    listed = invitations(client, service_id, include_accepted=True)
+    listed = invitations(client, service_id, includeAccepted=True)
     assert [i["status"] for i in listed] == ["accepted", "expired", "open"]
     text = repr(listed)
     for invitation, document in zip((used, old, fresh), stored(app), strict=True):
         assert invitation["token"] not in text
-        assert document["token_hash"] not in text
-    assert all("token" not in i and "token_hash" not in i for i in listed)
+        assert document["tokenHash"] not in text
+    assert all("token" not in i and "tokenHash" not in i for i in listed)
 
 
 def test_accepted_not_listed_by_default(app: App, client: FlaskClient) -> None:
@@ -412,21 +412,21 @@ def test_accepted_not_listed_by_default(app: App, client: FlaskClient) -> None:
     used = invite(client, service_id).get_json()
     assert accept(client, used["token"]).status_code == 200
     assert invitations(client, service_id) == []
-    (listed,) = invitations(client, service_id, include_accepted=True)
+    (listed,) = invitations(client, service_id, includeAccepted=True)
     assert listed["status"] == "accepted"
-    assert listed["accepted"]["user_id"] == BOB
+    assert listed["accepted"]["userId"] == BOB
     response = accept(client, used["token"], user=ERIN)
     assert response.status_code == 409
     assert response.get_json()["code"] == "invitation-accepted"
     expire(app)
     assert invitations(client, service_id) == []
-    assert invitations(client, service_id, include_accepted=True) == []
+    assert invitations(client, service_id, includeAccepted=True) == []
     assert accept(client, used["token"], user=ERIN).status_code == 404
     response = revoke_invitation(client, service_id, used["id"])
     assert response.status_code == 404
 
 
-def test_include_accepted_lists_all(app: App, client: FlaskClient) -> None:
+def test_includeAccepted_lists_all(app: App, client: FlaskClient) -> None:
     """With accepted invitations, the list has all that aren't hidden."""
     service_id = register(client)
     assert accept(client, token_of(client, service_id)).status_code == 200
@@ -435,17 +435,17 @@ def test_include_accepted_lists_all(app: App, client: FlaskClient) -> None:
     token_of(client, service_id)
     default = invitations(client, service_id)
     assert [i["status"] for i in default] == ["expired", "open"]
-    everything = invitations(client, service_id, include_accepted=True)
+    everything = invitations(client, service_id, includeAccepted=True)
     assert [i["status"] for i in everything] == ["accepted", "expired", "open"]
 
 
-def test_include_accepted_invalid(client: FlaskClient) -> None:
-    """Invalid values of `include_accepted` are rejected."""
+def test_includeAccepted_invalid(client: FlaskClient) -> None:
+    """Invalid values of `includeAccepted` are rejected."""
     service_id = register(client)
     response = client.get(
         f"{BASE}/services/{service_id}/invitations",
         headers=headers(ALICE),
-        query_string={"include_accepted": "maybe"},
+        query_string={"includeAccepted": "maybe"},
     )
     assert response.status_code == 400
 
@@ -501,7 +501,7 @@ def test_expired_follow_service(app: App, client: FlaskClient) -> None:
     expire(app)
     assert rename(client, service_id).status_code == 200
     (listed,) = invitations(client, NEW_ID)
-    assert listed["service_id"] == NEW_ID
+    assert listed["serviceId"] == NEW_ID
     assert listed["status"] == "expired"
     assert delete(client, NEW_ID, ALICE) == 200
     assert stored(app) == []
@@ -560,7 +560,7 @@ def test_expiry_days(app: App, client: FlaskClient) -> None:
     set_invitations_config(app, expiry_days=1)
     service_id = register(client)
     created = invite(client, service_id).get_json()
-    expiry = _parse(created["expires_at"]) - _parse(created["created_at"])
+    expiry = _parse(created["expiresAt"]) - _parse(created["createdAt"])
     assert expiry == timedelta(days=1)
 
 
@@ -594,9 +594,9 @@ def _expected_ttl_indexes(days: int) -> dict[str, tuple[Any, ...]]:
         The indexes as `_ttl_indexes()` gets them.
     """
     return {
-        "expires_at_1": ([("expires_at", 1)], days * SECONDS_PER_DAY, None),
-        "accepted_expires_at": (
-            [("expires_at", 1)],
+        "expiresAt_1": ([("expiresAt", 1)], days * SECONDS_PER_DAY, None),
+        "acceptedExpiresAt": (
+            [("expiresAt", 1)],
             0,
             {"accepted": {"$exists": True}},
         ),
@@ -622,17 +622,16 @@ def _overlay(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, days: int) -> None
 
 
 @pytest.mark.usefixtures("app_env")
-def test_upgrade_from_old_index(mongo_client: MongoClient[dict[str, Any]]) -> None:
-    """The app starts with the index of older versions, and replaces it.
+def test_ttl_index_replaced(mongo_client: MongoClient[dict[str, Any]]) -> None:
+    """The app replaces a TTL index with other seconds.
 
-    Older versions deleted all invitations when they expired. Data is kept,
-    and starting again changes nothing.
+    Data is kept, and starting again changes nothing.
     """
     collection = mongo_client[DB][INVITATIONS]
-    collection.create_index([("token_hash", 1)], unique=True)
-    collection.create_index([("service_id", 1), ("created_at", 1)])
-    collection.create_index([("expires_at", 1)], expireAfterSeconds=0)
-    collection.insert_one({"_id": "kept", "expires_at": now() + timedelta(days=1)})
+    collection.create_index([("tokenHash", 1)], unique=True)
+    collection.create_index([("serviceId", 1), ("createdAt", 1)])
+    collection.create_index([("expiresAt", 1)], expireAfterSeconds=0)
+    collection.insert_one({"_id": "kept", "expiresAt": now() + timedelta(days=1)})
     create_app()
     assert _ttl_indexes(collection) == _expected_ttl_indexes(30)
     assert collection.count_documents({"_id": "kept"}) == 1
@@ -713,19 +712,19 @@ def test_ttl_removal(
     also when the days change on a deployment with stored invitations.
     """
     collection = fast_ttl_monitor[DB][INVITATIONS]
-    collection.create_index([("expires_at", 1)], expireAfterSeconds=0)
+    collection.create_index([("expiresAt", 1)], expireAfterSeconds=0)
     create_app()
     current = now()
-    accepted = {"accepted": {"user_id": BOB, "accepted_at": current}}
+    accepted = {"accepted": {"userId": BOB, "acceptedAt": current}}
     documents: list[dict[str, Any]] = [
-        {"_id": "open", "expires_at": current + timedelta(days=1)},
-        {"_id": "used", "expires_at": current + timedelta(days=1), **accepted},
-        {"_id": "used-expired", "expires_at": current, **accepted},
-        {"_id": "expired", "expires_at": current - timedelta(days=2)},
-        {"_id": "old", "expires_at": current - timedelta(days=31)},
+        {"_id": "open", "expiresAt": current + timedelta(days=1)},
+        {"_id": "used", "expiresAt": current + timedelta(days=1), **accepted},
+        {"_id": "used-expired", "expiresAt": current, **accepted},
+        {"_id": "expired", "expiresAt": current - timedelta(days=2)},
+        {"_id": "old", "expiresAt": current - timedelta(days=31)},
     ]
     # the hash of the token is unique
-    collection.insert_many([{**doc, "token_hash": doc["_id"]} for doc in documents])
+    collection.insert_many([{**doc, "tokenHash": doc["_id"]} for doc in documents])
     expected = {"open", "used", "expired"}
     assert _wait_for_ids(collection, expected) == expected
     _overlay(tmp_path, monkeypatch, 1)
@@ -741,9 +740,9 @@ def test_indexes(app: App, client: FlaskClient) -> None:
         assert _ttl_indexes(collection) == _expected_ttl_indexes(30)
         indexes = collection.index_information()
     unique = [index["key"] for index in indexes.values() if index.get("unique")]
-    assert unique == [[("token_hash", 1)]]
+    assert unique == [[("tokenHash", 1)]]
     keys = [index["key"] for index in indexes.values()]
-    assert [("service_id", 1), ("created_at", 1)] in keys
+    assert [("serviceId", 1), ("createdAt", 1)] in keys
 
 
 def test_revoke(app: App, client: FlaskClient) -> None:
@@ -765,7 +764,7 @@ def test_revoke(app: App, client: FlaskClient) -> None:
     assert invitations(client, service_id) == []
     token = token_of(client, service_id)
     assert accept(client, token).status_code == 200
-    (accepted,) = invitations(client, service_id, include_accepted=True)
+    (accepted,) = invitations(client, service_id, includeAccepted=True)
     response = revoke_invitation(client, service_id, accepted["id"])
     assert response.status_code == 409
     assert response.get_json()["code"] == "invitation-accepted"
@@ -801,7 +800,7 @@ def test_only_owners_manage(client: FlaskClient) -> None:
 def test_invalid_role(client: FlaskClient) -> None:
     """Invitations are for the roles on services only."""
     service_id = register(client)
-    for body in ({"role": "admin"}, {}, {"role": "owner", "user_id": BOB}):
+    for body in ({"role": "admin"}, {}, {"role": "owner", "userId": BOB}):
         response = client.post(
             f"{BASE}/services/{service_id}/invitations",
             json=body,
@@ -925,7 +924,7 @@ def test_label_removed_with_role(app: App, client: FlaskClient) -> None:
     assert accept(client, created["token"]).status_code == 200
     invite(client, service_id, label="For Carol")
     assert revoke(client, service_id, BOB) == 200
-    first, second = invitations(client, service_id, include_accepted=True)
+    first, second = invitations(client, service_id, includeAccepted=True)
     assert "label" not in first
     assert second["label"] == "For Carol"
 
@@ -953,7 +952,7 @@ def test_deleted_with_service(app: App, client: FlaskClient) -> None:
     token = token_of(client, service_id)
     token_of(client, other_id)
     assert delete(client, service_id, ALICE) == 200
-    assert [i["service_id"] for i in stored(app)] == [other_id]
+    assert [i["serviceId"] for i in stored(app)] == [other_id]
     assert accept(client, token).status_code == 404
 
 
@@ -968,7 +967,7 @@ def test_service_deleted_before_accept(app: App, client: FlaskClient) -> None:
     assert "accepted" not in document
     with app.app.app_context():
         assert list_roles(f"{PATH}/{service_id}") != []
-        assert not get_collection(USER_NAMES).count_documents({"user_id": BOB})
+        assert not get_collection(USER_NAMES).count_documents({"userId": BOB})
 
 
 def test_create_racing_revoke(
@@ -1042,14 +1041,14 @@ def test_release_keeps_other_acceptance(
         """
         with app.app.app_context():
             get_collection(INVITATIONS).update_one(
-                {}, {"$set": {"accepted.user_id": ERIN}}
+                {}, {"$set": {"accepted.userId": ERIN}}
             )
         raise RuntimeError("failed")
 
     monkeypatch.setattr(invitations_module, "put_role", accepted_meanwhile)
     assert accept(client, token).status_code == 500
     (document,) = stored(app)
-    assert document["accepted"]["user_id"] == ERIN
+    assert document["accepted"]["userId"] == ERIN
 
 
 def test_limit(app: App, client: FlaskClient) -> None:
@@ -1098,7 +1097,7 @@ def test_limit_explains_accepted(client: FlaskClient) -> None:
     assert problem["code"] == "invitations-limit"
     assert "20" in problem["detail"]
     assert "ccepted invitations count until they expire" in problem["detail"]
-    assert "include_accepted" in problem["detail"]
+    assert "includeAccepted" in problem["detail"]
 
 
 def test_email_and_name(app: App, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1118,7 +1117,7 @@ def test_email_and_name(app: App, monkeypatch: pytest.MonkeyPatch) -> None:
         assert acceptance["email"] == "bob@example.org"
         claims.update(name=" ", email=1)
         acceptance = invitations_module._acceptance(BOB)
-    assert set(acceptance) == {"user_id", "accepted_at"}
+    assert set(acceptance) == {"userId", "acceptedAt"}
 
 
 @pytest.mark.parametrize("verified", [None, False, "true", 1])
@@ -1195,7 +1194,7 @@ def test_moved_with_rename(app: App, client: FlaskClient) -> None:
     token = token_of(client, service_id)
     assert rename(client, service_id).status_code == 200
     (invitation,) = invitations(client, NEW_ID)
-    assert invitation["service_id"] == NEW_ID
+    assert invitation["serviceId"] == NEW_ID
     assert accept(client, token).status_code == 200
     assert permissions(client, NEW_ID) == [(ALICE, "owner"), (BOB, "maintainer")]
 
@@ -1211,16 +1210,16 @@ def test_stale_removed_on_rename(app: App, client: FlaskClient) -> None:
         get_collection(INVITATIONS).insert_one(
             {
                 "_id": "stale",
-                "token_hash": "x",
-                "service_id": NEW_ID,
+                "tokenHash": "x",
+                "serviceId": NEW_ID,
                 "role": "owner",
-                "created_by": BOB,
-                "created_at": now(),
-                "expires_at": now() + timedelta(days=1),
+                "createdBy": BOB,
+                "createdAt": now(),
+                "expiresAt": now() + timedelta(days=1),
             }
         )
     assert rename(client, service_id).status_code == 200
-    assert [(i["_id"], i["service_id"]) for i in stored(app)] == [
+    assert [(i["_id"], i["serviceId"]) for i in stored(app)] == [
         (created["id"], NEW_ID)
     ]
 
@@ -1232,7 +1231,7 @@ def test_resume_moves_invitations(app: App, client: FlaskClient) -> None:
     make_lock(app, service_id)
     move_service(app, service_id, NEW_ID)
     resume(app)
-    assert [i["service_id"] for i in stored(app)] == [NEW_ID]
+    assert [i["serviceId"] for i in stored(app)] == [NEW_ID]
 
 
 def test_resume_removes_invitations(app: App, client: FlaskClient) -> None:
@@ -1290,8 +1289,8 @@ def test_group_owner_invitations(app: App, client: FlaskClient) -> None:
     first = invite(client, service_id, user=ERIN).get_json()
     second = invite(client, service_id, user=ERIN).get_json()
     (document, _) = stored(app)
-    assert document["created_as"] == {"group": TEAM_GROUP}
-    assert "created_as" not in first
+    assert document["createdAs"] == {"group": TEAM_GROUP}
+    assert "createdAs" not in first
     assert accept(client, first["token"]).status_code == 200
     response = client.delete(
         f"{BASE}/services/{service_id}/permissions/groups/{quote(TEAM_GROUP, safe='')}",
@@ -1305,10 +1304,10 @@ def test_admin_invitations(app: App, client: FlaskClient) -> None:
     """Invitations of admins don't depend on a role on the service."""
     service_id = register(client)
     created = invite(client, service_id, role="owner", user=ADMIN).get_json()
-    assert stored(app)[0]["created_as"] == {"admin": True}
+    assert stored(app)[0]["createdAs"] == {"admin": True}
     assert accept(client, created["token"]).status_code == 200
     assert permissions(client, service_id) == [(ALICE, "owner"), (BOB, "owner")]
-    assert stored(app)[0]["created_as"] == {"admin": True}
+    assert stored(app)[0]["createdAs"] == {"admin": True}
 
 
 def test_owner_creator(app: App, client: FlaskClient) -> None:
@@ -1316,7 +1315,7 @@ def test_owner_creator(app: App, client: FlaskClient) -> None:
     service_id = register(client)
     assert grant_group(client, service_id, TEAM_GROUP, "owner") == 200
     invite(client, service_id)
-    assert stored(app)[0]["created_as"] == {"user": ALICE}
+    assert stored(app)[0]["createdAs"] == {"user": ALICE}
 
 
 def test_creator_not_owner(
@@ -1334,7 +1333,7 @@ def test_without_creator_basis(app: App, client: FlaskClient) -> None:
     service_id = register(client)
     token = token_of(client, service_id)
     with app.app.app_context():
-        get_collection(INVITATIONS).update_many({}, {"$unset": {"created_as": ""}})
+        get_collection(INVITATIONS).update_many({}, {"$unset": {"createdAs": ""}})
     assert accept(client, token).status_code == 404
     assert stored(app) == []
 
@@ -1385,12 +1384,12 @@ def test_names_removed_with_role(client: FlaskClient) -> None:
     other_id = register(client)
     for target in (service_id, other_id):
         assert accept(client, token_of(client, target)).status_code == 200
-    listed = invitations(client, service_id, include_accepted=True)
+    listed = invitations(client, service_id, includeAccepted=True)
     assert listed[0]["accepted"]["name"] == NAMES[BOB]
     assert revoke(client, service_id, BOB) == 200
-    (accepted,) = invitations(client, service_id, include_accepted=True)
-    assert set(accepted["accepted"]) == {"user_id", "accepted_at"}
-    listed = invitations(client, other_id, include_accepted=True)
+    (accepted,) = invitations(client, service_id, includeAccepted=True)
+    assert set(accepted["accepted"]) == {"userId", "acceptedAt"}
+    listed = invitations(client, other_id, includeAccepted=True)
     assert listed[0]["accepted"]["name"] == NAMES[BOB]
 
 
@@ -1470,7 +1469,7 @@ def test_names_hidden_without_role(app: App, client: FlaskClient) -> None:
     assert accept(client, created["token"]).status_code == 200
     with app.app.app_context():
         remove_resource_role(BOB, "maintainer", f"{PATH}/{service_id}")
-    (accepted,) = invitations(client, service_id, include_accepted=True)
-    assert set(accepted["accepted"]) == {"user_id", "accepted_at"}
+    (accepted,) = invitations(client, service_id, includeAccepted=True)
+    assert set(accepted["accepted"]) == {"userId", "acceptedAt"}
     assert "label" not in accepted
     assert stored(app)[0]["accepted"]["name"] == NAMES[BOB]

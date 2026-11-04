@@ -9,27 +9,68 @@ how existing setups and data are affected.
 The steps add up: when skipping versions, apply the sections of all versions in
 between, starting with the oldest, which is the lowest on this page. Where
 sections advise different rollouts, follow the strictest (e.g., upgrade with the
-app scaled to 0 replicas).
+app scaled to 0 replicas). 1.0.0rc2 starts with a fresh database (see [From
+1.0.0rc1](#from-100rc1)): when upgrading to it or later, skip what the sections
+below say about stored data (e.g., fixes with `mongosh` or migrations of stored
+subjects). Their steps for the config, the deployment and clients still apply.
 
 ## From 1.0.0rc1
 
-Data is kept. The paths of users' roles change, as they collided with those of
-groups, which API clients and overlays with their own policy rules must follow:
+**This version needs a fresh database: data is not kept, and there is no
+migration.** The fields that the registry adds to the API and stores moved to
+camelCase (see [API style](api.md#api-style)), so this version can't read what
+earlier versions stored. It refuses to start if it finds such data or indexes
+(also after only emptying the collections), naming the collections. This also holds for upgrades from any earlier version:
+
+1. Scale the app to 0 replicas.
+2. Point it to an empty database (e.g., a new volume), or delete the database
+   `serviceStore`. Back up what you want to keep first, and register services,
+   service types and roles again through the API.
+3. Upgrade the app and the clients together, e.g.,
+   [cloud-registry-ui](https://github.com/elixir-cloud-aai/cloud-registry-ui) to
+   its 1.0.0-rc2.
+
+Going back to 1.0.0rc1 needs its database, as it was.
+
+**API:** fields and query parameters change their names, without aliases. Keys
+of the config stay `snake_case`.
+
+| Where | Before | Now |
+| --- | --- | --- |
+| `GET /service-info` | `registration_rules` | `registrationRules` |
+| its rules | `url_schemes` | `urlSchemes` |
+| its rules | `service_types` | `serviceTypes` |
+| its rules | `max_unused_service_types` | `maxUnusedServiceTypes` |
+| its rules | `max_services_per_user` | `maxServicesPerUser` |
+| `/service-info/listing` | `service_id` | `serviceId` |
+| permissions | `user_id` | `userId` |
+| `GET /me` | `user_id` | `userId` |
+| `GET /me` | `admin_available` | `adminAvailable` |
+| `GET /me` | `may_add_service_types` | `mayAddServiceTypes` |
+| `GET /me` | `service_types_pending` | `serviceTypesPending` |
+| `GET /me`, roles in `services` | `service_id` | `serviceId` |
+| `GET /approvals` | `service_types` | `serviceTypes` |
+| invitations | `service_id` | `serviceId` |
+| invitations | `created_by` | `createdBy` |
+| invitations | `created_at` | `createdAt` |
+| invitations | `expires_at` | `expiresAt` |
+| invitations, `accepted` | `user_id` | `userId` |
+| invitations, `accepted` | `accepted_at` | `acceptedAt` |
+| `POST /invitations/accept` | `service_id` | `serviceId` |
+| `GET /services/<id>/invitations`, query | `include_accepted` | `includeAccepted` |
+| verifications | `verified_at` | `verifiedAt` |
+| `GET /verifications` | `service_id` | `serviceId` |
+
+The paths of users' roles change too, as they collided with those of groups,
+which API clients and overlays with their own policy rules must follow:
 
 - **API:** `PUT` and `DELETE /services/<id>/permissions/<user-id>` move to
   `/services/<id>/permissions/users/<user-id>`. There is no alias: the former
-  paths are not found (`404 Not Found`), so move API clients in the same
-  upgrade, also [cloud-registry-ui](https://github.com/elixir-cloud-aai/cloud-registry-ui):
-  the UI's 1.0.0-rc2 uses the new paths and the `status` of invitations.
-  The only exception are identifiers that start with `users/` (e.g., of an
-  issuer with such a namespace): their former path is the new path of the user
-  without that prefix, so clients that weren't moved change the roles of that
-  user. With such identifiers, stop these clients first.
-  `/services/<id>/permissions/groups/<group>` and `GET
-  /services/<id>/permissions` stay. Users called `groups`, or whose identifiers
-  start with `groups/`, were refused and can now be granted roles and accept
-  invitations; the namespaces of issuers (`security.auth.issuers`) may now start
-  with `groups/`.
+  paths are not found (`404 Not Found`). `/services/<id>/permissions/groups/<group>`
+  and `GET /services/<id>/permissions` stay. Users called `groups`, or whose
+  identifiers start with `groups/`, were refused and can now be granted roles and
+  accept invitations; the namespaces of issuers (`security.auth.issuers`) may now
+  start with `groups/`.
 - **Policies:** the rule `owners-change-permissions` moves from
   `/ga4gh/registry/v1/services/:id/permissions/*` to
   `.../permissions/users/*`, and no longer covers the roles of groups;
@@ -48,52 +89,6 @@ groups, which API clients and overlays with their own policy rules must follow:
       `403 Forbidden`: change them to `.../permissions/users/*` (or
       `.../permissions/users/https:/*`). The app warns on startup if owners can
       create invitations, but no rule lets them grant roles to users.
-- **Stored data:** no migration is needed. Roles are stored on the service
-  (`/ga4gh/registry/v1/services/<id>`), not on these paths, so they keep
-  working. Configured rules are replaced when the app starts, so the former
-  rule doesn't stay in the database. Rules stored via FOCA's permissions API
-  do stay: list them (`GET /admin/access-control/permissions`, in admin mode),
-  and remove those on the former paths (`DELETE
-  /admin/access-control/permissions/<rule-id>`), as `.../permissions/*` would
-  still let owners change roles of groups, and the startup warning only checks
-  configured rules.
-- **Rollout:** upgrade with the app scaled to 0 replicas, unless no client
-  changes roles during the upgrade. No order of clients and pods is safe in a
-  rolling update: pods of 1.0.0rc1 take the new paths for the old ones, so that
-  `PUT .../permissions/users/bob` answers `200 OK` and grants the role to a user
-  `users/bob`, not to `bob`; pods of this version don't find the old paths. Each
-  pod that starts also replaces the configured rules of all pods, so owners may
-  get `403 Forbidden`, and if a pod of 1.0.0rc1 starts last, its rules stay in
-  place until the app restarts (see below for when such pods can still start).
-  After a rolling update, restart the app once, and look for such roles:
-
-    ```javascript
-    db.getSiblingDB("serviceStore").policy_rules.find(
-      {ptype: "g2", v0: /^user:users\//},
-    )
-    ```
-
-    Unless users really have these identifiers, first check who owns these
-    services (`GET /services/<id>/permissions`): such roles count as owners, so
-    that the other owners could have been removed, and the last owner can't be
-    revoked (`409 Conflict`). Such a role can also be a grant of `maintainer`
-    or a downgrade, after which `<user-id>` still has their former role. So for
-    each rule, admins first grant its role (`v1`) to `<user-id>`, and then revoke
-    `users/<user-id>` (`DELETE /services/<id>/permissions/users/users/<user-id>`,
-    on 1.0.0rc1 `DELETE /services/<id>/permissions/users/<user-id>`). If either
-    step returns `409 Conflict`, as the service would have no owner left, first
-    grant `owner` to whoever should own the service. Also check
-    the other role changes of the rollout: a revocation that reached such a pod
-    didn't revoke the role of `<user-id>`.
-- **Going back:** scale the app to 0 replicas, and move clients back, for the
-  reasons above. 1.0.0rc1 can't start until the index of expired invitations is
-  dropped and `keep_expired_days` is removed from your config (see below), after
-  all pods of this version have terminated, as a pod still starting creates the
-  index again; it
-  then replaces the configured rules again when it starts, and stored roles are
-  the same. It can't manage the roles of users called `groups`, or starting with
-  `groups/`, granted in the meantime, and doesn't start with namespaces starting
-  with `groups/`.
 
 **FOCA 0.20:** the app now builds on FOCA 0.20 (see [FOCA's migration
 guide](https://foca.readthedocs.io/en/v0.20.0/migration-0.20/)), whose image has
@@ -118,24 +113,18 @@ names both settings.
 
 **Listing the registry itself:** admins can now add the registry to its own
 services (see [Listing the registry
-itself](api.md#listing-the-registry-itself)). Nothing changes until they do, so
-no action is needed. The app creates a new index of the collection `services`
-when it starts. If the registry was registered by hand, delete that service
-first, as a second one with the same URL and API type is refused.
-Before going back to 1.0.0rc1, remove the entry
-(`DELETE /service-info/listing`), as that version would serve its internal field.
+itself](api.md#listing-the-registry-itself)). Nothing changes until they do.
 
 **Invitation labels:** invitations can have a `label`
-(see [Invitations](access-control.md#invitations)). It is optional, so scripts
-and stored invitations keep working; only invitations with a label have the
-field in responses, so clients that reject unknown fields of invitations must
-accept `label`.
+(see [Invitations](access-control.md#invitations)). Only invitations with a
+label have the field in responses, so clients that reject unknown fields of
+invitations must accept `label`.
 
 **Expired invitations:** those that weren't accepted are now kept (see
 [Invitations](access-control.md#invitations)):
 
 - `GET /services/<id>/invitations` lists them, and no longer lists accepted
-  invitations unless asked (`?include_accepted=true`). All invitations have a
+  invitations unless asked (`?includeAccepted=true`). All invitations have a
   new `status` (`open`, `expired` or `accepted`). Clients that look for
   acceptances in the list must ask for them, and clients that show all listed
   invitations as open must check `status`.
@@ -145,29 +134,15 @@ accept `label`.
   30, at most 365) sets when they are removed automatically. `0` removes them
   when they expire, as before. Check the default against your privacy
   statement: until then, invitations that weren't accepted keep their labels,
-  which may name people, and who created them and when (`created_by`,
-  `created_as`, `created_at`), also after that user lost their role. With the
-  defaults, that is up to 37 days after they were created (`expiry_days` +
-  `keep_expired_days`; before, 7), and current owners see the creators.
+  which may name people, and who created them and when (`createdBy`,
+  `createdAs`, `createdAt`). With the defaults, that is up to 37 days after they
+  were created (`expiry_days` + `keep_expired_days`; before, 7), and current
+  owners see the creators.
 - `max_per_service` still counts the same: invitations that haven't expired,
   open or accepted.
-- The app changes the indexes of the collection `invitations` when it starts,
-  so that its database user needs to be able to drop and create indexes (as
-  `readWrite` can): the new `accepted_expires_at` removes accepted invitations
-  when they expire, as before, and `expires_at_1`, which removed all of them
-  when they expired, then removes the others after the days to keep them. The
-  app does so each time it starts and the value differs. Invitations that
-  expired before the upgrade are gone.
-- Pods of the old version keep working during a rolling update, without listing
-  expired invitations, but can't start again once a pod of this version has
-  started, as the index they would create conflicts. To go back to an older
-  version, remove `keep_expired_days` from your config, which older versions
-  refuse, and first drop the index, whereupon that version removes all expired
-  invitations:
-
-  ```javascript
-  db.getSiblingDB("serviceStore").invitations.dropIndex("expires_at_1")
-  ```
+- The app sets the TTL index of the collection `invitations` when it starts and
+  the value differs, so that its database user needs to be able to drop and
+  create indexes (as `readWrite` can).
 
 ## From 0.6.0
 
@@ -511,10 +486,10 @@ they are accepted, as their creators seem to be no longer owners):
   the database, whereas the migration itself sets up the app as on startup, so
   run it with the image of the deployed version). A dry run counts what is
   stored, so its numbers can differ: configured rules are those that the running
-  app stored, and services that startup would still give a creator aren't
-  counted. It doesn't check the config as startup does, either. The migration,
-  also with `--dry-run`, refuses to run while the config trusts a single issuer,
-  or keeps the subjects of an issuer bare:
+  app stored. It doesn't check the config as startup does, either. The migration,
+  also with `--dry-run`, refuses to run on a database of a version before
+  1.0.0rc2, while the config trusts a single issuer, or keeps the subjects of an
+  issuer bare:
 
   ```bash
   kubectl exec deploy/cloud-registry -- \
@@ -535,6 +510,12 @@ they are accepted, as their creators seem to be no longer owners):
   (namespaced identifiers are kept).
 
 ## Stored services
+
+This section describes services stored by versions up to 1.0.0rc1. From 1.0.0rc2,
+which starts with a fresh database, the app no longer adds keys or creators to
+stored services on startup, and no longer warns of invalid URLs or further
+fields of organizations. It still warns of URL schemes and environments that
+are not allowed, e.g., after the config changed.
 
 Services stored before the registry set the [timestamps](api.md#timestamps)
 (`createdAt`, `updatedAt`) keep those they were registered with, which
@@ -623,13 +604,13 @@ db.getSiblingDB("serviceStore").services.deleteOne({id: "<id>"})
 db.getSiblingDB("serviceStore").services.updateOne({id: "<id>"}, {$set: {url: "<URL>"}})
 ```
 
-Then start the app again; it adds the missing keys.
+Then start the app again; versions up to 1.0.0rc1 add the missing keys.
 
 Services that already have a key (stored by `dev` images built before URLs
 were checked, or before the stricter checks above) are not checked again: if
 their URLs are now invalid, they are still served, but can only be updated
 with a valid URL, and registrations of the same service with a validly spelled
-URL may not be detected as duplicates. The app warns of them on startup,
+URL may not be detected as duplicates. Versions up to 1.0.0rc1 warn of them on startup,
 naming them; update or delete them as above.
 
 Services stored with `http` URLs (accepted before `https` became the only

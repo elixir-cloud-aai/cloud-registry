@@ -376,7 +376,7 @@ def remember_current_user(service_ids: list[str]) -> None:
         return
     for service_id in service_ids:
         get_collection(USER_NAMES).update_one(
-            {"service_id": service_id, "user_id": user_id},
+            {"serviceId": service_id, "userId": user_id},
             {"$set": {"name": name.strip()}},
             upsert=True,
         )
@@ -391,9 +391,9 @@ def _forget_names(serviceId: str, userId: str | None = None) -> None:
         serviceId: Service identifier.
         userId: User identifier; names of all users if `None`.
     """
-    query = {"service_id": serviceId}
+    query = {"serviceId": serviceId}
     if userId is not None:
-        query["user_id"] = userId
+        query["userId"] = userId
     get_collection(USER_NAMES).delete_many(query)
 
 
@@ -454,7 +454,7 @@ def remove_permissions(serviceId: str) -> None:
             current_user(),
         )
     _forget_names(serviceId)
-    get_collection(INVITATIONS).delete_many({"service_id": serviceId})
+    get_collection(INVITATIONS).delete_many({"serviceId": serviceId})
 
 
 # GET /services/{serviceId}/permissions
@@ -474,12 +474,12 @@ def getServicePermissions(serviceId: str, **kwargs: Any) -> list[dict[str, Any]]
     if not service_exists(serviceId):
         raise NotFound
     names = {
-        user["user_id"]: user["name"]
-        for user in get_collection(USER_NAMES).find({"service_id": serviceId})
+        user["userId"]: user["name"]
+        for user in get_collection(USER_NAMES).find({"serviceId": serviceId})
     }
     roles = list_roles(service_path(serviceId))
     users = [
-        {"user_id": role.subject, "role": role.role}
+        {"userId": role.subject, "role": role.role}
         | ({"name": names[role.subject]} if role.subject in names else {})
         for role in roles
         if role.subject_type == "user"
@@ -617,7 +617,7 @@ def _delete_roles(serviceId: str, subject: str, subject_type: SubjectType) -> No
             # accepted, as names are deleted with the role, and the labels of
             # these invitations, which may name the user
             get_collection(INVITATIONS).update_many(
-                {"service_id": serviceId, "accepted.user_id": subject},
+                {"serviceId": serviceId, "accepted.userId": subject},
                 {"$unset": {"accepted.name": "", "accepted.email": "", "label": ""}},
             )
 
@@ -768,7 +768,7 @@ def putServicePermission(serviceId: str, userId: str, **kwargs: Any) -> dict[str
     """
     role = request.json["role"]
     put_role(serviceId, userId, "user", role)
-    return {"user_id": userId, "role": role}
+    return {"userId": userId, "role": role}
 
 
 # DELETE /services/{serviceId}/permissions/users/{userId}
@@ -856,14 +856,14 @@ def getMe(**kwargs: Any) -> dict[str, Any]:
             `token_info`); unused.
 
     Returns:
-        User identifier (`user_id`), whether the user is an admin on this
+        User identifier (`userId`), whether the user is an admin on this
         request (`admin`; cf. FOCA's `is_admin()`; in admin mode, i.e., if
         the request asks for the opt-in role `admin`), whether they may
-        switch to admin mode (`admin_available`; cf. FOCA's
+        switch to admin mode (`adminAvailable`; cf. FOCA's
         `get_available_opt_in_roles()`; always if `admin` is true, e.g.,
         without opt-in), whether they may add service types
-        (`may_add_service_types`; cf. `may_add_service_types()`) and
-        whether these are pending (`service_types_pending`; cf.
+        (`mayAddServiceTypes`; cf. `may_add_service_types()`) and
+        whether these are pending (`serviceTypesPending`; cf.
         `service_types_pending()`), and the user's roles on services (cf.
         FOCA's `list_subject_roles()`): granted to the user, and granted to
         groups the user is a member of (with `group`), sorted by service
@@ -877,20 +877,20 @@ def getMe(**kwargs: Any) -> dict[str, Any]:
     """
     user_id = require_subject()
     services = [
-        {"service_id": role.id, "role": role.role}
+        {"serviceId": role.id, "role": role.role}
         | ({"group": role.subject} if role.subject_type == "group" else {})
         for role in list_subject_roles(services_path())
     ]
     remember_current_user(
-        [service["service_id"] for service in services if "group" not in service]
+        [service["serviceId"] for service in services if "group" not in service]
     )
     admin = is_admin()
     return {
-        "user_id": user_id,
+        "userId": user_id,
         "admin": admin,
         # admins without opt-in (e.g., `opt_in_roles: []`) are always admins
-        "admin_available": admin or ADMIN_ROLE in get_available_opt_in_roles(),
-        "may_add_service_types": may_add_service_types(),
-        "service_types_pending": service_types_pending(),
+        "adminAvailable": admin or ADMIN_ROLE in get_available_opt_in_roles(),
+        "mayAddServiceTypes": may_add_service_types(),
+        "serviceTypesPending": service_types_pending(),
         "services": services,
     }

@@ -84,12 +84,12 @@ def _verification(service: dict[str, Any]) -> dict[str, Any]:
 
     Returns:
         Verification, with the URL and API type of the service and the time
-        of the verification as `verified_at`.
+        of the verification as `verifiedAt`.
     """
     return {
         "url": service["url"],
         "type": service["type"],
-        "verified_at": format_time(service[VERIFIED]),
+        "verifiedAt": format_time(service[VERIFIED]),
     }
 
 
@@ -291,5 +291,5 @@ def getVerifications(**kwargs: Any) -> list[dict[str, Any]]:
         sort=[("id", 1)],
     )
     return [
-        {"service_id": service["id"], **_verification(service)} for service in services
+        {"serviceId": service["id"], **_verification(service)} for service in services
     ]

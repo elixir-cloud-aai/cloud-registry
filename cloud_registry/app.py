@@ -7,9 +7,11 @@ with Flask's development server.
 
 import logging
 from pathlib import Path
+from typing import cast
 
 from connexion import App
 from foca import Foca, get_config
+from foca.models.config import MongoConfig
 from foca.security.auth import require_no_service_clients
 
 from cloud_registry.ga4gh.registry.invitations import apply_keep_expired_days
@@ -22,24 +24,19 @@ from cloud_registry.ga4gh.registry.rename import (
 )
 from cloud_registry.ga4gh.registry.self_listing import refresh_self_listing
 from cloud_registry.ga4gh.registry.service import (
-    add_service_keys,
     warn_environments,
-    warn_invalid_urls,
-    warn_organization_fields,
     warn_url_schemes,
 )
 from cloud_registry.ga4gh.registry.service_info import (
     check_service_info_environment,
     check_service_info_fields,
 )
-from cloud_registry.ga4gh.registry.service_limits import (
-    add_service_creators,
-    reconcile_service_counts,
-)
+from cloud_registry.ga4gh.registry.service_limits import reconcile_service_counts
 from cloud_registry.ga4gh.registry.service_types import (
     add_service_types,
     sync_pending_services,
 )
+from cloud_registry.utils import refuse_old_format
 
 logger = logging.getLogger(__name__)
 
@@ -62,18 +59,19 @@ def create_app() -> App:
     Refuses service clients (FOCA's `require_no_service_clients()`), as the
     app doesn't support them, requires a size limit of request bodies, that
     the service info serves the registration rules of the app and has an
-    environment allowed for services, adds missing keys of services, resumes
-    interrupted renames of services (cf. `resume_renames()`; also before
-    requests of the registry's operations, cf.
-    `resume_renames_periodically()`), brings the entry of the registry among
-    its services up to date, if it is listed (cf. `refresh_self_listing()`),
-    adds the types of registered services that aren't stored (e.g., on
-    upgrades) and applies the days for which expired invitations are kept
-    (cf. `apply_keep_expired_days()`). Warns
-    of stored services with invalid URLs or URL schemes that are not allowed, and of
-    rules that let owners change roles of groups although the rule for
-    these is changed, or grant roles by invitation although no rule lets
-    them grant roles to users (cf. `warn_owner_rules()`).
+    environment allowed for services, and refuses data stored in the format of
+    earlier versions (cf. `refuse_old_format()`). Resumes interrupted renames
+    of services (cf. `resume_renames()`; also before requests of the registry's
+    operations, cf. `resume_renames_periodically()`), brings the entry of the
+    registry among its services up to date, if it is listed (cf.
+    `refresh_self_listing()`), adds the types of registered services that
+    aren't stored (e.g., after a failed change of that entry) and applies the
+    days for which expired invitations are kept (cf.
+    `apply_keep_expired_days()`). Warns of stored services with URL schemes or
+    environments that are not allowed, and of rules that let owners change
+    roles of groups although the rule for these is changed, or grant roles by
+    invitation although no rule lets them grant roles to users (cf.
+    `warn_owner_rules()`).
 
     FOCA validates the config, e.g., that token issuers are trusted (needed
     for access control) with an audience, the group settings and the
@@ -96,8 +94,8 @@ def create_app() -> App:
             (`server.public_url`) is not set, service clients are
             configured (which the app doesn't support), the service info
             doesn't serve the registration rules of the app, or has an
-            environment not allowed for services, or stored services are
-            invalid or duplicates.
+            environment not allowed for services, or the database has data in
+            the format of earlier versions.
         pydantic.ValidationError: The config is invalid, e.g., no token
             issuers are trusted, or the service info is invalid (naming the
             invalid field).
@@ -108,7 +106,10 @@ def create_app() -> App:
             (`custom.endpoints.service_info`) or the size limit of request
             bodies (`custom.max_content_length`).
     """
-    app = create_foca().create_app()
+    foca = create_foca()
+    # Before FOCA creates its indexes, of which unique ones fail on such data
+    refuse_old_format(cast(MongoConfig, foca.conf.db))
+    app = foca.create_app()
     require_no_service_clients(app.app)
     app.app.before_request(resume_renames_periodically)
 
@@ -132,17 +133,13 @@ def create_app() -> App:
                 "`https://registry.example.org/`)"
             )
         apply_keep_expired_days()
-        add_service_keys()
         resume_renames()
-        add_service_creators()
         reconcile_service_counts()
         refresh_self_listing()
         add_service_types()
         sync_pending_services()
-        warn_invalid_urls()
         warn_url_schemes()
         warn_environments()
-        warn_organization_fields()
     return app
 
 

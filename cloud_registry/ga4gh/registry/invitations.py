@@ -28,7 +28,7 @@ Invitations are stored in their own collection (`INVITATIONS`), with the
 SHA-256 hash of their token, never the token itself, so that the stored
 invitations can't be accepted by those who read the database. They expire
 after `custom.access_control.invitations.expiry_days` (default: 7), also once
-accepted. MongoDB deletes them with TTL indexes on `expires_at`: accepted ones
+accepted. MongoDB deletes them with TTL indexes on `expiresAt`: accepted ones
 when they expire (until then, reads skip them; cf. `config.yaml`), others
 `custom.access_control.invitations.keep_expired_days` later (default: 30; cf.
 `apply_keep_expired_days()`). As expired invitations stay stored, each read
@@ -90,7 +90,7 @@ from cloud_registry.utils import format_time, get_collection, now, set_ttl_index
 
 logger = logging.getLogger(__name__)
 # Fields of stored invitations: the hash of the token, and the acceptance
-TOKEN_HASH = "token_hash"  # noqa: S105 (field name)
+TOKEN_HASH = "tokenHash"  # noqa: S105 (field name)
 ACCEPTED = "accepted"
 # Field of stored invitations: plain text for those who manage them, if given;
 # served to those who may list them only, and not logged by the registry, as it
@@ -99,9 +99,9 @@ LABEL = "label"
 # Field of stored invitations: how the creator was allowed to create it,
 # `{"admin": True}`, `{"user": <user identifier>}` (owner) or `{"group":
 # <group>}` (member of an owner group); never served
-CREATED_AS = "created_as"
+CREATED_AS = "createdAs"
 # Field of stored invitations: when they expire, and a TTL index removes them
-EXPIRES_AT = "expires_at"
+EXPIRES_AT = "expiresAt"
 # Bytes of randomness of tokens (cf. `secrets.token_urlsafe()`)
 TOKEN_BYTES = 32
 SECONDS_PER_DAY = 86400
@@ -139,7 +139,7 @@ class InvitationsLimit(CodedConflict):
         super().__init__(
             f"The service has {limit} invitations that haven't expired, as many "
             "as allowed. Accepted invitations count until they expire, also those "
-            "that lists leave out (see `include_accepted`). Revoke open ones, or "
+            "that lists leave out (see `includeAccepted`). Revoke open ones, or "
             "wait until invitations expire."
         )
 
@@ -159,9 +159,8 @@ def hash_token(token: str) -> str:
 def apply_keep_expired_days() -> None:
     """Apply the days for which expired invitations are kept to the database.
 
-    Sets the TTL index on `expires_at` that applies to all invitations (cf.
-    `set_ttl_index()`), also changing that of versions that deleted invitations
-    when they expired. Accepted ones are deleted when they expire by another
+    Sets the TTL index on `expiresAt` that applies to all invitations (cf.
+    `set_ttl_index()`). Accepted ones are deleted when they expire by another
     index (cf. `config.yaml`). Must be called in an app context, on startup.
     """
     days = get_custom_config(CustomConfig).access_control.invitations.keep_expired_days
@@ -240,11 +239,11 @@ def _serve(invitation: dict[str, Any], users: set[str] | None = None) -> dict[st
     """
     served = {
         "id": invitation["_id"],
-        "service_id": invitation["service_id"],
+        "serviceId": invitation["serviceId"],
         "role": invitation["role"],
         "status": _status(invitation),
-        "created_by": invitation["created_by"],
-        "created_at": format_time(invitation["created_at"]),
+        "createdBy": invitation["createdBy"],
+        "createdAt": format_time(invitation["createdAt"]),
         EXPIRES_AT: format_time(invitation[EXPIRES_AT]),
     }
     if LABEL in invitation:
@@ -253,9 +252,9 @@ def _serve(invitation: dict[str, Any], users: set[str] | None = None) -> dict[st
     if accepted is not None:
         served[ACCEPTED] = {
             **accepted,
-            "accepted_at": format_time(accepted["accepted_at"]),
+            "acceptedAt": format_time(accepted["acceptedAt"]),
         }
-        if users is not None and accepted["user_id"] not in users:
+        if users is not None and accepted["userId"] not in users:
             served[ACCEPTED].pop("name", None)
             served[ACCEPTED].pop("email", None)
             served.pop(LABEL, None)
@@ -280,7 +279,7 @@ def _check_limit(serviceId: str) -> None:
     limit = get_custom_config(CustomConfig).access_control.invitations.max_per_service
     if limit is None:
         return
-    query = {"service_id": serviceId, **_unexpired()}
+    query = {"serviceId": serviceId, **_unexpired()}
     # a limit of 0 counts all documents
     if limit == 0 or (
         get_collection(INVITATIONS).count_documents(query, limit=limit) >= limit
@@ -345,14 +344,14 @@ def _creator_may_grant(invitation: dict[str, Any], user_id: str) -> bool:
     group = created_as.get("group")
     if (
         group is not None
-        and user_id == invitation["created_by"]
+        and user_id == invitation["createdBy"]
         and group not in get_current_group_values()
     ):
         return False
     subjects = [("user", created_as.get("user")), ("group", group)]
     return any(
         (role.subject_type, role.subject) in subjects and role.role == "owner"
-        for role in list_roles(service_path(invitation["service_id"]))
+        for role in list_roles(service_path(invitation["serviceId"]))
     )
 
 
@@ -404,11 +403,11 @@ def postServiceInvitation(
     document = {
         "_id": uuid4().hex,
         TOKEN_HASH: hash_token(token),
-        "service_id": serviceId,
+        "serviceId": serviceId,
         "role": invitation["role"],
-        "created_by": creator,
+        "createdBy": creator,
         CREATED_AS: created_as,
-        "created_at": created_at,
+        "createdAt": created_at,
         EXPIRES_AT: created_at + timedelta(days=expiry_days),
     }
     if LABEL in invitation:
@@ -437,13 +436,13 @@ def postServiceInvitation(
 
 # GET /services/{serviceId}/invitations
 def getServiceInvitations(
-    serviceId: str, include_accepted: bool = False, **kwargs: Any
+    serviceId: str, includeAccepted: bool = False, **kwargs: Any
 ) -> list[dict[str, Any]]:
     """List the invitations to a service.
 
     Args:
         serviceId: Service identifier.
-        include_accepted: Whether to list accepted invitations too.
+        includeAccepted: Whether to list accepted invitations too.
         **kwargs: Further arguments that Connexion passes (`user`,
             `token_info`); unused.
 
@@ -458,11 +457,11 @@ def getServiceInvitations(
     if not service_exists(serviceId):
         raise NotFound
     selected = (
-        {"$or": [_unused(), _accepted_filter()]} if include_accepted else _unused()
+        {"$or": [_unused(), _accepted_filter()]} if includeAccepted else _unused()
     )
     invitations = get_collection(INVITATIONS).find(
-        {"service_id": serviceId, **selected},
-        sort=[("created_at", 1), ("_id", 1)],
+        {"serviceId": serviceId, **selected},
+        sort=[("createdAt", 1), ("_id", 1)],
     )
     users = {
         role.subject
@@ -501,7 +500,7 @@ def deleteServiceInvitation(
     if not service_exists(serviceId):
         raise NotFound
     collection = get_collection(INVITATIONS)
-    query = {"_id": invitationId, "service_id": serviceId}
+    query = {"_id": invitationId, "serviceId": serviceId}
     deleted = collection.find_one_and_delete({**query, **_unused()})
     if deleted is None:
         if collection.count_documents({**query, **_accepted_filter()}, limit=1):
@@ -533,7 +532,7 @@ def _acceptance(user_id: str) -> dict[str, Any]:
         the user: names are for display.
     """
     claims = get_current_claims()
-    acceptance: dict[str, Any] = {"user_id": user_id, "accepted_at": now()}
+    acceptance: dict[str, Any] = {"userId": user_id, "acceptedAt": now()}
     claim_names = ["name"]
     if claims.get("email_verified") is True:
         claim_names.append("email")
@@ -563,7 +562,7 @@ def acceptInvitation(
             `token_info`); unused.
 
     Returns:
-        Identifier of the service (`service_id`) and the granted role
+        Identifier of the service (`serviceId`) and the granted role
         (`role`); or an error response: `409` if the invitation was accepted
         already.
 
@@ -597,7 +596,7 @@ def acceptInvitation(
         if collection.count_documents(accepted, limit=1):
             return problem(InvitationAccepted())
         raise NotFound
-    service_id: str = invitation["service_id"]
+    service_id: str = invitation["serviceId"]
     role: str = invitation["role"]
 
     def check_creator() -> None:
@@ -619,13 +618,13 @@ def acceptInvitation(
             "longer an owner.",
             invitation["_id"],
             escape_log_value(service_id),
-            escape_log_value(invitation["created_by"]),
+            escape_log_value(invitation["createdBy"]),
         )
         raise
     except Exception:
         # usable again, unless deleted meanwhile (e.g., with the service)
         collection.update_one(
-            {"_id": invitation["_id"], f"{ACCEPTED}.user_id": user_id},
+            {"_id": invitation["_id"], f"{ACCEPTED}.userId": user_id},
             {"$unset": {ACCEPTED: ""}},
         )
         raise
@@ -637,4 +636,4 @@ def acceptInvitation(
         role,
         current_user(),
     )
-    return {"service_id": service_id, "role": role}
+    return {"serviceId": service_id, "role": role}

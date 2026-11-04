@@ -110,7 +110,7 @@ def roles(client: FlaskClient, service_id: str) -> list[dict[str, Any]]:
     return sorted(permission_list(client, service_id), key=repr)
 
 
-def stored_service(app: App, service_id: str) -> dict[str, Any] | None:
+def read_service(app: App, service_id: str) -> dict[str, Any] | None:
     """Read a stored service, with its internal fields.
 
     Args:
@@ -134,7 +134,7 @@ def locks(app: App) -> list[dict[str, Any]]:
         Locks, without their times, sorted.
     """
     with app.app.app_context():
-        found = get_collection(locks_module.LOCKS).find({}, {"started_at": False})
+        found = get_collection(locks_module.LOCKS).find({}, {"startedAt": False})
         return sorted(found, key=repr)
 
 
@@ -180,13 +180,13 @@ def make_lock(
                     "to": target,
                     "path": PATH,
                     "token": "a",
-                    "started_at": started_at,
+                    "startedAt": started_at,
                 },
                 {
                     "_id": target,
                     "from": source,
                     "token": "b",
-                    "started_at": started_at,
+                    "startedAt": started_at,
                 },
             ]
         )
@@ -205,7 +205,7 @@ def make_change_lock(app: App, service_id: str, age: timedelta) -> None:
             {
                 "_id": {"change": "c"},
                 "service": service_id,
-                "started_at": now() - age,
+                "startedAt": now() - age,
             }
         )
 
@@ -245,8 +245,8 @@ def service_id(client: FlaskClient) -> str:
 
 EXPECTED_ROLES = sorted(
     [
-        {"user_id": ALICE, "name": NAMES[ALICE], "role": "owner"},
-        {"user_id": BOB, "role": "maintainer"},
+        {"userId": ALICE, "name": NAMES[ALICE], "role": "owner"},
+        {"userId": BOB, "role": "maintainer"},
         {"group": TEAM_GROUP, "role": "owner"},
     ],
     key=repr,
@@ -262,12 +262,12 @@ def test_rename(app: App, client: FlaskClient, service_id: str) -> None:
         get_collection("services").update_one(
             {"id": service_id}, {"$set": {"updatedAt": "2020-01-01T00:00:00Z"}}
         )
-    before = stored_service(app, service_id)
+    before = read_service(app, service_id)
     assert before is not None
     response = rename(client, service_id)
     assert response.status_code == 200, response.get_json()
     assert response.get_json() == NEW_ID
-    after = stored_service(app, NEW_ID)
+    after = read_service(app, NEW_ID)
     assert after is not None
     assert after["createdAt"] == before["createdAt"]
     assert after["updatedAt"] > before["updatedAt"]
@@ -283,16 +283,14 @@ def test_rename(app: App, client: FlaskClient, service_id: str) -> None:
     assert response.status_code == 404
     assert locks(app) == []
     with app.app.app_context():
-        assert not get_collection(USER_NAMES).count_documents(
-            {"service_id": service_id}
-        )
+        assert not get_collection(USER_NAMES).count_documents({"serviceId": service_id})
 
 
 def test_renamed_roles_apply(client: FlaskClient, service_id: str) -> None:
     """Roles apply under the new identifier only."""
     assert rename(client, service_id).status_code == 200
     me = client.get(f"{BASE}/me", headers=headers(BOB)).get_json()
-    assert me["services"] == [{"service_id": NEW_ID, "role": "maintainer"}]
+    assert me["services"] == [{"serviceId": NEW_ID, "role": "maintainer"}]
     response = client.delete(f"{BASE}/services/{NEW_ID}", headers=headers(ALICE))
     assert response.status_code == 200
 
@@ -698,7 +696,7 @@ def test_failure_after_move_resumed(
     assert len(locks(app)) == 2
     with app.app.app_context():
         get_collection(locks_module.LOCKS).update_many(
-            {}, {"$set": {"started_at": now() - STALE}}
+            {}, {"$set": {"startedAt": now() - STALE}}
         )
     resume(app)
     assert roles(client, NEW_ID) == EXPECTED_ROLES
@@ -745,7 +743,7 @@ def test_invalid_role_not_moved(
     monkeypatch.setattr(rename_module, "add_resource_role", reject_bob)
     assert rename(client, service_id).status_code == 200
     assert roles(client, NEW_ID) == [
-        role for role in EXPECTED_ROLES if role.get("user_id") != BOB
+        role for role in EXPECTED_ROLES if role.get("userId") != BOB
     ]
     assert (
         f"Role 'maintainer' of user '{BOB}' on service '{service_id}' not moved "
@@ -813,7 +811,7 @@ def test_resume_removes_stale_locks(app: App, client: FlaskClient) -> None:
     make_change_lock(app, "X", STALE)
     with app.app.app_context():
         get_collection(locks_module.LOCKS).insert_one(
-            {"_id": NEW_ID, "from": "X", "token": "b", "started_at": now() - STALE}
+            {"_id": NEW_ID, "from": "X", "token": "b", "startedAt": now() - STALE}
         )
     resume(app)
     assert locks(app) == []
@@ -869,7 +867,7 @@ def test_resume_failure_logged(
     )
     assert lock_ids(app) == sorted([service_id, NEW_ID], key=repr)
     assert roles(client, "OTHER") == [
-        {"user_id": ALICE, "name": NAMES[ALICE], "role": "owner"}
+        {"userId": ALICE, "name": NAMES[ALICE], "role": "owner"}
     ]
 
 

@@ -3,7 +3,7 @@
 FOCA serves the service info (`GET /service-info`) from the config
 (`service_info.service`), with the fields that `runtime_fields()` returns
 (`service_info.runtime_fields` in `config.yaml`; called on each request):
-the rules for registrations (`registration_rules`), an extension of the GA4GH
+the rules for registrations (`registrationRules`), an extension of the GA4GH
 `Service` schema (`RegistryServiceInfo` in `api/additions.openapi.yaml`).
 They are built from the config in effect, so that clients (e.g., UIs) can
 read them instead of configuring them: the environments
@@ -21,7 +21,7 @@ from foca import get_config, get_custom_config
 from cloud_registry.service_models.custom_config import CustomConfig
 
 # Service info field with the registration rules
-RULES = "registration_rules"
+RULES = "registrationRules"
 # Path of the function returning the fields (`service_info.runtime_fields`)
 RUNTIME_FIELDS = f"{__name__}.runtime_fields"
 
@@ -33,13 +33,13 @@ def registration_rules() -> dict[str, Any]:
 
     Returns:
         Environments allowed for services (`environments`; empty if any
-        value is), schemes allowed in service URLs (`url_schemes`), who may
-        add service types (`service_types`: `open`, `controlled` or
+        value is), schemes allowed in service URLs (`urlSchemes`), who may
+        add service types (`serviceTypes`: `open`, `controlled` or
         `moderated`), how many types that no service has users other
-        than admins may have added (`max_unused_service_types`; left out if
+        than admins may have added (`maxUnusedServiceTypes`; left out if
         there is no limit; `0` if they can't add types, always in mode
         `controlled`), and how many services they may have registered
-        (`max_services_per_user`; left out if there is no limit; `0` if
+        (`maxServicesPerUser`; left out if there is no limit; `0` if
         they can't register services).
         Lists are copies.
     """
@@ -48,17 +48,17 @@ def registration_rules() -> dict[str, Any]:
     access_control = custom.access_control
     rules: dict[str, Any] = {
         "environments": list(services.environments),
-        "url_schemes": list(services.url_schemes),
-        "service_types": access_control.service_types,
+        "urlSchemes": list(services.url_schemes),
+        "serviceTypes": access_control.service_types,
     }
     # users can't add types in the controlled mode, whatever the limit
     if access_control.service_types == "controlled":
-        rules["max_unused_service_types"] = 0
+        rules["maxUnusedServiceTypes"] = 0
     # FOCA leaves out `None` values of the service info anyway
     elif access_control.max_unused_service_types is not None:
-        rules["max_unused_service_types"] = access_control.max_unused_service_types
+        rules["maxUnusedServiceTypes"] = access_control.max_unused_service_types
     if access_control.max_services_per_user is not None:
-        rules["max_services_per_user"] = access_control.max_services_per_user
+        rules["maxServicesPerUser"] = access_control.max_services_per_user
     return rules
 
 
@@ -83,7 +83,7 @@ def check_service_info_fields() -> None:
         RuntimeError: No service info is configured, its fields aren't
             computed by `runtime_fields()` (`service_info.runtime_fields`),
             or the config sets the registration rules
-            (`service_info.service.registration_rules`, also to `null`),
+            (`service_info.service.registrationRules`, also to `null`),
             which would take precedence over those of the app, so that they
             could differ from the rules the registry enforces.
     """

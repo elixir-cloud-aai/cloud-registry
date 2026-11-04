@@ -21,6 +21,7 @@ import yaml
 from cloud_registry.app import create_app
 from cloud_registry.ga4gh.registry import server, service_types, verification
 from cloud_registry.ga4gh.registry.service import (
+    KEY,
     PENDING_SERVICE,
     VERIFIED,
     RegisterService,
@@ -147,11 +148,11 @@ def may_add(client: FlaskClient, user: str) -> bool:
         user: User.
 
     Returns:
-        `may_add_service_types` of the user.
+        `mayAddServiceTypes` of the user.
     """
     response = client.get(f"{BASE}/me", headers=headers(user))
     assert response.status_code == 200, response.get_json()
-    value: bool = response.get_json()["may_add_service_types"]
+    value: bool = response.get_json()["mayAddServiceTypes"]
     return value
 
 
@@ -176,7 +177,7 @@ def approvals(client: FlaskClient, user: str) -> dict[str, list[Any]]:
     assert response.status_code == 200, response.get_json()
     body = response.get_json()
     return {
-        "service_types": [item["artifact"] for item in body["service_types"]],
+        "serviceTypes": [item["artifact"] for item in body["serviceTypes"]],
         "services": [item["id"] for item in body["services"]],
     }
 
@@ -205,11 +206,11 @@ def pending(client: FlaskClient, user: str) -> bool:
         user: User.
 
     Returns:
-        `service_types_pending` of the user.
+        `serviceTypesPending` of the user.
     """
     response = client.get(f"{BASE}/me", headers=headers(user))
     assert response.status_code == 200, response.get_json()
-    value: bool = response.get_json()["service_types_pending"]
+    value: bool = response.get_json()["serviceTypesPending"]
     return value
 
 
@@ -230,7 +231,7 @@ def _created_by(mongo_client: MongoClient[dict[str, Any]]) -> dict[str, Any]:
         User who added each type, by artifact.
     """
     return {
-        doc["artifact"]: doc["created_by"]
+        doc["artifact"]: doc["createdBy"]
         for doc in mongo_client[DB]["service_types"].find()
     }
 
@@ -414,14 +415,22 @@ def test_controlled_type_removed_meanwhile(
 def test_types_added_on_startup(
     app_env: None, mongo_client: MongoClient[dict[str, Any]]
 ) -> None:
-    """Types of services registered before types were stored are added."""
+    """Types of services that aren't stored are added.
+
+    E.g., if the app stopped while changing the entry of the registry.
+    """
     mongo_client[DB]["services"].insert_many(
         [
-            {**SERVICE, "id": "A"},
-            {**SERVICE, "id": "B", "url": "https://other.example.org"},
-            {**_service(WES), "id": "C", "url": "https://wes.example.org"},
+            {**SERVICE, "id": "A", KEY: "a"},
+            {**SERVICE, "id": "B", "url": "https://other.example.org", KEY: "b"},
+            {**_service(WES), "id": "C", "url": "https://wes.example.org", KEY: "c"},
             # invalid types are skipped
-            {**_service({**WES, "version": 1}), "id": "D", "url": "https://d.org"},
+            {
+                **_service({**WES, "version": 1}),
+                "id": "D",
+                "url": "https://d.org",
+                KEY: "d",
+            },
         ]
     )
     client = create_app().app.test_client()
@@ -443,9 +452,9 @@ def test_moderated_add_type(client: FlaskClient, moderated: None) -> None:
     response = add_type(client, TES)
     assert response.status_code == 201, response.get_json()
     assert listed(client) == []
-    assert approvals(client, USER) == {"service_types": ["tes"], "services": []}
-    assert approvals(client, OTHER) == {"service_types": [], "services": []}
-    assert approvals(client, ADMIN) == {"service_types": ["tes"], "services": []}
+    assert approvals(client, USER) == {"serviceTypes": ["tes"], "services": []}
+    assert approvals(client, OTHER) == {"serviceTypes": [], "services": []}
+    assert approvals(client, ADMIN) == {"serviceTypes": ["tes"], "services": []}
     # registered, though pending
     assert add_type(client, TES, user=OTHER).status_code == 409
     assert approve(client, TES, user=USER).status_code == 403
@@ -454,7 +463,7 @@ def test_moderated_add_type(client: FlaskClient, moderated: None) -> None:
     assert response.status_code == 200, response.get_json()
     assert response.get_json() == TES
     assert listed(client) == [TES]
-    assert approvals(client, ADMIN) == {"service_types": [], "services": []}
+    assert approvals(client, ADMIN) == {"serviceTypes": [], "services": []}
     # approving again changes nothing
     assert approve(client, TES).get_json() == TES
     assert listed(client) == [TES]
@@ -467,7 +476,7 @@ def test_moderated_admin_types(client: FlaskClient, moderated: None) -> None:
     assert response.status_code == 201, response.get_json()
     assert listed(client) == [TES, WES]
     assert len(client.get(f"{BASE}/services").get_json()) == 1
-    assert approvals(client, ADMIN) == {"service_types": [], "services": []}
+    assert approvals(client, ADMIN) == {"serviceTypes": [], "services": []}
 
 
 def test_approve_type_not_found(client: FlaskClient) -> None:
@@ -499,13 +508,13 @@ def test_moderated_services(client: FlaskClient, moderated: None) -> None:
     assert client.get(f"{BASE}/services").get_json() == []
     assert client.get(f"{BASE}/services/{service_id}").status_code == 404
     assert approvals(client, USER) == {
-        "service_types": ["tes"],
+        "serviceTypes": ["tes"],
         "services": [service_id],
     }
     # services of other users with the pending type are pending too
-    assert approvals(client, OTHER) == {"service_types": [], "services": [other_id]}
+    assert approvals(client, OTHER) == {"serviceTypes": [], "services": [other_id]}
     assert approvals(client, ADMIN) == {
-        "service_types": ["tes"],
+        "serviceTypes": ["tes"],
         "services": sorted([service_id, other_id]),
     }
     response = client.put(
@@ -539,10 +548,10 @@ def test_moderated_delete_pending(client: FlaskClient, moderated: None) -> None:
     service_id = register(client, _service()).get_json()
     response = client.delete(f"{BASE}/services/{service_id}", headers=headers())
     assert response.status_code == 200
-    assert approvals(client, USER) == {"service_types": ["tes"], "services": []}
+    assert approvals(client, USER) == {"serviceTypes": ["tes"], "services": []}
     assert remove_type(client, TES, user=USER).status_code == 403
     assert remove_type(client, TES).status_code == 200
-    assert approvals(client, ADMIN) == {"service_types": [], "services": []}
+    assert approvals(client, ADMIN) == {"serviceTypes": [], "services": []}
 
 
 def test_moderated_login_for_reads(
@@ -586,7 +595,7 @@ def test_moderated_verifications(client: FlaskClient, moderated: None) -> None:
     assert client.put(path, headers=headers(ADMIN)).status_code == 200
     assert client.get(path).status_code == 200
     verifications = client.get(f"{BASE}/verifications").get_json()
-    assert [item["service_id"] for item in verifications] == [service_id]
+    assert [item["serviceId"] for item in verifications] == [service_id]
 
 
 def test_moderated_type_changed(client: FlaskClient, moderated: None) -> None:
@@ -598,7 +607,7 @@ def test_moderated_type_changed(client: FlaskClient, moderated: None) -> None:
     response = client.put(path, json=_service(WES), headers=headers())
     assert response.status_code == 200, response.get_json()
     assert approvals(client, USER) == {
-        "service_types": ["wes"],
+        "serviceTypes": ["wes"],
         "services": [service_id],
     }
     response = client.put(path, json=_service(WES, name="X"), headers=headers())
@@ -621,10 +630,10 @@ def test_moderated_maintainers(client: FlaskClient, moderated: None) -> None:
     assert response.status_code == 200, response.get_json()
     # the service, not the type, which another user added
     assert approvals(client, MAINTAINER) == {
-        "service_types": [],
+        "serviceTypes": [],
         "services": [service_id],
     }
-    assert approvals(client, NOBODY) == {"service_types": [], "services": []}
+    assert approvals(client, NOBODY) == {"serviceTypes": [], "services": []}
     response = client.put(
         f"{BASE}/services/{service_id}",
         json=_service(name="New"),
@@ -643,8 +652,8 @@ def test_moderated_group_roles(client: FlaskClient, moderated: None) -> None:
         headers=headers(ADMIN),
     )
     assert response.status_code == 200, response.get_json()
-    assert approvals(client, MEMBER) == {"service_types": [], "services": [service_id]}
-    assert approvals(client, NOBODY) == {"service_types": [], "services": []}
+    assert approvals(client, MEMBER) == {"serviceTypes": [], "services": [service_id]}
+    assert approvals(client, NOBODY) == {"serviceTypes": [], "services": []}
 
 
 def test_moderated_duplicate_named(client: FlaskClient, moderated: None) -> None:
@@ -664,7 +673,7 @@ def test_moderated_then_open(app: App, client: FlaskClient, moderated: None) -> 
     assert add_type(client, WES).status_code == 201
     assert listed(client) == [WES]
     assert approvals(client, USER) == {
-        "service_types": ["tes"],
+        "serviceTypes": ["tes"],
         "services": [service_id],
     }
 
@@ -681,7 +690,7 @@ def test_moderated_type_stored_first(
     """
     response = register(client, _service(url="https://[::1"))
     assert response.status_code == 400
-    assert approvals(client, USER)["service_types"] == []
+    assert approvals(client, USER)["serviceTypes"] == []
     assert mongo_client[DB]["service_types"].count_documents({}) == 0
     service = _service()
     service["type"]["artifact"] = "\ud800"
@@ -755,7 +764,7 @@ def test_many_pending_types(
     assert client.get(f"{BASE}/services/{pending_id}").status_code == 404
     assert client.get(f"{BASE}/verifications").status_code == 200
     assert approvals(client, USER) == {
-        "service_types": ["wes"],
+        "serviceTypes": ["wes"],
         "services": [pending_id],
     }
 
@@ -843,11 +852,22 @@ def test_pending_flags_synced_on_startup(
     mongo_client[DB]["service_types"].insert_many([{**TES}, {**WES, "pending": True}])
     mongo_client[DB]["services"].insert_many(
         [
-            {**SERVICE, "id": "A", PENDING_SERVICE: True},
-            {**_service(WES), "id": "B", "url": "https://wes.example.org"},
-            {**_service(WES), "id": "C", "url": "https://c.org", PENDING_SERVICE: True},
+            {**SERVICE, "id": "A", PENDING_SERVICE: True, KEY: "a"},
+            {**_service(WES), "id": "B", "url": "https://wes.example.org", KEY: "b"},
+            {
+                **_service(WES),
+                "id": "C",
+                "url": "https://c.org",
+                PENDING_SERVICE: True,
+                KEY: "c",
+            },
             # invalid types are skipped
-            {**_service({**WES, "version": 1}), "id": "D", "url": "https://d.org"},
+            {
+                **_service({**WES, "version": 1}),
+                "id": "D",
+                "url": "https://d.org",
+                KEY: "d",
+            },
         ]
     )
     create_app()
@@ -962,7 +982,7 @@ def test_indexes(app: App, mongo_client: MongoClient[dict[str, Any]]) -> None:
     keys = [index["key"] for index in [*services.values(), *types.values()]]
     assert [(PENDING_SERVICE, 1)] in keys
     assert [("pending", 1)] in keys
-    assert [("created_by", 1)] in keys
+    assert [("createdBy", 1)] in keys
 
 
 def test_concurrent_type_change(
@@ -1074,7 +1094,7 @@ def test_restored_type_syncs_flags(
     service_id = register(client, _service()).get_json()
     assert _flags(mongo_client) == {service_id: True}
     with client.application.test_request_context():
-        service_types._restore_type(dict(TES), {"created_by": USER})
+        service_types._restore_type(dict(TES), {"createdBy": USER})
     assert _flags(mongo_client) == {service_id: False}
     assert len(client.get(f"{BASE}/services").get_json()) == 1
 
