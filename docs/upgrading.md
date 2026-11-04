@@ -32,6 +32,10 @@ earlier versions stored. It refuses to start if it finds such data or indexes
 
 Going back to 1.0.0rc1 needs its database, as it was.
 
+**Service URLs:** a `url` with leading or trailing spaces now returns
+`400 Bad Request` instead of being stored, so remove the spaces from what you
+register again.
+
 **API:** fields and query parameters change their names, without aliases. Keys
 of the config stay `snake_case`.
 

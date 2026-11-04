@@ -209,6 +209,19 @@ def test_putServiceVerification_invalid_url(
     assert VERIFIED not in _stored(services)
 
 
+def test_putServiceVerification_url_spaces(
+    unit_app: Flask, services: Collection[dict[str, Any]]
+) -> None:
+    """URLs with surrounding spaces are invalid, not merely another URL."""
+    _insert(services)
+    checked = {**CHECKED, "url": f" {CHECKED['url']}"}
+    with unit_app.test_request_context():
+        res = _problem(putServiceVerification(MOCK_ID, verification=checked))
+    assert res.status_code == 400
+    assert "must not contain whitespace" in res.get_json()["detail"]
+    assert VERIFIED not in _stored(services)
+
+
 @pytest.mark.parametrize(
     "data, content_type",
     [
