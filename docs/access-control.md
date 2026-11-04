@@ -362,8 +362,7 @@ curl -X POST "http://localhost:8080/ga4gh/registry/v1/invitations/accept" \
   when they created it, as long as that group is owner (and, if they accept
   the invitation themselves, they are still a member of it). Otherwise, the
   invitations are deleted instead of accepted (`404`), so that removed owners
-  can't regain the role with invitations they created before. Revoking a
-  user's roles deletes the invitations they created (see **Removal**). The group
+  can't regain the role with invitations they created before. The group
   stays owner when a member leaves it, though, so the invitations that member
   created through it stay valid (only the member can't accept them
   themselves): when a member leaves an owner group, the other owners should
@@ -371,9 +370,10 @@ curl -X POST "http://localhost:8080/ga4gh/registry/v1/invitations/accept" \
   `createdBy`). Invitations of
   admins don't depend on their role, as the registry can't check admin groups
   without the admin's token: when removing an admin, delete the open
-  invitations they created on services where they have no role, which revoking a
-  role doesn't reach (no endpoint lists them across services: query the
-  collection `invitations` by `createdBy`).
+  invitations they created on services where you don't revoke their roles (no
+  endpoint lists them across services: query the collection `invitations` by
+  `createdBy`). Revoking a user's roles deletes the invitations they created
+  that nobody accepted (see **Removal**).
 - **Identifiers:** users whose roles the permissions API couldn't revoke
   (identifiers that start with a slash, or contain
   the segments `.` or `..`; see [Roles on services](#roles-on-services))
@@ -403,16 +403,19 @@ curl -X POST "http://localhost:8080/ga4gh/registry/v1/invitations/accept" \
   within about a minute. Owners can remove expired ones earlier. Until then,
   invitations that weren't accepted keep their label, and who created them and
   when (`createdBy`, `createdAs`, `createdAt`), and current owners see the
-  creators. Revoking a user's roles on a service (`DELETE
-  /services/{serviceId}/permissions/users/{userId}`) also deletes the invitations
-  to that service that the user created and nobody accepted, whether open or
-  expired, also those created as an admin or through a group, so that their links
-  stop working and their identifier and times are gone. Accepted ones keep them
-  until they expire, as they hold another user's acceptance; only the name and
-  email address of a user who accepted, and the label, are removed when that
-  user's roles are revoked. Invitations of owners who are only downgraded to
-  `maintainer` stay listed, and show `open` until they expire, although accepting
-  them then returns `404` (see **Creators**).
+  creators. Revoking the roles of a user who has one on a service (`DELETE
+  /services/{serviceId}/permissions/users/{userId}`; otherwise `404`, and nothing
+  is deleted) also deletes the invitations to that service that the user created
+  and nobody accepted, open or expired, also those created as an admin or through
+  a group, so that their links stop working and `createdBy`, `createdAs` and
+  `createdAt` are gone. Accepted ones keep these fields until they expire, as they
+  hold an acceptance; the name and email address of who accepted, and the label,
+  are removed when that user's roles are revoked. Invitations stay listed if their
+  creator only lost the role that allowed them (e.g., was downgraded to
+  `maintainer`, or the group's role was revoked): they show `open` until they
+  expire, although accepting them then returns `404`. Those created as an admin,
+  or through a group that is still owner, stay valid, so revoke them if they are
+  no longer wanted (see **Creators**).
 - **Limit:** a service has at most
   `custom.access_control.invitations.max_per_service` invitations that
   haven't expired, open or accepted (default: 20; `null` for no limit), so

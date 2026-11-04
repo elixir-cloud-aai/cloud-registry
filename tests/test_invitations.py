@@ -28,6 +28,7 @@ from werkzeug.test import TestResponse
 from cloud_registry.app import create_app
 from cloud_registry.ga4gh.registry import invitations as invitations_module
 from cloud_registry.ga4gh.registry import locks as locks_module
+from cloud_registry.ga4gh.registry import permissions as permissions_module
 from cloud_registry.ga4gh.registry.invitations import (
     SECONDS_PER_DAY,
     TOKEN_BYTES,
@@ -1247,9 +1248,10 @@ def test_resume_removes_invitations(app: App, client: FlaskClient) -> None:
 
 
 def test_revoked_owner_cannot_regain(app: App, client: FlaskClient) -> None:
-    """Invitations of owners who lost the role are deleted, not accepted.
+    """Invitations of owners whose roles are revoked are gone.
 
-    Also those of owners downgraded to maintainer; others' stay valid.
+    Those of owners downgraded to maintainer are deleted when accepted; others'
+    stay valid.
     """
     service_id = register(client)
     assert grant(client, service_id, CAROL, "owner") == 200
@@ -1269,16 +1271,56 @@ def test_revoked_owner_cannot_regain(app: App, client: FlaskClient) -> None:
 def test_revoke_logs_cleared(
     client: FlaskClient, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """The number of invitations deleted with the roles is logged."""
+    """Invitations deleted with the roles are logged."""
     caplog.set_level("INFO")
     service_id = register(client)
     assert grant(client, service_id, CAROL, "owner") == 200
-    invite(client, service_id, user=CAROL)
+    created = invite(client, service_id, user=CAROL).get_json()
     assert revoke(client, service_id, CAROL) == 200
     assert (
-        f"Deleted 1 invitation(s) to service '{service_id}': the roles of their "
-        f"creator '{CAROL}' were revoked." in caplog.text
+        f"Invitation '{created['id']}' to service '{service_id}' deleted: the roles "
+        f"of its creator '{CAROL}' were revoked." in caplog.text
     )
+
+
+def test_revoke_keeps_accepted_meanwhile(
+    app: App, client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An invitation accepted while the roles are revoked stays."""
+    service_id = register(client)
+    assert grant(client, service_id, CAROL, "owner") == 200
+    created = invite(client, service_id, user=CAROL).get_json()
+
+    class Racing:
+        """Collection in which invitations are accepted once they are found."""
+
+        def __init__(self, name: str) -> None:
+            """Use a collection.
+
+            Args:
+                name: Name of the collection.
+            """
+            self.collection = get_collection(name)
+            self.delete_one = self.collection.delete_one
+
+        def find(self, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+            """Find invitations, then accept them.
+
+            Args:
+                *args: Arguments of `find()`.
+                **kwargs: Keyword arguments of `find()`.
+
+            Returns:
+                The invitations as found.
+            """
+            found = list(self.collection.find(*args, **kwargs))
+            self.collection.update_many({}, {"$set": {"accepted": {"userId": BOB}}})
+            return found
+
+    monkeypatch.setattr(permissions_module, "get_collection", Racing)
+    with app.app.app_context():
+        permissions_module._delete_created_invitations(service_id, CAROL)
+    assert [document["_id"] for document in stored(app)] == [created["id"]]
 
 
 def test_revoke_clears_created(app: App, client: FlaskClient) -> None:
@@ -1309,7 +1351,7 @@ def test_revoke_clears_created(app: App, client: FlaskClient) -> None:
 
 
 def test_revoke_clears_created_through_group(app: App, client: FlaskClient) -> None:
-    """Also those created through a group that stays owner, which stayed valid."""
+    """Also those created through a group that stays owner, otherwise valid."""
     service_id = register(client)
     assert grant_group(client, service_id, TEAM_GROUP, "owner") == 200
     created = invite(client, service_id, user=ERIN).get_json()
@@ -1323,14 +1365,48 @@ def test_revoke_clears_created_through_group(app: App, client: FlaskClient) -> N
 def test_failed_revoke_keeps_created(app: App, client: FlaskClient) -> None:
     """Invitations stay if no role was revoked: last owners, users without one."""
     service_id = register(client)
-    created = invite(client, service_id).get_json()
+    alices = invite(client, service_id).get_json()
+    admins = invite(client, service_id, user=ADMIN).get_json()
     assert revoke(client, service_id, ALICE) == 409
-    assert revoke(client, service_id, CAROL) == 404
-    assert [document["_id"] for document in stored(app)] == [created["id"]]
-    assert accept(client, created["token"]).status_code == 200
+    assert revoke(client, service_id, ADMIN) == 404
+    assert {document["_id"] for document in stored(app)} == {
+        alices["id"],
+        admins["id"],
+    }
+    assert accept(client, admins["token"]).status_code == 200
 
 
-def test_revoked_owner_logged(
+def test_revoke_clears_created_as_admin(app: App, client: FlaskClient) -> None:
+    """Also those created as an admin, which don't depend on a role."""
+    service_id = register(client)
+    assert grant(client, service_id, ADMIN, "maintainer") == 200
+    created = invite(client, service_id, user=ADMIN).get_json()
+    assert stored(app)[0]["createdAs"] == {"admin": True}
+    assert revoke(client, service_id, ADMIN) == 200
+    assert stored(app) == []
+    assert accept(client, created["token"]).status_code == 404
+
+
+def test_downgraded_owner_invitations(app: App, client: FlaskClient) -> None:
+    """Invitations of owners only downgraded stay listed, but can't be accepted.
+
+    Also not by themselves, and accepting deletes them. Those created as an admin
+    don't depend on the role.
+    """
+    service_id = register(client)
+    assert grant(client, service_id, CAROL, "owner") == 200
+    created = invite(client, service_id, user=CAROL).get_json()
+    assert grant(client, service_id, CAROL, "maintainer") == 200
+    assert invitations(client, service_id)[0]["status"] == "open"
+    assert accept(client, created["token"], user=CAROL).status_code == 404
+    assert stored(app) == []
+    assert grant(client, service_id, ADMIN, "owner") == 200
+    admins = invite(client, service_id, user=ADMIN).get_json()
+    assert grant(client, service_id, ADMIN, "maintainer") == 200
+    assert accept(client, admins["token"]).status_code == 200
+
+
+def test_downgraded_owner_logged(
     client: FlaskClient, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Invitations deleted as their creator lost the role are logged."""
