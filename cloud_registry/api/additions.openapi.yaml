@@ -630,7 +630,9 @@ paths:
       description: |
         Revoke the roles of a user on a service. Only for owners of the
         service and admins. The last owner of a service (user or group)
-        cannot be removed (`409`); delete the service instead.
+        cannot be removed (`409`); delete the service instead. Also deletes
+        the invitations to the service that the user created and nobody
+        accepted, so that their links stop working.
       operationId: deleteServicePermission
       x-openapi-router-controller: cloud_registry.ga4gh.registry.permissions
       tags:

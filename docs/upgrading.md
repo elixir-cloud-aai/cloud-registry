@@ -138,6 +138,10 @@ invitations must accept `label`.
   `createdAs`, `createdAt`). With the defaults, that is up to 37 days after they
   were created (`expiry_days` + `keep_expired_days`; before, 7), and current
   owners see the creators.
+- Revoking a user's roles on a service now also deletes the invitations to it
+  that the user created and nobody accepted, also those that stayed valid because
+  they were created as an admin or through a group, and with them `createdBy`,
+  `createdAs` and `createdAt`. Accepted ones keep these fields until they expire.
 - `max_per_service` still counts the same: invitations that haven't expired,
   open or accepted.
 - The app sets the TTL index of the collection `invitations` when it starts and

@@ -577,11 +577,40 @@ def put_role(
             raise
 
 
+def _delete_created_invitations(serviceId: str, user: str) -> None:
+    """Delete the invitations to a service that a user created, unless accepted.
+
+    One by one, to log each; an invitation accepted meanwhile stays.
+
+    Args:
+        serviceId: Service identifier.
+        user: User identifier.
+    """
+    collection = get_collection(INVITATIONS)
+    query = {
+        "serviceId": serviceId,
+        "createdBy": user,
+        "accepted": {"$exists": False},
+    }
+    for invitation in list(collection.find(query, {"_id": True})):
+        if collection.delete_one({**query, "_id": invitation["_id"]}).deleted_count:
+            logger.info(
+                "Invitation '%s' to service '%s' deleted: the roles of its creator "
+                "'%s' were revoked.",
+                invitation["_id"],
+                escape_log_value(serviceId),
+                escape_log_value(user),
+            )
+
+
 def _delete_roles(serviceId: str, subject: str, subject_type: SubjectType) -> None:
     """Revoke all roles of a user or group on a service.
 
     See FOCA's `revoke_roles()`, which keeps the last owner and logs the
-    change. Not while the service is renamed (cf. `changing()`).
+    change. Not while the service is renamed (cf. `changing()`). For users, also
+    deletes the invitations to the service that they created and nobody
+    accepted, so that their links stop working, also those that don't depend on
+    their role. Accepted ones hold an acceptance, and stay until they expire.
 
     Args:
         serviceId: Service identifier.
@@ -620,6 +649,7 @@ def _delete_roles(serviceId: str, subject: str, subject_type: SubjectType) -> No
                 {"serviceId": serviceId, "accepted.userId": subject},
                 {"$unset": {"accepted.name": "", "accepted.email": "", "label": ""}},
             )
+            _delete_created_invitations(serviceId, subject)
 
 
 def is_manageable_user_id(userId: str) -> bool:
