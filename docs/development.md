@@ -90,8 +90,9 @@ dependency group `build-system`, and installed from the lock with hash
 checks, too; the wheel is built without network, so the image build
 downloads nothing that isn't hash-checked. The image contains no pip and no
 uv: the FOCA base image has no pip, and uv is mounted from a stage pinned by
-digest into the steps that use it, which the smoke test of CI checks. CI derives the version of dev
-images with them, installed the same way (exported by the uv image of the
+digest into the steps that use it, which the smoke test of CI checks (step
+"Check that image has no installer"). CI derives the version of dev images
+with them, installed the same way (exported by the uv image of the
 `Dockerfile`, pinned by digest), so that no job that holds publishing
 credentials installs a package without hash checks (the tests check
 this). Keep the group and `build-system.requires` the same (the tests

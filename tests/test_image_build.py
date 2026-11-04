@@ -270,6 +270,10 @@ def test_downloads_hash_checked() -> None:
                 assert args[args.index("--only-binary") + 1] == ":all:", args
                 assert "-r" in args, args
             assert "--no-deps" in args, args
+            # The image has a read-only root file system, so Python can't
+            # cache bytecode at runtime; the build environment needs none
+            if "--system" in args:
+                assert "--compile-bytecode" in args, args
         elif args[0] == "build":
             assert "--offline" in args, args
             assert "--no-build-isolation" in args, args

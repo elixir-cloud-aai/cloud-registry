@@ -70,7 +70,8 @@ LABEL org.opencontainers.image.vendor="ELIXIR On-Cloud"
 ## export leaves out the extras, and `--no-dev` a `dev` dependency group) and
 ## all their own dependencies, at the exact versions of `uv.lock`, checked
 ## against its hashes, as wheels only, and without resolving anything else
-## (`--no-deps`). `--frozen` takes the lock as is, unchecked against
+## (`--no-deps`), and compiled, as the root file system of deployments may be
+## read-only. `--frozen` takes the lock as is, unchecked against
 ## `pyproject.toml` (CI's `uv lock --check` checks it). A direct reference to
 ## a FOCA commit (temporary) has no hash and is left out, as the image has no
 ## Git: the build fails unless the base image has FOCA of that commit. It also
@@ -87,7 +88,7 @@ RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
     --project /tmp/src --output-file /tmp/src/locked.txt \
   && python /tmp/src/image_requirements.py /tmp/src/locked.txt > /tmp/src/requirements.txt \
   && uv pip install --system --require-hashes --only-binary :all: --no-deps \
-    -r /tmp/src/requirements.txt \
+    --compile-bytecode -r /tmp/src/requirements.txt \
   && rm -f /tmp/uv-*.lock
 
 ## Install app from the wheel of the build stage (non-editable; the base
@@ -99,7 +100,8 @@ RUN --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
 RUN --network=none --mount=from=build,source=/tmp/dist,target=/tmp/dist \
   --mount=from=uv,source=/uv,target=/usr/local/bin/uv \
   export UV_NO_CACHE=1 UV_PYTHON_DOWNLOADS=never \
-  && uv pip install --system --offline --no-index --no-deps /tmp/dist/*.whl \
+  && uv pip install --system --offline --no-index --no-deps \
+    --compile-bytecode /tmp/dist/*.whl \
   && uv pip check --system \
   && rm -rf /tmp/src /tmp/uv-*.lock
 USER 1000

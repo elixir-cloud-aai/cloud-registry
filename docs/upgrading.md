@@ -13,16 +13,6 @@ app scaled to 0 replicas).
 
 ## From 1.0.0rc1
 
-**FOCA 0.20:** the app now builds on FOCA 0.20 (see [FOCA's migration
-guide](https://foca.readthedocs.io/en/v0.20.0/migration-0.20/)), whose image has
-no pip. Images derived from the app's image that run `pip install` must use uv
-instead. The app has no gateway plugins, so the plugin store and its secret
-don't apply. With the Helm chart (now on foca-common 0.4.0), new values are
-optional: `cloudRegistry.startupProbe`, `cloudRegistry.readinessProbe` and
-`cloudRegistry.livenessProbe` replace the default probes of the app's container.
-Rendering now also fails on a global `config.security.auth.audience` that FOCA
-wouldn't use, if it is invalid and each issuer has its own.
-
 Data is kept. The paths of users' roles change, as they collided with those of
 groups, which API clients and overlays with their own policy rules must follow:
 
@@ -104,6 +94,16 @@ groups, which API clients and overlays with their own policy rules must follow:
   the same. It can't manage the roles of users called `groups`, or starting with
   `groups/`, granted in the meantime, and doesn't start with namespaces starting
   with `groups/`.
+
+**FOCA 0.20:** the app now builds on FOCA 0.20 (see [FOCA's migration
+guide](https://foca.readthedocs.io/en/v0.20.0/migration-0.20/)), whose image has
+no pip. Images derived from the app's image that run `pip install` must use uv
+instead. The app has no gateway plugins, so the plugin store and its secret
+don't apply. The Helm chart is now on foca-common 0.4.0, which checks audiences:
+the chart no longer accepts an invalid global `config.security.auth.audience` if
+each issuer has its own, which it used to ignore. New values are optional:
+`cloudRegistry.startupProbe`, `cloudRegistry.readinessProbe` and
+`cloudRegistry.livenessProbe` replace the default probes of the app's container.
 
 **Environment of the service info:** the app now refuses to start if
 `service_info.service.environment` isn't in

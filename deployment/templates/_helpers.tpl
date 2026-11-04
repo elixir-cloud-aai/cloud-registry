@@ -4,8 +4,9 @@ Settings of the app for the templates of the library chart foca-common (see
 YAML; the templates are called with a dict of the root context (`root`) and
 these settings (`settings`). They follow the base config in the image
 (`cloud_registry/config.yaml`): its size limit of request bodies
-(`server.max_content_length`), its token issuers (so an audience is
-required, unless each issuer has one, as the library checks), its database (`db.dbs`) and that of access control
+(`server.max_content_length`), its token issuers (so the library requires an
+audience, global or of each issuer: `requireAudience`), its database
+(`db.dbs`) and that of access control
 (`security.access_control.db_name`). The generated config sets the public
 URL of the app (`server.public_url`) to `publicUrl`, or else from
 `hostName`, with HTTPS, as TLS is usually terminated by the ingress, the
