@@ -1266,6 +1266,70 @@ def test_revoked_owner_cannot_regain(app: App, client: FlaskClient) -> None:
     assert accept(client, token, user=ERIN).status_code == 404
 
 
+def test_revoke_logs_cleared(
+    client: FlaskClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The number of invitations deleted with the roles is logged."""
+    caplog.set_level("INFO")
+    service_id = register(client)
+    assert grant(client, service_id, CAROL, "owner") == 200
+    invite(client, service_id, user=CAROL)
+    assert revoke(client, service_id, CAROL) == 200
+    assert (
+        f"Deleted 1 invitation(s) to service '{service_id}': the roles of their "
+        f"creator '{CAROL}' were revoked." in caplog.text
+    )
+
+
+def test_revoke_clears_created(app: App, client: FlaskClient) -> None:
+    """Revoking a user's roles deletes the invitations they created.
+
+    Open and expired ones, on that service only. Accepted ones hold another
+    user's acceptance, and those of others stay valid.
+    """
+    service_id = register(client)
+    other_id = register(client)
+    for target in (service_id, other_id):
+        assert grant(client, target, CAROL, "owner") == 200
+    accepted = invite(client, service_id, user=CAROL).get_json()
+    assert accept(client, accepted["token"]).status_code == 200
+    expired = invite(client, service_id, user=CAROL).get_json()
+    expire(app, {"_id": expired["id"]})
+    open_invitation = invite(client, service_id, user=CAROL).get_json()
+    others = invite(client, other_id, user=CAROL).get_json()
+    alices = invite(client, service_id).get_json()
+    assert revoke(client, service_id, CAROL) == 200
+    assert {document["_id"] for document in stored(app)} == {
+        accepted["id"],
+        others["id"],
+        alices["id"],
+    }
+    assert accept(client, open_invitation["token"], user=ERIN).status_code == 404
+    assert accept(client, alices["token"], user=ERIN).status_code == 200
+
+
+def test_revoke_clears_created_through_group(app: App, client: FlaskClient) -> None:
+    """Also those created through a group that stays owner, which stayed valid."""
+    service_id = register(client)
+    assert grant_group(client, service_id, TEAM_GROUP, "owner") == 200
+    created = invite(client, service_id, user=ERIN).get_json()
+    assert stored(app)[0]["createdAs"] == {"group": TEAM_GROUP}
+    assert grant(client, service_id, ERIN, "maintainer") == 200
+    assert revoke(client, service_id, ERIN) == 200
+    assert stored(app) == []
+    assert accept(client, created["token"]).status_code == 404
+
+
+def test_failed_revoke_keeps_created(app: App, client: FlaskClient) -> None:
+    """Invitations stay if no role was revoked: last owners, users without one."""
+    service_id = register(client)
+    created = invite(client, service_id).get_json()
+    assert revoke(client, service_id, ALICE) == 409
+    assert revoke(client, service_id, CAROL) == 404
+    assert [document["_id"] for document in stored(app)] == [created["id"]]
+    assert accept(client, created["token"]).status_code == 200
+
+
 def test_revoked_owner_logged(
     client: FlaskClient, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -1274,7 +1338,7 @@ def test_revoked_owner_logged(
     service_id = register(client)
     assert grant(client, service_id, CAROL, "owner") == 200
     created = invite(client, service_id, user=CAROL).get_json()
-    assert revoke(client, service_id, CAROL) == 200
+    assert grant(client, service_id, CAROL, "maintainer") == 200
     assert accept(client, created["token"]).status_code == 404
     assert (
         f"Invitation '{created['id']}' to service '{service_id}' deleted: its "

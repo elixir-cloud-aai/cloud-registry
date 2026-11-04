@@ -581,7 +581,11 @@ def _delete_roles(serviceId: str, subject: str, subject_type: SubjectType) -> No
     """Revoke all roles of a user or group on a service.
 
     See FOCA's `revoke_roles()`, which keeps the last owner and logs the
-    change. Not while the service is renamed (cf. `changing()`).
+    change. Not while the service is renamed (cf. `changing()`). For users, also
+    deletes the invitations to the service that they created and nobody
+    accepted, so that their links stop working, also those that don't depend on
+    their role. Accepted ones hold another user's acceptance, and stay until
+    they expire.
 
     Args:
         serviceId: Service identifier.
@@ -620,6 +624,21 @@ def _delete_roles(serviceId: str, subject: str, subject_type: SubjectType) -> No
                 {"serviceId": serviceId, "accepted.userId": subject},
                 {"$unset": {"accepted.name": "", "accepted.email": "", "label": ""}},
             )
+            created = get_collection(INVITATIONS).delete_many(
+                {
+                    "serviceId": serviceId,
+                    "createdBy": subject,
+                    "accepted": {"$exists": False},
+                }
+            )
+            if created.deleted_count:
+                logger.info(
+                    "Deleted %d invitation(s) to service '%s': the roles of their "
+                    "creator '%s' were revoked.",
+                    created.deleted_count,
+                    escape_log_value(serviceId),
+                    escape_log_value(subject),
+                )
 
 
 def is_manageable_user_id(userId: str) -> bool:
