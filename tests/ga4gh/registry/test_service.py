@@ -293,15 +293,20 @@ class TestRegisterService:
                 obj.register_metadata()
                 assert _find(services, obj.data["id"])["url"] == url
 
+    @pytest.mark.parametrize("service_id", [None, MOCK_ID])
     @pytest.mark.parametrize(
         "url", [" https://tes.example.org", "https://tes.example.org "]
     )
     def test_register_metadata_url_spaces(
-        self, unit_app: Flask, services: Collection[dict[str, Any]], url: str
+        self,
+        unit_app: Flask,
+        services: Collection[dict[str, Any]],
+        service_id: str | None,
+        url: str,
     ) -> None:
-        """Service URLs with surrounding spaces are not stored."""
+        """Service URLs with surrounding spaces are not stored (POST, PUT)."""
         with unit_app.app_context():
-            obj = RegisterService(data={**MOCK_SERVICE, "url": url})
+            obj = RegisterService(data={**MOCK_SERVICE, "url": url}, id=service_id)
             with pytest.raises(InvalidService, match="must not contain whitespace"):
                 obj.register_metadata()
         assert services.count_documents({}) == 0
