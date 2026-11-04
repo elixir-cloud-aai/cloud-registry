@@ -80,15 +80,17 @@ the lock), as `pip install -e` does; those jobs hold no publishing
 credentials.
 The image build installs the locked runtime dependencies only
 (`uv export --frozen --no-dev --no-emit-project`, which leaves out the
-extras, then `pip install --require-hashes --only-binary :all: --no-deps`,
-see the `Dockerfile`), so
+extras, then `uv pip install --system --require-hashes --only-binary :all:
+--no-deps`, see the `Dockerfile`), so
 two builds of the same commit get the same packages, and a new release of a
 dependency gets into the image only through a reviewed change of the lock.
 The build requirements of the app (`build-system.requires`), with which the
 image build builds the app's wheel, are locked the same way, as the
 dependency group `build-system`, and installed from the lock with hash
 checks, too; the wheel is built without network, so the image build
-downloads nothing that isn't hash-checked. CI derives the version of dev
+downloads nothing that isn't hash-checked. The image contains no pip and no
+uv: the FOCA base image has no pip, and uv is mounted from a stage pinned by
+digest into the steps that use it, which the smoke test of CI checks. CI derives the version of dev
 images with them, installed the same way (exported by the uv image of the
 `Dockerfile`, pinned by digest), so that no job that holds publishing
 credentials installs a package without hash checks (the tests check
@@ -424,7 +426,7 @@ that version: bump it by hand, in both workflows together.
 
 The chart is a thin chart over FOCA's library chart `foca-common` (see the
 [library chart's
-documentation](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.3.0/docs/helm-chart.md)):
+documentation](https://github.com/elixir-cloud-aai/foca/blob/chart-v0.4.0/docs/helm-chart.md)):
 `deployment/Chart.yaml` pins its version, and `deployment/Chart.lock` locks
 it; `helm dependency build deployment` downloads it into `deployment/charts/`
 (ignored by Git), and the release workflow packages it with the chart. CI

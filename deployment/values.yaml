@@ -86,6 +86,11 @@ cloudRegistry:
   # Path of the app's startup, readiness and liveness probes; change it if
   # the config disables the Swagger UI
   probePath: /ga4gh/registry/v1/ui/
+  # Probes of the app's container (Kubernetes probe specs); if set, one
+  # replaces the default on `probePath` entirely
+  startupProbe: {}
+  readinessProbe: {}
+  livenessProbe: {}
   # Number of the app's pods; with more than one, the app stays available
   # while a pod is restarted or evicted (e.g., on node drains, crashes and
   # upgrades; see deployment/README.md, Replicas)

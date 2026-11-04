@@ -2080,7 +2080,7 @@ def test_create_app_service_info_in_custom(
     """`create_app()` fails if the service info is set in the custom config.
 
     It was set there before FOCA served it (FOCA raises a `ValueError` caused
-    by the validation error).
+    by a plain `ValueError` with the setting and the reason, without the input).
     """
     overlay = _service_info_overlay({})
     del overlay["service_info"]
@@ -2088,7 +2088,7 @@ def test_create_app_service_info_in_custom(
     _set_overlay(monkeypatch, tmp_path, overlay)
     with pytest.raises(ValueError, match="custom configuration") as exc:
         cloud_registry.app.create_app()
-    assert isinstance(exc.value.__cause__, ValidationError)
+    assert type(exc.value.__cause__) is ValueError
     assert "endpoints.service_info" in str(exc.value.__cause__)
 
 
@@ -2107,7 +2107,7 @@ def test_create_app_max_content_length_in_custom(
     _set_overlay(monkeypatch, tmp_path, overlay)
     with pytest.raises(ValueError, match="custom configuration") as exc:
         cloud_registry.app.create_app()
-    assert isinstance(exc.value.__cause__, ValidationError)
+    assert type(exc.value.__cause__) is ValueError
     assert "max_content_length" in str(exc.value.__cause__)
 
 

@@ -573,15 +573,13 @@ class TestChartOverlay:
         [
             [{"issuer": "https://x.org/", "audience": ["a"]}, "https://y.org/"],
             [{"issuer": "https://x.org/"}],
-            [{"issuer": "https://x.org/", "audience": []}],
-            [{"issuer": "https://x.org/", "audience": [" "]}],
             [{"issuer": "https://x.org/", "audience": None}],
             [
                 {"issuer": "https://x.org/", "audience": ["a"]},
                 {"issuer": "https://y.org/"},
             ],
         ],
-        ids=["string", "unset", "empty", "blank", "null", "last-unset"],
+        ids=["string", "unset", "null", "last-unset"],
     )
     def test_issuer_audience_required(self, issuers: list[Any]) -> None:
         """Without a global audience, each issuer needs an audience of its own."""
@@ -595,6 +593,21 @@ class TestChartOverlay:
                 audience=None,
             )
         assert "config.security.auth.audience must" in exc.value.stderr
+
+    @pytest.mark.parametrize("audience", [[], [" "]], ids=["empty", "blank"])
+    def test_issuer_audience_invalid(self, audience: list[str]) -> None:
+        """The library refuses audiences of issuers that FOCA would refuse."""
+        issuers = [{"issuer": "https://x.org/", "audience": audience}]
+        with pytest.raises(subprocess.CalledProcessError) as exc:
+            _render_overlay(
+                "--set",
+                "hostName=example.org",
+                "--set-json",
+                f"config.security.auth.issuers={json.dumps(issuers)}",
+                issuer=None,
+                audience=None,
+            )
+        assert "config.security.auth.issuers must list" in exc.value.stderr
 
     @pytest.mark.parametrize(
         ("claims", "valid"),
