@@ -29,6 +29,7 @@ OLD_FORMAT = {
     "invitations": {"service_id": {"$exists": True}},
     "user_names": {"service_id": {"$exists": True}},
     "service_types": {"created_by": {"$exists": True}},
+    "service_locks": {"started_at": {"$exists": True}},
     "services": {"_serviceKey": {"$exists": False}},
 }
 # Indexes of old fields, which mark such a database also if no document is left;
@@ -38,6 +39,7 @@ OLD_FORMAT_INDEXES = {
     "invitations": "token_hash_1",
     "user_names": "service_id_1_user_id_1",
     "service_types": "created_by_1",
+    "service_locks": "started_at_1",
 }
 # RFC 3339, section 5.6 (ASCII digits only; the RFC allows a space instead of
 # `T` in a note only)

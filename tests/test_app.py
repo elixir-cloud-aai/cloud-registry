@@ -2017,6 +2017,7 @@ def test_create_app_invalid_service_info(
             "service_types",
             {"group": "g", "artifact": "a", "version": "1", "created_by": None},
         ),
+        ("service_locks", {"_id": "A", "service": "A", "started_at": "2026"}),
         ("services", {"id": "A", "url": "https://a.example.org"}),
     ],
 )
@@ -2046,6 +2047,7 @@ def test_create_app_old_format(
         ("invitations", [("token_hash", 1)]),
         ("user_names", [("service_id", 1), ("user_id", 1)]),
         ("service_types", [("created_by", 1)]),
+        ("service_locks", [("started_at", 1)]),
     ],
 )
 def test_create_app_old_indexes(
