@@ -170,6 +170,8 @@ class _PinnedConnection(http.client.HTTPConnection):
             context: TLS settings; plain HTTP if `None`.
         """
         super().__init__(host, port, timeout=timeout)
+        # so that the `Host` header only has ports other than the scheme's
+        self.default_port = _DEFAULT_PORTS["http" if context is None else "https"]
         self._address = address
         self._tls = context
         # kept for `abort()`: `http.client` drops `sock` while the response of
@@ -270,7 +272,7 @@ def safe_get(
     except ValueError as exc:
         raise Unreachable from exc
     scheme = parts.scheme.lower()
-    if scheme not in schemes or scheme not in _DEFAULT_PORTS or parts.username:
+    if scheme not in schemes or scheme not in _DEFAULT_PORTS or "@" in parts.netloc:
         raise AddressNotAllowed
     if not host:
         raise Unreachable

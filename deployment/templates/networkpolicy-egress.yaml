@@ -3,8 +3,7 @@ Optional second layer behind the app's own checks of the addresses it fetches
 service info from: the app's pods may only connect to DNS, the MongoDB of the
 release and public addresses (see deployment/README.md, Network policies).
 */ -}}
-{{- $settings := include "cloud-registry.settings" . | fromYaml -}}
-{{- $egress := dig "networkPolicy" "egress" dict .Values.cloudRegistry -}}
+{{- $egress := .Values.egressNetworkPolicy | default dict -}}
 {{- if $egress.enabled -}}
 {{- $ipv4 := list -}}
 {{- $ipv6 := list -}}

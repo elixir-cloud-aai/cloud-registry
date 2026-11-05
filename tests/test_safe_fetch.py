@@ -305,11 +305,12 @@ def test_other_schemes(url: str) -> None:
         safe_get(url, schemes={"http", "https", "ftp", "file", "gopher"})
 
 
-def test_credentials_in_url(http_port: int) -> None:
+@pytest.mark.parametrize("credentials", ["user:secret@", ":secret@", "@"])
+def test_credentials_in_url(http_port: int, credentials: str) -> None:
     """URLs with credentials are refused."""
     with pytest.raises(AddressNotAllowed):
         safe_get(
-            f"http://user:secret@127.0.0.1:{http_port}/",
+            f"http://{credentials}127.0.0.1:{http_port}/",
             schemes={"http"},
             networks=LOOPBACK,
         )
@@ -629,6 +630,26 @@ def test_tls_untrusted(monkeypatch: pytest.MonkeyPatch, tls_port: int) -> None:
     with pytest.raises(Unreachable):
         safe_get(f"https://{HOST}:{tls_port}/", networks=LOOPBACK)
     assert not Handler.requests
+
+
+@pytest.mark.parametrize(
+    ("tls", "port", "host"),
+    [
+        (True, 443, HOST),
+        (True, 80, f"{HOST}:80"),
+        (True, 8443, f"{HOST}:8443"),
+        (False, 80, HOST),
+        (False, 443, f"{HOST}:443"),
+    ],
+)
+def test_host_header_port(tls: bool, port: int, host: str) -> None:
+    """The `Host` header has the port unless it is the scheme's default."""
+    context = ssl.create_default_context() if tls else None
+    connection = safe_fetch._PinnedConnection(HOST, port, "127.0.0.1", 1.0, context)
+    sent: list[bytes] = []
+    connection.send = sent.append  # type: ignore[method-assign,assignment]
+    connection.request("GET", "/")
+    assert f"Host: {host}\r\n".encode() in b"".join(sent)
 
 
 def test_abort_without_socket() -> None:

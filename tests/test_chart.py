@@ -1341,7 +1341,8 @@ def test_schema_of_library() -> None:
     its `$comment` documents: the app's values (`cloudRegistry`) also
     require the Gunicorn settings and the `preStop` delay, MongoDB's image
     is pinned to a minor version, there is no Celery worker or broker, and
-    the public URL can be set (`publicUrl`).
+    the public URL (`publicUrl`) and the NetworkPolicy of the app's connections
+    (`egressNetworkPolicy`) can be set.
     The `$comment` names the library's version, which the release pin
     check compares with the pinned one.
     """
@@ -1361,6 +1362,7 @@ def test_schema_of_library() -> None:
         "required": ["preStopSleepSeconds", "gunicorn"],
     }
     assert properties.pop("publicUrl")["type"] == "string"
+    assert properties.pop("egressNetworkPolicy")["type"] == "object"
     image = properties["mongodb"]["properties"]["image"]
     assert "minor version" in image.pop("description")
     expected = dict(library["properties"])
@@ -1962,7 +1964,7 @@ def _egress_policy(*args: str) -> dict[str, Any]:
         The policy.
     """
     policies = _network_policies(
-        _render("--set", "cloudRegistry.networkPolicy.egress.enabled=true", *args)
+        _render("--set", "egressNetworkPolicy.enabled=true", *args)
     )
     (policy,) = [doc for name, doc in policies.items() if name.endswith("-egress")]
     return policy
@@ -2004,9 +2006,9 @@ def test_network_policy_egress_values() -> None:
     rule = {"to": [{"ipBlock": {"cidr": "10.1.0.0/16"}}], "ports": [{"port": 8443}]}
     spec = _egress_policy(
         "--set-json",
-        "cloudRegistry.networkPolicy.egress.ports=[443,8443]",
+        "egressNetworkPolicy.ports=[443,8443]",
         "--set-json",
-        f"cloudRegistry.networkPolicy.egress.to={json.dumps([rule])}",
+        f"egressNetworkPolicy.to={json.dumps([rule])}",
     )["spec"]
     assert spec["egress"][-1] == rule
     assert [port["port"] for port in spec["egress"][-2]["ports"]] == [443, 8443]
@@ -2026,10 +2028,10 @@ def test_network_policy_egress_external_mongodb() -> None:
 def test_network_policy_egress_invalid() -> None:
     """The schema rejects unknown fields and invalid ports."""
     for args in (
-        ("--set", "cloudRegistry.networkPolicy.egress.unknown=1"),
-        ("--set-json", "cloudRegistry.networkPolicy.egress.ports=[]"),
-        ("--set-json", "cloudRegistry.networkPolicy.egress.ports=[70000]"),
-        ("--set-json", 'cloudRegistry.networkPolicy.egress.to=[{"from": []}]'),
+        ("--set", "egressNetworkPolicy.unknown=1"),
+        ("--set-json", "egressNetworkPolicy.ports=[]"),
+        ("--set-json", "egressNetworkPolicy.ports=[70000]"),
+        ("--set-json", 'egressNetworkPolicy.to=[{"from": []}]'),
     ):
         with pytest.raises(subprocess.CalledProcessError):
             _render(*args)

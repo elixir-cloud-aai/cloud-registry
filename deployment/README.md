@@ -515,8 +515,8 @@ info](https://cloud-registry.readthedocs.io/en/latest/api/#importing-service-inf
 from addresses that users choose. It checks them itself, and connects only to
 public addresses (see [Service info
 import](https://cloud-registry.readthedocs.io/en/latest/configuration/#service-info-import)).
-As a second layer, `cloudRegistry.networkPolicy.egress.enabled: true` (default
-`false`, independent of `cloudRegistry.networkPolicy.enabled`) creates a
+As a second layer, `egressNetworkPolicy.enabled: true` (default `false`,
+independent of `cloudRegistry.networkPolicy`) creates a
 NetworkPolicy that lets the app's pods connect only to DNS (port 53, anywhere,
 as clusters serve it differently), the MongoDB of the release and to public
 addresses on `ports` (default `[443]`), which are all but `exceptCidrs` (by
@@ -529,19 +529,17 @@ is an allowed scheme. NetworkPolicies add
 up, so another policy selecting the app's pods can allow more. For example:
 
 ```yaml
-cloudRegistry:
-  networkPolicy:
-    egress:
-      enabled: true
-      to:
-      # An identity provider in the cluster
-      - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: identity
-        ports:
-        - port: 8443
-          protocol: TCP
+egressNetworkPolicy:
+  enabled: true
+  to:
+  # An identity provider in the cluster
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: identity
+    ports:
+    - port: 8443
+      protocol: TCP
 ```
 
 ## Server
