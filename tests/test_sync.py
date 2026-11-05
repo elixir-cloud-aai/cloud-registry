@@ -892,15 +892,176 @@ def test_stored_version_controlled(
 
 
 def test_admin_entry_moderated(client: FlaskClient, serve: Serve) -> None:
-    """Admins' entries are moderated too; they count for nobody, without a limit."""
+    """Admins' entries are moderated too, and each has its own limit."""
     set_access_control(client, service_types="moderated", max_unused_service_types=1)
     serve(INFO)
     identifier = register(client, user=ADMIN)
     assert turn_on(client, identifier, user=ADMIN).status_code == 200
-    for version in ("1.2.0", "1.3.0"):
-        serve(info(type=new_type(version)))
-        run_syncs(client)
-        assert state(client, identifier)["reason"] == "version awaiting approval"
+    serve(info(type=new_type("1.2.0")))
+    run_syncs(client)
+    assert state(client, identifier)["reason"] == "version awaiting approval"
+    serve(info(type=new_type("1.3.0")))
+    run_syncs(client)
+    assert state(client, identifier)["reason"] == "unused types limit reached"
+    types = client.get(f"{BASE}/services/types", headers=make_headers(ADMIN)).json
+    assert new_type("1.3.0") not in (types or [])
+
+
+def test_turn_on_url_changed_during_fetch(
+    client: FlaskClient, serve: Serve, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A URL changed during the first fetch never gets fetched by sync."""
+    serve(INFO)
+    identifier = register(client)
+    fetch = sync._fetch
+
+    def changing_url(url: str) -> tuple[str, dict[str, Any]]:
+        """Change the URL during the fetch.
+
+        Args:
+            url: URL.
+
+        Returns:
+            The result of the fetch.
+        """
+        result = fetch(url)
+        response = client.put(
+            f"{BASE}/services/{identifier}",
+            json={**SERVICE, "url": "https://internal.example.org/x"},
+            headers=make_headers(),
+        )
+        assert response.status_code == 200
+        return result
+
+    monkeypatch.setattr(sync, "_fetch", changing_url)
+    response = turn_on(client, identifier)
+    assert response.status_code == 409
+    assert response.json is not None
+    assert response.json["code"] == "service-busy"
+    assert client.get(f"{BASE}/services/{identifier}/sync").status_code == 404
+
+
+def test_turn_on_turned_off_during_fetch(
+    client: FlaskClient, serve: Serve, service_id: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Turning it off during a repeated request stays."""
+    fetch = sync._fetch
+
+    def turning_off(url: str) -> tuple[str, dict[str, Any]]:
+        """Turn sync off during the fetch.
+
+        Args:
+            url: URL.
+
+        Returns:
+            The result of the fetch.
+        """
+        result = fetch(url)
+        services(client).update_one({"id": service_id}, {"$unset": {SYNC: ""}})
+        return result
+
+    monkeypatch.setattr(sync, "_fetch", turning_off)
+    assert turn_on(client, service_id).status_code == 409
+    assert client.get(f"{BASE}/services/{service_id}/sync").status_code == 404
+
+
+def test_turn_on_turned_off_while_applying(
+    client: FlaskClient, serve: Serve, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sync turned off right after it was applied returns `404`."""
+    identifier = register(client)
+    serve(INFO)
+
+    def turning_off(*args: Any) -> None:
+        """Turn sync off instead of applying.
+
+        Args:
+            *args: Ignored.
+        """
+        services(client).update_one({"id": identifier}, {"$unset": {SYNC: ""}})
+
+    monkeypatch.setattr(sync, "_apply", turning_off)
+    assert turn_on(client, identifier).status_code == 404
+
+
+def test_identifier_that_cant_be_stored(client: FlaskClient, serve: Serve) -> None:
+    """An identifier with unpaired surrogates returns `400`, not `500`."""
+    identifier = register(client)
+    serve(info(id="\ud800x"))
+    assert turn_on(client, identifier).status_code == 400
+    assert client.get(f"{BASE}/services/{identifier}/sync").status_code == 404
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"type": {**TYPE, "artifact": "wes"}, "name": "By hand"},
+        {"name": "By hand"},
+    ],
+    ids=["other key", "other value"],
+)
+def test_update_during_sync_wins(
+    client: FlaskClient, serve: Serve, service_id: str, change: dict[str, Any]
+) -> None:
+    """Results aren't written if the service changed since the claim."""
+    serve(info(description="From the sync."))
+    services(client).update_one(
+        {"id": service_id}, {"$set": {sync.NEXT: now() - timedelta(seconds=1)}}
+    )
+    with client.application.app_context():
+        claimed = sync._claim()
+        assert claimed is not None
+        time.sleep(0.002)
+        assert (
+            client.put(
+                f"{BASE}/services/{service_id}",
+                json={**SERVICE, **change},
+                headers=make_headers(),
+            ).status_code
+            == 200
+        )
+        sync.sync_service(claimed)
+    service = get_service(client, service_id)
+    assert service["name"] == "By hand"
+    assert service["description"] == SERVICE["description"]
+    assert service["type"] == change.get("type", TYPE)
+
+
+def test_new_url_without_sync_ends_sync(
+    client: FlaskClient, serve: Serve, service_id: str
+) -> None:
+    """A URL changed while the deployment didn't sync is never fetched by sync."""
+    settings = service_info_settings(client)
+    settings.sync = False
+    assert (
+        client.put(
+            f"{BASE}/services/{service_id}",
+            json={**SERVICE, "url": "https://internal.example.org/x"},
+            headers=make_headers(),
+        ).status_code
+        == 200
+    )
+    settings.sync = True
+    assert client.get(f"{BASE}/services/{service_id}/sync").status_code == 404
+    urls = serve(INFO)
+    assert run_syncs(client) == 0
+    assert not urls
+
+
+def test_same_url_without_sync_keeps_sync(client: FlaskClient, service_id: str) -> None:
+    """Updates that keep the URL keep the state, whatever the deployment does."""
+    settings = service_info_settings(client)
+    settings.sync = False
+    assert (
+        client.put(
+            f"{BASE}/services/{service_id}",
+            json={**SERVICE, "name": "By hand"},
+            headers=make_headers(),
+        ).status_code
+        == 200
+    )
+    settings.sync = True
+    assert client.get(f"{BASE}/services/{service_id}/sync").status_code == 200
 
 
 def test_turn_on_pending_version_keeps_on(client: FlaskClient, serve: Serve) -> None:

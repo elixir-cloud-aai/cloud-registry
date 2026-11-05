@@ -41,6 +41,7 @@ from cloud_registry.ga4gh.registry.permissions import current_user, require_subj
 from cloud_registry.ga4gh.registry.service import (
     InvalidService,
     RegisterService,
+    check_strings,
     check_url_scheme,
     normalize_url,
 )
@@ -286,6 +287,7 @@ def service_values(service_info: object, url: str) -> dict[str, Any]:
     identifier = service_info.get("id")
     if not isinstance(identifier, str) or not 0 < len(identifier) <= MAX_ID_LENGTH:
         raise InvalidServiceInfo("'id' is missing or invalid.")
+    check_strings(identifier, field="id")
     values: dict[str, Any] = {
         field: service_info[field]
         for field in SERVICE_FIELDS

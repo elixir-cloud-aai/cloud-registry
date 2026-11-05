@@ -619,8 +619,10 @@ class RegisterService:
                 # the entry of the registry stays marked as such
                 if SELF_ENTRY in stored:
                     replacement[SELF_ENTRY] = stored[SELF_ENTRY]
-                # sync stays on, and overrides the values at its next attempt
-                if SYNC in stored:
+                # sync stays on, and overrides the values at its next attempt;
+                # a new URL (with the deployment's sync off, cf. `_check_url_lock()`)
+                # would never have been fetched by the user who turned it on
+                if SYNC in stored and stored["url"] == self.data["url"]:
                     replacement[SYNC] = stored[SYNC]
                 # invalid ones (e.g., set by owners before timestamps were
                 # checked) are removed

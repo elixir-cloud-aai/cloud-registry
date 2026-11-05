@@ -292,7 +292,8 @@ rules](api.md#registration-rules)), e.g., to show how often services are synced.
 
 **Without sync** (`sync: false`), nothing is fetched periodically, `PUT
 /services/{serviceId}/sync` returns `409 Conflict`, no service has a label, and URLs
-aren't locked; what was stored stays, and applies again when sync is turned back on.
+aren't locked; what was stored stays, and applies again when sync is turned back on,
+except for services whose URL changed meanwhile: their sync ends.
 Imports keep working, as users start them; to stop all fetches, block the [app's
 connections](deployment.md#the-apps-connections).
 
@@ -308,6 +309,14 @@ meanwhile are synced at the first check, and those of a worker that died when th
 claim expires. A shorter interval applies at once, on startup. A longer one applies
 after the next sync of each service. If the app is down for longer than two
 intervals, labels are `out-of-sync` until the next sync.
+
+**What reasons reveal:** the [reasons](api.md#synced-services) of syncs are served,
+and a registrant controls the DNS of their host name. By pointing it elsewhere after
+turning sync on, they can learn whether a name resolves to a public address and, for
+[permitted networks](#service-info-import), whether something answers there: slowly,
+as it takes one probe per service and interval. To limit who can read them, [require
+login for reads](access-control.md#requiring-login-for-reads) and restrict the rules
+`get-service-sync` and `list-syncs`.
 
 ## Service environments
 

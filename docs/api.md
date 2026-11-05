@@ -610,8 +610,8 @@ identifier; `?status=synced` or `?status=out-of-sync` selects by the label.
 {"url": "https://tes.example.org/ga4gh/tes/v1", "type": {"group": "org.ga4gh", "artifact": "tes", "version": "1.1.0"}, "status": "out-of-sync", "reason": "unreachable", "serviceInfoId": "org.example.tes", "lastAttemptAt": "2026-11-05T12:34:56.789Z", "lastSuccessAt": "2026-11-03T12:34:56.789Z"}
 ```
 
-The label `status` has three states, like [verified](#verified-services) services,
-it isn't served with the GA4GH endpoints:
+Like [verification](#verified-services), the label isn't served with the GA4GH
+endpoints. A service is in one of three states:
 
 - **no sync** (`404 Not Found`, not listed): a manual entry, which may have drifted;
 - **`synced`**: the last sync succeeded, at most two intervals ago, so that a
@@ -631,11 +631,11 @@ never network errors:
 | `identity mismatch` | it has another `id` than when sync was turned on, or another `type.group` or `type.artifact` than the service: something is seriously wrong, and no type is added. If a new `id` is right, turn sync off and on again |
 | `version awaiting approval` | [mode `moderated`](#pending-approvals): its `type` is new, and pending (listed in `GET /approvals`); the service stays listed with its old values, and the next sync after the approval applies it. It counts for the limit of unused types of the user who registered the service |
 | `version not allowed` | mode `controlled`, or a limit of unused types of `0`: its `type` isn't registered, and only admins may add it. Ask them to |
-| `unused types limit reached` | the user who registered the service has added [as many unused types as allowed](configuration.md#service-types) |
+| `unused types limit reached` | the user who registered the service, or this service if an admin registered it, has added [as many unused types as allowed](configuration.md#service-types) |
 
 In mode `open`, a new `type` is added, for the user who registered the service, and
 applied. Service info is self-declared, so these rules also hold for services that
-admins registered, except for the limit (they count for nobody).
+admins registered; as these count for nobody, each has a limit of its own.
 
 **Turning it on** changes nothing if the first fetch fails (the same `502 Bad
 Gateway` as for imports, whatever the cause, so that users can't map networks, also
@@ -643,7 +643,8 @@ counting for the [limit](configuration.md#service-info-import)), the service inf
 invalid (`400 Bad Request`) or describes another service (`409 Conflict`, code
 `sync-identity-mismatch`). `409 Conflict` with code `sync-unavailable` means that the
 deployment doesn't sync, or that the service is the registry's [own
-entry](#listing-the-registry-itself).
+entry](#listing-the-registry-itself), and code `service-busy` that the service changed
+during the fetch; try again.
 
 **Verified and synced doesn't mean trusted.** Verified says that an admin checked
 something once, and synced that a service recently described itself in a way the

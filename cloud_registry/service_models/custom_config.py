@@ -352,7 +352,8 @@ nfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', length=6), url_schemes=['\
 https'], environments=['prod', 'test', 'dev', 'staging'], service_info=ServiceI\
 nfoConfig(private_networks=[], fetches_per_hour=30, sync=True, sync_interval_h\
 ours=24.0))), access_control=AccessControlConfig(service_types='open', max_unu\
-sed_service_types=10, max_services_per_user=50, invitations=InvitationsConfig(expiry_days=7, keep_expired_d\
+sed_service_types=10, max_services_per_user=50, invitations=InvitationsConfig(\
+expiry_days=7, keep_expired_d\
 ays=30, max_per_service=20)))
     """
 

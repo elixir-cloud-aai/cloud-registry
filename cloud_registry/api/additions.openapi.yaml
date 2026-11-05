@@ -1622,6 +1622,7 @@ components:
         - environments
         - urlSchemes
         - serviceTypes
+        - serviceInfoSync
       additionalProperties: false
       properties:
         environments:

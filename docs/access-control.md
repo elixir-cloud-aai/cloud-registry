@@ -97,8 +97,8 @@ patched reads without a valid token are then rejected with `401
 Unauthorized`; any authenticated user may read, by the default policies
 (in `security.access_control.policies`, which are only evaluated for reads
 that require login): `list-services`, `get-service` (also for
-`/services/types`, which matches `/services/:id`), `get-service-verification`
-and `list-verifications`. `GET /service-info`, the API
+`/services/types`, which matches `/services/:id`), `get-service-verification`,
+`list-verifications`, `get-service-sync` and `list-syncs`. `GET /service-info`, the API
 specification (`/openapi.json`) and the Swagger UI (`/ui/`) stay public.
 
 If an overlay of the deployment gives the policies as a list, which replaces
@@ -120,10 +120,12 @@ security:
             get-service: [p, reader, "/ga4gh/registry/v1/services/:id", GET]
             get-service-verification: null
             list-verifications: null
+            get-service-sync: null
+            list-syncs: null
 ```
 
 Readers may then list and get services and get the service types, but not
-read verifications; admins may read everything.
+read verifications or the state of syncs; admins may read everything.
 
 Owners and maintainers of services can still update them, but only read them
 with a rule that allows them to.

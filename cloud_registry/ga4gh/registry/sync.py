@@ -14,16 +14,20 @@ deletes it. The label is computed when it is read (cf. `sync_status()`): only
 a recent success counts, so that a scheduler that stopped can't show `synced`
 forever.
 
-Sync is turned on only after a successful fetch, so that nobody can read the
-reason for an address of their choice: as for imports, all failed fetches look
-alike to the user (cf. `FetchFailed`).
+Sync is turned on only after a successful fetch of the URL as stored, so that
+nobody can read the reason for an address of their choice right away: as for
+imports, all failed fetches look alike to the user (cf. `FetchFailed`). The
+reasons of later syncs are served, though, so whoever controls a host name can
+still point it elsewhere and learn something about the target, slowly: one probe
+per service and interval (see "Service info sync" in `docs/configuration.md`).
 
 The scheduler is a daemon thread in each worker (cf. `start_sync_scheduler()`),
 so it needs neither a task queue nor incoming requests. Workers and replicas
 coordinate through the database: a due service is claimed in a single write
 moving its next attempt ahead (cf. `_claim()`), which costs one indexed query per
-tick with a single worker, and the result is only written if the claim is
-unchanged, so that a rename, `PUT` or `DELETE` meanwhile wins. All state is in the
+tick with a single worker, and the result is only written if the claim and the
+service are unchanged, so that any change meanwhile wins (cf. `_write()`); the
+sync is then tried again when the claim expires. All state is in the
 database, so that restarts lose nothing: overdue services are synced at the first
 tick, and those of a worker that died when their claim expires.
 """
@@ -43,6 +47,7 @@ from pymongo import ReturnDocument
 from cloud_registry.exceptions import (
     CodedConflict,
     NotFound,
+    ServiceBusy,
     TooManyRequests,
     problem,
 )
@@ -263,7 +268,10 @@ def _write(
     fields: dict[str, Any] | None = None,
     removed: tuple[str, ...] = (),
 ) -> bool:
-    """Write the result of a sync, unless the service changed its claim.
+    """Write the result of a sync, unless the service changed since the claim.
+
+    Whatever a user changes renews `updatedAt`, and approvals change the pending
+    flag; the results of the fetch may no longer fit then.
 
     Args:
         service: Stored service, as claimed.
@@ -281,11 +289,10 @@ def _write(
     }
     if unset:
         update["$unset"] = unset
-    result = get_collection("services").update_one(
-        # by the internal identifier, as the service may be renamed meanwhile
-        {"_id": service["_id"], NEXT: service[SYNC][NEXT_ATTEMPT]},
-        update,
-    )
+    query = {"_id": service["_id"], NEXT: service[SYNC][NEXT_ATTEMPT]}
+    for field in ("url", KEY, UPDATED, PENDING_SERVICE):
+        query[field] = service.get(field, {"$exists": False})
+    result = get_collection("services").update_one(query, update)
     return result.modified_count > 0
 
 
@@ -361,7 +368,9 @@ def _reason(
     ):
         return Reason.IDENTITY_MISMATCH
     service_type = cast(dict[str, str], type_document(values["type"]))
-    return TYPE_REASONS.get(decide_synced_type(service_type, service.get(CREATED_BY)))
+    # services of admins count for nobody, so each has its own limit
+    counted_as = service.get(CREATED_BY) or f"service:{service['_id']}"
+    return TYPE_REASONS.get(decide_synced_type(service_type, counted_as))
 
 
 def _apply(
@@ -477,9 +486,9 @@ def cap_next_attempts() -> None:
     Idempotent, and safe to run concurrently (e.g., in each worker).
     """
     if sync_enabled():
+        latest = now() + sync_interval()
         get_collection("services").update_many(
-            {NEXT: {"$gt": now() + sync_interval()}},
-            {"$set": {NEXT: now() + sync_interval()}},
+            {NEXT: {"$gt": latest}}, {"$set": {NEXT: latest}}
         )
 
 
@@ -604,22 +613,26 @@ def putServiceSync(serviceId: str, **kwargs: Any) -> dict[str, Any] | Response:
         Sync state of the service, also if the service info can't be applied (cf.
         `Reason`); or an error response, changing nothing: `400` if the service
         info is invalid, `409` if it describes another service, the deployment
-        doesn't sync or the service is the registry's own entry, `429` above the
-        limits for fetches, and `502` if the fetch fails, for any reason.
+        doesn't sync, the service is the registry's own entry or it changed during
+        the fetch, `429` above the limits for fetches, and `502` if the fetch
+        fails, for any reason.
 
     Raises:
-        cloud_registry.exceptions.NotFound: The service doesn't exist.
+        cloud_registry.exceptions.NotFound: The service doesn't exist (anymore),
+            or sync was turned off meanwhile.
     """
     collection = get_collection("services")
     with changing(serviceId):
         service = collection.find_one({"id": serviceId})
         if service is None:
             raise NotFound
-        if not sync_enabled():
-            return problem(SyncUnavailable("This deployment doesn't sync services."))
-        if SELF_ENTRY in service:
+        if not sync_enabled() or SELF_ENTRY in service:
             return problem(
-                SyncUnavailable("The registry's own entry follows its service info.")
+                SyncUnavailable(
+                    "This deployment doesn't sync services."
+                    if not sync_enabled()
+                    else "The registry's own entry follows its service info."
+                )
             )
         try:
             with fetch_slot():
@@ -640,8 +653,14 @@ def putServiceSync(serviceId: str, **kwargs: Any) -> dict[str, Any] | Response:
         if identifier != baseline or service_key(values) != service[KEY]:
             return problem(SyncIdentityMismatch())
         current = now()
+        # also not if the URL changed during the fetch, as it wasn't fetched then
         claimed = collection.find_one_and_update(
-            {"_id": service["_id"]},
+            {
+                "_id": service["_id"],
+                "url": service["url"],
+                KEY: service[KEY],
+                SYNC: service.get(SYNC, {"$exists": False}),
+            },
             {
                 "$set": {
                     SYNC: {
@@ -654,10 +673,12 @@ def putServiceSync(serviceId: str, **kwargs: Any) -> dict[str, Any] | Response:
             return_document=ReturnDocument.AFTER,
         )
         if claimed is None:
-            raise NotFound
+            if collection.count_documents({"_id": service["_id"]}) == 0:
+                raise NotFound
+            return problem(ServiceBusy())
         _apply(claimed, identifier, values, current)
         stored = collection.find_one({"_id": service["_id"]})
-    if stored is None:
+    if stored is None or SYNC not in stored:
         raise NotFound
     logger.info(
         "Service '%s' synced by '%s'.", escape_log_value(serviceId), current_user()

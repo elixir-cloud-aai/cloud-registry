@@ -563,19 +563,19 @@ class SyncedType(Enum):
     LIMIT = "limit"
 
 
-def decide_synced_type(service_type: dict[str, str], user: str | None) -> SyncedType:
+def decide_synced_type(service_type: dict[str, str], user: str) -> SyncedType:
     """Decide about the type in the service info of a synced service.
 
     As for a registration by the user the service counts for, but as nobody acts
     on it and service info is self-declared, also if an admin registered the
-    service: new types are pending if the deployment moderates them, and can't be
-    added if only admins may add them. Adds a type that may be added.
+    service: new types are pending if the deployment moderates them, can't be
+    added if only admins may add them, and count for the limit of unused types.
+    Adds a type that may be added.
 
     Args:
         service_type: Service type, in its stored form (cf. `type_document()`).
-        user: User the service counts for (cf.
-            `cloud_registry.ga4gh.registry.service.CREATED_BY`), who adds the type;
-            `None` for nobody, who has no limit.
+        user: Identifier that adds the type (cf. `CREATED_BY`) and whose limit
+            counts: the user the service counts for, or one for the service.
 
     Returns:
         Whether the type can be applied (`APPROVED`), including a new type added
@@ -594,11 +594,7 @@ def decide_synced_type(service_type: dict[str, str], user: str | None) -> Synced
     limit = access_control.max_unused_service_types
     if access_control.service_types == "controlled" or limit == 0:
         return SyncedType.NOT_ALLOWED
-    if (
-        user is not None
-        and limit is not None
-        and _count_unused_types(user, limit) >= limit
-    ):
+    if limit is not None and _count_unused_types(user, limit) >= limit:
         return SyncedType.LIMIT
     pending = access_control.service_types == "moderated"
     store_service_type(service_type, created_by=user, pending=pending)

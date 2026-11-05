@@ -36,6 +36,7 @@ def test_registration_rules_defaults(unit_app: Flask) -> None:
             "serviceTypes": "open",
             "maxUnusedServiceTypes": 10,
             "maxServicesPerUser": 50,
+            "serviceInfoSync": {"enabled": True, "intervalHours": 24.0},
         }
 
 
@@ -57,6 +58,7 @@ def test_registration_rules_configured(unit_app: Flask) -> None:
             "environments": [],
             "urlSchemes": ["http", "https"],
             "serviceTypes": "moderated",
+            "serviceInfoSync": {"enabled": True, "intervalHours": 24.0},
         }
         custom.access_control.max_unused_service_types = 0
         assert registration_rules()["maxUnusedServiceTypes"] == 0

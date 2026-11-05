@@ -62,6 +62,7 @@ DEFAULT_RULES: dict[str, Any] = {
     "serviceTypes": "open",
     "maxUnusedServiceTypes": 10,
     "maxServicesPerUser": 50,
+    "serviceInfoSync": {"enabled": True, "intervalHours": 24.0},
 }
 # Times of registrations and updates of services (cf. `_set_service_clock()`)
 TIME = datetime(2026, 10, 20, 12, 34, 56, 789000, tzinfo=UTC)
@@ -1272,6 +1273,7 @@ def test_registration_rules_configured(
         "environments": [],
         "urlSchemes": ["http", "https"],
         "serviceTypes": "moderated",
+        "serviceInfoSync": {"enabled": True, "intervalHours": 24.0},
     }
 
 
