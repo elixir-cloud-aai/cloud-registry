@@ -142,6 +142,7 @@ def tls_port(certificate: Path) -> Iterator[int]:
     """Port of a TLS server with the certificate of `HOST`."""
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(certificate)
     server.socket = context.wrap_socket(server.socket, server_side=True)
     yield from _serve(server)
@@ -150,7 +151,17 @@ def tls_port(certificate: Path) -> Iterator[int]:
 @pytest.fixture
 def client_context(certificate: Path) -> ssl.SSLContext:
     """TLS settings of a client that trusts the certificate of `HOST`."""
-    return ssl.create_default_context(cafile=str(certificate))
+    context = ssl.create_default_context(cafile=str(certificate))
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    return context
+
+
+def test_default_tls_settings() -> None:
+    """Fetches need TLS 1.2 or newer, and check certificates and host names."""
+    context = safe_fetch._default_tls_context()
+    assert context.minimum_version >= ssl.TLSVersion.TLSv1_2
+    assert context.verify_mode is ssl.CERT_REQUIRED
+    assert context.check_hostname
 
 
 def resolving(
@@ -644,7 +655,7 @@ def test_tls_untrusted(monkeypatch: pytest.MonkeyPatch, tls_port: int) -> None:
 )
 def test_host_header_port(tls: bool, port: int, host: str) -> None:
     """The `Host` header has the port unless it is the scheme's default."""
-    context = ssl.create_default_context() if tls else None
+    context = safe_fetch._default_tls_context() if tls else None
     connection = safe_fetch._PinnedConnection(HOST, port, "127.0.0.1", 1.0, context)
     sent: list[bytes] = []
     connection.send = sent.append  # type: ignore[method-assign,assignment]

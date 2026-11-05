@@ -149,6 +149,18 @@ def _resolve(host: str, port: int, deadline: _Deadline) -> list[str]:
     return addresses
 
 
+def _default_tls_context() -> ssl.SSLContext:
+    """Get the TLS settings of fetches.
+
+    Returns:
+        Settings of the standard library that check certificates, with TLS 1.2
+        or newer, whatever the defaults of the Python version and its OpenSSL.
+    """
+    context = ssl.create_default_context()
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    return context
+
+
 class _PinnedConnection(http.client.HTTPConnection):
     """Connection to a given address, for a host (plain, unless with TLS)."""
 
@@ -289,7 +301,7 @@ def safe_get(
         raise AddressNotAllowed
     tls = None
     if scheme == "https":
-        tls = context or ssl.create_default_context()
+        tls = context or _default_tls_context()
     request_headers = {
         "Accept": "application/json",
         "Accept-Encoding": "identity",
