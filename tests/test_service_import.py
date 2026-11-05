@@ -113,15 +113,22 @@ def serve(monkeypatch: pytest.MonkeyPatch) -> Callable[[object], list[str]]:
 @pytest.mark.parametrize(
     "address",
     [
-        "https://TES.example.org/ga4gh/tes/v1/service-info",
         "https://tes.example.org/ga4gh//tes/v1/service-info",
         "https://tes.example.org/ga4gh/x/../tes/v1/service-info",
+        "https://tes.example.org/ga4gh/./tes/v1/service-info",
     ],
 )
-def test_service_url_is_what_gets_fetched(address: str) -> None:
-    """The URL of the service is the normalized one, which gets fetched."""
+def test_service_url_path_not_normalized(address: str) -> None:
+    """Paths that the fetch would change are refused."""
+    with pytest.raises(InvalidService):
+        service_import.service_url(address, schemes=frozenset({"https"}))
+
+
+def test_service_url_keeps_host_as_written() -> None:
+    """Host names stay as written; their case doesn't change the service."""
+    address = "https://TES.example.org/ga4gh/tes/v1/service-info"
     url = service_import.service_url(address, schemes=frozenset({"https"}))
-    assert url == URL
+    assert url == "https://TES.example.org/ga4gh/tes/v1"
 
 
 def test_import(client: FlaskClient, serve: Callable[[object], list[str]]) -> None:

@@ -28,6 +28,7 @@ from pathlib import Path
 import re
 import threading
 from typing import Any
+from urllib.parse import urlsplit
 
 from foca import get_custom_config
 from foca.utils.logging import escape_log_value
@@ -160,20 +161,23 @@ def service_url(address: str, schemes: frozenset[str]) -> str:
         schemes: Schemes allowed in service URLs.
 
     Returns:
-        The normalized address, which is what gets fetched, without
-        `SERVICE_INFO_PATH`.
+        The address without `SERVICE_INFO_PATH`.
 
     Raises:
         InvalidService: The address is invalid, uses a scheme that isn't
-            allowed, has a query or fragment, or doesn't end in
-            `SERVICE_INFO_PATH`.
+            allowed, has a query or fragment, doesn't end in
+            `SERVICE_INFO_PATH`, or has a path that normalizing would change
+            (e.g., repeated slashes): fetches use the normalized form, which
+            services may route differently than what the URL would say.
     """
     check_url_scheme(address, schemes=schemes)
     if "?" in address or "#" in address or not address.endswith(SERVICE_INFO_PATH):
         raise InvalidService(
             f"The address of the service info must end in '{SERVICE_INFO_PATH}'."
         )
-    return normalize_url(address).removesuffix(SERVICE_INFO_PATH)
+    if urlsplit(normalize_url(address)).path != urlsplit(address).path:
+        raise InvalidService("The path of the address is not in its normal form.")
+    return address.removesuffix(SERVICE_INFO_PATH)
 
 
 def private_networks() -> list[IPNetwork]:
