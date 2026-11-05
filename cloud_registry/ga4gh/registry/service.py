@@ -742,6 +742,10 @@ def warn_url_schemes() -> None:
         )
 
 
+# Fields of services with URLs (`format: uri`)
+URI_FIELDS = ("url", "contactUrl", "documentationUrl")
+
+
 def warn_invalid_formats() -> None:
     """Warn of stored services that FOCA's response checks would reject.
 
@@ -759,21 +763,21 @@ def warn_invalid_formats() -> None:
             "url": True,
             "contactUrl": True,
             "documentationUrl": True,
-            "organization.url": True,
+            "organization": True,
             CREATED: True,
             UPDATED: True,
         },
     ):
-        organization = service.get("organization") or {}
-        uris = [
-            service.get("url"),
-            service.get("contactUrl"),
-            service.get("documentationUrl"),
-            organization.get("url"),
-        ]
-        dates = [service.get(field) for field in DATE_TIME_FIELDS]
-        if not all(is_uri(value) for value in uris if value is not None) or not all(
-            is_date_time(value) for value in dates if value is not None
+        organization = service.get("organization", {})
+        if not isinstance(organization, dict):
+            ids.append(f"'{service.get('id')}'")
+            continue
+        uris = [service[field] for field in URI_FIELDS if field in service]
+        if "url" in organization:
+            uris.append(organization["url"])
+        dates = [service[field] for field in DATE_TIME_FIELDS if field in service]
+        if not all(isinstance(value, str) and is_uri(value) for value in uris) or (
+            not all(isinstance(value, str) and is_date_time(value) for value in dates)
         ):
             ids.append(f"'{service.get('id')}'")
     if ids:

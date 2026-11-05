@@ -1236,6 +1236,13 @@ class TestTimestamps:
         assert _find(services, MOCK_ID)[CREATED] == changed
 
 
+VALID_FORMATS = {
+    **MOCK_SERVICE,
+    "organization": {"name": "Org", "url": "https://example.org"},
+    "createdAt": "2019-06-04T12:58:19Z",
+}
+
+
 @pytest.mark.parametrize(
     "fields",
     [
@@ -1245,6 +1252,10 @@ class TestTimestamps:
         {"contactUrl": "support@example.org"},
         {"documentationUrl": "docs.example.org"},
         {"organization": {"name": "Org", "url": "example.org"}},
+        {"organization": "Org"},
+        {"createdAt": 1},
+        {"updatedAt": None},
+        {"contactUrl": None},
     ],
 )
 def test_warn_invalid_formats(
@@ -1254,8 +1265,8 @@ def test_warn_invalid_formats(
     fields: dict[str, Any],
 ) -> None:
     """Stored services with invalid formats are named, valid ones not."""
-    services.insert_one(stored_service({**MOCK_SERVICE, "id": "GOOD"}))
-    services.insert_one(stored_service({**MOCK_SERVICE, "id": "BAD", **fields}))
+    services.insert_one(stored_service({**VALID_FORMATS, "id": "GOOD"}))
+    services.insert_one(stored_service({**VALID_FORMATS, "id": "BAD", **fields}))
     with unit_app.app_context(), caplog.at_level(logging.WARNING):
         warn_invalid_formats()
     assert len(caplog.records) == 1
@@ -1270,7 +1281,7 @@ def test_warn_invalid_formats_none(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Without such services, nothing is logged."""
-    services.insert_one(stored_service({**MOCK_SERVICE, "id": "GOOD"}))
+    services.insert_one(stored_service({**VALID_FORMATS, "id": "GOOD"}))
     with unit_app.app_context(), caplog.at_level(logging.WARNING):
         warn_invalid_formats()
     assert not caplog.records
