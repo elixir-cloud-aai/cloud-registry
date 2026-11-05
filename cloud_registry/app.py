@@ -25,6 +25,7 @@ from cloud_registry.ga4gh.registry.rename import (
 from cloud_registry.ga4gh.registry.self_listing import refresh_self_listing
 from cloud_registry.ga4gh.registry.service import (
     warn_environments,
+    warn_invalid_formats,
     warn_url_schemes,
 )
 from cloud_registry.ga4gh.registry.service_info import (
@@ -146,6 +147,7 @@ def create_app() -> App:
         sync_pending_services()
         warn_url_schemes()
         warn_environments()
+        warn_invalid_formats()
         cap_next_attempts()
         start_sync_scheduler(app.app)
     return app

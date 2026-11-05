@@ -32,6 +32,7 @@ from cloud_registry.ga4gh.registry.service import (
     normalize_url,
     service_key,
     warn_environments,
+    warn_invalid_formats,
     warn_url_schemes,
 )
 from cloud_registry.service_models.custom_config import CustomConfig
@@ -1233,3 +1234,43 @@ class TestTimestamps:
             obj.register_metadata()
         assert len(reads) == 2
         assert _find(services, MOCK_ID)[CREATED] == changed
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"createdAt": "yesterday"},
+        {"updatedAt": "2019-06-04 12:58:19"},
+        {"url": "tes.example.org"},
+        {"contactUrl": "support@example.org"},
+        {"documentationUrl": "docs.example.org"},
+        {"organization": {"name": "Org", "url": "example.org"}},
+    ],
+)
+def test_warn_invalid_formats(
+    unit_app: Flask,
+    services: Collection[dict[str, Any]],
+    caplog: pytest.LogCaptureFixture,
+    fields: dict[str, Any],
+) -> None:
+    """Stored services with invalid formats are named, valid ones not."""
+    services.insert_one(stored_service({**MOCK_SERVICE, "id": "GOOD"}))
+    services.insert_one(stored_service({**MOCK_SERVICE, "id": "BAD", **fields}))
+    with unit_app.app_context(), caplog.at_level(logging.WARNING):
+        warn_invalid_formats()
+    assert len(caplog.records) == 1
+    message = caplog.records[0].getMessage()
+    assert "'BAD'" in message
+    assert "GOOD" not in message
+
+
+def test_warn_invalid_formats_none(
+    unit_app: Flask,
+    services: Collection[dict[str, Any]],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Without such services, nothing is logged."""
+    services.insert_one(stored_service({**MOCK_SERVICE, "id": "GOOD"}))
+    with unit_app.app_context(), caplog.at_level(logging.WARNING):
+        warn_invalid_formats()
+    assert not caplog.records

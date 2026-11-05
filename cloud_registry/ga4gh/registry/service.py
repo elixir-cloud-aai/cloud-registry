@@ -9,6 +9,7 @@ from typing import Any
 from foca import get_custom_config
 from foca.utils.logging import escape_log_value
 from foca.utils.misc import generate_id
+from foca.utils.service_info import is_uri
 from foca.utils.urls import (
     HTTP_SCHEMES,
     InvalidURL,
@@ -737,5 +738,47 @@ def warn_url_schemes() -> None:
             "Services with URL schemes not allowed "
             "(`custom.endpoints.services.url_schemes`) are still served, but "
             "can only be updated with an allowed scheme; update or delete them: %s",
+            escape_log_value(", ".join(ids)),
+        )
+
+
+def warn_invalid_formats() -> None:
+    """Warn of stored services that FOCA's response checks would reject.
+
+    FOCA checks the `date-time` and `uri` formats of responses, too, so a
+    single stored service with an invalid value makes its reads and
+    `GET /services` fail with `500`. Requests can't store such values, but data
+    written around the API can.
+    """
+    ids = []
+    for service in get_collection("services").find(
+        {},
+        {
+            "_id": False,
+            "id": True,
+            "url": True,
+            "contactUrl": True,
+            "documentationUrl": True,
+            "organization.url": True,
+            CREATED: True,
+            UPDATED: True,
+        },
+    ):
+        organization = service.get("organization") or {}
+        uris = [
+            service.get("url"),
+            service.get("contactUrl"),
+            service.get("documentationUrl"),
+            organization.get("url"),
+        ]
+        dates = [service.get(field) for field in DATE_TIME_FIELDS]
+        if not all(is_uri(value) for value in uris if value is not None) or not all(
+            is_date_time(value) for value in dates if value is not None
+        ):
+            ids.append(f"'{service.get('id')}'")
+    if ids:
+        logger.error(
+            "Services with invalid URLs or timestamps make reads of them and "
+            "`GET /services` return 500; correct or delete them in the database: %s",
             escape_log_value(", ".join(ids)),
         )

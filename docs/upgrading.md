@@ -63,8 +63,10 @@ request checks change some responses, so check clients that rely on them:
   value and is logged too, so don't send secrets in those fields, and unpaired surrogates in JSON bodies get one that doesn't name the
   field.
 - FOCA checks the formats of responses too, so stored `date-time` and `uri` values
-  must be valid, or reads return `500`. The fresh database of this version holds
-  only checked values; don't import old data around the API.
+  must be valid, or reads of the service and `GET /services` return `500`. Requests
+  can't store such values, and this version needs a fresh database, but if data got
+  in around the API, the app logs an error on startup naming the services: correct
+  or delete them in the database.
 
 **Service URLs:** a `url` with leading or trailing spaces now returns
 `400 Bad Request` instead of being stored, so remove the spaces from what you
