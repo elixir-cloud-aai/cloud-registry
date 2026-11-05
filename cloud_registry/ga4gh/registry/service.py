@@ -377,6 +377,23 @@ class RegisterService:
         self.environments: list[str] = list(endpoint_conf.services.environments)
         self.db_coll = get_collection("services")
 
+    def check(self) -> str:
+        """Check the values of the service, whatever else is registered.
+
+        Returns:
+            Key of the service (cf. `service_key()`).
+
+        Raises:
+            InvalidService: Cf. `register_metadata()`.
+        """
+        check_strings(self.data)
+        key = service_key(self.data)
+        check_url_scheme(self.data["url"], schemes=self.url_schemes)
+        check_links(self.data)
+        check_date_times(self.data)
+        check_environment(self.data, environments=self.environments)
+        return key
+
     def validate(self) -> str:
         """Check the service, before it is registered.
 
@@ -391,12 +408,7 @@ class RegisterService:
             DuplicateService: Another service with the same URL and API type
                 is registered.
         """
-        check_strings(self.data)
-        key = service_key(self.data)
-        check_url_scheme(self.data["url"], schemes=self.url_schemes)
-        check_links(self.data)
-        check_date_times(self.data)
-        check_environment(self.data, environments=self.environments)
+        key = self.check()
         self._check_duplicate(key=key)
         return key
 

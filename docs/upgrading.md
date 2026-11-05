@@ -32,6 +32,14 @@ earlier versions stored. It refuses to start if it finds such data or indexes
 
 Going back to 1.0.0rc1 needs its database, as it was.
 
+**Outgoing requests:** the registry now fetches service info from public
+addresses when users [import it](api.md#importing-service-info), so it needs
+outgoing connections, on top of those to the token issuers; nothing changes if they
+are blocked, except that imports fail. It adds the collection
+`service_info_fetches`, and the policy rule `import-service-info`, which overlays
+that give `policies` as a list must include. The Helm chart has an optional policy
+for the [app's connections](deployment.md#the-apps-connections).
+
 **Service URLs:** a `url` with leading or trailing spaces now returns
 `400 Bad Request` instead of being stored, so remove the spaces from what you
 register again.

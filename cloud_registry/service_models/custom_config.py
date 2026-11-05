@@ -1,5 +1,6 @@
 """Cloud Registry custom config models."""
 
+import ipaddress
 from typing import Annotated, Literal
 
 from foca.models.config import FOCABaseConfig
@@ -63,6 +64,55 @@ class IdConfig(FOCABaseConfig):
         return charset
 
 
+class ServiceInfoConfig(FOCABaseConfig):
+    """Model for fetching the service info of services.
+
+    Args:
+        private_networks: Networks (CIDR notation) that the app may fetch
+            service info from, besides public addresses; none by default.
+            Only for networks whose services users may probe, e.g., in tests.
+        fetches_per_hour: How often each user may have service info fetched
+            per hour (`429` above).
+
+    Attributes:
+        private_networks: Networks (CIDR notation) that the app may fetch
+            service info from, besides public addresses; none by default.
+            Only for networks whose services users may probe, e.g., in tests.
+        fetches_per_hour: How often each user may have service info fetched
+            per hour (`429` above).
+
+    Raises:
+        pydantic.ValidationError: The class was instantianted with an illegal
+            data type, a network is invalid (also with host bits set), or
+            `fetches_per_hour` is not positive.
+
+    Example:
+        >>> ServiceInfoConfig(private_networks=['10.1.0.0/16'])
+        ServiceInfoConfig(private_networks=['10.1.0.0/16'], fetches_per_hour=30)
+    """
+
+    private_networks: list[str] = Field(default_factory=list)
+    fetches_per_hour: PositiveInt = 30
+
+    @field_validator("private_networks")
+    @classmethod
+    def _check_networks(cls, networks: list[str]) -> list[str]:
+        """Reject values that aren't networks.
+
+        Args:
+            networks: Networks.
+
+        Returns:
+            The networks.
+
+        Raises:
+            ValueError: A value is not a network.
+        """
+        for network in networks:
+            ipaddress.ip_network(network)
+        return networks
+
+
 class ServicesConfig(FOCABaseConfig):
     """Model for defining the service database store for cloud registry.
 
@@ -80,6 +130,7 @@ class ServicesConfig(FOCABaseConfig):
             the values that the GA4GH specification suggests (`prod`, `test`,
             `dev`, `staging`). Empty to allow any value. At most 256
             characters each, as in the API.
+        service_info: Fetching the service info of services.
 
     Attributes:
         id: Unique identifier for a service in cloud registry.
@@ -91,6 +142,7 @@ class ServicesConfig(FOCABaseConfig):
             the values that the GA4GH specification suggests (`prod`, `test`,
             `dev`, `staging`). Empty to allow any value. At most 256
             characters each, as in the API.
+        service_info: Fetching the service info of services.
 
     Raises:
         pydantic.ValidationError: The class was instantianted with an illegal
@@ -106,7 +158,7 @@ class ServicesConfig(FOCABaseConfig):
         ... )
         ServicesConfig(id=IdConfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ01234567\
 89', length=6), url_schemes=['https'], environments=['prod', 'test', 'dev', 's\
-taging'])
+taging'], service_info=ServiceInfoConfig(private_networks=[], fetches_per_hour=30))
     """
 
     id: IdConfig
@@ -116,6 +168,7 @@ taging'])
     environments: list[Annotated[str, Field(max_length=256)]] = Field(
         default=["prod", "test", "dev", "staging"]
     )
+    service_info: ServiceInfoConfig = Field(default_factory=ServiceInfoConfig)
 
 
 class EndpointsConfig(FOCABaseConfig):
@@ -142,7 +195,8 @@ class EndpointsConfig(FOCABaseConfig):
         ... )
         EndpointsConfig(services=ServicesConfig(id=IdConfig(charset='ABCDEFGHI\
 JKLMNOPQRSTUVWXYZ0123456789', length=6), url_schemes=['https'], environments=[\
-'prod', 'test', 'dev', 'staging']))
+'prod', 'test', 'dev', 'staging'], service_info=ServiceInfoConfig(private_networks\
+=[], fetches_per_hour=30)))
     """
 
     services: ServicesConfig
@@ -281,7 +335,8 @@ class CustomConfig(FOCABaseConfig):
         ... )
         CustomConfig(endpoints=EndpointsConfig(services=ServicesConfig(id=IdCo\
 nfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', length=6), url_schemes=['\
-https'], environments=['prod', 'test', 'dev', 'staging'])), access_control=Acc\
+https'], environments=['prod', 'test', 'dev', 'staging'], service_info=ServiceI\
+nfoConfig(private_networks=[], fetches_per_hour=30))), access_control=Acc\
 essControlConfig(service_types='open', max_unused_service_types=10, max_serv\
 ices_per_user=50, invitations=InvitationsConfig(expiry_days=7, keep_expired_d\
 ays=30, max_per_service=20)))

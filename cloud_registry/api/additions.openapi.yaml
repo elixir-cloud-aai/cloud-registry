@@ -224,6 +224,78 @@ paths:
           $ref: '#/components/responses/InternalServerError'
         default:
           $ref: '#/components/responses/Error'
+  /services/import:
+    post:
+      summary: Get the values for a registration from service info.
+      description: |
+        Fetch the service info of a service from the address of its endpoint,
+        and return the values for a registration (`POST /services`), for users
+        to edit and register. Nothing is stored. `url` is set to the address
+        without `/service-info`. Only publicly available service info is
+        supported: the registry sends no tokens, doesn't follow redirects, and
+        only connects to public addresses (unless the deployment permits
+        others). Other values than those of the schema are ignored, and the
+        values are checked as in a registration (`400` otherwise), except for
+        duplicates and whether the user may add the type, which `POST
+        /services` checks. Limited per user (`429` above); every failed fetch
+        returns the same `502`.
+      operationId: postServiceImport
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.service_import
+      tags:
+        - cloud-registry
+      requestBody:
+        description: Address of the service info.
+        required: true
+        content:
+          application/json:
+            schema:
+              x-body-name: service_import
+              $ref: '#/components/schemas/ServiceImport'
+      responses:
+        '200':
+          description: Values for a registration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalServiceRegister'
+        '400':
+          description: |
+            The address doesn't end in `/service-info`, is invalid or has a
+            scheme that isn't allowed, or the service info doesn't pass the
+            checks of a registration (saying which field in `detail`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          description: |
+            The user has had service info fetched as often per hour as allowed
+            (`custom.endpoints.services.service_info.fetches_per_hour`).
+          headers:
+            Retry-After:
+              description: Seconds after which to try again.
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '502':
+          description: |
+            The service info could not be fetched, for whichever reason (e.g.,
+            the address is not public, or the service requires a token).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          $ref: '#/components/responses/Error'
   /services/types:
     get:
       security:
@@ -1447,6 +1519,22 @@ components:
             only admins can register services. Not set if there is no limit
             (`custom.access_control.max_services_per_user: null`).
           example: 50
+    ServiceImport:
+      description: Address of the service info to import.
+      type: object
+      required:
+        - serviceInfoUrl
+      additionalProperties: false
+      properties:
+        serviceInfoUrl:
+          type: string
+          format: uri
+          # of service URLs (`url`), with `/service-info`
+          maxLength: 2061
+          description: |
+            Address of the service info, the URL of the service with
+            `/service-info`; without a query or fragment.
+          example: 'https://tes.example.org/ga4gh/tes/v1/service-info'
     SelfListing:
       description: Whether the registry is listed among its own services.
       type: object

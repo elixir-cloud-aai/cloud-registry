@@ -1,0 +1,65 @@
+{{- /*
+Optional second layer behind the app's own checks of the addresses it fetches
+service info from: the app's pods may only connect to DNS, the MongoDB of the
+release and public addresses (see deployment/README.md, Network policies).
+*/ -}}
+{{- $settings := include "cloud-registry.settings" . | fromYaml -}}
+{{- $egress := dig "networkPolicy" "egress" dict .Values.cloudRegistry -}}
+{{- if $egress.enabled -}}
+{{- $ipv4 := list -}}
+{{- $ipv6 := list -}}
+{{- range $egress.exceptCidrs -}}
+{{- if contains ":" . -}}
+{{- $ipv6 = append $ipv6 . -}}
+{{- else -}}
+{{- $ipv4 = append $ipv4 . -}}
+{{- end -}}
+{{- end -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "%s-egress" (include "foca-common.fullname" .) | quote }}
+  labels:
+    {{- include "foca-common.labels" (dict "root" . "component" "app") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "foca-common.selectorLabels" (dict "root" . "component" "app") | nindent 6 }}
+  policyTypes:
+  - Egress
+  egress:
+  # DNS, wherever the cluster serves it
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+  {{- if include "foca-common.mongodbEnabled" . }}
+  - to:
+    - podSelector:
+        matchLabels:
+          {{- include "foca-common.selectorLabels" (dict "root" . "component" "mongodb") | nindent 10 }}
+    ports:
+    - port: 27017
+      protocol: TCP
+  {{- end }}
+  # Public addresses: services, and token issuers
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+          {{- toYaml $ipv4 | nindent 10 }}
+    - ipBlock:
+        cidr: ::/0
+        except:
+          {{- toYaml $ipv6 | nindent 10 }}
+    ports:
+    {{- range $egress.ports }}
+    - port: {{ . }}
+      protocol: TCP
+    {{- end }}
+  {{- with $egress.to }}
+  # What's private: e.g., token issuers, an external MongoDB, permitted networks
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+{{ end -}}

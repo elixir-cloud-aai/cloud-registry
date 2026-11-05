@@ -389,6 +389,57 @@
                 ]
               },
               "description": "NetworkPolicy peers allowed to connect to the app, e.g., the pods of the ingress controller or Gateway; no defaults, as they depend on the cluster; must not be empty if enabled"
+            },
+            "egress": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Create a NetworkPolicy letting the app connect only to DNS, the MongoDB of the release, public addresses and the rules in to"
+                },
+                "ports": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535
+                  },
+                  "description": "Ports of public addresses that the app may connect to"
+                },
+                "exceptCidrs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": "CIDR blocks that don't count as public (IPv4 and IPv6)"
+                },
+                "to": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "minProperties": 1,
+                    "additionalProperties": false,
+                    "properties": {
+                      "to": {
+                        "type": "array",
+                        "items": {
+                          "type": "object"
+                        }
+                      },
+                      "ports": {
+                        "type": "array",
+                        "items": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  },
+                  "description": "Further NetworkPolicy egress rules, for private addresses the app must reach"
+                }
+              }
             }
           }
         },

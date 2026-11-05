@@ -135,6 +135,9 @@ security:
             owners-manage-invitations: [p, owner, "/ga4gh/registry/v1/services/:id/invitations", "(GET)|(POST)"]
             owners-revoke-invitations: [p, owner, "/ga4gh/registry/v1/services/:id/invitations/:invitation", DELETE]
             accept-invitations: [p, "*", /ga4gh/registry/v1/invitations/accept, POST]
+            # any authenticated user may have service info fetched, to import
+            # it (limited per user: `custom.endpoints.services.service_info`)
+            import-service-info: [p, "*", /ga4gh/registry/v1/services/import, POST]
             # any authenticated user may add service types, unless only
             # admins may (`custom.access_control.service_types: controlled`,
             # checked by the app); keep this rule and set that option instead,
@@ -229,6 +232,15 @@ db:
                 # Number of services each user registered (`count`), by user
                 # identifier (`_id`), for the limit of services per user
                 service_counts: {}
+                # Fetches of service info per user (`_id`) in the current
+                # hour; MongoDB removes old ones (TTL index; a limit counts
+                # for an hour, so documents are kept for at most two)
+                service_info_fetches:
+                    indexes:
+                        - keys:
+                              windowStart: 1
+                          options:
+                            'expireAfterSeconds': 7200
                 # Display names of users with roles on services, per service
                 user_names:
                     indexes:
@@ -417,3 +429,12 @@ custom:
                 - test
                 - dev
                 - staging
+            # Fetching the service info of services (`POST /services/import`;
+            # see "Service info import" in `docs/configuration.md`): networks
+            # that may be fetched from besides public addresses (CIDR
+            # notation; none by default, only for networks whose services
+            # users may probe), and how often each user may have service info
+            # fetched per hour (`429` above)
+            service_info:
+                private_networks: []
+                fetches_per_hour: 30
