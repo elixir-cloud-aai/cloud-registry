@@ -99,12 +99,12 @@ def _is_invalid_token(exc: Unauthorized) -> bool:
         exc: Exception of FOCA's `validate_token()`.
 
     Returns:
-        Whether its challenge has the error `invalid_token` (RFC 6750); FOCA
-        leaves it out if the token couldn't be validated for other reasons
-        (e.g., the identity provider is unavailable). The challenge is read
-        from the headers of the response, wherever FOCA keeps it in the
-        exception (`www_authenticate` up to FOCA 0.21, generic headers after
-        FOCA #710).
+        Whether its Bearer challenge has the error `invalid_token` (RFC
+        6750); FOCA leaves it out if the token couldn't be validated for
+        other reasons (e.g., the identity provider is unavailable). The
+        challenge is read from the headers of the response, wherever FOCA
+        keeps it in the exception (`www_authenticate` up to FOCA 0.21,
+        generic headers after FOCA #710).
     """
     for name, value in exc.get_headers():
         if name.lower() != "www-authenticate":

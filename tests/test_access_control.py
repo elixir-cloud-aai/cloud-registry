@@ -28,6 +28,7 @@ from foca.security.access_control import (
 )
 from foca.security.access_control.enforcement import locked_enforcer
 from foca.security.access_control.foca_casbin_adapter.adapter import Adapter
+from foca.security.auth import _unauthorized as foca_unauthorized
 from pymongo.collection import Collection
 import pytest
 from werkzeug.datastructures import WWWAuthenticate
@@ -2046,7 +2047,7 @@ def test_invitation_rules_recipe(
 
 
 class _HeadersUnauthorized(WerkzeugUnauthorized):
-    """`401` with its challenge in generic headers, as FOCA plans (FOCA #710)."""
+    """`401` with its challenge only in extra headers (cf. FOCA #710)."""
 
     def __init__(self, challenge: str | None) -> None:
         """Keep the challenge for the headers.
@@ -2111,4 +2112,11 @@ def test_is_invalid_token(exc: WerkzeugUnauthorized, invalid: bool) -> None:
     Wherever FOCA puts the challenge: in `www_authenticate` (FOCA 0.21) or in
     generic headers (FOCA #710).
     """
+    assert permissions_module._is_invalid_token(exc) is invalid
+
+
+@pytest.mark.parametrize("invalid", [True, False])
+def test_is_invalid_token_foca(invalid: bool) -> None:
+    """Invalid tokens are told from the exceptions FOCA raises for tokens."""
+    exc = foca_unauthorized("Token rejected", invalid_token=invalid)
     assert permissions_module._is_invalid_token(exc) is invalid
