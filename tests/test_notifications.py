@@ -7,6 +7,7 @@ from flask.testing import FlaskClient
 from foca import get_custom_config
 import pytest
 
+from cloud_registry.ga4gh.registry import notifications as notifications_module
 from cloud_registry.ga4gh.registry import sync
 from cloud_registry.ga4gh.registry.service import PENDING_SERVICE, SYNC
 from cloud_registry.ga4gh.registry.service_types import PENDING
@@ -296,6 +297,50 @@ def test_dismiss_only_what_is_visible(client: FlaskClient) -> None:
     assert dismiss(client, "unknown") == 404
     assert len(notifications(client)) == 1
     assert dismiss(client, notification_id) == 200
+    assert dismiss(client, notification_id) == 404
+
+
+def test_concurrent_dismissals(
+    client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Of dismissals at the same time, one succeeds; the other finds it dismissed."""
+    service_id = register(client)
+    fail(client, service_id)
+    notification_id = notifications(client)[0]["id"]
+    assert dismiss(client, notification_id) == 200
+    original = notifications_module.get_collection
+
+    class Unseen:
+        """Collection whose reads don't see what a concurrent request wrote."""
+
+        def __init__(self, name: str) -> None:
+            """Create the collection.
+
+            Args:
+                name: Name of the collection.
+            """
+            self.collection = original(name)
+
+        def __getattr__(self, name: str) -> Any:
+            """Get an attribute of the collection.
+
+            Args:
+                name: Name of the attribute.
+
+            Returns:
+                The attribute.
+            """
+            return getattr(self.collection, name)
+
+        def find_one(self, *args: Any, **kwargs: Any) -> None:
+            """Find nothing.
+
+            Args:
+                *args: Ignored.
+                **kwargs: Ignored.
+            """
+
+    monkeypatch.setattr(notifications_module, "get_collection", Unseen)
     assert dismiss(client, notification_id) == 404
 
 

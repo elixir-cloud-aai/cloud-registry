@@ -29,6 +29,7 @@ from urllib.parse import urlsplit
 from foca import get_custom_config
 from foca.security.access_control import resource_filter
 from foca.utils.logging import escape_log_value
+from pymongo.errors import DuplicateKeyError
 
 from cloud_registry.exceptions import NotFound
 from cloud_registry.ga4gh.registry.permissions import (
@@ -335,13 +336,12 @@ def deleteNotification(notificationId: str, **kwargs: Any) -> str:
     audience, notifications = _current()
     if notificationId not in {item["id"] for item in notifications}:
         raise NotFound
-    dismissal = _dismissal_id(audience, notificationId)
-    collection = get_collection(DISMISSALS)
-    if collection.find_one({"_id": dismissal}, {"_id": True}) is not None:
-        raise NotFound
-    collection.update_one(
-        {"_id": dismissal}, {"$setOnInsert": {"dismissedAt": now()}}, upsert=True
-    )
+    try:
+        get_collection(DISMISSALS).insert_one(
+            {"_id": _dismissal_id(audience, notificationId), "dismissedAt": now()}
+        )
+    except DuplicateKeyError as exc:
+        raise NotFound from exc
     logger.info(
         "Notification '%s' dismissed by '%s'.",
         escape_log_value(notificationId),
