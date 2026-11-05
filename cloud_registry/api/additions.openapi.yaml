@@ -1272,7 +1272,7 @@ paths:
       description: |
         Dismiss a notification for all users with a role on the service, or for all
         admins in admin mode. It only comes back if the problem ended and came back,
-        or its reason changed, under a new identifier.
+        or its reason changed.
       operationId: deleteNotification
       x-openapi-router-controller: cloud_registry.ga4gh.registry.notifications
       tags:
@@ -2274,8 +2274,8 @@ components:
         id:
           type: string
           description: |
-            Identifier, which stands for this episode of the problem: it changes if
-            the problem ends and comes back, or its reason changes.
+            Identifier, which stays the same as long as the problem lasts, with the
+            same reason.
           example: '3f2a9c1e5b7d4f608a1c2e3d4b5a6978'
         type:
           type: string

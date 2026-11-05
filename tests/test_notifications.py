@@ -465,6 +465,34 @@ def test_admin_types_come_back_with_new_values(client: FlaskClient) -> None:
     assert types == {"pending-service", "environment-not-allowed"}
 
 
+def test_admin_types_come_back_after_ending(client: FlaskClient) -> None:
+    """What ended while admins looked comes back, with the same type or value."""
+    service_id = register(client)
+    problem = {PENDING_SERVICE: True, "environment": "gone"}
+    update_service(client, service_id, {"$set": problem})
+    for item in notifications(client, ADMIN, admin=True):
+        assert dismiss(client, item["id"], ADMIN, admin=True) == 200
+    assert notifications(client, ADMIN, admin=True) == []
+    update_service(
+        client, service_id, {"$unset": {PENDING_SERVICE: "", "environment": ""}}
+    )
+    assert notifications(client, ADMIN, admin=True) == []
+    update_service(client, service_id, {"$set": problem})
+    assert {item["type"] for item in notifications(client, ADMIN, admin=True)} == {
+        "pending-service",
+        "environment-not-allowed",
+    }
+
+
+def test_dismissals_of_owners_stay_when_admins_look(client: FlaskClient) -> None:
+    """Admins looking doesn't bring back what owners dismissed."""
+    service_id = register(client)
+    fail(client, service_id)
+    assert dismiss(client, notifications(client)[0]["id"]) == 200
+    assert len(notifications(client, ADMIN, admin=True)) == 1
+    assert notifications(client) == []
+
+
 def test_invalid_url_is_no_scheme_problem(client: FlaskClient) -> None:
     """URLs with an allowed scheme aren't reported, whatever else they have."""
     service_id = register(client)

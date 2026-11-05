@@ -10,11 +10,10 @@ Only dismissals are stored, per audience: any user with a role on a service
 dismisses a notification for all of them, and any admin for all admins, but not
 for each other. The identifier of a notification stands for one episode of a
 problem (cf. `_notification_id()`), so that a dismissed notification only comes back
-if the problem ended and came back, or its reason changed. For values that the
-configuration no longer allows, that is the value: the configuration leaves no trace
-when it changes, so that one dropped again after being allowed stays dismissed.
-Likewise, a service that returns to the same pending type stays dismissed, as only
-the type identifies that episode.
+if the problem ended and came back, or its reason changed. For what only admins see,
+the identifier stands for the pending type or the value that isn't allowed, as changes
+of the configuration and the pending flag leave no trace; their dismissals are removed
+when admins list notifications while the problem is gone (cf. `getNotifications()`).
 Dismissals don't refer to users, and can only be made by human actions, so they stay.
 """
 
@@ -293,6 +292,19 @@ def getNotifications(**kwargs: Any) -> list[dict[str, Any]]:
         first (those without a time last), with a stable order.
     """
     audience, notifications = _current()
+    if audience == ADMINS:
+        # what ended is forgotten, so that it comes back if it does, under the same
+        # identifier; only those of admins, as these are all known here
+        get_collection(DISMISSALS).delete_many(
+            {
+                "_id": {
+                    "$regex": f"^{ADMINS}:",
+                    "$nin": [
+                        _dismissal_id(ADMINS, item["id"]) for item in notifications
+                    ],
+                }
+            }
+        )
     dismissed = {
         item["_id"]
         for item in get_collection(DISMISSALS).find(
