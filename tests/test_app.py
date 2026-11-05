@@ -880,9 +880,9 @@ def test_put_duplicate(client: FlaskClient, admin_headers: dict[str, str]) -> No
     "url, detail",
     [
         ("https://user:secret@tes.example.org", "must not contain user info"),
-        ("tes.example.org/v1", "need a scheme and a host"),
+        ("tes.example.org/v1", "is not a 'uri'"),
         ("http://[::1/v1", "must be valid URLs"),
-        ("https://tes.exa\nmple.org", "must not contain whitespace"),
+        ("https://tes.exa\nmple.org", "is not a 'uri'"),
         ("ftp://tes.example.org", "must use one of these schemes: 'http', 'https'"),
         # by default (`custom.endpoints.services.url_schemes`)
         ("http://tes.example.org", "must use one of these schemes: 'https'"),
@@ -969,13 +969,13 @@ def test_service_surrogate(
 ) -> None:
     """Services with unpaired surrogates in any string are rejected (`400`).
 
-    Such strings can't be stored; the response names the field.
+    Such strings can't be stored.
     """
     response = getattr(client, method)(
         f"{BASE}/services{path}", json=service, headers=admin_headers
     )
     _assert_error(response, 400)
-    assert f"'{field}'" in response.get_json()["detail"]
+    assert "unpaired surrogates" in response.get_json()["detail"]
     assert client.get(f"{BASE}/services").get_json() == []
 
 
@@ -2172,7 +2172,7 @@ def test_service_date_time_invalid(
 ) -> None:
     """Timestamps of services must be RFC 3339 date-times.
 
-    Others are rejected with `400`, naming the field.
+    Others are rejected with `400` by FOCA, naming the field.
     """
     response = getattr(client, method)(
         f"{BASE}/services{path}", json=_service(**{field: value}), headers=admin_headers
@@ -2227,8 +2227,6 @@ def _timestamps(client: FlaskClient, service_id: str) -> dict[str, str]:
     [
         {},
         {"createdAt": "2019-06-04T12:58:19Z", "updatedAt": "2019-06-04T12:58:19Z"},
-        # not even checked
-        {"createdAt": "yesterday"},
     ],
 )
 def test_service_timestamps(
@@ -2240,8 +2238,8 @@ def test_service_timestamps(
     """The registry sets the timestamps of users' services.
 
     `createdAt` is set on registration and kept on updates; `updatedAt` is
-    set on registration and each update. Timestamps sent by users other than
-    admins are ignored.
+    set on registration and each update. Valid timestamps sent by users other
+    than admins are ignored.
     """
     _set_service_clock(monkeypatch, TIME, LATER)
     service_id = _post(client, headers, _service(**sent))
@@ -2259,6 +2257,16 @@ def test_service_timestamps(
         "createdAt": FORMATTED_TIME,
         "updatedAt": FORMATTED_LATER,
     }
+
+
+def test_service_timestamp_invalid_all_users(
+    client: FlaskClient, headers: dict[str, str]
+) -> None:
+    """Users other than admins get `400` too: their values aren't just ignored."""
+    response = client.post(
+        f"{BASE}/services", json=_service(createdAt="yesterday"), headers=headers
+    )
+    _assert_error(response, 400)
 
 
 def test_service_timestamps_admin_edit(
@@ -2373,11 +2381,11 @@ def test_validation_error_detail(
 
 
 @pytest.mark.parametrize(
-    "method, path, status",
+    "method, path",
     [
-        ("get", "/services", 200),
-        ("get", "/service-info", 200),
-        ("post", "/services/types", 201),
+        ("get", "/services"),
+        ("get", "/service-info"),
+        ("post", "/services/types"),
     ],
 )
 def test_extra_query_parameters_without_parameters(
@@ -2385,20 +2393,18 @@ def test_extra_query_parameters_without_parameters(
     admin_headers: dict[str, str],
     method: str,
     path: str,
-    status: int,
 ) -> None:
-    """Operations without parameters ignore query parameters.
+    """Operations without parameters reject query parameters too.
 
-    Connexion only checks the query parameters of operations with path,
-    query or header parameters (cf. `extra_parameter` of
-    `test_validation_error_detail()`), not request bodies, as `docs/api.md`
-    (Errors) says.
+    FOCA checks them, while Connexion only checks those of operations with
+    path, query or header parameters (cf. `extra_parameter` of
+    `test_validation_error_detail()`), as `docs/api.md` (Errors) says.
     """
     body = SERVICE["type"] if method == "post" else None
     response = client.open(
         f"{BASE}{path}?x=1", method=method, headers=admin_headers, json=body
     )
-    assert response.status_code == status, response.get_json()
+    assert response.status_code == 400, response.get_json()
 
 
 @pytest.mark.parametrize(

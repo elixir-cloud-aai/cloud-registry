@@ -49,6 +49,23 @@ index it uses is created on startup); set
 it](configuration.md#service-info-sync). The Helm chart has an optional policy
 for the [app's connections](deployment.md#the-apps-connections).
 
+**FOCA 0.21:** the app now builds on FOCA 0.21 (see [FOCA's migration
+guide](https://foca.readthedocs.io/en/v0.21.0/migration-0.21/)), whose stricter
+request checks change some responses, so check clients that rely on them:
+
+- Query parameters that an operation doesn't declare now return `400 Bad Request`
+  on all operations, including `GET /services`, `GET /service-info` and `POST
+  /services/types`, which ignored them.
+- `createdAt` and `updatedAt` that aren't date-times now return `400 Bad Request`
+  for all users, instead of being ignored for users other than admins.
+- Some `400 Bad Request` responses have another `detail`: URLs that aren't valid
+  URIs (without scheme, or with whitespace) get FOCA's message, which quotes the
+  value and is logged too, so don't send secrets in those fields, and unpaired surrogates in JSON bodies get one that doesn't name the
+  field.
+- FOCA checks the formats of responses too, so stored `date-time` and `uri` values
+  must be valid, or reads return `500`. The fresh database of this version holds
+  only checked values; don't import old data around the API.
+
 **Service URLs:** a `url` with leading or trailing spaces now returns
 `400 Bad Request` instead of being stored, so remove the spaces from what you
 register again.

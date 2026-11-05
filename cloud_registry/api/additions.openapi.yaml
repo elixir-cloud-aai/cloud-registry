@@ -1785,7 +1785,8 @@ components:
       properties:
         serviceInfoUrl:
           type: string
-          format: uri
+          # No `format: uri`: FOCA would log and return rejected addresses,
+          # which can hold secrets; the app checks them without quoting them
           # of service URLs (`url`), with `/service-info`
           maxLength: 2061
           description: |

@@ -292,7 +292,7 @@ def test_add_type_surrogates(client: FlaskClient) -> None:
         headers={**headers(), "Content-Type": "application/json"},
     )
     assert response.status_code == 400
-    assert "'artifact'" in response.get_json()["detail"]
+    assert "unpaired surrogates" in response.get_json()["detail"]
 
 
 def test_type_of_service_added(
@@ -492,7 +492,7 @@ def test_approve_type_surrogates(client: FlaskClient) -> None:
         headers={**headers(ADMIN), "Content-Type": "application/json"},
     )
     assert response.status_code == 400
-    assert "'artifact'" in response.get_json()["detail"]
+    assert "unpaired surrogates" in response.get_json()["detail"]
 
 
 def test_moderated_services(client: FlaskClient, moderated: None) -> None:
@@ -714,7 +714,7 @@ def test_moderated_update_surrogates(client: FlaskClient, moderated: None) -> No
         headers={**headers(), "Content-Type": "application/json"},
     )
     assert response.status_code == 400
-    assert "'type.artifact'" in response.get_json()["detail"]
+    assert "unpaired surrogates" in response.get_json()["detail"]
 
 
 def _flags(mongo_client: MongoClient[dict[str, Any]]) -> dict[str, bool]:

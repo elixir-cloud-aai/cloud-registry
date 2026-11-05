@@ -259,8 +259,8 @@ them (e.g., to sort services or show when they were last changed):
 
 The registry sets them as RFC 3339 date-times in UTC, in milliseconds
 (e.g., `2026-10-20T12:34:56.789Z`). Timestamps sent in registrations are
-ignored (not an error, so clients can send services back as they got them;
-like all fields, they must be strings), except for admins: they can set
+ignored, so clients can send services back as they got them, except for
+admins: they can set
 them, e.g., to keep the timestamps of services imported from another
 registry. Those are stored as sent, so they may have other time zones or
 precisions. `updatedAt` is only kept for services that admins register
@@ -269,7 +269,8 @@ are set as for other users. Timestamps of admins must be RFC 3339
 date-times (e.g., `2019-06-04T12:58:19Z`); others are rejected (`400 Bad
 Request`), so admins who update a service with another stored `createdAt`
 send a valid one, or none.
-Verifying a service doesn't change its timestamps.
+Timestamps that aren't date-times are rejected (`400 Bad Request`) for all
+users. Verifying a service doesn't change its timestamps.
 
 This differs from the GA4GH specification, where the timestamps describe
 the deployment of the service (when it was first deployed, and last
@@ -369,11 +370,12 @@ curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/types/approval" \
 
 Requests that don't match the API specification (e.g., missing or unknown
 fields, values that are too long, or bodies that aren't JSON) are rejected
-with `400 Bad Request`, with the reason in `detail`. So are extra query
-parameters of operations that have path, query or header parameters (e.g.,
-`GET /services/{serviceId}?page=1`); operations without any (request bodies
-don't count), such as `GET /services`, `GET /service-info` and `POST
-/services/types`, ignore query parameters.
+with `400 Bad Request`, with the reason in `detail`. So are query parameters
+that an operation doesn't declare, on all operations (e.g., `GET
+/services/{serviceId}?page=1` and `GET /services?x=1`); values that don't match
+the `date-time` or `uri` format of their field, for which `detail` quotes the
+value and names the field; and JSON bodies with unpaired surrogates (e.g.,
+`\ud800`), for which `detail` names neither.
 
 Errors handled by the app are [problem
 details](https://www.rfc-editor.org/rfc/rfc7807) (`title`, `status` and

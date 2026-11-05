@@ -288,7 +288,7 @@ def test_verify_checked_invalid(
     "url, detail",
     [
         ("https://user@tes.example.org/ga4gh/tes/v1", "must not contain user info"),
-        ("tes.example.org/ga4gh/tes/v1", "need a scheme and a host"),
+        ("tes.example.org/ga4gh/tes/v1", "is not a 'uri'"),
     ],
 )
 def test_verify_checked_invalid_url(

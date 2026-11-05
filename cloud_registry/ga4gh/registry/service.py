@@ -79,8 +79,8 @@ LINK_FIELDS: dict[str, frozenset[str]] = {
 # when the service was registered, and when it was last changed
 CREATED = "createdAt"
 UPDATED = "updatedAt"
-# Fields with timestamps (`format: date-time`), which Connexion's request
-# validation doesn't check without an optional package (`rfc3339-validator`)
+# Fields with timestamps (`format: date-time`); FOCA checks those of requests,
+# the app those it doesn't get through requests
 DATE_TIME_FIELDS = (CREATED, UPDATED)
 # Identifiers that can't be used for services: dot segments, which clients
 # resolve in URLs, and `types`, as `/services/types` lists the service types
