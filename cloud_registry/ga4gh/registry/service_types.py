@@ -88,6 +88,9 @@ TYPE_PROJECTION = {"_id": False} | dict.fromkeys(TYPE_FIELDS, True)
 # Internal field of stored service types: the user who added the type, or
 # `None` for types added on startup (cf. `add_service_types()`); not served
 CREATED_BY = "createdBy"
+# Start of `CREATED_BY` for types that syncs of services add that count for nobody
+# (`service:<internal identifier>`): no users, so that migrations leave them alone
+SERVICE_SUBJECT_PREFIX = "service:"
 # Internal field of stored service types: `True` while the type is pending,
 # i.e., until an admin approves it (mode `moderated`); not set for approved
 # types
@@ -600,6 +603,26 @@ def decide_synced_type(service_type: dict[str, str], user: str) -> SyncedType:
     store_service_type(service_type, created_by=user, pending=pending)
     # the state stored, as another request may have added it meanwhile
     return SyncedType.PENDING if is_pending(service_type) else SyncedType.APPROVED
+
+
+def release_left_type(service_type: dict[str, str], user: str) -> None:
+    """Stop counting a type that a sync left behind for the limit of who added it.
+
+    Otherwise, a service that releases new versions would use up the limit and
+    stop syncing, without anybody doing anything wrong. The type stays, and admins
+    can remove it. Pending types still count, as they wait for admins.
+
+    Args:
+        service_type: Former type of a service, in its stored form.
+        user: Identifier that the service counts for (cf. `decide_synced_type()`).
+    """
+    stored = {field: service_type[field] for field in TYPE_FIELDS}
+    if get_collection("services").find_one(_services_of_type(stored), {"_id": True}):
+        return
+    get_collection("service_types").update_one(
+        {**stored, CREATED_BY: user, PENDING: {"$ne": True}},
+        {"$set": {CREATED_BY: None}},
+    )
 
 
 def check_service_type(value: object) -> None:

@@ -379,7 +379,8 @@ Users other than admins may only have added
 `controlled`, they can't add types at all): further types are rejected
 (`409`), whether added explicitly or by registering or changing services,
 until services have them or admins remove them (approved types count too).
-Types become unused when their services are deleted or change their type, so
+Types become unused when their services are deleted or change their type
+(except for versions that [syncs](api.md#synced-services) leave behind), so
 the limit bounds how many types each user can add without services (users
 can still leave more types unused by registering services with new types and
 deleting them, one registration per type); set `0` to let only admins add

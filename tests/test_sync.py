@@ -941,6 +941,79 @@ def test_turn_on_url_changed_during_fetch(
     assert client.get(f"{BASE}/services/{identifier}/sync").status_code == 404
 
 
+def test_turn_on_other_change_during_fetch(
+    client: FlaskClient, serve: Serve, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Other changes during the first fetch aren't overwritten silently."""
+    serve(INFO)
+    identifier = register(client)
+    fetch = sync._fetch
+
+    def changing_name(url: str) -> tuple[str, dict[str, Any]]:
+        """Change the name during the fetch.
+
+        Args:
+            url: URL.
+
+        Returns:
+            The result of the fetch.
+        """
+        result = fetch(url)
+        time.sleep(0.002)
+        response = client.put(
+            f"{BASE}/services/{identifier}",
+            json={**SERVICE, "name": "By hand"},
+            headers=make_headers(),
+        )
+        assert response.status_code == 200
+        return result
+
+    monkeypatch.setattr(sync, "_fetch", changing_name)
+    assert turn_on(client, identifier).status_code == 409
+    assert get_service(client, identifier)["name"] == "By hand"
+
+
+@pytest.mark.parametrize("user", [USER, ADMIN], ids=["user", "admin"])
+def test_new_versions_keep_syncing(
+    client: FlaskClient, serve: Serve, user: str
+) -> None:
+    """Versions that a service leaves behind don't use up the limit."""
+    set_access_control(client, max_unused_service_types=1)
+    serve(INFO)
+    identifier = register(client, user=user)
+    assert turn_on(client, identifier, user=user).status_code == 200
+    versions = ("1.2.0", "1.3.0", "1.4.0", "1.5.0")
+    for version in versions:
+        serve(info(type=new_type(version)))
+        run_syncs(client)
+        assert state(client, identifier)["status"] == "synced"
+        assert get_service(client, identifier)["type"] == new_type(version)
+    types = client.get(f"{BASE}/services/types", headers=make_headers(ADMIN)).json
+    assert new_type("1.2.0") in (types or [])
+
+
+def test_left_type_of_another_service_counts(
+    client: FlaskClient, serve: Serve, service_id: str
+) -> None:
+    """A type that another service still has stays with who added it."""
+    with client.application.app_context():
+        collection = get_collection("service_types")
+        collection.insert_one({**new_type(), "createdBy": USER})
+        other = {
+            **SERVICE,
+            "type": new_type(),
+            "url": "https://other.example.org/ga4gh/tes/v1",
+        }
+        register(client, other)
+        serve(info(type=new_type()))
+        run_syncs(client)
+        serve(INFO)
+        run_syncs(client)
+        stored = collection.find_one(new_type())
+    assert stored is not None
+    assert stored["createdBy"] == USER
+
+
 def test_turn_on_turned_off_during_fetch(
     client: FlaskClient, serve: Serve, service_id: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:

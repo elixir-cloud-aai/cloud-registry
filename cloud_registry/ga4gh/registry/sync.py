@@ -79,8 +79,10 @@ from cloud_registry.ga4gh.registry.service_import import (
     service_values,
 )
 from cloud_registry.ga4gh.registry.service_types import (
+    SERVICE_SUBJECT_PREFIX,
     SyncedType,
     decide_synced_type,
+    release_left_type,
     sync_pending_flag,
     type_document,
     visible_services,
@@ -346,6 +348,19 @@ def _unreachable(service: dict[str, Any], current: datetime) -> None:
     )
 
 
+def _counted_as(service: dict[str, Any]) -> str:
+    """Get the identifier that the types a service adds count for.
+
+    Args:
+        service: Stored service.
+
+    Returns:
+        The user the service counts for; for services of admins, which count for
+        nobody, one for the service, so that each has a limit of its own.
+    """
+    return service.get(CREATED_BY) or f"{SERVICE_SUBJECT_PREFIX}{service['_id']}"
+
+
 def _reason(
     service: dict[str, Any], identifier: str, values: dict[str, Any]
 ) -> Reason | None:
@@ -368,9 +383,7 @@ def _reason(
     ):
         return Reason.IDENTITY_MISMATCH
     service_type = cast(dict[str, str], type_document(values["type"]))
-    # services of admins count for nobody, so each has its own limit
-    counted_as = service.get(CREATED_BY) or f"service:{service['_id']}"
-    return TYPE_REASONS.get(decide_synced_type(service_type, counted_as))
+    return TYPE_REASONS.get(decide_synced_type(service_type, _counted_as(service)))
 
 
 def _apply(
@@ -412,6 +425,8 @@ def _apply(
         fields=fields,
         removed=removed,
     )
+    if written and "type" in fields:
+        release_left_type(service["type"], _counted_as(service))
     if written and PENDING_SERVICE in service:
         # the service may have left a pending type for an approved one
         sync_pending_flag(service["id"], cast(dict[str, str], values["type"]))
@@ -653,12 +668,14 @@ def putServiceSync(serviceId: str, **kwargs: Any) -> dict[str, Any] | Response:
         if identifier != baseline or service_key(values) != service[KEY]:
             return problem(SyncIdentityMismatch())
         current = now()
-        # also not if the URL changed during the fetch, as it wasn't fetched then
+        # not if the service changed during the fetch, e.g., its URL, which
+        # wasn't fetched then
         claimed = collection.find_one_and_update(
             {
                 "_id": service["_id"],
                 "url": service["url"],
                 KEY: service[KEY],
+                UPDATED: service.get(UPDATED, {"$exists": False}),
                 SYNC: service.get(SYNC, {"$exists": False}),
             },
             {

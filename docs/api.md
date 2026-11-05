@@ -635,7 +635,9 @@ never network errors:
 
 In mode `open`, a new `type` is added, for the user who registered the service, and
 applied. Service info is self-declared, so these rules also hold for services that
-admins registered; as these count for nobody, each has a limit of its own.
+admins registered; as these count for nobody, each has a limit of its own. Versions
+that a sync leaves behind, if no other service has them, no longer count, so that
+releasing new versions doesn't use up the limit; they stay until admins remove them.
 
 **Turning it on** changes nothing if the first fetch fails (the same `502 Bad
 Gateway` as for imports, whatever the cause, so that users can't map networks, also

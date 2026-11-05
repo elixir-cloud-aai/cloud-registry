@@ -1557,7 +1557,8 @@ components:
                   registered (`POST /services/{serviceId}/rename`), or with
                   the identifier of the service info (`PUT
                   /service-info/listing`).
-                - `service-busy`: the service is being renamed (`PUT` and
+                - `service-busy`: the service changed during the fetch (`PUT
+                  /services/{serviceId}/sync`), or is being renamed (`PUT` and
                   `DELETE` of `/services/{serviceId}`,
                   `/services/{serviceId}/permissions/...` and
                   `/service-info/listing`), or the service or
