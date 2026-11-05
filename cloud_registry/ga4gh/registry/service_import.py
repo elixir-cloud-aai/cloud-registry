@@ -160,7 +160,8 @@ def service_url(address: str, schemes: frozenset[str]) -> str:
         schemes: Schemes allowed in service URLs.
 
     Returns:
-        The address without `SERVICE_INFO_PATH`.
+        The normalized address, which is what gets fetched, without
+        `SERVICE_INFO_PATH`.
 
     Raises:
         InvalidService: The address is invalid, uses a scheme that isn't
@@ -172,7 +173,7 @@ def service_url(address: str, schemes: frozenset[str]) -> str:
         raise InvalidService(
             f"The address of the service info must end in '{SERVICE_INFO_PATH}'."
         )
-    return address.removesuffix(SERVICE_INFO_PATH)
+    return normalize_url(address).removesuffix(SERVICE_INFO_PATH)
 
 
 def private_networks() -> list[IPNetwork]:

@@ -110,6 +110,20 @@ def serve(monkeypatch: pytest.MonkeyPatch) -> Callable[[object], list[str]]:
     return set_result
 
 
+@pytest.mark.parametrize(
+    "address",
+    [
+        "https://TES.example.org/ga4gh/tes/v1/service-info",
+        "https://tes.example.org/ga4gh//tes/v1/service-info",
+        "https://tes.example.org/ga4gh/x/../tes/v1/service-info",
+    ],
+)
+def test_service_url_is_what_gets_fetched(address: str) -> None:
+    """The URL of the service is the normalized one, which gets fetched."""
+    url = service_import.service_url(address, schemes=frozenset({"https"}))
+    assert url == URL
+
+
 def test_import(client: FlaskClient, serve: Callable[[object], list[str]]) -> None:
     """Service info gives the values for a registration, without storing them."""
     urls = serve(INFO)

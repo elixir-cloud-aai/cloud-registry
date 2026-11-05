@@ -35,6 +35,10 @@ IPNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
 
 # Default limits of the response size, in bytes, and the total time, in seconds
 MAX_BYTES = 256 * 1024
+# Lookups at a time per process: they can't be interrupted, and outlive their
+# fetches if the resolver hangs, so that they must not pile up
+MAX_LOOKUPS = 8
+_LOOKUPS = threading.BoundedSemaphore(MAX_LOOKUPS)
 TIMEOUT = 10.0
 # Ports of schemes, for URLs without a port
 _DEFAULT_PORTS = {"http": 80, "https": 443}
@@ -129,9 +133,12 @@ def _resolve(host: str, port: int, deadline: _Deadline) -> list[str]:
         Unique IP addresses, in the order of the resolver.
 
     Raises:
-        Unreachable: The name can't be resolved in time.
+        Unreachable: The name can't be resolved in time, or too many lookups
+            are still running (cf. `MAX_LOOKUPS`).
     """
     addresses: list[str] = []
+    if not _LOOKUPS.acquire(blocking=False):
+        raise Unreachable
 
     def lookup() -> None:
         """Store the addresses of the host, if any."""
@@ -139,7 +146,10 @@ def _resolve(host: str, port: int, deadline: _Deadline) -> list[str]:
             infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
         except (OSError, UnicodeError):  # e.g., labels too long to encode
             return
-        addresses.extend(dict.fromkeys(str(info[4][0]) for info in infos))
+        else:
+            addresses.extend(dict.fromkeys(str(info[4][0]) for info in infos))
+        finally:
+            _LOOKUPS.release()
 
     thread = threading.Thread(target=lookup, daemon=True, name="safe-fetch-resolve")
     thread.start()
@@ -287,6 +297,8 @@ def safe_get(
     if scheme not in schemes or scheme not in _DEFAULT_PORTS or "@" in parts.netloc:
         raise AddressNotAllowed
     if not host:
+        raise Unreachable
+    if port == 0:  # nothing can listen there
         raise Unreachable
     port = port or _DEFAULT_PORTS[scheme]
     target = parts.path or "/"

@@ -643,6 +643,59 @@ def test_tls_untrusted(monkeypatch: pytest.MonkeyPatch, tls_port: int) -> None:
     assert not Handler.requests
 
 
+def test_host_header_ipv6() -> None:
+    """The `Host` header has IPv6 addresses in brackets."""
+    connection = safe_fetch._PinnedConnection("2001:db8::1", 8443, "::1", 1.0, None)
+    connection.putrequest("GET", "/")
+    assert b"Host: [2001:db8::1]:8443" in connection._buffer  # type: ignore[attr-defined]
+
+
+def test_port_zero(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Port 0 is not taken for the scheme's default."""
+    resolving(monkeypatch, "127.0.0.1")
+    with pytest.raises(Unreachable):
+        safe_get(f"https://{HOST}:0/", networks=LOOPBACK)
+
+
+def test_lookups_are_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hanging lookups don't pile up, and free their places when they end."""
+    release = threading.Event()
+    started: list[str] = []
+
+    def hanging(host: str, *args: object, **kwargs: object) -> list[tuple[object, ...]]:
+        """Hang until the test is done.
+
+        Args:
+            host: Host name.
+            *args: Ignored.
+            **kwargs: Ignored.
+
+        Returns:
+            One address.
+        """
+        started.append(host)
+        release.wait(10)
+        return [(0, 0, 0, "", ("127.0.0.1", 0))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", hanging)
+    try:
+        for index in range(safe_fetch.MAX_LOOKUPS):
+            with pytest.raises(Unreachable):
+                safe_get(f"https://{HOST}{index}/", networks=LOOPBACK, timeout=0.01)
+        assert len(started) == safe_fetch.MAX_LOOKUPS
+        with pytest.raises(Unreachable):
+            safe_get(f"https://{HOST}/", networks=LOOPBACK, timeout=0.01)
+        assert len(started) == safe_fetch.MAX_LOOKUPS
+    finally:
+        release.set()
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if safe_fetch._LOOKUPS._value == safe_fetch.MAX_LOOKUPS:
+            break
+        time.sleep(0.01)
+    assert safe_fetch._LOOKUPS._value == safe_fetch.MAX_LOOKUPS
+
+
 @pytest.mark.parametrize(
     ("tls", "port", "host"),
     [

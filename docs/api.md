@@ -422,7 +422,7 @@ curl -X POST "http://localhost:8080/ga4gh/registry/v1/services/import" \
 
 - **Address:** `serviceInfoUrl` must end in `/service-info`, without a query or
   fragment, and use an [allowed scheme](configuration.md#service-url-schemes); `url`
-  is set to it without `/service-info`.
+  is set to it, normalized as fetched, without `/service-info`.
 - **Values:** the response has `name`, `type`, `description`, `organization`
   (`name`, `url`), `contactUrl`, `documentationUrl`, `environment`, `version` and
   `url`, as far as the service info has them; other fields are ignored.
