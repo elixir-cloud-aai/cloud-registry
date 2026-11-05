@@ -687,9 +687,11 @@ Without [admin mode](access-control.md#admin-mode), admins see what other users 
 service dismiss it for each other, and admins for all admins, but not for each other.
 It returns the identifier, or `404 Not Found` if the user has no such notification
 (anymore). A dismissed notification only comes back if the problem ended and came
-back, or its reason changed, with a new identifier. Updates and renames keep it. The
-exception is a configuration that changes back and forth: the registry doesn't track
-it, so that a value dismissed before stays dismissed; another value comes back.
+back, or its reason changed, with a new identifier. Updates and renames keep it. There
+are two exceptions, as the registry doesn't record these changes: a configuration that
+changes back and forth, so that a value dismissed before stays dismissed, and a service
+that returns to the same pending type. Other values and types come back, and `GET
+/approvals` always lists what is pending.
 
 ## Listing the registry itself
 

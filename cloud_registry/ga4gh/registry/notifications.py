@@ -13,6 +13,8 @@ problem (cf. `_notification_id()`), so that a dismissed notification only comes 
 if the problem ended and came back, or its reason changed. For values that the
 configuration no longer allows, that is the value: the configuration leaves no trace
 when it changes, so that one dropped again after being allowed stays dismissed.
+Likewise, a service that returns to the same pending type stays dismissed, as only
+the type identifies that episode.
 Dismissals don't refer to users, and can only be made by human actions, so they stay.
 """
 
