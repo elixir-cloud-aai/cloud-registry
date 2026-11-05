@@ -71,6 +71,11 @@ ignore_missing_imports = true
 module = ["casbin", "casbin.*"]
 ignore_missing_imports = true
 
+# jsonschema ships no type information
+[[tool.mypy.overrides]]
+module = ["jsonschema", "jsonschema.*"]
+ignore_missing_imports = true
+
 # Gunicorn ships no type information (used by the tests only)
 [[tool.mypy.overrides]]
 module = ["gunicorn", "gunicorn.*"]
@@ -115,6 +120,8 @@ dependencies = [
     # `Dockerfile` (`.github/dependabot.yml`).
     "foca>=0.20.0,<0.21",
     "gunicorn>=26.2.0,<27",
+    # A dependency of Connexion; checks imported service info
+    "jsonschema>=4,<5",
 ]
 
 [project.optional-dependencies]

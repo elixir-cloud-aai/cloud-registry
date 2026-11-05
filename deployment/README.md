@@ -448,7 +448,8 @@ The chart creates
 [NetworkPolicies](https://kubernetes.io/docs/concepts/services-networking/network-policies/)
 that restrict which pods may connect to its pods (ingress); connections from
 the pods, e.g., of the app to MongoDB and to the token issuers (OpenID
-Connect discovery, JWKS), are not restricted. They only take effect if the
+Connect discovery, JWKS), are not restricted, unless the policy for the
+[app's connections](#the-apps-connections) is enabled. They only take effect if the
 cluster's network plugin enforces NetworkPolicies (e.g., Calico or Cilium);
 other clusters accept and ignore them. NetworkPolicies add up: a pod that
 several policies select accepts the connections that any of them allows, so
@@ -506,6 +507,40 @@ allow rules) before relying on these restrictions.
 Neither policy blocks the probes: connections from the pod's own node, where
 the kubelet runs them, are always allowed (see "The two sorts of pod
 isolation" in the Kubernetes documentation).
+
+### The app's connections
+
+The app [fetches service
+info](https://cloud-registry.readthedocs.io/en/latest/api/#importing-service-info)
+from addresses that users choose. It checks them itself, and connects only to
+public addresses (see [Service info
+import](https://cloud-registry.readthedocs.io/en/latest/configuration/#service-info-import)).
+As a second layer, `egressNetworkPolicy.enabled: true` (default `false`,
+independent of `cloudRegistry.networkPolicy`) creates a
+NetworkPolicy that lets the app's pods connect only to DNS (port 53, anywhere,
+as clusters serve it differently), the MongoDB of the release and to public
+addresses on `ports` (default `[443]`), which are all but `exceptCidrs` (by
+default, the private, loopback, link-local and other ranges that aren't public).
+
+Add a rule for everything private that the app must reach to `to`, as in
+`spec.egress` of a NetworkPolicy: token issuers, an external MongoDB, services in
+`private_networks`. Add `ports` for services on other ports, e.g., `80` if `http`
+is an allowed scheme. NetworkPolicies add
+up, so another policy selecting the app's pods can allow more. For example:
+
+```yaml
+egressNetworkPolicy:
+  enabled: true
+  to:
+  # An identity provider in the cluster
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: identity
+    ports:
+    - port: 8443
+      protocol: TCP
+```
 
 ## Server
 
@@ -884,6 +919,13 @@ kubectl rollout restart deployment/cloud-registry -n <namespace>
 ```
 
 ### To app version 1.0.0rc2
+
+The app now makes outgoing requests of its own, to public addresses, to [fetch
+service
+info](https://cloud-registry.readthedocs.io/en/latest/api/#importing-service-info).
+If your cluster restricts the connections of the app's pods, allow them, or
+expect imports to fail; see [The app's connections](#the-apps-connections) for
+the chart's optional policy.
 
 **This version needs a fresh database: data is not kept, and there is no
 migration.** The app refuses to start on data or indexes of earlier versions. All

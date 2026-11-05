@@ -14,6 +14,7 @@ under the API base path `/ga4gh/registry/v1`:
 | `/service-info/listing` | `GET`, `PUT`, `DELETE` | admins |
 | `/services` | `GET` (GA4GH) | anyone |
 | `/services` | `POST` | any authenticated user |
+| `/services/import` | `POST` | any authenticated user |
 | `/services/types` | `GET` (GA4GH) | anyone |
 | `/services/types` | `POST` | any authenticated user (mode `controlled`: admins) |
 | `/services/types` | `DELETE` | admins |
@@ -406,6 +407,52 @@ services](#verified-services) for verifications. Extensions of the GA4GH
 endpoints, such as pagination, search or filters, will be reconsidered with
 the upcoming new version of the Service Registry specification.
 
+## Importing service info
+
+Importing is the recommended way to register a service: `POST /services/import`
+fetches the service info of a service and returns the values for a registration,
+which users can edit before registering them (`POST /services`). Nothing is
+stored. It needs a login.
+
+```bash
+curl -X POST "http://localhost:8080/ga4gh/registry/v1/services/import" \
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"serviceInfoUrl": "https://tes.example.org/ga4gh/tes/v1/service-info"}'
+```
+
+- **Address:** `serviceInfoUrl` must end in `/service-info`, without a query or
+  fragment, and use an [allowed scheme](configuration.md#service-url-schemes); `url`
+  is set to it without `/service-info`.
+- **Values:** the response has `name`, `type`, `description`, `organization`
+  (`name`, `url`), `contactUrl`, `documentationUrl`, `environment`, `version` and
+  `url`, as far as the service info has them; other fields are ignored.
+- **Checks:** service info needs an `id`, and the values are checked as in a
+  registration (`400 Bad Request`, naming the field but not its value). Whether a
+  service is registered already, and whether the user may add the type, is
+  checked on `POST /services`.
+
+**Only publicly available service info can be imported:** the registry never
+sends a token. We strongly recommend that services make their service info public,
+as it tells people how to get access.
+
+The registry fetches addresses that users choose, so it takes these precautions
+against server-side request forgery:
+
+- it connects to public addresses only, unless the deployment [permits
+  networks](configuration.md#service-info-import). All addresses of a host must be
+  allowed; they are checked after they are resolved, and the connection goes to a
+  checked address, so that a name can't point elsewhere afterwards;
+- `https` only, unless the deployment [allows
+  `http`](configuration.md#service-url-schemes), with the certificate checked for
+  the host;
+- no redirects, at most 256 KiB, at most 10 seconds;
+- users may have service info fetched 30 times per hour by default, and only few
+  requests fetch at a time (`429 Too Many Requests`, with `Retry-After`; see [Service
+  info import](configuration.md#service-info-import));
+- every failed fetch returns the same `502 Bad Gateway`, whatever the cause
+  (e.g., an address that isn't allowed, an unknown host, a timeout or a status
+  other than `200`), so that users can't map networks with it.
+
 ## Duplicate services
 
 A service is identified by its base URL (`url`) and its API type (`type.group`
@@ -433,10 +480,12 @@ they don't operate, a squatter could block the real operator of a service.
 Admins resolve such cases: they can delete the entry, or grant the real
 operator the role `owner` on it and revoke the squatter's role. Consumers that
 need trustworthy entries should rely on entries checked by admins (see
-[Verified services](#verified-services)). Proving control of a
-URL (e.g., by fetching `{url}/service-info` on registration) was rejected:
-the identifier in service info is self-declared, and fetching user-supplied
-URLs would allow server-side request forgery.
+[Verified services](#verified-services)). Proving control of a URL by fetching
+`{url}/service-info` was rejected, and stays so: service info is self-declared,
+so serving it proves nothing about who registers the entry. The registry does
+fetch service info, but for another purpose, with safeguards against server-side
+request forgery: to [import](#importing-service-info) what a service says about
+itself.
 
 ## Verified services
 

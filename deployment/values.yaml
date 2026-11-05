@@ -23,6 +23,44 @@ hostName: ""
 # sets `server.public_url` in the app config
 publicUrl: ""
 
+# Second layer behind the app's checks of the addresses it fetches service info
+# from: a NetworkPolicy letting the app's pods connect only to DNS, the MongoDB
+# of the release and public addresses (see deployment/README.md, Network
+# policies); independent of `cloudRegistry.networkPolicy`. Disabled by default,
+# as what else the app must reach depends on the cluster
+egressNetworkPolicy:
+  enabled: false
+  # Ports of public addresses, for services and token issuers
+  ports: [443]
+  # Addresses that don't count as public (IPv4 and IPv6)
+  exceptCidrs:
+    - 0.0.0.0/8
+    - 10.0.0.0/8
+    - 100.64.0.0/10
+    - 127.0.0.0/8
+    - 169.254.0.0/16
+    - 172.16.0.0/12
+    - 192.0.0.0/24
+    - 192.0.2.0/24
+    - 192.168.0.0/16
+    - 198.18.0.0/15
+    - 198.51.100.0/24
+    - 203.0.113.0/24
+    - 224.0.0.0/3
+    - ::/3
+    - 64:ff9b::/96
+    - 2001::/32
+    - 2001:db8::/32
+    - 2002::/16
+    - fc00::/7
+    - fe80::/10
+    - fec0::/10
+    - ff00::/8
+  # Further NetworkPolicy egress rules (`to`, `ports`) for private addresses the
+  # app must reach, e.g., token issuers, an external MongoDB, or
+  # `config.custom.endpoints.services.service_info.private_networks`
+  to: []
+
 # App config overriding the base config in the image (`cloud_registry/config.yaml`
 # of the image's version); mappings are merged recursively, other values
 # (including lists) are replaced. Stored in a ConfigMap, so must not contain

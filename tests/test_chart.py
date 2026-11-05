@@ -1341,7 +1341,8 @@ def test_schema_of_library() -> None:
     its `$comment` documents: the app's values (`cloudRegistry`) also
     require the Gunicorn settings and the `preStop` delay, MongoDB's image
     is pinned to a minor version, there is no Celery worker or broker, and
-    the public URL can be set (`publicUrl`).
+    the public URL (`publicUrl`) and the NetworkPolicy of the app's connections
+    (`egressNetworkPolicy`) can be set.
     The `$comment` names the library's version, which the release pin
     check compares with the pinned one.
     """
@@ -1361,6 +1362,7 @@ def test_schema_of_library() -> None:
         "required": ["preStopSleepSeconds", "gunicorn"],
     }
     assert properties.pop("publicUrl")["type"] == "string"
+    assert properties.pop("egressNetworkPolicy")["type"] == "object"
     image = properties["mongodb"]["properties"]["image"]
     assert "minor version" in image.pop("description")
     expected = dict(library["properties"])
@@ -1898,7 +1900,8 @@ def test_network_policy_app_no_default_peers() -> None:
     """
     values = yaml.safe_load((CHART / "values.yaml").read_text())
     policy = values["cloudRegistry"]["networkPolicy"]
-    assert policy == {"enabled": False, "ingressFrom": []}
+    assert policy["enabled"] is False
+    assert policy["ingressFrom"] == []
     with pytest.raises(subprocess.CalledProcessError) as exc:
         _render("--set", "cloudRegistry.networkPolicy.enabled=true")
     assert "ingressFrom must list at least one NetworkPolicy peer" in exc.value.stderr
@@ -1942,6 +1945,96 @@ def test_network_policy_app_ingress_from(tmp_path: Path) -> None:
     docs = _render("-f", str(values_file))
     (rule,) = _only_ingress(_network_policies(docs)[APP])
     assert rule["from"] == peers
+
+
+def test_network_policy_egress_default() -> None:
+    """The app's connections aren't restricted by default."""
+    policies = _network_policies(_render())
+    assert not any(name.endswith("-egress") for name in policies)
+    assert all("egress" not in doc["spec"] for doc in policies.values())
+
+
+def _egress_policy(*args: str) -> dict[str, Any]:
+    """Render the policy of the app's connections.
+
+    Args:
+        *args: Further arguments of `helm template`.
+
+    Returns:
+        The policy.
+    """
+    policies = _network_policies(
+        _render("--set", "egressNetworkPolicy.enabled=true", *args)
+    )
+    (policy,) = [doc for name, doc in policies.items() if name.endswith("-egress")]
+    return policy
+
+
+def test_network_policy_egress() -> None:
+    """The app may connect to DNS, its MongoDB and public addresses only."""
+    spec = _egress_policy()["spec"]
+    assert spec["policyTypes"] == ["Egress"]
+    assert "ingress" not in spec
+    assert spec["podSelector"]["matchLabels"]["app.kubernetes.io/component"] == "app"
+    dns, mongodb, public = spec["egress"]
+    assert "to" not in dns
+    assert {(port["port"], port["protocol"]) for port in dns["ports"]} == {
+        (53, "UDP"),
+        (53, "TCP"),
+    }
+    labels = mongodb["to"][0]["podSelector"]["matchLabels"]
+    assert labels["app.kubernetes.io/component"] == "mongodb"
+    assert mongodb["ports"] == [{"port": 27017, "protocol": "TCP"}]
+    assert public["ports"] == [{"port": 443, "protocol": "TCP"}]
+    ipv4, ipv6 = (peer["ipBlock"] for peer in public["to"])
+    assert ipv4["cidr"] == "0.0.0.0/0"
+    assert {"10.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16"} <= set(ipv4["except"])
+    assert not any(":" in cidr for cidr in ipv4["except"])
+    assert ipv6["cidr"] == "::/0"
+    assert {"::/3", "fc00::/7", "fe80::/10", "2002::/16"} <= set(ipv6["except"])
+    assert all(":" in cidr for cidr in ipv6["except"])
+
+
+def test_network_policy_egress_independent() -> None:
+    """The policy doesn't need the one for connections to the app."""
+    spec = _egress_policy("--set", "cloudRegistry.networkPolicy.enabled=false")["spec"]
+    assert spec["policyTypes"] == ["Egress"]
+
+
+def test_network_policy_egress_values() -> None:
+    """Ports and further rules can be set."""
+    rule = {"to": [{"ipBlock": {"cidr": "10.1.0.0/16"}}], "ports": [{"port": 8443}]}
+    spec = _egress_policy(
+        "--set-json",
+        "egressNetworkPolicy.ports=[443,8443]",
+        "--set-json",
+        f"egressNetworkPolicy.to={json.dumps([rule])}",
+    )["spec"]
+    assert spec["egress"][-1] == rule
+    assert [port["port"] for port in spec["egress"][-2]["ports"]] == [443, 8443]
+
+
+def test_network_policy_egress_external_mongodb() -> None:
+    """Without the chart's MongoDB, it has no rule."""
+    spec = _egress_policy(
+        "--set",
+        "mongodb.enabled=false",
+        "--set",
+        "config.db.host=db.example.org",
+    )["spec"]
+    assert len(spec["egress"]) == 2
+
+
+def test_network_policy_egress_invalid() -> None:
+    """The schema rejects unknown fields and invalid ports."""
+    for args in (
+        ("--set", "egressNetworkPolicy.unknown=1"),
+        ("--set-json", "egressNetworkPolicy.ports=[]"),
+        ("--set-json", "egressNetworkPolicy.ports=[70000]"),
+        ("--set-json", 'egressNetworkPolicy.to=[{"from": []}]'),
+    ):
+        with pytest.raises(subprocess.CalledProcessError):
+            _render(*args)
 
 
 @pytest.mark.parametrize(

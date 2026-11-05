@@ -237,6 +237,40 @@ On startup, the app warns of stored services whose URLs use other schemes
 (e.g., `http` URLs registered while `http` was allowed): they are still
 served, but can only be updated with an allowed scheme.
 
+## Service info import
+
+The registry [fetches the service info](api.md#importing-service-info) of
+services when users import it, from public addresses only:
+
+```yaml
+custom:
+    endpoints:
+        services:
+            service_info:
+                # Networks to fetch from besides public addresses; none by default
+                private_networks:
+                    - 10.1.0.0/16
+                # How often each user may have service info fetched per hour
+                fetches_per_hour: 30
+```
+
+`private_networks` (CIDR notation, IPv4 or IPv6) is for services in private
+networks, e.g., in tests or inside an organization. Whatever it permits, users can
+reach through the registry, and tell from its responses whether something there
+serves service info, so keep it narrow, and never permit the addresses of cloud
+metadata (`169.254.169.254`) or of the registry's own infrastructure.
+
+The registry connects directly: proxy settings of the environment (e.g.,
+`HTTPS_PROXY`) don't apply. Above `fetches_per_hour` (a positive number; each user
+on their own, admins too; failed fetches count, as they also limit probing), users
+get `429 Too Many Requests`. So do requests while two others of the same worker are
+fetching, so that slow addresses leave threads for other requests. As a second layer, the
+Helm chart can restrict the [app's
+connections](deployment.md#the-apps-connections).
+
+Service URLs must use an [allowed scheme](#service-url-schemes), so `http` services
+can only be imported if `http` is allowed (with the chart's policy, also add port 80).
+
 ## Service environments
 
 The GA4GH specification describes the environment of a service

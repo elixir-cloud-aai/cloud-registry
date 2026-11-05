@@ -638,6 +638,7 @@ dependencies = [
     { name = "connexion" },
     { name = "foca" },
     { name = "gunicorn" },
+    { name = "jsonschema" },
 ]
 
 [package.optional-dependencies]
@@ -679,6 +680,7 @@ requires-dist = [
     { name = "foca", specifier = ">=0.20.0,<0.21" },
     { name = "griffelib", marker = "extra == 'docs'", specifier = ">=2.4,<3" },
     { name = "gunicorn", specifier = ">=26.2.0,<27" },
+    { name = "jsonschema", specifier = ">=4,<5" },
     { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.6.1,<2" },
     { name = "mkdocs-autorefs", marker = "extra == 'docs'", specifier = ">=1.4.4,<2" },
     { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.7.7,<10" },

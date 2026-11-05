@@ -13,12 +13,14 @@ from flask import Response
 from foca.errors.exceptions import problem_response
 from foca.security.access_control import LastOwner
 from werkzeug.exceptions import (
+    BadGateway,
     BadRequest,
     Conflict,
     HTTPException,
     InternalServerError,
     NotFound,
     RequestEntityTooLarge,
+    TooManyRequests,
 )
 
 # Default code of conflicts without a code of their own (`code` member of
@@ -135,6 +137,16 @@ exceptions = {
         "title": "Content Too Large",
         "detail": "The request body exceeds the size limit.",
         "status": 413,
+    },
+    TooManyRequests: {
+        "title": "Too many requests",
+        "detail": "Too many requests; try again later.",
+        "status": 429,
+    },
+    BadGateway: {
+        "title": "Bad gateway",
+        "detail": "An upstream server could not be reached.",
+        "status": 502,
     },
     InternalServerError: {
         "title": "Internal server error",

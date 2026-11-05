@@ -30,6 +30,8 @@ DB_CONFIG: dict[str, Any] = {
         "service_locks": {},
         # services per user (cf. `cloud_registry.ga4gh.registry.service_limits`)
         "service_counts": {},
+        # fetches per user (cf. `cloud_registry.ga4gh.registry.service_import`)
+        "service_info_fetches": {},
     },
 }
 MONGO_CONFIG: dict[str, Any] = {
