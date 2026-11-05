@@ -9,6 +9,7 @@ from typing import Any
 from foca import get_custom_config
 from foca.utils.logging import escape_log_value
 from foca.utils.misc import generate_id
+from foca.utils.service_info import is_uri
 from foca.utils.urls import (
     HTTP_SCHEMES,
     InvalidURL,
@@ -79,8 +80,8 @@ LINK_FIELDS: dict[str, frozenset[str]] = {
 # when the service was registered, and when it was last changed
 CREATED = "createdAt"
 UPDATED = "updatedAt"
-# Fields with timestamps (`format: date-time`), which Connexion's request
-# validation doesn't check without an optional package (`rfc3339-validator`)
+# Fields with timestamps (`format: date-time`); FOCA checks those of requests,
+# the app those it doesn't get through requests
 DATE_TIME_FIELDS = (CREATED, UPDATED)
 # Identifiers that can't be used for services: dot segments, which clients
 # resolve in URLs, and `types`, as `/services/types` lists the service types
@@ -737,5 +738,51 @@ def warn_url_schemes() -> None:
             "Services with URL schemes not allowed "
             "(`custom.endpoints.services.url_schemes`) are still served, but "
             "can only be updated with an allowed scheme; update or delete them: %s",
+            escape_log_value(", ".join(ids)),
+        )
+
+
+# Fields of services with URLs (`format: uri`)
+URI_FIELDS = ("url", "contactUrl", "documentationUrl")
+
+
+def warn_invalid_formats() -> None:
+    """Warn of stored services that FOCA's response checks would reject.
+
+    FOCA checks the `date-time` and `uri` formats of responses, too, so a
+    single stored service with an invalid value makes its reads and
+    `GET /services` fail with `500`. Requests can't store such values, but data
+    written around the API can.
+    """
+    ids = []
+    for service in get_collection("services").find(
+        {},
+        {
+            "_id": False,
+            "id": True,
+            "url": True,
+            "contactUrl": True,
+            "documentationUrl": True,
+            "organization": True,
+            CREATED: True,
+            UPDATED: True,
+        },
+    ):
+        organization = service.get("organization", {})
+        if not isinstance(organization, dict):
+            ids.append(f"'{service.get('id')}'")
+            continue
+        uris = [service[field] for field in URI_FIELDS if field in service]
+        if "url" in organization:
+            uris.append(organization["url"])
+        dates = [service[field] for field in DATE_TIME_FIELDS if field in service]
+        if not all(isinstance(value, str) and is_uri(value) for value in uris) or (
+            not all(isinstance(value, str) and is_date_time(value) for value in dates)
+        ):
+            ids.append(f"'{service.get('id')}'")
+    if ids:
+        logger.error(
+            "Services with invalid URLs or timestamps make reads of them and "
+            "`GET /services` return 500; correct or delete them in the database: %s",
             escape_log_value(", ".join(ids)),
         )

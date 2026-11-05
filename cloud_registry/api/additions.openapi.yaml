@@ -1785,12 +1785,13 @@ components:
       properties:
         serviceInfoUrl:
           type: string
-          format: uri
-          # of service URLs (`url`), with `/service-info`
-          maxLength: 2061
+          # No `format` or `maxLength`: FOCA would log and return rejected
+          # addresses, which can hold secrets; the app checks them without
+          # quoting them
           description: |
             Address of the service info, the URL of the service with
-            `/service-info`; without a query or fragment.
+            `/service-info`; without a query or fragment, at most 2061
+            characters.
           example: 'https://tes.example.org/ga4gh/tes/v1/service-info'
     SelfListing:
       description: Whether the registry is listed among its own services.

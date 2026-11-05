@@ -425,6 +425,8 @@ def test_error_of_links_has_no_raw_values(
     [
         "https://alice:hunter2@tes.example.org/service-info",
         "https://tes.example.org/service-info?token=hunter2",
+        "https://tes.example.org/service-info?token=hunter2 x",
+        "https://tes.example.org/" + "a" * 2100 + "?token=hunter2",
     ],
 )
 def test_rejected_address_not_logged(
@@ -435,14 +437,12 @@ def test_rejected_address_not_logged(
 ) -> None:
     """Rejected addresses aren't logged, as they can hold secrets."""
     serve(INFO)
-    caplog.set_level(logging.INFO, logger=service_import.__name__)
-    assert post(client, address).status_code == 400
-    messages = [
-        record.getMessage()
-        for record in caplog.records
-        if record.name == service_import.__name__
-    ]
-    assert messages
+    caplog.set_level(logging.INFO)
+    response = post(client, address)
+    assert response.status_code == 400
+    assert "hunter2" not in response.text
+    messages = [record.getMessage() for record in caplog.records]
+    assert any(record.name == service_import.__name__ for record in caplog.records)
     assert not any("hunter2" in message for message in messages)
 
 

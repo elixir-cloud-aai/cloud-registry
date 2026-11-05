@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any, Literal
+from unittest import mock
 from urllib.parse import quote
 
 from connexion import App
@@ -24,6 +25,7 @@ from cloud_registry.ga4gh.registry.service import (
     KEY,
     PENDING_SERVICE,
     VERIFIED,
+    InvalidService,
     RegisterService,
 )
 from cloud_registry.service_models.custom_config import CustomConfig
@@ -292,7 +294,7 @@ def test_add_type_surrogates(client: FlaskClient) -> None:
         headers={**headers(), "Content-Type": "application/json"},
     )
     assert response.status_code == 400
-    assert "'artifact'" in response.get_json()["detail"]
+    assert "unpaired surrogates" in response.get_json()["detail"]
 
 
 def test_type_of_service_added(
@@ -492,7 +494,7 @@ def test_approve_type_surrogates(client: FlaskClient) -> None:
         headers={**headers(ADMIN), "Content-Type": "application/json"},
     )
     assert response.status_code == 400
-    assert "'artifact'" in response.get_json()["detail"]
+    assert "unpaired surrogates" in response.get_json()["detail"]
 
 
 def test_moderated_services(client: FlaskClient, moderated: None) -> None:
@@ -714,7 +716,7 @@ def test_moderated_update_surrogates(client: FlaskClient, moderated: None) -> No
         headers={**headers(), "Content-Type": "application/json"},
     )
     assert response.status_code == 400
-    assert "'type.artifact'" in response.get_json()["detail"]
+    assert "unpaired surrogates" in response.get_json()["detail"]
 
 
 def _flags(mongo_client: MongoClient[dict[str, Any]]) -> dict[str, bool]:
@@ -1203,3 +1205,32 @@ def test_verify_approved_meanwhile(
     path = f"{BASE}/services/{service_id}/verification"
     response = client.put(path, headers=headers(ADMIN))
     assert response.status_code == 200, response.get_json()
+
+
+def test_approve_type_invalid_after_validation(client: FlaskClient) -> None:
+    """Types that FOCA's checks let pass, but the app refuses, return `400`."""
+    with mock.patch(
+        "cloud_registry.ga4gh.registry.service_types._requested_type",
+        side_effect=InvalidService("Invalid"),
+    ):
+        response = client.put(
+            f"{TYPES}/approval",
+            json={"group": "org.ga4gh", "artifact": "tes", "version": "1"},
+            headers=headers(ADMIN),
+        )
+    assert response.status_code == 400
+
+
+def test_moderated_update_invalid_after_validation(
+    client: FlaskClient, moderated: None
+) -> None:
+    """Strings that FOCA's checks let pass, but the app refuses, return `400`."""
+    service_id = register(client, _service()).get_json()
+    with mock.patch(
+        "cloud_registry.ga4gh.registry.server.check_strings",
+        side_effect=InvalidService("Invalid"),
+    ):
+        response = client.put(
+            f"{BASE}/services/{service_id}", json=_service(), headers=headers()
+        )
+    assert response.status_code == 400

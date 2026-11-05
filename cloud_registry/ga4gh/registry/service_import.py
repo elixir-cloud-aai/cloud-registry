@@ -154,6 +154,10 @@ def fetch_slot() -> Iterator[None]:
         _fetch_slots.release()
 
 
+# Length of service URLs (`url`) with `SERVICE_INFO_PATH`
+MAX_ADDRESS_LENGTH = 2061
+
+
 def service_url(address: str, schemes: frozenset[str]) -> str:
     """Get the URL of a service from the address of its service info.
 
@@ -165,12 +169,17 @@ def service_url(address: str, schemes: frozenset[str]) -> str:
         The address without `SERVICE_INFO_PATH`.
 
     Raises:
-        InvalidService: The address is invalid, uses a scheme that isn't
+        InvalidService: The address is too long or invalid, uses a scheme that isn't
             allowed, has a query or fragment, doesn't end in
             `SERVICE_INFO_PATH`, or has a path that normalizing would change
             (e.g., repeated slashes): fetches use the normalized form, which
             services may route differently than what the URL would say.
     """
+    if len(address) > MAX_ADDRESS_LENGTH:
+        raise InvalidService(
+            f"The address of the service info must not be longer than "
+            f"{MAX_ADDRESS_LENGTH} characters."
+        )
     check_url_scheme(address, schemes=schemes)
     if "?" in address or "#" in address or not address.endswith(SERVICE_INFO_PATH):
         raise InvalidService(
