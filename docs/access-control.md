@@ -500,6 +500,14 @@ keep the opt-in only once their UI sends the header (an admin mode switch);
 until then, set `opt_in_roles: []`, or admins can't act as admins in the
 UI.
 
+## Notifications
+
+[Notifications](api.md#notifications) need a login, by the rules
+`list-notifications` and `dismiss-notifications`, for any authenticated user; what
+users see depends on their roles on services. Admins see those of all services, and
+pending approvals and values that the configuration no longer allows, only in [admin
+mode](#admin-mode).
+
 ## Current user
 
 `GET /me` returns the current user's identifier (to give to owners), whether

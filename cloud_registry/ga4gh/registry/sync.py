@@ -314,6 +314,12 @@ def _failed(service: dict[str, Any], reason: Reason, current: datetime) -> None:
             "reason": str(reason),
             # the time the problem started, whatever the reasons since
             "failingSince": state.get("failingSince", current),
+            # the time of the reason, for notifications that come back with it
+            "reasonSince": (
+                state.get("reasonSince", current)
+                if state.get("reason") == reason
+                else current
+            ),
             "retries": 0,
             NEXT_ATTEMPT: current + sync_interval(),
         },
@@ -421,7 +427,7 @@ def _apply(
             "retries": 0,
             NEXT_ATTEMPT: current + sync_interval(),
         },
-        drop=("reason", "failingSince"),
+        drop=("reason", "failingSince", "reasonSince"),
         fields=fields,
         removed=removed,
     )
