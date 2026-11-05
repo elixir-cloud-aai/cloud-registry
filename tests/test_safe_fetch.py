@@ -228,6 +228,10 @@ def resolving(
         "64:ff9b::a9fe:a9fe",  # NAT64 of 169.254.169.254
         "64:ff9b:1::1",  # local NAT64
         "2001:0:4136:e378:8000:63bf:3fff:fdd2",  # Teredo
+        "fec0::1",  # site-local
+        "::ffff:0:a00:1",  # IPv4-translated
+        "1::1",
+        "5f00::1",
     ],
 )
 def test_address_not_allowed(address: str) -> None:

@@ -262,12 +262,14 @@ metadata (`169.254.169.254`) or of the registry's own infrastructure.
 
 The registry connects directly: proxy settings of the environment (e.g.,
 `HTTPS_PROXY`) don't apply. Above `fetches_per_hour` (a positive number; each user
-on their own, admins too), users get `429 Too Many Requests`. As a second layer, the
+on their own, admins too; failed fetches count, as they also limit probing), users
+get `429 Too Many Requests`. So do requests while two others of the same worker are
+fetching, so that slow addresses leave threads for other requests. As a second layer, the
 Helm chart can restrict the [app's
 connections](deployment.md#the-apps-connections).
 
 Service URLs must use an [allowed scheme](#service-url-schemes), so `http` services
-can only be imported if `http` is allowed.
+can only be imported if `http` is allowed (with the chart's policy, also add port 80).
 
 ## Service environments
 

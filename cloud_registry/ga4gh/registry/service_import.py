@@ -17,12 +17,16 @@ checked like a registration (cf. `service_values()`), except for what depends on
 the user or on other services (e.g., duplicates), which `POST /services` checks.
 """
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import timedelta
 from functools import cache
 import ipaddress
 import json
 import logging
 from pathlib import Path
+import re
+import threading
 from typing import Any
 
 from foca import get_custom_config
@@ -61,6 +65,10 @@ OBJECT_FIELDS = {
     "type": ("group", "artifact", "version"),
     "organization": ("name", "url"),
 }
+# Names of these fields, as messages of checks of registrations quote them
+_CHECKED_FIELDS = frozenset(SERVICE_FIELDS) | {
+    f"{field}.{key}" for field, keys in OBJECT_FIELDS.items() for key in keys
+}
 # Maximum length of the identifier of service info, as of a name; the schema
 # of registrations doesn't limit it, as they don't take it
 MAX_ID_LENGTH = 1024
@@ -78,6 +86,12 @@ FETCH_FAILED = (
     "doesn't follow redirects."
 )
 SPECIFICATION = Path(__file__).parents[2] / "api" / "additions.openapi.yaml"
+# How many requests of a worker may fetch at a time, so that requests with slow
+# addresses leave threads for others (e.g., probes; 4 per worker by default)
+MAX_CONCURRENT_FETCHES = 2
+_fetch_slots = threading.BoundedSemaphore(MAX_CONCURRENT_FETCHES)
+# Time after which to try again if all slots are taken, in seconds
+BUSY_RETRY_AFTER = 10
 
 
 class FetchFailed(BadGateway):
@@ -107,6 +121,35 @@ class FetchLimit(TooManyRequests):
             "often as allowed; try again later.",
             retry_after=retry_after,
         )
+
+
+class FetchesBusy(TooManyRequests):
+    """As many requests as allowed are fetching service info right now."""
+
+    def __init__(self) -> None:
+        """Create the exception, with a description of what to do."""
+        super().__init__(
+            "The registry is fetching other service info; try again shortly.",
+            retry_after=BUSY_RETRY_AFTER,
+        )
+
+
+@contextmanager
+def fetch_slot() -> Iterator[None]:
+    """Hold one of the slots for fetches of requests in this worker.
+
+    Yields:
+        Nothing; the slot is held until the context exits.
+
+    Raises:
+        FetchesBusy: All slots are taken.
+    """
+    if not _fetch_slots.acquire(blocking=False):
+        raise FetchesBusy
+    try:
+        yield
+    finally:
+        _fetch_slots.release()
 
 
 def service_url(address: str, schemes: frozenset[str]) -> str:
@@ -256,7 +299,13 @@ def service_values(service_info: object, url: str) -> dict[str, Any]:
     try:
         RegisterService(data=values).check()
     except InvalidService as exc:
-        raise InvalidServiceInfo(str(exc.description)) from exc
+        # messages can repeat values, which come from elsewhere; they quote the
+        # field first (e.g., `URLs in 'contactUrl' need a valid host: ...`)
+        match = re.search(r"'([\w.]+)'", str(exc.description))
+        field = match.group(1) if match else ""
+        if field not in _CHECKED_FIELDS:
+            field = "url"
+        raise InvalidServiceInfo(f"'{field}' is missing or invalid.") from exc
     return values
 
 
@@ -290,6 +339,12 @@ def check_fetch_limit(user: str) -> None:
             upsert=True,
         )
     except DuplicateKeyError as exc:
+        # or another request of the user just started the window
+        if fetches.update_one(
+            {"_id": user, "windowStart": {"$gt": window}, "count": {"$lt": limit}},
+            {"$inc": {"count": 1}},
+        ).modified_count:
+            return
         stored = fetches.find_one({"_id": user}) or {}
         wait = FETCH_WINDOW
         if "windowStart" in stored:
@@ -314,15 +369,24 @@ def postServiceImport(service_import: dict[str, Any], **kwargs: Any) -> Any:
         Values for a registration (cf. `service_values()`); or an error
         response: `400` for addresses that aren't one of service info, or
         service info that doesn't pass the checks of a registration, `429`
-        above the limit of the user (cf. `check_fetch_limit()`), and `502` if
+        above the limit of the user (cf. `check_fetch_limit()`) or while other
+        requests take the slots for fetches (cf. `fetch_slot()`), and `502` if
         the fetch fails, for any reason.
     """
     address: str = service_import["serviceInfoUrl"]
     services = get_custom_config(CustomConfig).endpoints.services
     try:
         url = service_url(address, schemes=frozenset(services.url_schemes))
-        check_fetch_limit(require_subject())
-        return service_values(fetch_service_info(address), url)
+    except InvalidService as exc:
+        # not logged: rejected addresses can hold credentials or tokens
+        logger.info(
+            "Service info not imported by '%s': invalid address.", current_user()
+        )
+        return problem(exc)
+    try:
+        with fetch_slot():
+            check_fetch_limit(require_subject())
+            return service_values(fetch_service_info(address), url)
     except FetchError as exc:
         logger.info(
             "Service info not imported by '%s' from '%s': %s.",
@@ -331,8 +395,10 @@ def postServiceImport(service_import: dict[str, Any], **kwargs: Any) -> Any:
             type(exc).__name__,
         )
         return problem(FetchFailed())
-    except FetchLimit as exc:
-        logger.info("Service info not imported: '%s' is at the limit.", current_user())
+    except TooManyRequests as exc:
+        logger.info(
+            "Service info not imported by '%s': %s", current_user(), exc.description
+        )
         return problem(exc)
     except InvalidService as exc:
         logger.info(

@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterator
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import logging
 import socket
 import threading
 from types import SimpleNamespace
@@ -17,6 +18,7 @@ import pytest
 from werkzeug.test import TestResponse
 
 from cloud_registry.ga4gh.registry import service_import
+from cloud_registry.ga4gh.registry.service import InvalidService
 from cloud_registry.ga4gh.registry.service_import import FETCH_FAILED, FetchLimit
 from cloud_registry.safe_fetch import AddressNotAllowed, FetchError, Unreachable
 from cloud_registry.service_models.custom_config import (
@@ -376,6 +378,110 @@ def test_rate_limit_window(
     )
     assert post(client).status_code == 200
     assert _fetches(client).find_one({"_id": USER})["count"] == 1  # type: ignore[index]
+
+
+def test_invalid_service_url(client: FlaskClient) -> None:
+    """Failed checks of the service URL name it, without repeating it."""
+    with client.application.app_context(), pytest.raises(InvalidService) as exc:
+        service_import.service_values(INFO, "ftp://secret.example.org")
+    assert exc.value.description == "'url' is missing or invalid."
+
+
+def test_error_of_links_has_no_raw_values(
+    client: FlaskClient, serve: Callable[[object], list[str]]
+) -> None:
+    """Errors of the checks of links don't repeat what the address served."""
+    serve({**INFO, "documentationUrl": "https://abc%41.example<script>/"})
+    response = post(client)
+    assert response.status_code == 400
+    assert response.json is not None
+    assert "documentationUrl" in response.json["detail"]
+    assert "script" not in response.text
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "https://alice:hunter2@tes.example.org/service-info",
+        "https://tes.example.org/service-info?token=hunter2",
+    ],
+)
+def test_rejected_address_not_logged(
+    client: FlaskClient,
+    serve: Callable[[object], list[str]],
+    caplog: pytest.LogCaptureFixture,
+    address: str,
+) -> None:
+    """Rejected addresses aren't logged, as they can hold secrets."""
+    serve(INFO)
+    caplog.set_level(logging.INFO, logger=service_import.__name__)
+    assert post(client, address).status_code == 400
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == service_import.__name__
+    ]
+    assert messages
+    assert not any("hunter2" in message for message in messages)
+
+
+def test_concurrent_first_fetch(
+    client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Losing the race to start a window doesn't count as being at the limit."""
+
+    class Fetches:
+        """Collection in which another request starts the window first."""
+
+        def __init__(self) -> None:
+            """Start without a document."""
+            self.increments = 0
+
+        def update_one(self, query: dict[str, Any], *args: Any, **kwargs: Any) -> Any:
+            """Increment only after the insert failed.
+
+            Args:
+                query: Query.
+                *args: Ignored.
+                **kwargs: Ignored.
+
+            Returns:
+                Result of the increment.
+
+            Raises:
+                DuplicateKeyError: For the insert.
+            """
+            if kwargs.get("upsert"):
+                raise DuplicateKeyError("duplicate")
+            self.increments += 1
+            return SimpleNamespace(modified_count=self.increments - 1)
+
+    fetches = Fetches()
+    monkeypatch.setattr(service_import, "get_collection", lambda name: fetches)
+    with client.application.app_context():
+        service_import.check_fetch_limit(USER)
+    assert fetches.increments == 2
+
+
+def test_concurrent_fetches_limited(
+    client: FlaskClient, serve: Callable[[object], list[str]]
+) -> None:
+    """Requests can't take all threads; refused ones don't count for the limit."""
+    urls = serve(INFO)
+    with service_import.fetch_slot(), service_import.fetch_slot():
+        response = post(client)
+        assert response.status_code == 429
+        assert response.headers["Retry-After"] == str(service_import.BUSY_RETRY_AFTER)
+        assert not urls
+        assert not _fetches(client).count_documents({})
+    assert post(client).status_code == 200
+
+
+def test_slot_released_on_error() -> None:
+    """Slots are released if the fetch fails."""
+    for _ in range(service_import.MAX_CONCURRENT_FETCHES + 1):
+        with pytest.raises(ValueError), service_import.fetch_slot():
+            raise ValueError
 
 
 def test_rate_limit_document_gone(

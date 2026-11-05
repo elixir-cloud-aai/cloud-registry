@@ -446,9 +446,9 @@ against server-side request forgery:
   `http`](configuration.md#service-url-schemes), with the certificate checked for
   the host;
 - no redirects, at most 256 KiB, at most 10 seconds;
-- users may have service info fetched 30 times per hour by default (`429 Too Many
-  Requests`, with `Retry-After`; see [Service info
-  import](configuration.md#service-info-import));
+- users may have service info fetched 30 times per hour by default, and only few
+  requests fetch at a time (`429 Too Many Requests`, with `Retry-After`; see [Service
+  info import](configuration.md#service-info-import));
 - every failed fetch returns the same `502 Bad Gateway`, whatever the cause
   (e.g., an address that isn't allowed, an unknown host, a timeout or a status
   other than `200`), so that users can't map networks with it.

@@ -274,7 +274,8 @@ paths:
         '429':
           description: |
             The user has had service info fetched as often per hour as allowed
-            (`custom.endpoints.services.service_info.fetches_per_hour`).
+            (`custom.endpoints.services.service_info.fetches_per_hour`), or
+            other requests are fetching service info right now.
           headers:
             Retry-After:
               description: Seconds after which to try again.

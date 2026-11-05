@@ -524,7 +524,8 @@ default, the private, loopback, link-local and other ranges that aren't public).
 
 Add a rule for everything private that the app must reach to `to`, as in
 `spec.egress` of a NetworkPolicy: token issuers, an external MongoDB, services in
-`private_networks`. Add `ports` for services on other ports. NetworkPolicies add
+`private_networks`. Add `ports` for services on other ports, e.g., `80` if `http`
+is an allowed scheme. NetworkPolicies add
 up, so another policy selecting the app's pods can allow more. For example:
 
 ```yaml

@@ -196,9 +196,12 @@ cloudRegistry:
         - 192.168.0.0/16
         - 198.18.0.0/15
         - 224.0.0.0/3
-        - ::1/128
+        - ::/3
+        - 64:ff9b::/96
+        - 2002::/16
         - fc00::/7
         - fe80::/10
+        - fec0::/10
         - ff00::/8
       # Further NetworkPolicy egress rules (`to`, `ports`) for private
       # addresses the app must reach, e.g., token issuers, an external MongoDB,

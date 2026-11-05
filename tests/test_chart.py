@@ -1989,7 +1989,7 @@ def test_network_policy_egress() -> None:
     assert {"10.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16"} <= set(ipv4["except"])
     assert not any(":" in cidr for cidr in ipv4["except"])
     assert ipv6["cidr"] == "::/0"
-    assert {"::1/128", "fc00::/7", "fe80::/10"} <= set(ipv6["except"])
+    assert {"::/3", "fc00::/7", "fe80::/10", "2002::/16"} <= set(ipv6["except"])
     assert all(":" in cidr for cidr in ipv6["except"])
 
 

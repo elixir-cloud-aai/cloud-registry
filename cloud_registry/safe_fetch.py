@@ -39,9 +39,11 @@ TIMEOUT = 10.0
 # Ports of schemes, for URLs without a port
 _DEFAULT_PORTS = {"http": 80, "https": 443}
 # NAT64 prefix with an IPv4 address in its last 32 bits (RFC 6052), which
-# reaches the IPv4 address, and IPv4-compatible addresses (deprecated)
+# reaches the IPv4 address
 _NAT64 = ipaddress.ip_network("64:ff9b::/96")
-_IPV4_COMPATIBLE = ipaddress.ip_network("::/96")
+# All public IPv6 addresses are global unicast addresses; `is_global` also
+# accepts others, e.g., deprecated site-local and IPv4-translated ones
+_GLOBAL_UNICAST = ipaddress.ip_network("2000::/3")
 _LAST_32_BITS = 0xFFFFFFFF
 
 
@@ -67,7 +69,8 @@ def is_allowed_address(address: IPAddress, networks: Iterable[IPNetwork] = ()) -
     Returns:
         Whether the address is in `networks` or public. IPv4 addresses embedded
         in IPv6 addresses (IPv4-mapped, 6to4, NAT64) are checked themselves, as
-        they would be reached; Teredo and IPv4-compatible addresses are refused.
+        they would be reached; Teredo addresses and other IPv6 addresses outside
+        of global unicast are refused.
     """
     networks = list(networks)
     if any(address in network for network in networks):
@@ -80,7 +83,7 @@ def is_allowed_address(address: IPAddress, networks: Iterable[IPNetwork] = ()) -
             embedded = ipaddress.IPv4Address(int(address) & _LAST_32_BITS)
         if embedded is not None:
             return is_allowed_address(embedded, networks)
-        if address.teredo is not None or address in _IPV4_COMPATIBLE:
+        if address.teredo is not None or address not in _GLOBAL_UNICAST:
             return False
     return address.is_global and not address.is_multicast
 
@@ -146,7 +149,7 @@ def _resolve(host: str, port: int, deadline: _Deadline) -> list[str]:
     return addresses
 
 
-class _PinnedConnection(http.client.HTTPSConnection):
+class _PinnedConnection(http.client.HTTPConnection):
     """Connection to a given address, for a host (plain, unless with TLS)."""
 
     def __init__(
@@ -166,7 +169,7 @@ class _PinnedConnection(http.client.HTTPSConnection):
             timeout: Timeout of each socket operation, in seconds.
             context: TLS settings; plain HTTP if `None`.
         """
-        super().__init__(host, port, timeout=timeout, context=context)
+        super().__init__(host, port, timeout=timeout)
         self._address = address
         self._tls = context
         # kept for `abort()`: `http.client` drops `sock` while the response of
