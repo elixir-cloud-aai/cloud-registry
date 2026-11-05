@@ -32,6 +32,7 @@ from cloud_registry.ga4gh.registry.service import (
     DuplicateService,
     InvalidService,
     RegisterService,
+    SyncUrlLocked,
     check_strings,
     service_exists,
 )
@@ -269,8 +270,8 @@ def _register_service(
         the user may not add, `409` for a registered service with the same
         URL and API type, naming it only if the user may read it (cf.
         `may_read_service()` and `visible_services()`), for updates of
-        pending services by users other than admins, or for users who
-        registered as many services as allowed.
+        pending services by users other than admins, for users who registered
+        as many services as allowed, or for other URLs of services with sync.
 
     Raises:
         cloud_registry.exceptions.BadRequest: The owner role can't be stored
@@ -307,7 +308,7 @@ def _register_service(
             if not service.was_created:
                 release_service(service.created_by)
             raise
-    except (InvalidService, UnusedTypesLimit, ServicesLimit) as exc:
+    except (InvalidService, UnusedTypesLimit, ServicesLimit, SyncUrlLocked) as exc:
         logger.info(
             "Service not registered: %s",
             escape_log_value(shorten_detail(exc.description)),

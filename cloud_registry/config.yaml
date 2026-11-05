@@ -138,6 +138,10 @@ security:
             # any authenticated user may have service info fetched, to import
             # it (limited per user: `custom.endpoints.services.service_info`)
             import-service-info: [p, "*", /ga4gh/registry/v1/services/import, POST]
+            # owners and maintainers may turn sync of their services with their
+            # service info on and off
+            owners-sync-services: [p, owner, "/ga4gh/registry/v1/services/:id/sync", "(PUT)|(DELETE)"]
+            maintainers-sync-services: [p, maintainer, "/ga4gh/registry/v1/services/:id/sync", "(PUT)|(DELETE)"]
             # any authenticated user may add service types, unless only
             # admins may (`custom.access_control.service_types: controlled`,
             # checked by the app); keep this rule and set that option instead,
@@ -166,6 +170,8 @@ security:
             get-service: [p, "*", "/ga4gh/registry/v1/services/:id", GET]
             get-service-verification: [p, "*", "/ga4gh/registry/v1/services/:id/verification", GET]
             list-verifications: [p, "*", /ga4gh/registry/v1/verifications, GET]
+            get-service-sync: [p, "*", "/ga4gh/registry/v1/services/:id/sync", GET]
+            list-syncs: [p, "*", /ga4gh/registry/v1/syncs, GET]
 
 # Database configuration
 # Cf. https://foca.readthedocs.io/en/latest/configuration/db/
@@ -205,6 +211,12 @@ db:
                         # counted on startup)
                         - keys:
                               _createdBy: 1
+                        # Services with sync by the time of their next attempt
+                        # (internal field, cf. `PUT /services/{serviceId}/sync`)
+                        - keys:
+                              _sync.nextAttemptAt: 1
+                          options:
+                            'sparse': True
                         # The entry of the registry among its services
                         # (internal flag, cf. `PUT /service-info/listing`)
                         - keys:
@@ -429,12 +441,16 @@ custom:
                 - test
                 - dev
                 - staging
-            # Fetching the service info of services (`POST /services/import`;
-            # see "Service info import" in `docs/configuration.md`): networks
-            # that may be fetched from besides public addresses (CIDR
-            # notation; none by default, only for networks whose services
-            # users may probe), and how often each user may have service info
-            # fetched per hour (`429` above)
+            # Fetching the service info of services (`POST /services/import`,
+            # `PUT /services/{serviceId}/sync`; see "Service info import" and
+            # "Service info sync" in `docs/configuration.md`): networks that may
+            # be fetched from besides public addresses (CIDR notation; none by
+            # default, only for networks whose services users may probe), how
+            # often each user may have service info fetched per hour (`429`
+            # above), whether services can be synced with their service info,
+            # and the time between syncs of a service, in hours
             service_info:
                 private_networks: []
                 fetches_per_hour: 30
+                sync: true
+                sync_interval_hours: 24

@@ -22,7 +22,10 @@ from cloud_registry.ga4gh.registry.permissions import INVITATIONS
 from cloud_registry.ga4gh.registry.service import CREATED_BY as SERVICE_CREATOR
 from cloud_registry.ga4gh.registry.service import KEY
 from cloud_registry.ga4gh.registry.service_limits import COUNT, SERVICE_COUNTS
-from cloud_registry.ga4gh.registry.service_types import CREATED_BY
+from cloud_registry.ga4gh.registry.service_types import (
+    CREATED_BY,
+    SERVICE_SUBJECT_PREFIX,
+)
 from cloud_registry.namespace_subjects import (
     _policy_collection,
     check_namespace,
@@ -274,6 +277,19 @@ def test_subjects_with_separator(client: FlaskClient) -> None:
         assert stored is not None
         assert stored[CREATED_BY] == f"{ISSUER}|auth0|1"
         assert ("g2", f"user:{ISSUER}|auth0|1", "owner", "/s/3") in _rules()
+
+
+def test_types_of_services_stay(client: FlaskClient) -> None:
+    """Types added by syncs of services that count for nobody have no user."""
+    subject = f"{SERVICE_SUBJECT_PREFIX}abc"
+    with client.application.app_context():
+        get_collection("service_types").insert_one(
+            {"group": "g", "artifact": "s", "version": "1", CREATED_BY: subject}
+        )
+        namespace_subjects(ISSUER)
+        stored = get_collection("service_types").find_one({"artifact": "s"})
+    assert stored is not None
+    assert stored[CREATED_BY] == subject
 
 
 def test_invitation_changed_meanwhile(

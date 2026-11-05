@@ -53,6 +53,10 @@ CREATED_BY = "_createdBy"
 # `cloud_registry.ga4gh.registry.self_listing`): `True`; kept on updates and
 # renames; not served
 SELF_ENTRY = "_selfEntry"
+# Internal field with the state of the sync of a service with its service info
+# (cf. `cloud_registry.ga4gh.registry.sync`), while it is turned on; kept on
+# updates and renames; not served
+SYNC = "_sync"
 # Projection excluding internal fields
 PROJECTION = {
     "_id": False,
@@ -61,6 +65,7 @@ PROJECTION = {
     PENDING_SERVICE: False,
     CREATED_BY: False,
     SELF_ENTRY: False,
+    SYNC: False,
 }
 # Fields with URLs of links, as paths of keys, with the schemes they allow
 # (cf. `foca.utils.urls.check_url_fields()`): contact URLs can be email
@@ -123,6 +128,19 @@ class DuplicateService(CodedConflict):
             f"A service with the same URL and API type is registered: '{existing_id}'."
         )
         self.existing_id = existing_id
+
+
+class SyncUrlLocked(CodedConflict):
+    """The URL of a service with sync turned on must stay."""
+
+    problem_code = "sync-url-locked"
+
+    def __init__(self) -> None:
+        """Create the exception, with a description of what to do."""
+        super().__init__(
+            "Service info is synced from the URL of this service, so it can't "
+            "change. To move the service, turn sync off first, or import it anew."
+        )
 
 
 class InvalidService(BadRequest):
@@ -357,6 +375,7 @@ class RegisterService:
             id_length: Length of generated service identifiers.
             url_schemes: Schemes allowed in service URLs.
             environments: Values allowed for `environment`; any if empty.
+            sync: Whether the deployment syncs services with their service info.
             db_coll: Database collection for storing service objects.
         """
         endpoint_conf = get_custom_config(CustomConfig).endpoints
@@ -375,6 +394,7 @@ class RegisterService:
         self.id_length = int(endpoint_conf.services.id.length)
         self.url_schemes = frozenset(endpoint_conf.services.url_schemes)
         self.environments: list[str] = list(endpoint_conf.services.environments)
+        self.sync = endpoint_conf.services.service_info.sync
         self.db_coll = get_collection("services")
 
     def check(self) -> str:
@@ -407,10 +427,29 @@ class RegisterService:
             InvalidService: Cf. `register_metadata()`.
             DuplicateService: Another service with the same URL and API type
                 is registered.
+            SyncUrlLocked: The update changes the URL of a service with sync.
         """
         key = self.check()
         self._check_duplicate(key=key)
+        if self.replace:
+            stored = self.db_coll.find_one(
+                {"id": self.data["id"]}, {"_id": False, "url": True, SYNC: True}
+            )
+            if stored is not None:
+                self._check_url_lock(stored)
         return key
+
+    def _check_url_lock(self, stored: dict[str, Any]) -> None:
+        """Check that an update keeps the URL of a service with sync.
+
+        Args:
+            stored: Stored service, with `url` and `SYNC`.
+
+        Raises:
+            SyncUrlLocked: The service has sync, and another URL, as written.
+        """
+        if self.sync and SYNC in stored and stored.get("url") != self.data["url"]:
+            raise SyncUrlLocked
 
     def _internal_fields(self, key: str) -> dict[str, Any]:
         """Get the internal fields to store with the service.
@@ -536,6 +575,8 @@ class RegisterService:
                 changed or was added concurrently on each try.
             cloud_registry.exceptions.NotFound: The service doesn't exist
                 (anymore), and `allow_create` is false.
+            SyncUrlLocked: Sync was turned on after `validate()`, and the update
+                changes the URL.
         """
         for _ in range(retries + 1):
             stored = self.db_coll.find_one(
@@ -548,6 +589,7 @@ class RegisterService:
                     CREATED: True,
                     CREATED_BY: True,
                     SELF_ENTRY: True,
+                    SYNC: True,
                 },
             )
             if stored is None and not self.allow_create:
@@ -560,13 +602,28 @@ class RegisterService:
                 replacement.setdefault(CREATED, timestamp)
             else:
                 # the fields as read; missing if they were
-                for field in ("url", KEY, VERIFIED, CREATED, CREATED_BY, SELF_ENTRY):
+                for field in (
+                    "url",
+                    KEY,
+                    VERIFIED,
+                    CREATED,
+                    CREATED_BY,
+                    SELF_ENTRY,
+                    SYNC,
+                ):
                     query[field] = stored.get(field, {"$exists": False})
+                # sync may have been turned on since `validate()`
+                self._check_url_lock(stored)
                 # the user the service counts for never changes
                 replacement[CREATED_BY] = stored[CREATED_BY]
                 # the entry of the registry stays marked as such
                 if SELF_ENTRY in stored:
                     replacement[SELF_ENTRY] = stored[SELF_ENTRY]
+                # sync stays on, and overrides the values at its next attempt;
+                # a new URL (with the deployment's sync off, cf. `_check_url_lock()`)
+                # would never have been fetched by the user who turned it on
+                if SYNC in stored and stored["url"] == self.data["url"]:
+                    replacement[SYNC] = stored[SYNC]
                 # invalid ones (e.g., set by owners before timestamps were
                 # checked) are removed
                 created = stored.get(CREATED)

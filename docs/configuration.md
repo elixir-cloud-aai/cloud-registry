@@ -271,6 +271,53 @@ connections](deployment.md#the-apps-connections).
 Service URLs must use an [allowed scheme](#service-url-schemes), so `http` services
 can only be imported if `http` is allowed (with the chart's policy, also add port 80).
 
+## Service info sync
+
+Services can be [synced](api.md#synced-services) with their service info, which is
+on by default, every 24 hours:
+
+```yaml
+custom:
+    endpoints:
+        services:
+            service_info:
+                # Whether services can be synced
+                sync: true
+                # Time between syncs of a service, in hours
+                sync_interval_hours: 24
+```
+
+Clients read both from the service info (`serviceInfoSync` of the [registration
+rules](api.md#registration-rules)), e.g., to show how often services are synced.
+
+**Without sync** (`sync: false`), nothing is fetched periodically, `PUT
+/services/{serviceId}/sync` returns `409 Conflict`, no service has a label, and URLs
+aren't locked; what was stored stays, and applies again when sync is turned back on,
+except for services whose URL changed meanwhile: their sync ends.
+Imports keep working, as users start them; to stop all fetches, block the [app's
+connections](deployment.md#the-apps-connections).
+
+**How it runs:** each worker runs a background thread, without a task queue, and
+whether or not requests come in. Once a minute (or each interval, if shorter), it
+syncs the services that are due, one after the other. Workers and replicas share the
+work through the database, without any setup: a service is claimed for five minutes
+in a single write, so that only one of them syncs it. With a single worker, this
+costs one indexed query per minute, besides the fetches.
+
+**On restarts,** nothing is lost, as the times are stored: services that became due
+meanwhile are synced at the first check, and those of a worker that died when their
+claim expires. A shorter interval applies at once, on startup. A longer one applies
+after the next sync of each service. If the app is down for longer than two
+intervals, labels are `out-of-sync` until the next sync.
+
+**What reasons reveal:** the [reasons](api.md#synced-services) of syncs are served,
+and a registrant controls the DNS of their host name. By pointing it elsewhere after
+turning sync on, they can learn whether a name resolves to a public address and, for
+[permitted networks](#service-info-import), whether something answers there: slowly,
+as it takes one probe per service and interval. To limit who can read them, [require
+login for reads](access-control.md#requiring-login-for-reads) and restrict the rules
+`get-service-sync` and `list-syncs`.
+
 ## Service environments
 
 The GA4GH specification describes the environment of a service
@@ -332,7 +379,8 @@ Users other than admins may only have added
 `controlled`, they can't add types at all): further types are rejected
 (`409`), whether added explicitly or by registering or changing services,
 until services have them or admins remove them (approved types count too).
-Types become unused when their services are deleted or change their type, so
+Types become unused when their services are deleted or change their type
+(except for versions that [syncs](api.md#synced-services) leave behind), so
 the limit bounds how many types each user can add without services (users
 can still leave more types unused by registering services with new types and
 deleting them, one registration per type); set `0` to let only admins add

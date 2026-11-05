@@ -71,7 +71,10 @@ from cloud_registry.ga4gh.registry.invitations import ACCEPTED, CREATED_AS
 from cloud_registry.ga4gh.registry.permissions import INVITATIONS
 from cloud_registry.ga4gh.registry.service import CREATED_BY as SERVICE_CREATOR
 from cloud_registry.ga4gh.registry.service_limits import COUNT, SERVICE_COUNTS
-from cloud_registry.ga4gh.registry.service_types import CREATED_BY
+from cloud_registry.ga4gh.registry.service_types import (
+    CREATED_BY,
+    SERVICE_SUBJECT_PREFIX,
+)
 from cloud_registry.utils import get_collection, refuse_old_format
 
 logger = logging.getLogger(__name__)
@@ -204,7 +207,7 @@ def _namespace_service_types(namespace: str, dry_run: bool) -> int:
     count = 0
     for service_type in collection.find({CREATED_BY: {"$type": "string"}}):
         subject = service_type[CREATED_BY]
-        if not _is_bare(subject):
+        if not _is_bare(subject) or subject.startswith(SERVICE_SUBJECT_PREFIX):
             continue
         count += 1
         if not dry_run:

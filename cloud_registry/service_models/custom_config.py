@@ -5,7 +5,13 @@ from typing import Annotated, Literal
 
 from foca.models.config import FOCABaseConfig
 from foca.utils.misc import generate_id
-from pydantic import Field, NonNegativeInt, PositiveInt, field_validator
+from pydantic import (
+    Field,
+    NonNegativeInt,
+    PositiveFloat,
+    PositiveInt,
+    field_validator,
+)
 
 
 class IdConfig(FOCABaseConfig):
@@ -73,6 +79,8 @@ class ServiceInfoConfig(FOCABaseConfig):
             Only for networks whose services users may probe, e.g., in tests.
         fetches_per_hour: How often each user may have service info fetched
             per hour (`429` above).
+        sync: Whether services can be synced with their service info.
+        sync_interval_hours: Time between syncs of a service, in hours.
 
     Attributes:
         private_networks: Networks (CIDR notation) that the app may fetch
@@ -80,19 +88,24 @@ class ServiceInfoConfig(FOCABaseConfig):
             Only for networks whose services users may probe, e.g., in tests.
         fetches_per_hour: How often each user may have service info fetched
             per hour (`429` above).
+        sync: Whether services can be synced with their service info.
+        sync_interval_hours: Time between syncs of a service, in hours.
 
     Raises:
         pydantic.ValidationError: The class was instantianted with an illegal
             data type, a network is invalid (also with host bits set), or
-            `fetches_per_hour` is not positive.
+            `fetches_per_hour` or `sync_interval_hours` is not positive.
 
     Example:
         >>> ServiceInfoConfig(private_networks=['10.1.0.0/16'])
-        ServiceInfoConfig(private_networks=['10.1.0.0/16'], fetches_per_hour=30)
+        ServiceInfoConfig(private_networks=['10.1.0.0/16'], fetches_per_hour=30, \
+sync=True, sync_interval_hours=24.0)
     """
 
     private_networks: list[str] = Field(default_factory=list)
     fetches_per_hour: PositiveInt = 30
+    sync: bool = True
+    sync_interval_hours: PositiveFloat = 24.0
 
     @field_validator("private_networks")
     @classmethod
@@ -158,7 +171,8 @@ class ServicesConfig(FOCABaseConfig):
         ... )
         ServicesConfig(id=IdConfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ01234567\
 89', length=6), url_schemes=['https'], environments=['prod', 'test', 'dev', 's\
-taging'], service_info=ServiceInfoConfig(private_networks=[], fetches_per_hour=30))
+taging'], service_info=ServiceInfoConfig(private_networks=[], fetches_per_hour\
+=30, sync=True, sync_interval_hours=24.0))
     """
 
     id: IdConfig
@@ -196,7 +210,7 @@ class EndpointsConfig(FOCABaseConfig):
         EndpointsConfig(services=ServicesConfig(id=IdConfig(charset='ABCDEFGHI\
 JKLMNOPQRSTUVWXYZ0123456789', length=6), url_schemes=['https'], environments=[\
 'prod', 'test', 'dev', 'staging'], service_info=ServiceInfoConfig(private_networks\
-=[], fetches_per_hour=30)))
+=[], fetches_per_hour=30, sync=True, sync_interval_hours=24.0)))
     """
 
     services: ServicesConfig
@@ -336,9 +350,10 @@ class CustomConfig(FOCABaseConfig):
         CustomConfig(endpoints=EndpointsConfig(services=ServicesConfig(id=IdCo\
 nfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', length=6), url_schemes=['\
 https'], environments=['prod', 'test', 'dev', 'staging'], service_info=ServiceI\
-nfoConfig(private_networks=[], fetches_per_hour=30))), access_control=Acc\
-essControlConfig(service_types='open', max_unused_service_types=10, max_serv\
-ices_per_user=50, invitations=InvitationsConfig(expiry_days=7, keep_expired_d\
+nfoConfig(private_networks=[], fetches_per_hour=30, sync=True, sync_interval_h\
+ours=24.0))), access_control=AccessControlConfig(service_types='open', max_unu\
+sed_service_types=10, max_services_per_user=50, invitations=InvitationsConfig(\
+expiry_days=7, keep_expired_d\
 ays=30, max_per_service=20)))
     """
 

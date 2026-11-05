@@ -36,6 +36,10 @@ from cloud_registry.ga4gh.registry.service_types import (
     add_service_types,
     sync_pending_services,
 )
+from cloud_registry.ga4gh.registry.sync import (
+    cap_next_attempts,
+    start_sync_scheduler,
+)
 from cloud_registry.utils import refuse_old_format
 
 logger = logging.getLogger(__name__)
@@ -67,7 +71,9 @@ def create_app() -> App:
     `refresh_self_listing()`), adds the types of registered services that
     aren't stored (e.g., after a failed change of that entry) and applies the
     days for which expired invitations are kept (cf.
-    `apply_keep_expired_days()`). Warns of stored services with URL schemes or
+    `apply_keep_expired_days()`), and syncs services with their service info in
+    the background, if they have it turned on (cf. `start_sync_scheduler()`, in
+    each worker). Warns of stored services with URL schemes or
     environments that are not allowed, and of rules that let owners change
     roles of groups although the rule for these is changed, or grant roles by
     invitation although no rule lets them grant roles to users (cf.
@@ -140,6 +146,8 @@ def create_app() -> App:
         sync_pending_services()
         warn_url_schemes()
         warn_environments()
+        cap_next_attempts()
+        start_sync_scheduler(app.app)
     return app
 
 

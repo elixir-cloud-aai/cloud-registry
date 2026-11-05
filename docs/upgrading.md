@@ -33,11 +33,19 @@ earlier versions stored. It refuses to start if it finds such data or indexes
 Going back to 1.0.0rc1 needs its database, as it was.
 
 **Outgoing requests:** the registry now fetches service info from public
-addresses when users [import it](api.md#importing-service-info), so it needs
-outgoing connections, on top of those to the token issuers; nothing changes if they
-are blocked, except that imports fail. It adds the collection
-`service_info_fetches`, and the policy rule `import-service-info`, which overlays
-that give `policies` as a list must include. The Helm chart has an optional policy
+addresses when users [import it](api.md#importing-service-info) and for
+[syncs](api.md#synced-services), so it needs outgoing connections, on top of those to
+the token issuers; nothing changes if they are blocked, except that imports fail and
+synced services become `out-of-sync`. It adds the collection
+`service_info_fetches`, and the policy rules `import-service-info`,
+`owners-sync-services`, `maintainers-sync-services`, `get-service-sync` and
+`list-syncs`, which overlays that give `policies` as a list must include.
+[Sync](api.md#synced-services) is available by default, so owners can turn it on for
+their services: each worker then runs a background thread, which queries the database
+once a minute and fetches service info, by default every 24 hours per service (the
+index it uses is created on startup); set
+`custom.endpoints.services.service_info.sync: false` to [prevent
+it](configuration.md#service-info-sync). The Helm chart has an optional policy
 for the [app's connections](deployment.md#the-apps-connections).
 
 **Service URLs:** a `url` with leading or trailing spaces now returns

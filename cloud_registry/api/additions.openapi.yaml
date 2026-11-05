@@ -1084,6 +1084,159 @@ paths:
           $ref: '#/components/responses/InternalServerError'
         default:
           $ref: '#/components/responses/Error'
+  "/services/{serviceId}/sync":
+    get:
+      summary: Get the sync state of a service.
+      description: |
+        Get whether a service is in sync with its service info. Services without
+        sync return `404` (they may have drifted), as do unknown services, pending
+        services (see `GET /approvals`) that the user may not see, and all services
+        if the deployment doesn't sync. Verified and synced doesn't mean trusted:
+        users decide.
+      operationId: getServiceSync
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.sync
+      security:
+        - bearerAuth: []
+        - {}
+      tags:
+        - cloud-registry
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+      responses:
+        '200':
+          description: Sync state of the service.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sync'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      summary: Turn sync of a service on, or sync it now.
+      description: |
+        Fetch the service info of the service (`{url}/service-info`), apply it and
+        keep doing so periodically. For owners, maintainers and admins. The first
+        fetch must succeed, or nothing changes; service info that can't be applied
+        (e.g., a type awaiting approval) turns sync on with a `reason`. While sync
+        is on, updates with another `url` return `409`, and other changes of
+        synced fields last until the next sync. Limited per user, like `POST
+        /services/import` (`429` above); every failed fetch returns the same `502`.
+      operationId: putServiceSync
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.sync
+      tags:
+        - cloud-registry
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+      responses:
+        '200':
+          description: Sync state of the service.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sync'
+        '400':
+          description: The service info doesn't pass the checks of a registration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          description: Too many fetches (see `POST /services/import`).
+          headers:
+            Retry-After:
+              description: Seconds after which to try again.
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '502':
+          description: The service info could not be fetched, for whichever reason.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      summary: Turn sync of a service off.
+      description: |
+        The service keeps its values, and can change its URL again. For owners,
+        maintainers and admins.
+      operationId: deleteServiceSync
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.sync
+      tags:
+        - cloud-registry
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+      responses:
+        '200':
+          description: Identifier of the service.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+  /syncs:
+    get:
+      summary: List the sync states of services.
+      description: |
+        List the services with sync, sorted by identifier. Clients on the safe side
+        keep the services (`GET /services`) that are listed here as `synced` and in
+        `GET /verifications`, with the same identifier, URL and API type. Verified
+        and synced doesn't mean trusted: users decide. Pending services (see `GET
+        /approvals`) are only listed to users who see them in `GET /services`.
+      operationId: getSyncs
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.sync
+      security:
+        - bearerAuth: []
+        - {}
+      tags:
+        - cloud-registry
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Only list services with this label.
+          schema:
+            $ref: '#/components/schemas/SyncStatus'
+      responses:
+        '200':
+          description: Sync states.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ServiceSync'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
   /verifications:
     get:
       summary: List verified services.
@@ -1404,12 +1557,20 @@ components:
                   registered (`POST /services/{serviceId}/rename`), or with
                   the identifier of the service info (`PUT
                   /service-info/listing`).
-                - `service-busy`: the service is being renamed (`PUT` and
+                - `service-busy`: the service changed during the fetch (`PUT
+                  /services/{serviceId}/sync`), or is being renamed (`PUT` and
                   `DELETE` of `/services/{serviceId}`,
                   `/services/{serviceId}/permissions/...` and
                   `/service-info/listing`), or the service or
                   the new identifier is being renamed or changed (`POST
                   /services/{serviceId}/rename`); try again later.
+                - `sync-url-locked`: the service has sync turned on, so its URL
+                  can't change (`PUT /services/{serviceId}`).
+                - `sync-unavailable`: the deployment doesn't sync, or the service
+                  is the registry's own entry (`PUT /services/{serviceId}/sync`).
+                - `sync-identity-mismatch`: the service info has another
+                  identifier or API type than the service (`PUT
+                  /services/{serviceId}/sync`).
                 - `conflict`: other conflicts (e.g., changes of policy rules
                   set in the configuration via FOCA's permissions API).
 
@@ -1428,6 +1589,9 @@ components:
                 - invitation-accepted
                 - service-id-taken
                 - service-busy
+                - sync-url-locked
+                - sync-unavailable
+                - sync-identity-mismatch
                 - conflict
     ServiceId:
       description: Service identifier.
@@ -1459,6 +1623,7 @@ components:
         - environments
         - urlSchemes
         - serviceTypes
+        - serviceInfoSync
       additionalProperties: false
       properties:
         environments:
@@ -1520,6 +1685,24 @@ components:
             only admins can register services. Not set if there is no limit
             (`custom.access_control.max_services_per_user: null`).
           example: 50
+        serviceInfoSync:
+          type: object
+          description: |
+            Whether services can be synced with their service info, and how often
+            (`custom.endpoints.services.service_info`).
+          required:
+            - enabled
+            - intervalHours
+          additionalProperties: false
+          properties:
+            enabled:
+              type: boolean
+              description: Whether `PUT /services/{serviceId}/sync` is available.
+              example: true
+            intervalHours:
+              type: number
+              description: Time between syncs of a service, in hours.
+              example: 24
     ServiceImport:
       description: Address of the service info to import.
       type: object
@@ -1943,6 +2126,78 @@ components:
           $ref: '#/components/schemas/ServiceType'
         verifiedAt:
           $ref: '#/components/schemas/VerifiedAt'
+    SyncStatus:
+      description: |
+        Label of a service with sync: `synced` if the last sync succeeded, at most
+        two intervals ago; otherwise `out-of-sync`.
+      type: string
+      enum:
+        - synced
+        - out-of-sync
+    SyncReason:
+      description: |
+        Why a service is out of sync; a fixed set. `unreachable`: the fetch failed,
+        also after retries. `address not allowed`: the host resolves to an address
+        that isn't public. `invalid service info`: it doesn't pass the checks of a
+        registration. `identity mismatch`: another identifier than when sync was
+        turned on, or another `type.group` or `type.artifact` than the service.
+        `version awaiting approval`: its `type` is pending until an admin approves
+        it (see `GET /approvals`). `version not allowed`: only admins may add its
+        `type`. `unused types limit reached`: the user who registered the service
+        has added as many unused types as allowed.
+      type: string
+      enum:
+        - unreachable
+        - address not allowed
+        - invalid service info
+        - identity mismatch
+        - version awaiting approval
+        - version not allowed
+        - unused types limit reached
+    Sync:
+      description: |
+        Sync state of a service with its service info, with its URL and API type.
+      type: object
+      required:
+        - url
+        - type
+        - status
+        - serviceInfoId
+      properties:
+        url:
+          type: string
+          description: URL of the service, as registered.
+          example: 'https://tes.example.org/ga4gh/tes/v1'
+        type:
+          $ref: '#/components/schemas/ServiceType'
+        status:
+          $ref: '#/components/schemas/SyncStatus'
+        reason:
+          $ref: '#/components/schemas/SyncReason'
+        serviceInfoId:
+          type: string
+          description: Identifier of the service info when sync was turned on.
+          example: 'org.example.tes'
+        lastAttemptAt:
+          type: string
+          format: date-time
+          description: Time of the last attempt (RFC 3339 format, UTC).
+          example: '2026-10-20T12:34:56.789Z'
+        lastSuccessAt:
+          type: string
+          format: date-time
+          description: Time of the last success (RFC 3339 format, UTC).
+          example: '2026-10-20T12:34:56.789Z'
+    ServiceSync:
+      description: Sync state of a service, with its identifier.
+      allOf:
+        - $ref: '#/components/schemas/Sync'
+      type: object
+      required:
+        - serviceId
+      properties:
+        serviceId:
+          $ref: '#/components/schemas/ServiceId'
     Role:
       description: |
         Role on a service: `owner` (update and delete the service, manage

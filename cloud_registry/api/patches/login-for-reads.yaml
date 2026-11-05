@@ -24,3 +24,11 @@ paths:
     get:
       security:
         - bearerAuth: []
+  /services/{serviceId}/sync:
+    get:
+      security:
+        - bearerAuth: []
+  /syncs:
+    get:
+      security:
+        - bearerAuth: []
