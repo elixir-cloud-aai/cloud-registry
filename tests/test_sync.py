@@ -396,6 +396,79 @@ def test_turn_on_again_syncs_now(
     assert get_service(client, service_id)["description"] == "Newer."
 
 
+def test_only_if_enabled_syncs(
+    client: FlaskClient, serve: Serve, service_id: str
+) -> None:
+    """With `onlyIfEnabled`, a service with sync syncs at once."""
+    serve(info(description="Newer."))
+    response = client.put(
+        f"{BASE}/services/{service_id}/sync?onlyIfEnabled=true",
+        headers=make_headers(USER, roles=None),
+    )
+    assert response.status_code == 200
+    assert get_service(client, service_id)["description"] == "Newer."
+
+
+def test_only_if_enabled_stays_off(
+    client: FlaskClient, serve: Serve, service_id: str
+) -> None:
+    """With `onlyIfEnabled`, a service without sync stays so, without a fetch."""
+    headers = make_headers(USER, roles=None)
+    off = client.delete(f"{BASE}/services/{service_id}/sync", headers=headers)
+    assert off.status_code == 200
+    urls = serve(info(description="Newer."))
+    response = client.put(
+        f"{BASE}/services/{service_id}/sync?onlyIfEnabled=true", headers=headers
+    )
+    assert response.status_code == 404
+    assert not urls
+    assert client.get(f"{BASE}/services/{service_id}/sync").status_code == 404
+    assert get_service(client, service_id)["description"] != "Newer."
+
+
+def test_only_if_enabled_turned_off_during_fetch(
+    client: FlaskClient,
+    serve: Serve,
+    service_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sync turned off during the fetch of `onlyIfEnabled` stays off."""
+    serve(info(description="Newer."))
+    fetch = sync._fetch
+
+    def turning_off(url: str) -> tuple[str, dict[str, Any]]:
+        """Turn sync off during the fetch.
+
+        Args:
+            url: URL.
+
+        Returns:
+            The result of the fetch.
+        """
+        services(client).update_one({"id": service_id}, {"$unset": {sync.SYNC: ""}})
+        return fetch(url)
+
+    monkeypatch.setattr(sync, "_fetch", turning_off)
+    response = client.put(
+        f"{BASE}/services/{service_id}/sync?onlyIfEnabled=true",
+        headers=make_headers(USER, roles=None),
+    )
+    assert response.status_code == 404
+    assert client.get(f"{BASE}/services/{service_id}/sync").status_code == 404
+
+
+def test_only_if_enabled_unavailable(client: FlaskClient, serve: Serve) -> None:
+    """With `onlyIfEnabled`, a deployment without sync still says so."""
+    identifier = register(client)
+    service_info_settings(client).sync = False
+    response = client.put(
+        f"{BASE}/services/{identifier}/sync?onlyIfEnabled=true",
+        headers=make_headers(USER, roles=None),
+    )
+    assert response.status_code == 409
+    assert response.get_json()["code"] == "sync-unavailable"
+
+
 def test_turn_on_own_entry(client: FlaskClient, serve: Serve) -> None:
     """The registry's own entry follows its service info instead."""
     urls = serve(INFO)

@@ -618,7 +618,9 @@ def getSyncs(status: str | None = None, **kwargs: Any) -> list[dict[str, Any]]:
 
 
 # PUT /services/{serviceId}/sync
-def putServiceSync(serviceId: str, **kwargs: Any) -> dict[str, Any] | Response:
+def putServiceSync(
+    serviceId: str, onlyIfEnabled: bool = False, **kwargs: Any
+) -> dict[str, Any] | Response:
     """Turn sync of a service on, or sync it now.
 
     Sync is only turned on after a successful fetch, so that users can't read the
@@ -627,6 +629,7 @@ def putServiceSync(serviceId: str, **kwargs: Any) -> dict[str, Any] | Response:
 
     Args:
         serviceId: Service identifier.
+        onlyIfEnabled: Only sync if sync is on; never turn it on.
         **kwargs: Further arguments that Connexion passes (`user`,
             `token_info`); unused.
 
@@ -640,7 +643,7 @@ def putServiceSync(serviceId: str, **kwargs: Any) -> dict[str, Any] | Response:
 
     Raises:
         cloud_registry.exceptions.NotFound: The service doesn't exist (anymore),
-            or sync was turned off meanwhile.
+            sync was turned off meanwhile, or sync is off with `onlyIfEnabled`.
     """
     collection = get_collection("services")
     with changing(serviceId):
@@ -655,6 +658,8 @@ def putServiceSync(serviceId: str, **kwargs: Any) -> dict[str, Any] | Response:
                     else "The registry's own entry follows its service info."
                 )
             )
+        if onlyIfEnabled and SYNC not in service:
+            raise NotFound
         try:
             with fetch_slot():
                 check_fetch_limit(require_subject())
@@ -696,7 +701,10 @@ def putServiceSync(serviceId: str, **kwargs: Any) -> dict[str, Any] | Response:
             return_document=ReturnDocument.AFTER,
         )
         if claimed is None:
-            if collection.count_documents({"_id": service["_id"]}) == 0:
+            query: dict[str, Any] = {"_id": service["_id"]}
+            if onlyIfEnabled:
+                query[SYNC] = {"$exists": True}
+            if collection.count_documents(query) == 0:
                 raise NotFound
             return problem(ServiceBusy())
         _apply(claimed, identifier, values, current)

@@ -460,8 +460,9 @@ against server-side request forgery:
   the host;
 - no redirects, at most 256 KiB, at most 10 seconds;
 - users may have service info fetched 30 times per hour by default, and only few
-  requests fetch at a time (`429 Too Many Requests`, with `Retry-After`; see [Service
-  info import](configuration.md#service-info-import));
+  requests fetch at a time (`429 Too Many Requests`, with `Retry-After`, which browser
+  apps on other origins can read as well; see [Service info
+  import](configuration.md#service-info-import));
 - every failed fetch returns the same `502 Bad Gateway`, whatever the cause
   (e.g., an address that isn't allowed, an unknown host, a timeout or a status
   other than `200`), so that users can't map networks with it.
@@ -584,8 +585,11 @@ curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/<id>/sync" \
 safeguards](#importing-service-info) as imports (never with a token), applies it,
 and turns sync on; repeating it syncs the service at once. The registry then
 syncs it every 24 hours by default (see [Service info
-sync](configuration.md#service-info-sync)), whether or not requests come in.
-`DELETE` turns it off. The service info must be publicly available: a service whose
+sync](configuration.md#service-info-sync)), whether or not requests come in. With
+`?onlyIfEnabled=true`, `PUT` only syncs a service that has sync on, and otherwise
+returns `404 Not Found` without a fetch: use it for "sync now", which can't then turn
+on what someone just turned off. `DELETE` turns it off. The service info must be
+publicly available: a service whose
 service info isn't world-readable can't be synced, so its entry can't be protected
 from drift. We strongly recommend that services make their service info public,
 also as it tells people how to get access.
