@@ -138,6 +138,10 @@ security:
             # any authenticated user may have service info fetched, to import
             # it (limited per user: `custom.endpoints.services.service_info`)
             import-service-info: [p, "*", /ga4gh/registry/v1/services/import, POST]
+            # any authenticated user may read and dismiss their notifications
+            # (filtered by the app)
+            list-notifications: [p, "*", /ga4gh/registry/v1/notifications, GET]
+            dismiss-notifications: [p, "*", "/ga4gh/registry/v1/notifications/:id", DELETE]
             # owners and maintainers may turn sync of their services with their
             # service info on and off
             owners-sync-services: [p, owner, "/ga4gh/registry/v1/services/:id/sync", "(PUT)|(DELETE)"]
@@ -253,6 +257,8 @@ db:
                               windowStart: 1
                           options:
                             'expireAfterSeconds': 7200
+                # Dismissed notifications, per audience
+                notification_dismissals: {}
                 # Display names of users with roles on services, per service
                 user_names:
                     indexes:

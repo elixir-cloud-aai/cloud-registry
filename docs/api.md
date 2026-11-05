@@ -35,6 +35,8 @@ under the API base path `/ga4gh/registry/v1`:
 | `/services/{serviceId}/sync` | `GET` | anyone |
 | `/services/{serviceId}/sync` | `PUT`, `DELETE` | owners, maintainers, admins |
 | `/syncs` | `GET` | anyone |
+| `/notifications` | `GET` | authenticated users |
+| `/notifications/{notificationId}` | `DELETE` | authenticated users |
 | `/approvals` | `GET` | any authenticated user |
 | `/me` | `GET` | any authenticated user |
 
@@ -656,6 +658,36 @@ trust. Clients on the safe side use services that are both verified and synced: 
 list the services (`GET /services`) and keep those listed by `GET /verifications` and
 `GET /syncs?status=synced` with the same identifier, `url` and `type` (`group` and
 `artifact`).
+
+## Notifications
+
+`GET /notifications` tells a logged-in user what needs their attention, e.g., for a
+client to show. There is no inbox: notifications are computed from the stored data
+when they are read, so that they end with what caused them. The registry doesn't
+send any.
+
+```json
+[{"id": "3f2a9c1e5b7d4f608a1c2e3d4b5a6978", "type": "out-of-sync", "serviceId": "ABC123", "reason": "unreachable", "since": "2026-11-05T12:34:56.789Z"}]
+```
+
+Each has a `type`, the `serviceId` (or a `serviceType`, for pending types) to link
+to, a `reason`, and `since` as far as known; the most recent come first.
+
+| `type` | Who sees it | About | `reason` |
+| --- | --- | --- | --- |
+| `out-of-sync` | users with a role on the service, admins | a service that is [out of sync](#synced-services) | one of those of syncs, or `no recent sync` if none succeeded in time, without any failing: syncs aren't running |
+| `pending-service-type` | admins | a type that [waits for approval](#service-types) | `awaiting approval` |
+| `pending-service` | admins | a service that waits for approval | `awaiting approval` |
+| `environment-not-allowed` | admins | a service with an [environment](configuration.md#service-environments) that is no longer allowed | `environment not allowed` |
+| `url-scheme-not-allowed` | admins | a service with a URL scheme that is no longer allowed | `url scheme not allowed` |
+
+Admins see those of all services, in [admin mode](access-control.md#admin-mode).
+
+`DELETE /notifications/{notificationId}` dismisses one: users with a role on the
+service dismiss it for each other, and admins for all admins, but not for each other.
+It returns the identifier, or `404 Not Found` if the user has no such notification
+(anymore). A dismissed notification only comes back if the problem ended and came
+back, or its reason changed, with a new identifier. Renames keep it.
 
 ## Listing the registry itself
 

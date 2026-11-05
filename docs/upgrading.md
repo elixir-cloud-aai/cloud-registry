@@ -36,10 +36,10 @@ Going back to 1.0.0rc1 needs its database, as it was.
 addresses when users [import it](api.md#importing-service-info) and for
 [syncs](api.md#synced-services), so it needs outgoing connections, on top of those to
 the token issuers; nothing changes if they are blocked, except that imports fail and
-synced services become `out-of-sync`. It adds the collection
-`service_info_fetches`, and the policy rules `import-service-info`,
-`owners-sync-services`, `maintainers-sync-services`, `get-service-sync` and
-`list-syncs`, which overlays that give `policies` as a list must include.
+synced services become `out-of-sync`. It adds the collections
+`service_info_fetches` and `notification_dismissals`, and the policy rules `import-service-info`,
+`owners-sync-services`, `maintainers-sync-services`, `get-service-sync`,
+`list-syncs`, `list-notifications` and `dismiss-notifications`, which overlays that give `policies` as a list must include.
 [Sync](api.md#synced-services) is available by default, so owners can turn it on for
 their services: each worker then runs a background thread, which queries the database
 once a minute and fetches service info, by default every 24 hours per service (the

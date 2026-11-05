@@ -1237,6 +1237,70 @@ paths:
           $ref: '#/components/responses/InternalServerError'
         default:
           $ref: '#/components/responses/Error'
+  /notifications:
+    get:
+      summary: List what needs the attention of the current user.
+      description: |
+        Computed from the stored data when read, so that notifications end with
+        what caused them. Users see the services they have a role on that are out of
+        sync; admins in admin mode see those of all services, and pending approvals
+        and services that the configuration no longer allows. Most recent first.
+      operationId: getNotifications
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.notifications
+      tags:
+        - cloud-registry
+      responses:
+        '200':
+          description: Notifications.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Notification'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
+  /notifications/{notificationId}:
+    delete:
+      summary: Dismiss a notification.
+      description: |
+        Dismiss a notification for all users with a role on the service, or for all
+        admins in admin mode. It only comes back if the problem ended and came back,
+        or its reason changed, under a new identifier.
+      operationId: deleteNotification
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.notifications
+      tags:
+        - cloud-registry
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          description: Identifier of the notification.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Identifier of the notification.
+          content:
+            application/json:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
   /verifications:
     get:
       summary: List verified services.
@@ -2198,6 +2262,64 @@ components:
       properties:
         serviceId:
           $ref: '#/components/schemas/ServiceId'
+    Notification:
+      description: Something that needs the attention of the current user.
+      type: object
+      required:
+        - id
+        - type
+        - reason
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          description: |
+            Identifier, which stands for this episode of the problem: it changes if
+            the problem ends and comes back, or its reason changes.
+          example: '3f2a9c1e5b7d4f608a1c2e3d4b5a6978'
+        type:
+          type: string
+          description: |
+            What it is about. `out-of-sync`: see `GET /services/{serviceId}/sync`.
+            `pending-service-type` and `pending-service`: see `GET /approvals`.
+            `environment-not-allowed` and `url-scheme-not-allowed`: the service
+            has a value that the configuration no longer allows.
+          enum:
+            - out-of-sync
+            - pending-service-type
+            - pending-service
+            - environment-not-allowed
+            - url-scheme-not-allowed
+        serviceId:
+          $ref: '#/components/schemas/ServiceId'
+        serviceType:
+          $ref: '#/components/schemas/ServiceType'
+        reason:
+          type: string
+          description: |
+            Why. For `out-of-sync`, one of the reasons of syncs (see `SyncReason`), or
+            `no recent sync`: no attempt failed, but none succeeded in time, so syncs
+            aren't running.
+          enum:
+            - unreachable
+            - address not allowed
+            - invalid service info
+            - identity mismatch
+            - version awaiting approval
+            - version not allowed
+            - unused types limit reached
+            - no recent sync
+            - awaiting approval
+            - environment not allowed
+            - url scheme not allowed
+        since:
+          type: string
+          format: date-time
+          description: |
+            When it started, as far as known (RFC 3339 format, UTC): for
+            `out-of-sync`, since when syncs have failed, or the last success; for
+            services otherwise, their last update.
+          example: '2026-10-20T12:34:56.789Z'
     Role:
       description: |
         Role on a service: `owner` (update and delete the service, manage
