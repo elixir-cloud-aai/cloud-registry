@@ -426,6 +426,7 @@ def test_error_of_links_has_no_raw_values(
         "https://alice:hunter2@tes.example.org/service-info",
         "https://tes.example.org/service-info?token=hunter2",
         "https://tes.example.org/service-info?token=hunter2 x",
+        "https://tes.example.org/" + "a" * 2100 + "?token=hunter2",
     ],
 )
 def test_rejected_address_not_logged(
