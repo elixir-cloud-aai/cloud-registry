@@ -635,3 +635,21 @@ def test_collection_in_config(client: FlaskClient) -> None:
         index.get("expireAfterSeconds") == 7200 and index["key"] == [("windowStart", 1)]
         for index in indexes.values()
     )
+
+
+def test_retry_after_is_exposed_to_browsers(
+    client: FlaskClient, serve: Callable[[object], list[str]]
+) -> None:
+    """Browser apps on other origins can read how long to wait after a `429`."""
+    _limit(client, 1)
+    serve(INFO)
+    assert post(client).status_code == 200
+    response = client.post(
+        ENDPOINT,
+        json={"serviceInfoUrl": ADDRESS},
+        headers=make_headers(USER) | {"Origin": "https://app.example.org"},
+    )
+    assert response.status_code == 429
+    assert "Retry-After" in response.headers
+    exposed = response.headers["Access-Control-Expose-Headers"]
+    assert "retry-after" in exposed.lower()

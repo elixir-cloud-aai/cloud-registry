@@ -1125,12 +1125,21 @@ paths:
         is on, updates with another `url` return `409`, and other changes of
         synced fields last until the next sync. Limited per user, like `POST
         /services/import` (`429` above); every failed fetch returns the same `502`.
+        With `onlyIfEnabled`, a service without sync returns `404`, without a fetch,
+        so that "sync now" can't turn on what someone just turned off.
       operationId: putServiceSync
       x-openapi-router-controller: cloud_registry.ga4gh.registry.sync
       tags:
         - cloud-registry
       parameters:
         - $ref: '#/components/parameters/ServiceId'
+        - name: onlyIfEnabled
+          in: query
+          required: false
+          description: Only sync if sync is on; never turn it on.
+          schema:
+            type: boolean
+            default: false
       responses:
         '200':
           description: Sync state of the service.

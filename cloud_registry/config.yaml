@@ -33,6 +33,10 @@ server:
 # Cf. https://foca.readthedocs.io/en/latest/configuration/auth/ and
 # https://foca.readthedocs.io/en/latest/configuration/access-control/
 security:
+    # Lets browser apps on other origins read how long to wait after a `429`
+    cors:
+        expose_headers:
+          - Retry-After
     auth:
         add_key_to_claims: True
         algorithms:
