@@ -28,8 +28,11 @@ from foca.security.access_control import (
 )
 from foca.security.access_control.enforcement import locked_enforcer
 from foca.security.access_control.foca_casbin_adapter.adapter import Adapter
+from foca.security.auth import _unauthorized as foca_unauthorized
 from pymongo.collection import Collection
 import pytest
+from werkzeug.datastructures import WWWAuthenticate
+from werkzeug.exceptions import Unauthorized as WerkzeugUnauthorized
 import yaml
 
 import cloud_registry.app
@@ -2041,3 +2044,79 @@ def test_invitation_rules_recipe(
         headers=headers(ALICE),
     )
     assert response.status_code == 403
+
+
+class _HeadersUnauthorized(WerkzeugUnauthorized):
+    """`401` with its challenge only in extra headers (cf. FOCA #710)."""
+
+    def __init__(self, challenge: str | None) -> None:
+        """Keep the challenge for the headers.
+
+        Args:
+            challenge: Value of `WWW-Authenticate`, or `None` for none.
+        """
+        super().__init__("Token rejected")
+        self.extra_headers = (
+            [] if challenge is None else [("WWW-Authenticate", challenge)]
+        )
+
+    def get_headers(self, *args: Any, **kwargs: Any) -> list[tuple[str, str]]:
+        """Add the challenge to the headers.
+
+        Args:
+            *args: Positional arguments of the Werkzeug method.
+            **kwargs: Keyword arguments of the Werkzeug method.
+
+        Returns:
+            Headers of the response.
+        """
+        return [*super().get_headers(*args, **kwargs), *self.extra_headers]
+
+
+@pytest.mark.parametrize(
+    ("exc", "invalid"),
+    [
+        (
+            WerkzeugUnauthorized(
+                www_authenticate=WWWAuthenticate("bearer", {"error": "invalid_token"})
+            ),
+            True,
+        ),
+        (WerkzeugUnauthorized(www_authenticate=WWWAuthenticate("bearer")), False),
+        (WerkzeugUnauthorized(), False),
+        (_HeadersUnauthorized('Bearer error="invalid_token"'), True),
+        (
+            _HeadersUnauthorized(
+                'Bearer error="invalid_token", error_description="Invalid token"'
+            ),
+            True,
+        ),
+        (_HeadersUnauthorized("Bearer"), False),
+        (_HeadersUnauthorized('Basic realm="x"'), False),
+        (_HeadersUnauthorized(None), False),
+    ],
+    ids=[
+        "attribute-invalid",
+        "attribute-other",
+        "attribute-none",
+        "headers-invalid",
+        "headers-invalid-description",
+        "headers-other",
+        "headers-other-scheme",
+        "headers-none",
+    ],
+)
+def test_is_invalid_token(exc: WerkzeugUnauthorized, invalid: bool) -> None:
+    """Invalid tokens are told from the challenge in the response headers.
+
+    Wherever FOCA puts the challenge: in `www_authenticate` (FOCA 0.21) or in
+    generic headers (FOCA #710).
+    """
+    assert permissions_module._is_invalid_token(exc) is invalid
+
+
+@pytest.mark.parametrize("invalid", [True, False])
+def test_is_invalid_token_foca(invalid: bool) -> None:
+    """Invalid tokens are told from the exceptions FOCA raises for tokens."""
+    exc = foca_unauthorized("Token rejected", invalid_token=invalid)
+    assert permissions_module._is_invalid_token(exc) is invalid

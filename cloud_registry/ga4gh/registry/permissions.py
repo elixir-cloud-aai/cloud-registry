@@ -49,6 +49,7 @@ from foca.security.access_control.constants import ADMIN_ROLE
 from foca.security.access_control.enforcement import _enforces_access_control
 from foca.security.auth import validate_token
 from foca.utils.logging import escape_log_value
+from werkzeug.datastructures import WWWAuthenticate
 
 from cloud_registry.exceptions import (
     BadRequest,
@@ -98,12 +99,24 @@ def _is_invalid_token(exc: Unauthorized) -> bool:
         exc: Exception of FOCA's `validate_token()`.
 
     Returns:
-        Whether its challenge has the error `invalid_token` (RFC 6750); FOCA
-        leaves it out if the token couldn't be validated for other reasons
-        (e.g., the identity provider is unavailable).
+        Whether its Bearer challenge has the error `invalid_token` (RFC
+        6750); FOCA leaves it out if the token couldn't be validated for
+        other reasons (e.g., the identity provider is unavailable). The
+        challenge is read from the headers of the response, wherever FOCA
+        keeps it in the exception (`www_authenticate` up to FOCA 0.21,
+        generic headers after FOCA #710).
     """
-    challenge = getattr(exc, "www_authenticate", None) or []
-    return any(item.parameters.get("error") == "invalid_token" for item in challenge)
+    for name, value in exc.get_headers():
+        if name.lower() != "www-authenticate":
+            continue
+        challenge = WWWAuthenticate.from_header(value)
+        if (
+            challenge is not None
+            and challenge.type == "bearer"
+            and challenge.parameters.get("error") == "invalid_token"
+        ):
+            return True
+    return False
 
 
 # Attribute of `flask.g` with the rejection of the token of the request
