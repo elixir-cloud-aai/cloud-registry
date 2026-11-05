@@ -46,6 +46,7 @@ no service has (`custom.access_control.max_unused_service_types`; cf.
 types (or of pending types) without bound.
 """
 
+from enum import Enum
 from itertools import islice
 import json
 import logging
@@ -551,6 +552,58 @@ def store_service_type(
         return False
     logger.info("Added service type %s.", escape_log_value(describe_type(service_type)))
     return True
+
+
+class SyncedType(Enum):
+    """What a sync of a service may do with the type of its service info."""
+
+    APPROVED = "approved"
+    PENDING = "pending"
+    NOT_ALLOWED = "not allowed"
+    LIMIT = "limit"
+
+
+def decide_synced_type(service_type: dict[str, str], user: str | None) -> SyncedType:
+    """Decide about the type in the service info of a synced service.
+
+    As for a registration by the user the service counts for, but as nobody acts
+    on it and service info is self-declared, also if an admin registered the
+    service: new types are pending if the deployment moderates them, and can't be
+    added if only admins may add them. Adds a type that may be added.
+
+    Args:
+        service_type: Service type, in its stored form (cf. `type_document()`).
+        user: User the service counts for (cf.
+            `cloud_registry.ga4gh.registry.service.CREATED_BY`), who adds the type;
+            `None` for nobody, who has no limit.
+
+    Returns:
+        Whether the type can be applied (`APPROVED`), including a new type added
+        in mode `open`, waits for approval (`PENDING`), including a new one added
+        in mode `moderated`, or can't be added: in mode `controlled`, or if the
+        limit is `0` (`NOT_ALLOWED`), or as the user is at the limit (`LIMIT`).
+    """
+    stored = get_collection("service_types").find_one(
+        dict(service_type), {"_id": False, PENDING: True}
+    )
+    if stored is not None:
+        return (
+            SyncedType.PENDING if stored.get(PENDING) is True else SyncedType.APPROVED
+        )
+    access_control = get_custom_config(CustomConfig).access_control
+    limit = access_control.max_unused_service_types
+    if access_control.service_types == "controlled" or limit == 0:
+        return SyncedType.NOT_ALLOWED
+    if (
+        user is not None
+        and limit is not None
+        and _count_unused_types(user, limit) >= limit
+    ):
+        return SyncedType.LIMIT
+    pending = access_control.service_types == "moderated"
+    store_service_type(service_type, created_by=user, pending=pending)
+    # the state stored, as another request may have added it meanwhile
+    return SyncedType.PENDING if is_pending(service_type) else SyncedType.APPROVED
 
 
 def check_service_type(value: object) -> None:

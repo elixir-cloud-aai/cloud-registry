@@ -400,6 +400,8 @@ def app_env(
     """
     monkeypatch.setattr(socket.socket, "connect", _no_network)
     monkeypatch.setenv("FOCA_CONFIG_OVERLAY", str(CONFIG_OVERLAY))
+    # no threads per app; `tests/test_sync.py` tests the scheduler
+    monkeypatch.setattr("cloud_registry.app.start_sync_scheduler", lambda app: None)
 
 
 @pytest.fixture

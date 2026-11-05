@@ -271,6 +271,44 @@ connections](deployment.md#the-apps-connections).
 Service URLs must use an [allowed scheme](#service-url-schemes), so `http` services
 can only be imported if `http` is allowed (with the chart's policy, also add port 80).
 
+## Service info sync
+
+Services can be [synced](api.md#synced-services) with their service info, which is
+on by default, every 24 hours:
+
+```yaml
+custom:
+    endpoints:
+        services:
+            service_info:
+                # Whether services can be synced
+                sync: true
+                # Time between syncs of a service, in hours
+                sync_interval_hours: 24
+```
+
+Clients read both from the service info (`serviceInfoSync` of the [registration
+rules](api.md#registration-rules)), e.g., to show how often services are synced.
+
+**Without sync** (`sync: false`), nothing is fetched periodically, `PUT
+/services/{serviceId}/sync` returns `409 Conflict`, no service has a label, and URLs
+aren't locked; what was stored stays, and applies again when sync is turned back on.
+Imports keep working, as users start them; to stop all fetches, block the [app's
+connections](deployment.md#the-apps-connections).
+
+**How it runs:** each worker runs a background thread, without a task queue, and
+whether or not requests come in. Once a minute (or each interval, if shorter), it
+syncs the services that are due, one after the other. Workers and replicas share the
+work through the database, without any setup: a service is claimed for five minutes
+in a single write, so that only one of them syncs it. With a single worker, this
+costs one indexed query per minute, besides the fetches.
+
+**On restarts,** nothing is lost, as the times are stored: services that became due
+meanwhile are synced at the first check, and those of a worker that died when their
+claim expires. A shorter interval applies at once, on startup. A longer one applies
+after the next sync of each service. If the app is down for longer than two
+intervals, labels are `out-of-sync` until the next sync.
+
 ## Service environments
 
 The GA4GH specification describes the environment of a service

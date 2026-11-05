@@ -32,6 +32,9 @@ under the API base path `/ga4gh/registry/v1`:
 | `/services/{serviceId}/verification` | `GET` | anyone |
 | `/services/{serviceId}/verification` | `PUT`, `DELETE` | admins |
 | `/verifications` | `GET` | anyone |
+| `/services/{serviceId}/sync` | `GET` | anyone |
+| `/services/{serviceId}/sync` | `PUT`, `DELETE` | owners, maintainers, admins |
+| `/syncs` | `GET` | anyone |
 | `/approvals` | `GET` | any authenticated user |
 | `/me` | `GET` | any authenticated user |
 
@@ -93,7 +96,8 @@ forms, `GET /service-info` serves them in `registrationRules`:
     "urlSchemes": ["https"],
     "serviceTypes": "open",
     "maxUnusedServiceTypes": 10,
-    "maxServicesPerUser": 50
+    "maxServicesPerUser": 50,
+    "serviceInfoSync": {"enabled": true, "intervalHours": 24}
   }
 }
 ```
@@ -114,7 +118,10 @@ forms, `GET /service-info` serves them in `registrationRules`:
 - `maxServicesPerUser`: how many of the registered services users other
   than admins may have registered (`409 Conflict` for further ones); `0` if
   only admins can register services, and not set if there is no limit (see
-  [Services per user](configuration.md#services-per-user)).
+  [Services per user](configuration.md#services-per-user));
+- `serviceInfoSync`: whether services can be [synced](#synced-services)
+  (`enabled`), and how often (`intervalHours`; see [Service info
+  sync](configuration.md#service-info-sync)).
 
 The registry builds the rules from its config on each request, so they are
 always those it enforces; the rules for the current user (e.g., whether they
@@ -205,7 +212,8 @@ Admins can change the identifier of a service (`POST
 /services/{serviceId}/rename`, with the new identifier in the body, e.g.,
 `{"id": "my-tes"}`; `200 OK`, with the new identifier). Everything stored
 under the old identifier moves to the new one: the service, with its
-[verification](#verified-services) and `createdAt` (`updatedAt` is renewed),
+[verification](#verified-services), [sync](#synced-services) and `createdAt`
+(`updatedAt` is renewed),
 the roles of users and groups on it and the stored names of these users.
 Registering the service again under a new identifier and deleting the old one
 would lose all of these.
@@ -397,6 +405,9 @@ unlike `detail`, codes are stable, so clients branch on them (e.g., `{"title":
 | `invitation-accepted` | the invitation was accepted already (see [Invitations](access-control.md#invitations)) |
 | `service-id-taken` | a service with the new identifier is registered (see [Renaming services](#renaming-services)), or with the identifier of the service info (see [Listing the registry itself](#listing-the-registry-itself)) |
 | `service-busy` | the service, or the new identifier, is being renamed or changed (see [Renaming services](#renaming-services)) |
+| `sync-url-locked` | the service has sync turned on, so its URL can't change (see [Synced services](#synced-services)) |
+| `sync-unavailable` | the deployment doesn't sync, or the service is the registry's own entry (see [Synced services](#synced-services)) |
+| `sync-identity-mismatch` | the service info has another identifier or API type than the service (see [Synced services](#synced-services)) |
 | `conflict` | other conflicts (e.g., changes of policy rules set in the configuration via FOCA's permissions API) |
 
 Further codes may be added; treat unknown ones like `conflict`. The API
@@ -485,7 +496,7 @@ need trustworthy entries should rely on entries checked by admins (see
 so serving it proves nothing about who registers the entry. The registry does
 fetch service info, but for another purpose, with safeguards against server-side
 request forgery: to [import](#importing-service-info) what a service says about
-itself.
+itself, and to [keep the entry up to date](#synced-services).
 
 ## Verified services
 
@@ -555,6 +566,93 @@ A verification applies to the service as it was when it was verified:
 - Deleting a service deletes its verification.
 - Admins should send the URL and API type they checked when verifying (see
   above), so that a service changed meanwhile isn't verified.
+
+## Synced services
+
+Owners and maintainers of a service, and admins, can have the registry keep it up
+to date with its service info. Sync is recommended for imported services: entries
+without it can drift from what the service says.
+
+```bash
+curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/<id>/sync" \
+  -H "Authorization: Bearer <token>"
+```
+
+`PUT` fetches the service info at `{url}/service-info` with the [same
+safeguards](#importing-service-info) as imports (never with a token), applies it,
+and turns sync on; repeating it syncs the service at once. The registry then
+syncs it every 24 hours by default (see [Service info
+sync](configuration.md#service-info-sync)), whether or not requests come in.
+`DELETE` turns it off. The service info must be publicly available: a service whose
+service info isn't world-readable can't be synced, so its entry can't be protected
+from drift. We strongly recommend that services make their service info public,
+also as it tells people how to get access.
+
+**What sync changes:** `name`, `type`, `description`, `organization`, `contactUrl`,
+`documentationUrl`, `environment` and `version`, removing optional ones that the
+service info no longer has. Never the identifier, `url` or the roles. `updatedAt`
+only changes if a value does. The [verification](#verified-services) stays: it says
+that an admin knows and checked the registrants, and a service can change right
+after any check, with or without sync. Changes with `PUT /services/{serviceId}` are
+allowed, but last until the next sync, as sync overrides them.
+
+**The URL stays:** while sync is on, `PUT /services/{serviceId}` with another `url`
+(as written) returns `409 Conflict` (code `sync-url-locked`), also for admins. To
+move a service, turn sync off first, or import and register it anew.
+
+**The state** can be read by anyone (unless the deployment [requires
+login](access-control.md#requiring-login-for-reads)): `GET
+/services/{serviceId}/sync` returns it (`404 Not Found` if the service has no sync),
+and `GET /syncs` lists all services with sync, each with `serviceId`, sorted by
+identifier; `?status=synced` or `?status=out-of-sync` selects by the label.
+
+```json
+{"url": "https://tes.example.org/ga4gh/tes/v1", "type": {"group": "org.ga4gh", "artifact": "tes", "version": "1.1.0"}, "status": "out-of-sync", "reason": "unreachable", "serviceInfoId": "org.example.tes", "lastAttemptAt": "2026-11-05T12:34:56.789Z", "lastSuccessAt": "2026-11-03T12:34:56.789Z"}
+```
+
+The label `status` has three states, like [verified](#verified-services) services,
+it isn't served with the GA4GH endpoints:
+
+- **no sync** (`404 Not Found`, not listed): a manual entry, which may have drifted;
+- **`synced`**: the last sync succeeded, at most two intervals ago, so that a
+  registry that stopped syncing can't show `synced` forever;
+- **`out-of-sync`**: the last sync failed, with a `reason`, or the last success is
+  too long ago, without one: syncs aren't running, so tell the operators of the
+  registry. Together with the times, this tells admins whom to contact.
+
+If a sync fails, the service keeps its last values. The reasons are a fixed set,
+never network errors:
+
+| `reason` | Meaning |
+| --- | --- |
+| `unreachable` | the fetch failed, also after two retries within minutes (only then does the label change): the service is down, requires a token, redirects, or the response is too large or too slow |
+| `address not allowed` | the host resolves to an address that isn't public |
+| `invalid service info` | it doesn't pass the checks of a registration (e.g., an [environment](configuration.md#service-environments) that isn't allowed) |
+| `identity mismatch` | it has another `id` than when sync was turned on, or another `type.group` or `type.artifact` than the service: something is seriously wrong, and no type is added. If a new `id` is right, turn sync off and on again |
+| `version awaiting approval` | [mode `moderated`](#pending-approvals): its `type` is new, and pending (listed in `GET /approvals`); the service stays listed with its old values, and the next sync after the approval applies it. It counts for the limit of unused types of the user who registered the service |
+| `version not allowed` | mode `controlled`, or a limit of unused types of `0`: its `type` isn't registered, and only admins may add it. Ask them to |
+| `unused types limit reached` | the user who registered the service has added [as many unused types as allowed](configuration.md#service-types) |
+
+In mode `open`, a new `type` is added, for the user who registered the service, and
+applied. Service info is self-declared, so these rules also hold for services that
+admins registered, except for the limit (they count for nobody).
+
+**Turning it on** changes nothing if the first fetch fails (the same `502 Bad
+Gateway` as for imports, whatever the cause, so that users can't map networks, also
+counting for the [limit](configuration.md#service-info-import)), the service info is
+invalid (`400 Bad Request`) or describes another service (`409 Conflict`, code
+`sync-identity-mismatch`). `409 Conflict` with code `sync-unavailable` means that the
+deployment doesn't sync, or that the service is the registry's [own
+entry](#listing-the-registry-itself).
+
+**Verified and synced doesn't mean trusted.** Verified says that an admin checked
+something once, and synced that a service recently described itself in a way the
+registry could read: both are facts about the entry, not about the service. Service
+info is self-declared, and a service can change at any time. Users decide whom they
+trust. Clients on the safe side use services that are both verified and synced: they
+list the services (`GET /services`) and keep those listed by `GET /verifications` and
+`GET /syncs?status=synced` with the same identifier, `url` and `type` (`group` and
+`artifact`).
 
 ## Listing the registry itself
 

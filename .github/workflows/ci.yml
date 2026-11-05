@@ -415,6 +415,36 @@ jobs:
           check POST /services/types 401 '.status == 401'
           check GET /approvals 401 '.status == 401'
           check GET /me 401 '.status == 401'
+          # The scheduler syncs without any request needing it: a due service
+          # at an address that isn't allowed gets that reason
+          docker compose exec -T mongodb mongosh --quiet serviceStore --eval '
+            db.services.insertOne({
+              id: "SMOKE2",
+              name: "Smoke test sync",
+              type: {group: "org.ga4gh", artifact: "wes", version: "1.1.0"},
+              organization: {name: "Example", url: "https://example.org"},
+              version: "1.0.0",
+              url: "https://127.0.0.1/ga4gh/wes/v1",
+              _serviceKey: "smoke2",
+              _createdBy: null,
+              _sync: {serviceInfoId: "smoke", nextAttemptAt: new Date()}
+            });
+            db.service_types.insertOne({
+              group: "org.ga4gh", artifact: "wes", version: "1.1.0", createdBy: null
+            })'
+          for _ in $(seq 1 30); do
+            sleep 5
+            curl --silent --show-error "${api}/services/SMOKE2/sync" | tee "${body}"
+            echo
+            if jq -e '.reason == "address not allowed"' "${body}" > /dev/null; then
+              break
+            fi
+          done
+          check GET /services/SMOKE2/sync 200 \
+            '.status == "out-of-sync" and .reason == "address not allowed"'
+          check GET '/syncs?status=out-of-sync' 200 'map(.serviceId) == ["SMOKE2"]'
+          check PUT /services/SMOKE2/sync 401 '.status == 401'
+          check POST /services/import 401 '.status == 401'
           # The path of users' roles: the new one exists, the former one doesn't
           check PUT /services/SMOKE1/permissions/users/x 401 '.status == 401'
           check PUT /services/SMOKE1/permissions/x 404 '.status == 404'

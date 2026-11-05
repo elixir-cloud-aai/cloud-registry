@@ -10,8 +10,10 @@ read them instead of configuring them: the environments
 (`custom.endpoints.services.environments`) and service URL schemes
 (`url_schemes`) allowed, who may add service types
 (`custom.access_control.service_types`), how many unused types users
-other than admins may have added (`max_unused_service_types`), and how many
-services they may have registered (`max_services_per_user`).
+other than admins may have added (`max_unused_service_types`), how many
+services they may have registered (`max_services_per_user`), and whether and
+how often services can be synced with their service info
+(`custom.endpoints.services.service_info`).
 """
 
 from typing import Any
@@ -40,7 +42,8 @@ def registration_rules() -> dict[str, Any]:
         there is no limit; `0` if they can't add types, always in mode
         `controlled`), and how many services they may have registered
         (`maxServicesPerUser`; left out if there is no limit; `0` if
-        they can't register services).
+        they can't register services), and whether services can be synced
+        with their service info, and how often (`serviceInfoSync`).
         Lists are copies.
     """
     custom = get_custom_config(CustomConfig)
@@ -50,6 +53,10 @@ def registration_rules() -> dict[str, Any]:
         "environments": list(services.environments),
         "urlSchemes": list(services.url_schemes),
         "serviceTypes": access_control.service_types,
+        "serviceInfoSync": {
+            "enabled": services.service_info.sync,
+            "intervalHours": services.service_info.sync_interval_hours,
+        },
     }
     # users can't add types in the controlled mode, whatever the limit
     if access_control.service_types == "controlled":

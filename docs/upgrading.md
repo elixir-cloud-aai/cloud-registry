@@ -36,8 +36,12 @@ Going back to 1.0.0rc1 needs its database, as it was.
 addresses when users [import it](api.md#importing-service-info), so it needs
 outgoing connections, on top of those to the token issuers; nothing changes if they
 are blocked, except that imports fail. It adds the collection
-`service_info_fetches`, and the policy rule `import-service-info`, which overlays
-that give `policies` as a list must include. The Helm chart has an optional policy
+`service_info_fetches`, and the policy rules `import-service-info`,
+`owners-sync-services`, `maintainers-sync-services`, `get-service-sync` and
+`list-syncs`, which overlays that give `policies` as a list must include. Owners can
+turn on [sync](api.md#synced-services), on by default: set
+`custom.endpoints.services.service_info.sync: false` to [prevent
+it](configuration.md#service-info-sync). The Helm chart has an optional policy
 for the [app's connections](deployment.md#the-apps-connections).
 
 **Service URLs:** a `url` with leading or trailing spaces now returns
