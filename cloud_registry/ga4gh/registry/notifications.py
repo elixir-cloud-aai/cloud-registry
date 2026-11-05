@@ -10,15 +10,19 @@ Only dismissals are stored, per audience: any user with a role on a service
 dismisses a notification for all of them, and any admin for all admins, but not
 for each other. The identifier of a notification stands for one episode of a
 problem (cf. `_notification_id()`), so that a dismissed notification only comes back
-if the problem ended and came back, or its reason changed. Dismissals don't refer to
-users, and can only be made by human actions, so they stay.
+if the problem ended and came back, or its reason changed. For values that the
+configuration no longer allows, that is the value: the configuration leaves no trace
+when it changes, so that one dropped again after being allowed stays dismissed.
+Dismissals don't refer to users, and can only be made by human actions, so they stay.
 """
 
 from collections.abc import Iterator
 from enum import StrEnum
 import hashlib
 import logging
+import re
 from typing import Any
+from urllib.parse import urlsplit
 
 from foca import get_custom_config
 from foca.security.access_control import resource_filter
@@ -33,9 +37,6 @@ from cloud_registry.ga4gh.registry.service import (
     PENDING_SERVICE,
     SYNC,
     UPDATED,
-    InvalidService,
-    check_environment,
-    check_url_scheme,
 )
 from cloud_registry.ga4gh.registry.service_types import PENDING, TYPE_FIELDS
 from cloud_registry.ga4gh.registry.sync import (
@@ -150,7 +151,7 @@ def _out_of_sync(query: dict[str, Any]) -> Iterator[dict[str, Any]]:
             NotificationType.OUT_OF_SYNC,
             service,
             reason,
-            f"{reason}\0{started}",
+            f"{reason}\0{state.get('reasonSince') or started}",
             format_time(started) if started else None,
         )
 
@@ -172,6 +173,19 @@ def _pending_types() -> Iterator[dict[str, Any]]:
         }
 
 
+def _allowed_urls(schemes: set[str]) -> re.Pattern[str]:
+    """Get the pattern of URLs with allowed schemes, for a query.
+
+    Args:
+        schemes: Allowed schemes, in lower case.
+
+    Returns:
+        Pattern.
+    """
+    alternatives = "|".join(re.escape(scheme) for scheme in sorted(schemes))
+    return re.compile(f"^({alternatives}):", re.IGNORECASE)
+
+
 def _stored_service_problems() -> Iterator[dict[str, Any]]:
     """Get the notifications about pending services, and what's no longer allowed.
 
@@ -182,45 +196,52 @@ def _stored_service_problems() -> Iterator[dict[str, Any]]:
         Notifications.
     """
     services_config = get_custom_config(CustomConfig).endpoints.services
+    schemes = {scheme.lower() for scheme in services_config.url_schemes}
+    environments = services_config.environments
+    problems: list[dict[str, Any]] = [
+        {PENDING_SERVICE: True},
+        {"url": {"$not": _allowed_urls(schemes)}},
+    ]
+    if environments:
+        problems.append({"environment": {"$exists": True, "$nin": environments}})
     for service in get_collection("services").find(
-        {},
+        {"$or": problems},
         {
             "id": True,
             "url": True,
+            "type": True,
             "environment": True,
             UPDATED: True,
             PENDING_SERVICE: True,
         },
     ):
         updated = service.get(UPDATED)
-        episode = str(updated)
         if service.get(PENDING_SERVICE) is True:
             yield _service_notification(
                 NotificationType.PENDING_SERVICE,
                 service,
                 AWAITING_APPROVAL,
-                episode,
+                # waits for this type, whatever else changes
+                str(service.get("type")),
                 updated,
             )
-        if services_config.environments and "environment" in service:
-            try:
-                check_environment(service, environments=services_config.environments)
-            except InvalidService:
-                yield _service_notification(
-                    NotificationType.ENVIRONMENT,
-                    service,
-                    ENVIRONMENT_NOT_ALLOWED,
-                    episode,
-                    updated,
-                )
-        try:
-            check_url_scheme(service["url"], schemes=services_config.url_schemes)
-        except InvalidService:
+        if environments and service.get("environment", environments[0]) not in (
+            environments
+        ):
+            yield _service_notification(
+                NotificationType.ENVIRONMENT,
+                service,
+                ENVIRONMENT_NOT_ALLOWED,
+                str(service["environment"]),
+                updated,
+            )
+        scheme = urlsplit(str(service.get("url", ""))).scheme.lower()
+        if scheme not in schemes:
             yield _service_notification(
                 NotificationType.URL_SCHEME,
                 service,
                 URL_SCHEME_NOT_ALLOWED,
-                episode,
+                scheme,
                 updated,
             )
 
@@ -266,7 +287,7 @@ def getNotifications(**kwargs: Any) -> list[dict[str, Any]]:
 
     Returns:
         Notifications that the audience of the user hasn't dismissed, most recent
-        first (those without a time last), then sorted by identifier.
+        first (those without a time last), with a stable order.
     """
     audience, notifications = _current()
     dismissed = {
@@ -284,10 +305,13 @@ def getNotifications(**kwargs: Any) -> list[dict[str, Any]]:
     }
     remaining = [
         item
-        for item in sorted(notifications, key=lambda item: item["id"])
+        for item in notifications
         if _dismissal_id(audience, item["id"]) not in dismissed
     ]
-    return sorted(remaining, key=lambda item: item.get("since", ""), reverse=True)
+    # the times have one format (cf. `format_time()`), so they sort as strings
+    return sorted(
+        remaining, key=lambda item: (item.get("since", ""), item["id"]), reverse=True
+    )
 
 
 # DELETE /notifications/{notificationId}

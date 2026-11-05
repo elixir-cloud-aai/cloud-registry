@@ -35,8 +35,8 @@ under the API base path `/ga4gh/registry/v1`:
 | `/services/{serviceId}/sync` | `GET` | anyone |
 | `/services/{serviceId}/sync` | `PUT`, `DELETE` | owners, maintainers, admins |
 | `/syncs` | `GET` | anyone |
-| `/notifications` | `GET` | authenticated users |
-| `/notifications/{notificationId}` | `DELETE` | authenticated users |
+| `/notifications` | `GET` | any authenticated user |
+| `/notifications/{notificationId}` | `DELETE` | any authenticated user |
 | `/approvals` | `GET` | any authenticated user |
 | `/me` | `GET` | any authenticated user |
 
@@ -675,19 +675,21 @@ to, a `reason`, and `since` as far as known; the most recent come first.
 
 | `type` | Who sees it | About | `reason` |
 | --- | --- | --- | --- |
-| `out-of-sync` | users with a role on the service, admins | a service that is [out of sync](#synced-services) | one of those of syncs, or `no recent sync` if none succeeded in time, without any failing: syncs aren't running |
-| `pending-service-type` | admins | a type that [waits for approval](#service-types) | `awaiting approval` |
-| `pending-service` | admins | a service that waits for approval | `awaiting approval` |
-| `environment-not-allowed` | admins | a service with an [environment](configuration.md#service-environments) that is no longer allowed | `environment not allowed` |
-| `url-scheme-not-allowed` | admins | a service with a URL scheme that is no longer allowed | `url scheme not allowed` |
+| `out-of-sync` | users with a role on the service, admins in admin mode | a service that is [out of sync](#synced-services) | one of those of syncs, or `no recent sync` if none succeeded in time, without any failing: syncs aren't running |
+| `pending-service-type` | admins in admin mode | a type that [waits for approval](#service-types) | `awaiting approval` |
+| `pending-service` | admins in admin mode | a service that waits for approval | `awaiting approval` |
+| `environment-not-allowed` | admins in admin mode | a service with an [environment](configuration.md#service-environments) that is no longer allowed | `environment not allowed` |
+| `url-scheme-not-allowed` | admins in admin mode | a service with a URL scheme that is no longer allowed | `url scheme not allowed` |
 
-Admins see those of all services, in [admin mode](access-control.md#admin-mode).
+Without [admin mode](access-control.md#admin-mode), admins see what other users see.
 
 `DELETE /notifications/{notificationId}` dismisses one: users with a role on the
 service dismiss it for each other, and admins for all admins, but not for each other.
 It returns the identifier, or `404 Not Found` if the user has no such notification
 (anymore). A dismissed notification only comes back if the problem ended and came
-back, or its reason changed, with a new identifier. Renames keep it.
+back, or its reason changed, with a new identifier. Updates and renames keep it. The
+exception is a configuration that changes back and forth: the registry doesn't track
+it, so that a value dismissed before stays dismissed; another value comes back.
 
 ## Listing the registry itself
 

@@ -7,6 +7,7 @@ from flask.testing import FlaskClient
 from foca import get_custom_config
 import pytest
 
+from cloud_registry.ga4gh.registry import sync
 from cloud_registry.ga4gh.registry.service import PENDING_SERVICE, SYNC
 from cloud_registry.ga4gh.registry.service_types import PENDING
 from cloud_registry.service_models.custom_config import CustomConfig
@@ -347,6 +348,85 @@ def test_rename_keeps_notification(client: FlaskClient) -> None:
     after = notifications(client)[0]
     assert after["id"] == before["id"]
     assert after["serviceId"] == "NEWNAME"
+
+
+def test_comes_back_with_reason_that_returned(client: FlaskClient) -> None:
+    """A dismissed reason comes back after another one, as a real sync records it."""
+    service_id = register(client)
+    fail(client, service_id)
+
+    def set_reason(reason: sync.Reason) -> None:
+        """Record a failed sync.
+
+        Args:
+            reason: Reason.
+        """
+        with client.application.app_context():
+            service = get_collection("services").find_one({"id": service_id})
+            assert service is not None
+            sync._failed(service, reason, now())
+
+    set_reason(sync.Reason.UNREACHABLE)
+    first = notifications(client)[0]["id"]
+    assert dismiss(client, first) == 200
+    set_reason(sync.Reason.UNREACHABLE)
+    assert notifications(client) == []
+    set_reason(sync.Reason.INVALID)
+    second = notifications(client)[0]["id"]
+    set_reason(sync.Reason.UNREACHABLE)
+    third = notifications(client)[0]["id"]
+    assert len({first, second, third}) == 3
+
+
+def test_admin_types_stay_dismissed(client: FlaskClient) -> None:
+    """Updates and renames don't bring back what admins dismissed."""
+    service_id = register(client)
+    update_service(
+        client,
+        service_id,
+        {
+            "$set": {
+                PENDING_SERVICE: True,
+                "environment": "gone",
+                "url": "http://tes.example.org/x",
+            }
+        },
+    )
+    items = notifications(client, ADMIN, admin=True)
+    assert len(items) == 3
+    for item in items:
+        assert dismiss(client, item["id"], ADMIN, admin=True) == 200
+    update_service(client, service_id, {"$set": {"updatedAt": "2030-01-01T00:00:00Z"}})
+    update_service(client, service_id, {"$set": {"id": "NEWNAME"}})
+    assert notifications(client, ADMIN, admin=True) == []
+
+
+def test_admin_types_come_back_with_new_values(client: FlaskClient) -> None:
+    """Another value that isn't allowed, or another pending type, comes back."""
+    service_id = register(client)
+    update_service(
+        client,
+        service_id,
+        {"$set": {PENDING_SERVICE: True, "environment": "gone"}},
+    )
+    for item in notifications(client, ADMIN, admin=True):
+        assert dismiss(client, item["id"], ADMIN, admin=True) == 200
+    update_service(
+        client,
+        service_id,
+        {"$set": {"environment": "other", "type": {**TYPE, "version": "9"}}},
+    )
+    types = {item["type"] for item in notifications(client, ADMIN, admin=True)}
+    assert types == {"pending-service", "environment-not-allowed"}
+
+
+def test_invalid_url_is_no_scheme_problem(client: FlaskClient) -> None:
+    """URLs with an allowed scheme aren't reported, whatever else they have."""
+    service_id = register(client)
+    update_service(
+        client, service_id, {"$set": {"url": "HTTPS://user:pw@tes.example.org/"}}
+    )
+    assert notifications(client, ADMIN, admin=True) == []
 
 
 def test_most_recent_first(client: FlaskClient) -> None:
