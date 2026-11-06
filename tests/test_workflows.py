@@ -218,16 +218,20 @@ def test_release_tag_checked_first() -> None:
     prepare = _load(WORKFLOWS / "release.yml")["jobs"]["prepare"]
     steps = {step["name"]: step for step in prepare["steps"]}
     names = list(steps)
+    # Only the checkout and Python (without reading files of the commit) come
+    # first
+    assert names.index("Check release tag and commit") == 2
+    assert names[:2] == ["Check out repository", "Set up Python"]
+    assert set(steps["Set up Python"]["with"]) == {"python-version"}
     check = steps["Check release tag and commit"]
     assert check["id"] == "commit"
+    assert "GH_TOKEN" in check["env"]
     assert "scripts/" not in check["run"]
     assert prepare["outputs"]["sha"] == "${{ steps.commit.outputs.sha }}"
     derive = steps["Derive release version"]
     assert derive["id"] == "version"
     assert "GH_TOKEN" not in derive["env"]
-    for index, step in enumerate(prepare["steps"]):
-        if "scripts/" in step.get("run", ""):
-            assert index > names.index("Check release tag and commit"), step["name"]
+    assert names.index("Derive release version") == 3
 
 
 def test_release_chart_default_image() -> None:
