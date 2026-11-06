@@ -208,6 +208,28 @@ def test_release_chart_checked() -> None:
     assert names.index("Sign chart") < names.index("Create release")
 
 
+def test_release_tag_checked_first() -> None:
+    """The release tag is checked before any script of the tagged commit runs.
+
+    The step that checks the tag (annotated, signature verified by GitHub,
+    commit on `main`) holds a token and runs no code of the tagged commit;
+    the scripts run in later steps, the version's without the token.
+    """
+    prepare = _load(WORKFLOWS / "release.yml")["jobs"]["prepare"]
+    steps = {step["name"]: step for step in prepare["steps"]}
+    names = list(steps)
+    check = steps["Check release tag and commit"]
+    assert check["id"] == "commit"
+    assert "scripts/" not in check["run"]
+    assert prepare["outputs"]["sha"] == "${{ steps.commit.outputs.sha }}"
+    derive = steps["Derive release version"]
+    assert derive["id"] == "version"
+    assert "GH_TOKEN" not in derive["env"]
+    for index, step in enumerate(prepare["steps"]):
+        if "scripts/" in step.get("run", ""):
+            assert index > names.index("Check release tag and commit"), step["name"]
+
+
 def test_release_chart_default_image() -> None:
     """Released charts default to the fully qualified published image.
 
