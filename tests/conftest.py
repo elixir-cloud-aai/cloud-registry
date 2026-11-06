@@ -24,7 +24,8 @@ from connexion import App
 from cryptography.hazmat.primitives.asymmetric import rsa
 from flask import Flask
 from flask.testing import FlaskClient
-from foca.config.access import get_app_config, set_app_config
+from foca import get_config
+from foca.config.access import set_app_config
 from foca.database import register_mongodb
 from foca.models.config import (
     CollectionConfig,
@@ -437,7 +438,8 @@ def _collections(app: Flask) -> dict[str, CollectionConfig]:
     Returns:
         Configs of the collections, by name.
     """
-    mongo = get_app_config(app).db
+    with app.app_context():
+        mongo = get_config().db
     assert mongo is not None and mongo.dbs is not None
     collections = mongo.dbs[DB].collections
     assert collections is not None

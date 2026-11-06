@@ -17,9 +17,8 @@ import connexion
 from connexion import App
 from cryptography.hazmat.primitives.asymmetric import rsa
 from flask.testing import FlaskClient
-from foca import get_custom_config
+from foca import get_config, get_custom_config
 import foca.api.service_info
-from foca.config.access import get_app_config
 from foca.security import auth
 import jwt
 from pydantic import ValidationError
@@ -156,7 +155,8 @@ def _service_info(app: App) -> dict[str, Any]:
     Returns:
         Service info, as served.
     """
-    service_info = get_app_config(app.app).service_info
+    with app.app.app_context():
+        service_info = get_config().service_info
     assert service_info is not None
     return service_info.service
 
@@ -635,7 +635,8 @@ def test_max_content_length_default(app: App) -> None:
 
     By FOCA (`server.max_content_length`).
     """
-    assert get_app_config(app.app).server.max_content_length == MAX_CONTENT_LENGTH
+    with app.app.app_context():
+        assert get_config().server.max_content_length == MAX_CONTENT_LENGTH
     assert app.app.config["MAX_CONTENT_LENGTH"] == MAX_CONTENT_LENGTH
 
 
@@ -1105,7 +1106,8 @@ def proxy_app(app: App) -> App:
 
     It has one possible generated service identifier (`A`).
     """
-    get_app_config(app.app).server.public_url = "https://example.org/proxy/registry"
+    with app.app.app_context():
+        get_config().server.public_url = "https://example.org/proxy/registry"
     endpoints = _custom_config(app).endpoints
     endpoints.services.id.charset = "A"
     endpoints.services.id.length = 1
@@ -2441,7 +2443,8 @@ def test_validation_error_detail_large_body(
         f"{BASE}/services", headers=admin_headers, json=_service(name="a" * 900_000)
     )
     _assert_error(response, 400)
-    max_length = get_app_config(client.application).exceptions.max_detail_length
+    with client.application.app_context():
+        max_length = get_config().exceptions.max_detail_length
     assert len(response.get_json()["detail"]) == max_length
     assert "…" in response.get_json()["detail"]
     assert response.get_json()["detail"].endswith("is too long - 'name'")

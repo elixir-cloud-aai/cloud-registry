@@ -1,8 +1,7 @@
 """Unit tests for the service info fields of the registry."""
 
 from flask import Flask
-from foca import get_custom_config
-from foca.config.access import get_app_config
+from foca import get_config, get_custom_config
 from foca.models.config import ServiceInfoConfig
 import pytest
 
@@ -111,9 +110,10 @@ def _set_service_info(
         runtime: Path to the function returning fields at runtime
             (`service_info.runtime_fields`).
     """
-    get_app_config(app).service_info = ServiceInfoConfig(
-        service=service, runtime_fields=runtime
-    )
+    with app.app_context():
+        get_config().service_info = ServiceInfoConfig(
+            service=service, runtime_fields=runtime
+        )
 
 
 def test_check_service_info_fields(unit_app: Flask) -> None:
