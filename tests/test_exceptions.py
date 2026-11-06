@@ -7,7 +7,7 @@ codes of conflicts (cf. `tests/test_conflicts.py`).
 from collections.abc import Iterator
 
 from flask import Flask
-from foca.config.access import get_app_config
+from foca import get_config
 import pytest
 from werkzeug.exceptions import HTTPException
 
@@ -32,7 +32,7 @@ def test_problem_media_type(unit_app: Flask, media_type: str) -> None:
 
     That is, the media type of error responses (`exceptions.media_type`).
     """
-    get_app_config(unit_app).exceptions.media_type = media_type
+    get_config().exceptions.media_type = media_type
     assert problem(BadRequest()).content_type == media_type
 
 
