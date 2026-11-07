@@ -211,7 +211,8 @@ def test_list_environment_not_allowed(
     response = client.put(LISTING, headers=admin)
     assert response.status_code == 400
     assert (
-        "'environment' must be one of: 'production'." in response.get_json()["detail"]
+        "'#/environment': Must be one of: 'production'."
+        in response.get_json()["detail"]
     )
     assert db["services"].count_documents({}) == 0
     assert db["service_types"].count_documents({}) == 0

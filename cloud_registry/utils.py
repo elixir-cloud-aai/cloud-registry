@@ -158,7 +158,7 @@ def is_date_time(value: object) -> bool:
     """Check whether a string is an RFC 3339 date-time (non-strings pass).
 
     Used for the timestamps of registered services (cf.
-    `cloud_registry.ga4gh.registry.service.check_date_times()`).
+    `cloud_registry.ga4gh.registry.service.date_time_errors()`).
     """
     if not isinstance(value, str):
         return True

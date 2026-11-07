@@ -58,10 +58,16 @@ request checks change some responses, so check clients that rely on them:
   /services/types`, which ignored them.
 - `createdAt` and `updatedAt` that aren't date-times now return `400 Bad Request`
   for all users, instead of being ignored for users other than admins.
-- Some `400 Bad Request` responses have another `detail`: URLs that aren't valid
-  URIs (without scheme, or with whitespace) get FOCA's message, which quotes the
-  value and is logged too, so don't send secrets in those fields, and unpaired surrogates in JSON bodies get one that doesn't name the
-  field.
+- `400 Bad Request` responses to requests with invalid fields list all of them
+  in `errors`, each with a JSON Pointer (`pointer`) or parameter name
+  (`parameter`), a stable `code` and a message (see [Errors](api.md#errors)),
+  with the problem type and `code` `invalid-request`. Their `detail` names the
+  invalid fields by location and code (e.g., `Invalid fields: #/url
+  (scheme-not-allowed)`) instead of describing the first one, and neither the
+  responses nor the logs quote the rejected values. Clients that show or parse
+  `detail` should show the messages of `errors` at their fields instead.
+  Bodies that aren't JSON or have unpaired surrogates get a fixed `detail`
+  (`The request is malformed.`), without `errors`.
 - FOCA checks the formats of responses too, so stored `date-time` and `uri` values
   must be valid, or reads of the service and `GET /services` return `500`. Requests
   can't store such values, and this version needs a fresh database, but if data got

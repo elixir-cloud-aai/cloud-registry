@@ -29,7 +29,14 @@ from cloud_registry.ga4gh.registry.service import (
     RegisterService,
 )
 from cloud_registry.service_models.custom_config import CustomConfig
-from tests.conftest import ADMIN, CONFIG_OVERLAY, TEAM_GROUP, USER, make_headers
+from tests.conftest import (
+    ADMIN,
+    CONFIG_OVERLAY,
+    TEAM_GROUP,
+    USER,
+    invalid_fields,
+    make_headers,
+)
 from tests.mock_data import DB
 
 BASE = "/ga4gh/registry/v1"
@@ -294,7 +301,8 @@ def test_add_type_surrogates(client: FlaskClient) -> None:
         headers={**headers(), "Content-Type": "application/json"},
     )
     assert response.status_code == 400
-    assert "unpaired surrogates" in response.get_json()["detail"]
+    # rejected by FOCA, before the app, without naming the field
+    assert response.get_json()["detail"] == "The request is malformed."
 
 
 def test_type_of_service_added(
@@ -367,10 +375,8 @@ def test_controlled_services(client: FlaskClient, controlled: None) -> None:
     Services of admins may have new types, which are stored.
     """
     response = register(client, _service())
-    assert response.status_code == 400
-    detail = response.get_json()["detail"]
-    assert '{"group": "org.ga4gh", "artifact": "tes", "version": "1.1.0"}' in detail
-    assert "is not registered" in detail
+    assert invalid_fields(response) == [("#/type", "unregistered-type")]
+    assert "Is not registered" in response.get_json()["errors"][0]["detail"]
     assert client.get(f"{BASE}/services").get_json() == []
     assert register(client, _service(), user=ADMIN).status_code == 201
     assert listed(client) == [TES]
@@ -494,7 +500,8 @@ def test_approve_type_surrogates(client: FlaskClient) -> None:
         headers={**headers(ADMIN), "Content-Type": "application/json"},
     )
     assert response.status_code == 400
-    assert "unpaired surrogates" in response.get_json()["detail"]
+    # rejected by FOCA, before the app, without naming the field
+    assert response.get_json()["detail"] == "The request is malformed."
 
 
 def test_moderated_services(client: FlaskClient, moderated: None) -> None:
@@ -716,7 +723,8 @@ def test_moderated_update_surrogates(client: FlaskClient, moderated: None) -> No
         headers={**headers(), "Content-Type": "application/json"},
     )
     assert response.status_code == 400
-    assert "unpaired surrogates" in response.get_json()["detail"]
+    # rejected by FOCA, before the app, without naming the field
+    assert response.get_json()["detail"] == "The request is malformed."
 
 
 def _flags(mongo_client: MongoClient[dict[str, Any]]) -> dict[str, bool]:

@@ -36,6 +36,7 @@ from typing import Any
 from uuid import uuid4
 
 from flask import request
+from foca.errors import FieldError, json_pointer
 from foca.security.access_control import (
     add_resource_role,
     list_roles,
@@ -48,7 +49,14 @@ from foca.utils.logging import escape_log_value
 import pymongo
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
-from cloud_registry.exceptions import CodedConflict, NotFound, ServiceBusy, problem
+from cloud_registry.exceptions import (
+    UNUSABLE_ID,
+    CodedConflict,
+    NotFound,
+    ServiceBusy,
+    problem,
+    reject,
+)
 from cloud_registry.ga4gh.registry.locks import (
     LOCKS,
     lock_exclusive,
@@ -64,6 +72,7 @@ from cloud_registry.ga4gh.registry.permissions import (
     services_path,
 )
 from cloud_registry.ga4gh.registry.service import (
+    UNUSABLE_ID_DETAIL,
     UPDATED,
     InvalidService,
     check_strings,
@@ -124,11 +133,14 @@ def renameService(serviceId: str, rename: dict[str, Any], **kwargs: Any) -> Any:
             `token_info`); unused.
 
     Returns:
-        New identifier; or an error response: `400` for identifiers that
-        can't be used in roles, `409` if a service with the new identifier is
-        registered, or if either identifier is being renamed or changed.
+        New identifier; or an error response: `409` if a service with the
+        new identifier is registered, or if either identifier is being
+        renamed or changed.
 
     Raises:
+        foca.errors.InvalidFieldsProblem: The identifier can't be used in
+            roles (cf. `check_id()`); FOCA responds with `400` and the
+            invalid field (cf. `cloud_registry.exceptions.reject()`).
         cloud_registry.exceptions.NotFound: The service doesn't exist, or was
             deleted meanwhile.
     """
@@ -141,7 +153,7 @@ def renameService(serviceId: str, rename: dict[str, Any], **kwargs: Any) -> Any:
             escape_log_value(serviceId),
             escape_log_value(exc.description),
         )
-        return problem(exc)
+        return reject(exc)
     if not service_exists(serviceId):
         raise NotFound
     if service_exists(new_id):
@@ -179,13 +191,22 @@ def check_id(new_id: str) -> None:
 
     Raises:
         InvalidService: The identifier has unpaired surrogates, or can't be
-            stored in roles (e.g., with commas or line breaks).
+            stored in roles (e.g., with commas or line breaks; the invalid
+            field `id`, code `unusable-id`).
     """
     check_strings(new_id, field="id")
     try:
         validate_rule_value(f"{services_path()}/{new_id}")
     except ValueError as exc:
-        raise InvalidService(f"The identifier can't be used in roles: {exc}.") from exc
+        raise InvalidService(
+            field_errors=[
+                FieldError(
+                    detail=UNUSABLE_ID_DETAIL,
+                    code=UNUSABLE_ID,
+                    pointer=json_pointer("id"),
+                )
+            ]
+        ) from exc
 
 
 def _lock(path: str, source: str, target: str) -> tuple[str, str] | None:

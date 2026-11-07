@@ -38,6 +38,7 @@ from tests.conftest import (
     ISSUER,
     USER,
     MockResponse,
+    invalid_fields,
     make_headers,
     mock_get,
     without_timestamps,
@@ -762,9 +763,9 @@ def test_service_environment_invalid(
         json=_service(environment=environment),
         headers=admin_headers,
     )
-    _assert_error(response, 400)
-    assert response.get_json()["detail"] == (
-        "'environment' must be one of: 'prod', 'test', 'dev', 'staging'."
+    assert invalid_fields(response) == [("#/environment", "invalid-value")]
+    assert response.get_json()["errors"][0]["detail"] == (
+        "Must be one of: 'prod', 'test', 'dev', 'staging'."
     )
     assert client.get(f"{BASE}/services").get_json() == []
 
@@ -781,8 +782,8 @@ def test_service_environments_configured(
         json=_service(environment="prod", url="https://other.example.org"),
         headers=headers,
     )
-    _assert_error(response, 400)
-    assert "'production'" in response.get_json()["detail"]
+    assert invalid_fields(response) == [("#/environment", "invalid-value")]
+    assert "'production'" in response.get_json()["errors"][0]["detail"]
     services_config.environments = []
     _post(client, headers, _service(environment="x", url="https://other.example.org"))
 
@@ -878,15 +879,20 @@ def test_put_duplicate(client: FlaskClient, admin_headers: dict[str, str]) -> No
 
 @pytest.mark.parametrize("method, path", [("post", ""), ("put", "/abc")])
 @pytest.mark.parametrize(
-    "url, detail",
+    "url, code, detail",
     [
-        ("https://user:secret@tes.example.org", "must not contain user info"),
-        ("tes.example.org/v1", "is not a 'uri'"),
-        ("http://[::1/v1", "must be valid URLs"),
-        ("https://tes.exa\nmple.org", "is not a 'uri'"),
-        ("ftp://tes.example.org", "must use one of these schemes: 'http', 'https'"),
+        (
+            "https://user:secret@tes.example.org",
+            "invalid-url",
+            "Must not contain user info.",
+        ),
+        # FOCA's schema validation (`format: uri`)
+        ("tes.example.org/v1", "invalid-format", "Must be a valid URI."),
+        ("http://[::1/v1", "invalid-url", "Must be a valid URL."),
+        ("https://tes.exa\nmple.org", "invalid-format", "Must be a valid URI."),
+        ("ftp://tes.example.org", "scheme-not-allowed", "these schemes: 'https'."),
         # by default (`custom.endpoints.services.url_schemes`)
-        ("http://tes.example.org", "must use one of these schemes: 'https'"),
+        ("http://tes.example.org", "scheme-not-allowed", "these schemes: 'https'."),
     ],
 )
 def test_service_url_invalid(
@@ -895,16 +901,16 @@ def test_service_url_invalid(
     method: str,
     path: str,
     url: str,
+    code: str,
     detail: str,
 ) -> None:
-    """Invalid service URLs are rejected, saying why."""
+    """Invalid service URLs are rejected, saying why, without the URL."""
     response = getattr(client, method)(
         f"{BASE}/services{path}", json=_service(url=url), headers=admin_headers
     )
-    _assert_error(response, 400)
+    assert invalid_fields(response, url) == [("#/url", code)]
     assert response.content_type == ERROR_MEDIA_TYPE
-    assert response.get_json()["title"] == "Bad request"
-    assert detail in response.get_json()["detail"]
+    assert response.get_json()["errors"][0]["detail"].endswith(detail)
     assert "Location" not in response.headers
 
 
@@ -970,13 +976,15 @@ def test_service_surrogate(
 ) -> None:
     """Services with unpaired surrogates in any string are rejected (`400`).
 
-    Such strings can't be stored.
+    Such strings can't be stored. FOCA rejects such bodies before the app,
+    without naming the field (nor invalid fields).
     """
     response = getattr(client, method)(
         f"{BASE}/services{path}", json=service, headers=admin_headers
     )
     _assert_error(response, 400)
-    assert "unpaired surrogates" in response.get_json()["detail"]
+    assert response.get_json()["detail"] == "The request is malformed."
+    assert "errors" not in response.get_json()
     assert client.get(f"{BASE}/services").get_json() == []
 
 
@@ -1008,7 +1016,7 @@ def test_service_url_not_http(
 ) -> None:
     """URLs of services, contacts, documentation and organizations are HTTP(S).
 
-    Cf. the unit tests of `check_links()` for other cases.
+    Cf. the unit tests of `link_errors()` for other cases.
     """
     response = getattr(client, method)(
         f"{BASE}/services{path}",
@@ -2174,13 +2182,12 @@ def test_service_date_time_invalid(
 ) -> None:
     """Timestamps of services must be RFC 3339 date-times.
 
-    Others are rejected with `400` by FOCA, naming the field.
+    Others are rejected with `400` by FOCA, pointing to the field.
     """
     response = getattr(client, method)(
         f"{BASE}/services{path}", json=_service(**{field: value}), headers=admin_headers
     )
-    _assert_error(response, 400)
-    assert f"'{field}'" in response.get_json()["detail"]
+    assert invalid_fields(response, value) == [(f"#/{field}", "invalid-format")]
     assert client.get(f"{BASE}/services").get_json() == []
 
 
@@ -2333,11 +2340,17 @@ def test_service_timestamps_admin(
 
 
 @pytest.mark.parametrize(
-    "request_kwargs, detail",
+    "request_kwargs, fields",
     [
         (
             {"method": "post", "path": "/services", "json": {"url": "x"}},
-            "'name' is a required property",
+            [
+                ("#/url", "invalid-format"),
+                ("#/name", "required"),
+                ("#/organization", "required"),
+                ("#/type", "required"),
+                ("#/version", "required"),
+            ],
         ),
         (
             {
@@ -2345,41 +2358,51 @@ def test_service_timestamps_admin(
                 "path": "/services",
                 "json": _service(name="a" * 1025),
             },
-            "is too long - 'name'",
+            [("#/name", "too-long")],
         ),
         (
+            # a reserved identifier (cf. `RESERVED_IDS`)
             {"method": "put", "path": "/services/types", "json": _service()},
-            "does not match",
-        ),
-        (
-            {
-                "method": "post",
-                "path": "/services",
-                "data": "{",
-                "content_type": "application/json",
-            },
-            "Request body is not valid JSON",
+            [("serviceId", "pattern-mismatch")],
         ),
         (
             {"method": "get", "path": "/services/abc?page=1"},
-            "Extra query parameter(s) page not in spec",
+            [("page", "unknown-parameter")],
         ),
     ],
-    ids=["required", "too_long", "pattern", "json", "extra_parameter"],
+    ids=["required", "too_long", "reserved_id", "extra_parameter"],
 )
-def test_validation_error_detail(
+def test_validation_error_fields(
     client: FlaskClient,
     admin_headers: dict[str, str],
     request_kwargs: dict[str, Any],
-    detail: str,
+    fields: list[tuple[str, str]],
 ) -> None:
-    """Requests rejected by the schema validation return `400`, saying why."""
+    """Requests rejected by the schema validation return `400`, with all fields.
+
+    By location and code, without the rejected values.
+    """
     path = request_kwargs.pop("path")
     response = client.open(f"{BASE}{path}", headers=admin_headers, **request_kwargs)
+    assert sorted(invalid_fields(response)) == sorted(fields)
+    assert response.content_type == ERROR_MEDIA_TYPE
+
+
+def test_validation_error_not_json(
+    client: FlaskClient, admin_headers: dict[str, str]
+) -> None:
+    """Bodies that aren't JSON return `400`, without invalid fields."""
+    response = client.post(
+        f"{BASE}/services",
+        headers=admin_headers,
+        data="{",
+        content_type="application/json",
+    )
     _assert_error(response, 400)
     assert response.content_type == ERROR_MEDIA_TYPE
     assert response.get_json()["title"] == "Bad request"
-    assert detail in response.get_json()["detail"]
+    assert response.get_json()["detail"] == "The request is malformed."
+    assert "errors" not in response.get_json()
 
 
 @pytest.mark.parametrize(
@@ -2400,7 +2423,7 @@ def test_extra_query_parameters_without_parameters(
 
     FOCA checks them, while Connexion only checks those of operations with
     path, query or header parameters (cf. `extra_parameter` of
-    `test_validation_error_detail()`), as `docs/api.md` (Errors) says.
+    `test_validation_error_fields()`), as `docs/api.md` (Errors) says.
     """
     body = SERVICE["type"] if method == "post" else None
     response = client.open(
@@ -2427,27 +2450,21 @@ def test_organization_extra_fields(
         headers=admin_headers,
         json=_service(organization=organization),
     )
-    _assert_error(response, 400)
-    assert "'blob' was unexpected" in response.get_json()["detail"]
+    assert invalid_fields(response) == [("#/organization/blob", "unknown-property")]
     assert client.get(f"{BASE}/services").get_json() == []
 
 
-def test_validation_error_detail_large_body(
+def test_validation_error_large_body(
     client: FlaskClient, admin_headers: dict[str, str]
 ) -> None:
-    """Reasons quoting large rejected values are shortened.
-
-    The field name is kept.
-    """
+    """Large rejected values are not returned, only their fields."""
     response = client.post(
         f"{BASE}/services", headers=admin_headers, json=_service(name="a" * 900_000)
     )
-    _assert_error(response, 400)
+    assert invalid_fields(response, "a" * 100) == [("#/name", "too-long")]
     with client.application.app_context():
         max_length = get_config().exceptions.max_detail_length
-    assert len(response.get_json()["detail"]) == max_length
-    assert "…" in response.get_json()["detail"]
-    assert response.get_json()["detail"].endswith("is too long - 'name'")
+    assert len(response.get_data()) < max_length
 
 
 def test_validation_error_logs_bounded(

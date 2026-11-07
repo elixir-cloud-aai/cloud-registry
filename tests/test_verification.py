@@ -13,7 +13,13 @@ import pytest
 from werkzeug.test import TestResponse
 
 from cloud_registry.ga4gh.registry import verification as verification_module
-from tests.conftest import ADMIN, USER, make_headers, without_timestamps
+from tests.conftest import (
+    ADMIN,
+    USER,
+    invalid_fields,
+    make_headers,
+    without_timestamps,
+)
 from tests.mock_data import ERROR_MEDIA_TYPE
 
 BASE = "/ga4gh/registry/v1"
@@ -285,20 +291,20 @@ def test_verify_checked_invalid(
 
 
 @pytest.mark.parametrize(
-    "url, detail",
+    "url, code",
     [
-        ("https://user@tes.example.org/ga4gh/tes/v1", "must not contain user info"),
-        ("tes.example.org/ga4gh/tes/v1", "is not a 'uri'"),
+        ("https://user@tes.example.org/ga4gh/tes/v1", "invalid-url"),
+        # FOCA's schema validation (`format: uri`)
+        ("tes.example.org/ga4gh/tes/v1", "invalid-format"),
     ],
 )
 def test_verify_checked_invalid_url(
-    client: FlaskClient, service: str, url: str, detail: str
+    client: FlaskClient, service: str, url: str, code: str
 ) -> None:
-    """Invalid URLs in the body are rejected, saying why."""
+    """Invalid URLs in the body are rejected, pointing to the field."""
     response = verify(client, checked={**checked(), "url": url})
-    assert response.status_code == 400
+    assert invalid_fields(response, url) == [("#/url", code)]
     assert response.content_type == ERROR_MEDIA_TYPE
-    assert detail in response.get_json()["detail"]
     assert verified(client) == []
 
 

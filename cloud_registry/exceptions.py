@@ -1,5 +1,6 @@
 """App exceptions."""
 
+from collections.abc import Iterable
 from typing import Any, ClassVar
 
 from connexion.exceptions import (
@@ -10,6 +11,7 @@ from connexion.exceptions import (
     Unauthorized,
 )
 from flask import Response
+from foca.errors import FieldError, InvalidFieldsProblem
 from foca.errors.exceptions import problem_response
 from foca.security.access_control import LastOwner
 from werkzeug.exceptions import (
@@ -28,6 +30,68 @@ from werkzeug.exceptions import (
 CONFLICT_CODE = "conflict"
 # Detail of conflicts with fixed problem details
 CONFLICT_DETAIL = "The request conflicts with the current state of the resource."
+
+# Codes of invalid fields (`code` of the entries of `errors` of `400`
+# responses; cf. `InvalidFields`) that the app's own checks report, besides
+# FOCA's generic codes of its schema validation, some of which the app's
+# checks report too (`INVALID_VALUE`, `INVALID_FORMAT`, `TOO_LONG`).
+# Documented in the API specification (schema `FieldError`) and in
+# `docs/api.md` (Errors)
+INVALID_URL = "invalid-url"
+SCHEME_NOT_ALLOWED = "scheme-not-allowed"
+UNREGISTERED_TYPE = "unregistered-type"
+UNUSABLE_ID = "unusable-id"
+NOT_SERVICE_INFO_URL = "not-service-info-url"
+PATH_NOT_NORMALIZED = "path-not-normalized"
+INVALID_VALUE = "invalid-value"
+INVALID_FORMAT = "invalid-format"
+TOO_LONG = "too-long"
+FIELD_ERROR_CODES = (
+    INVALID_URL,
+    SCHEME_NOT_ALLOWED,
+    UNREGISTERED_TYPE,
+    UNUSABLE_ID,
+    NOT_SERVICE_INFO_URL,
+    PATH_NOT_NORMALIZED,
+    INVALID_VALUE,
+    INVALID_FORMAT,
+    TOO_LONG,
+)
+
+
+class InvalidFields(BadRequest):
+    """`400 Bad Request` for invalid fields that the app's own checks found.
+
+    Requests get the invalid fields like those of FOCA's schema validation,
+    in the member `errors` of the problem details (cf. `reject()`). Checks
+    of values that aren't those of the request (e.g., of fetched service
+    info) use the description instead, which names the fields.
+
+    Args:
+        description: Description; by default, the locations and details of
+            the invalid fields.
+        field_errors: Invalid fields, with JSON Pointers into the checked
+            object (e.g., the request body) or the names of parameters; their
+            details never quote the values.
+
+    Attributes:
+        field_errors: Invalid fields.
+    """
+
+    def __init__(
+        self,
+        description: str | None = None,
+        *,
+        field_errors: Iterable[FieldError] = (),
+    ) -> None:
+        """Create the exception."""
+        self.field_errors = tuple(field_errors)
+        if description is None and self.field_errors:
+            description = "; ".join(
+                f"'{error.pointer or error.parameter}': {error.detail}"
+                for error in self.field_errors
+            )
+        super().__init__(description)
 
 
 class CodedConflict(Conflict):
@@ -180,3 +244,28 @@ def problem(exc: HTTPException, **extensions: Any) -> Response:
         if isinstance(exc, CodedConflict):
             extensions["code"] = exc.problem_code
     return problem_response(exc, **extensions)
+
+
+def reject(exc: HTTPException) -> Response:
+    """Respond to a request that the app's own checks reject.
+
+    Invalid fields of the request (cf. `InvalidFields`) are raised as FOCA's
+    `InvalidFieldsProblem`, so that FOCA responds with them like with those
+    of its schema validation: `400`, with the problem type and code
+    `invalid-request`, the fields in `errors`, and a `detail` that names
+    them by location and code (cf. FOCA's `exceptions.validation_reasons`),
+    and logs them.
+
+    Args:
+        exc: werkzeug exception with a request-specific description.
+
+    Returns:
+        Problem details response of exceptions without invalid fields (cf.
+        `problem()`).
+
+    Raises:
+        foca.errors.InvalidFieldsProblem: The exception has invalid fields.
+    """
+    if isinstance(exc, InvalidFields) and exc.field_errors:
+        raise InvalidFieldsProblem(exc.field_errors) from exc
+    return problem(exc)

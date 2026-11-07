@@ -26,7 +26,7 @@ from cloud_registry.ga4gh.registry import rename as rename_module
 from cloud_registry.ga4gh.registry.permissions import USER_NAMES
 from cloud_registry.ga4gh.registry.service import VERIFIED
 from cloud_registry.utils import get_collection, now
-from tests.conftest import ADMIN, COLLECTION_CLASS, NAMES, TEAM_GROUP
+from tests.conftest import ADMIN, COLLECTION_CLASS, NAMES, TEAM_GROUP, invalid_fields
 from tests.test_access_control import (
     ALICE,
     BASE,
@@ -350,12 +350,36 @@ def test_rename_taken(client: FlaskClient, service_id: str, own: bool) -> None:
 
 
 @pytest.mark.parametrize(
-    "new_id",
-    [".", "..", "types", "", "a/b", "a,b", "a\nb", "\ud800", 1, None],
+    "new_id, code",
+    [
+        (".", "pattern-mismatch"),
+        ("..", "pattern-mismatch"),
+        ("types", "pattern-mismatch"),
+        ("", "too-short"),
+        ("a/b", "pattern-mismatch"),
+        ("a,b", "unusable-id"),
+        ("a\nb", "unusable-id"),
+        (1, "invalid-type"),
+        (None, "invalid-type"),
+    ],
 )
-def test_rename_invalid(client: FlaskClient, service_id: str, new_id: Any) -> None:
-    """Identifiers that can't be routed or stored in roles are rejected."""
+def test_rename_invalid(
+    client: FlaskClient, service_id: str, new_id: Any, code: str
+) -> None:
+    """Identifiers that can't be routed or stored in roles are rejected.
+
+    Reserved identifiers and those with slashes don't match the pattern of
+    the schema; the app rejects those that can't be stored in roles.
+    """
     response = rename(client, service_id, new_id=new_id)
+    # first, e.g., `too-short` before `pattern-mismatch` for empty ones
+    assert invalid_fields(response)[0] == ("#/id", code)
+    assert roles(client, service_id) == EXPECTED_ROLES
+
+
+def test_rename_surrogates(client: FlaskClient, service_id: str) -> None:
+    """Identifiers with unpaired surrogates are rejected by FOCA."""
+    response = rename(client, service_id, new_id="\ud800")
     assert response.status_code == 400
     assert roles(client, service_id) == EXPECTED_ROLES
 

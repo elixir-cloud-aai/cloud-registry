@@ -26,7 +26,7 @@ from cloud_registry.service_models.custom_config import (
     ServiceInfoConfig,
 )
 from cloud_registry.utils import now
-from tests.conftest import _CONNECT, ADMIN, USER, make_headers
+from tests.conftest import _CONNECT, ADMIN, USER, invalid_fields, make_headers
 from tests.mock_data import ERROR_MEDIA_TYPE
 
 BASE = "/ga4gh/registry/v1"
@@ -120,8 +120,10 @@ def serve(monkeypatch: pytest.MonkeyPatch) -> Callable[[object], list[str]]:
 )
 def test_service_url_path_not_normalized(address: str) -> None:
     """Paths that the fetch would change are refused."""
-    with pytest.raises(InvalidService):
+    with pytest.raises(InvalidService) as exc_info:
         service_import.service_url(address, schemes=frozenset({"https"}))
+    [error] = exc_info.value.field_errors
+    assert (error.pointer, error.code) == ("#/serviceInfoUrl", "path-not-normalized")
 
 
 def test_service_url_keeps_host_as_written() -> None:
@@ -193,28 +195,33 @@ def test_login_required(
 
 
 @pytest.mark.parametrize(
-    "address",
+    "address, code",
     [
-        URL,
-        f"{URL}/service-info/",
-        f"{URL}/service-info?x=1",
-        f"{URL}/service-info#x",
-        f"{URL}/service-info?",
-        f"{URL}/other-service-info",
-        "http://tes.example.org/service-info",  # scheme not allowed
-        "ftp://tes.example.org/service-info",
-        "https://user:secret@tes.example.org/service-info",
-        "not a url/service-info",
-        " https://tes.example.org/service-info",
+        (URL, "not-service-info-url"),
+        (f"{URL}/service-info/", "not-service-info-url"),
+        (f"{URL}/service-info?x=1", "not-service-info-url"),
+        (f"{URL}/service-info#x", "not-service-info-url"),
+        (f"{URL}/service-info?", "not-service-info-url"),
+        (f"{URL}/other-service-info", "not-service-info-url"),
+        ("http://tes.example.org/service-info", "scheme-not-allowed"),
+        ("ftp://tes.example.org/service-info", "scheme-not-allowed"),
+        ("https://user:secret@tes.example.org/service-info", "invalid-url"),
+        ("not a url/service-info", "invalid-url"),
+        (" https://tes.example.org/service-info", "invalid-url"),
+        ("https://tes.example.org//service-info", "path-not-normalized"),
+        (f"https://tes.example.org/{'x' * 2048}/service-info", "too-long"),
     ],
 )
 def test_invalid_address(
-    client: FlaskClient, serve: Callable[[object], list[str]], address: str
+    client: FlaskClient, serve: Callable[[object], list[str]], address: str, code: str
 ) -> None:
-    """Addresses of anything else than service info are rejected unfetched."""
+    """Addresses of anything else than service info are rejected unfetched.
+
+    The field is reported with its code, without the address.
+    """
     urls = serve(INFO)
     response = post(client, address)
-    assert response.status_code == 400
+    assert invalid_fields(response, address.strip()) == [("#/serviceInfoUrl", code)]
     assert response.mimetype == ERROR_MEDIA_TYPE
     assert not urls
 

@@ -393,10 +393,12 @@ log:
 exceptions:
     mapping: cloud_registry.exceptions.exceptions
     media_type: application/json
-    # Requests rejected by Connexion's validation (e.g., of the schema) get
-    # the reason as detail (shortened to `max_detail_length`, 500 characters
-    # by default); FOCA's default since 0.18, set explicitly, as clients rely
-    # on it
+    # Requests rejected by Connexion's validation (e.g., of the schema) and by
+    # the app's own checks of fields get their invalid fields in `errors`,
+    # with `detail` naming them by location and code, without the rejected
+    # values (`validation_reasons` is off, FOCA's default since 0.22); FOCA's
+    # default since 0.18, set explicitly, as clients rely on it (see Errors
+    # in `docs/api.md`)
     validation_details: True
 
 custom:

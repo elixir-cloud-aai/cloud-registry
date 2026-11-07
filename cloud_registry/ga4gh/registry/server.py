@@ -4,15 +4,18 @@ import logging
 from typing import Any
 
 from flask import Response, request
+from foca.errors import FieldError, InvalidFieldsProblem
 from foca.errors.exceptions import shorten_detail
 from foca.security.access_control import get_current_subject, is_admin
 from foca.utils.logging import escape_log_value, log_traffic
 from foca.utils.urls import get_public_url
 
 from cloud_registry.exceptions import (
+    UNUSABLE_ID,
     BadRequest,
     NotFound,
     problem,
+    reject,
 )
 from cloud_registry.ga4gh.registry.locks import changing
 from cloud_registry.ga4gh.registry.permissions import (
@@ -29,6 +32,7 @@ from cloud_registry.ga4gh.registry.service import (
     CREATED_BY,
     PENDING_SERVICE,
     PROJECTION,
+    UNUSABLE_ID_DETAIL,
     DuplicateService,
     InvalidService,
     RegisterService,
@@ -43,6 +47,7 @@ from cloud_registry.ga4gh.registry.service_limits import (
 )
 from cloud_registry.ga4gh.registry.service_types import (
     PendingService,
+    UnregisteredServiceType,
     UnusedTypesLimit,
     check_service_type,
     is_approved,
@@ -266,16 +271,18 @@ def _register_service(
 
     Returns:
         Identifier of the service; if it is new, with status `201` and its URL
-        as `Location`. Or an error response: `400` for invalid URLs or types
-        the user may not add, `409` for a registered service with the same
-        URL and API type, naming it only if the user may read it (cf.
+        as `Location`. Or an error response: `409` for a registered service
+        with the same URL and API type, naming it only if the user may read it (cf.
         `may_read_service()` and `visible_services()`), for updates of
         pending services by users other than admins, for users who registered
         as many services as allowed, or for other URLs of services with sync.
 
     Raises:
-        cloud_registry.exceptions.BadRequest: The owner role can't be stored
-            for the service identifier.
+        foca.errors.InvalidFieldsProblem: Fields of the service are invalid
+            (e.g., URLs, schemes, or types the user may not add), all of them
+            (cf. `RegisterService.check()`); or the owner role can't be
+            stored for the service identifier (`serviceId`). FOCA responds
+            with `400` and the invalid fields (cf. `reject()`).
         cloud_registry.exceptions.NotFound: A new service was deleted
             meanwhile.
     """
@@ -294,7 +301,11 @@ def _register_service(
     if service_id is None and not is_admin():
         service.created_by = get_current_subject()
     try:
-        check_service_type(service.data.get("type"))
+        try:
+            check_service_type(service.data.get("type"))
+        except UnregisteredServiceType as exc:
+            # with the invalid fields of the service, if any
+            service.check(errors=exc.field_errors)
         # pending types are only stored for valid services within the limit
         service.validate()
         reserve_service(service.created_by)
@@ -313,7 +324,7 @@ def _register_service(
             "Service not registered: %s",
             escape_log_value(shorten_detail(exc.description)),
         )
-        return problem(exc)
+        return reject(exc)
     except DuplicateService as exc:
         logger.info(
             "Service not registered: %s",
@@ -358,7 +369,17 @@ def _register_service(
             # service identifiers with commas)
             logger.info("Can't store owner role: %s", escape_log_value(exc))
             _unregister_service(service)
-            raise BadRequest from exc
+            # only identifiers of `PUT` can be invalid (generated ones can't);
+            # FOCA responds with the invalid parameter (cf. `reject()`)
+            raise InvalidFieldsProblem(
+                [
+                    FieldError(
+                        detail=UNUSABLE_ID_DETAIL,
+                        code=UNUSABLE_ID,
+                        parameter="serviceId",
+                    )
+                ]
+            ) from exc
         except Exception:
             _unregister_service(service)
             raise

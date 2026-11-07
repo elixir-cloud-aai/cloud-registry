@@ -25,25 +25,33 @@ import ipaddress
 import json
 import logging
 from pathlib import Path
-import re
 import threading
 from typing import Any
 from urllib.parse import urlsplit
 
 from foca import get_custom_config
+from foca.errors import FieldError, json_pointer
 from foca.utils.logging import escape_log_value
 from jsonschema import Draft4Validator
 from pymongo.errors import DuplicateKeyError
 import yaml
 
-from cloud_registry.exceptions import BadGateway, TooManyRequests, problem
+from cloud_registry.exceptions import (
+    NOT_SERVICE_INFO_URL,
+    PATH_NOT_NORMALIZED,
+    TOO_LONG,
+    BadGateway,
+    TooManyRequests,
+    problem,
+    reject,
+)
 from cloud_registry.ga4gh.registry.permissions import current_user, require_subject
 from cloud_registry.ga4gh.registry.service import (
     InvalidService,
     RegisterService,
     check_strings,
-    check_url_scheme,
     normalize_url,
+    url_errors,
 )
 from cloud_registry.safe_fetch import FetchError, IPNetwork, safe_get
 from cloud_registry.service_models.custom_config import CustomConfig
@@ -156,37 +164,70 @@ def fetch_slot() -> Iterator[None]:
 
 # Length of service URLs (`url`) with `SERVICE_INFO_PATH`
 MAX_ADDRESS_LENGTH = 2061
+# Field of the request body of `POST /services/import` with the address
+ADDRESS_FIELD = "serviceInfoUrl"
 
 
 def service_url(address: str, schemes: frozenset[str]) -> str:
     """Get the URL of a service from the address of its service info.
 
     Args:
-        address: Address of the service info.
+        address: Address of the service info (`serviceInfoUrl` of the request
+            body, the field of the errors).
         schemes: Schemes allowed in service URLs.
 
     Returns:
         The address without `SERVICE_INFO_PATH`.
 
     Raises:
-        InvalidService: The address is too long or invalid, uses a scheme that isn't
-            allowed, has a query or fragment, doesn't end in
-            `SERVICE_INFO_PATH`, or has a path that normalizing would change
-            (e.g., repeated slashes): fetches use the normalized form, which
-            services may route differently than what the URL would say.
+        InvalidService: The address is too long (`too-long`) or invalid,
+            uses a scheme that isn't allowed (cf. `url_errors()`), has a
+            query or fragment or doesn't end in `SERVICE_INFO_PATH`
+            (`not-service-info-url`), or has a path that normalizing would
+            change (e.g., repeated slashes; `path-not-normalized`): fetches
+            use the normalized form, which services may route differently
+            than what the URL would say. The first of these that applies.
     """
+    pointer = json_pointer(ADDRESS_FIELD)
     if len(address) > MAX_ADDRESS_LENGTH:
         raise InvalidService(
-            f"The address of the service info must not be longer than "
-            f"{MAX_ADDRESS_LENGTH} characters."
+            field_errors=[
+                FieldError(
+                    detail=f"Must be at most {MAX_ADDRESS_LENGTH} characters long.",
+                    code=TOO_LONG,
+                    pointer=pointer,
+                )
+            ]
         )
-    check_url_scheme(address, schemes=schemes)
+    errors = url_errors(address, schemes, ADDRESS_FIELD)
+    if errors:
+        raise InvalidService(field_errors=errors)
     if "?" in address or "#" in address or not address.endswith(SERVICE_INFO_PATH):
         raise InvalidService(
-            f"The address of the service info must end in '{SERVICE_INFO_PATH}'."
+            field_errors=[
+                FieldError(
+                    detail=(
+                        f"Must end in '{SERVICE_INFO_PATH}', without a query or "
+                        "fragment."
+                    ),
+                    code=NOT_SERVICE_INFO_URL,
+                    pointer=pointer,
+                )
+            ]
         )
-    if urlsplit(normalize_url(address)).path != urlsplit(address).path:
-        raise InvalidService("The path of the address is not in its normal form.")
+    if urlsplit(normalize_url(address, ADDRESS_FIELD)).path != urlsplit(address).path:
+        raise InvalidService(
+            field_errors=[
+                FieldError(
+                    detail=(
+                        "Must have a path in normal form (e.g., without repeated "
+                        "slashes, dot segments or needless percent-encodings)."
+                    ),
+                    code=PATH_NOT_NORMALIZED,
+                    pointer=pointer,
+                )
+            ]
+        )
     return address.removesuffix(SERVICE_INFO_PATH)
 
 
@@ -315,10 +356,10 @@ def service_values(service_info: object, url: str) -> dict[str, Any]:
     try:
         RegisterService(data=values).check()
     except InvalidService as exc:
-        # messages can repeat values, which come from elsewhere; they quote the
-        # field first (e.g., `URLs in 'contactUrl' need a valid host: ...`)
-        match = re.search(r"'([\w.]+)'", str(exc.description))
-        field = match.group(1) if match else ""
+        # the first invalid field, by its pointer into the values (e.g.,
+        # `#/organization/url`), as `organization.url`
+        pointer = exc.field_errors[0].pointer if exc.field_errors else None
+        field = ".".join(str(pointer).split("/")[1:]) if pointer else ""
         if field not in _CHECKED_FIELDS:
             field = "url"
         raise InvalidServiceInfo(f"'{field}' is missing or invalid.") from exc
@@ -383,11 +424,16 @@ def postServiceImport(service_import: dict[str, Any], **kwargs: Any) -> Any:
 
     Returns:
         Values for a registration (cf. `service_values()`); or an error
-        response: `400` for addresses that aren't one of service info, or
-        service info that doesn't pass the checks of a registration, `429`
-        above the limit of the user (cf. `check_fetch_limit()`) or while other
-        requests take the slots for fetches (cf. `fetch_slot()`), and `502` if
-        the fetch fails, for any reason.
+        response: `400` for service info that doesn't pass the checks of a
+        registration, `429` above the limit of the user (cf.
+        `check_fetch_limit()`) or while other requests take the slots for
+        fetches (cf. `fetch_slot()`), and `502` if the fetch fails, for any
+        reason.
+
+    Raises:
+        foca.errors.InvalidFieldsProblem: The address isn't one of service
+            info (cf. `service_url()`); FOCA responds with `400` and the
+            invalid field (cf. `cloud_registry.exceptions.reject()`).
     """
     address: str = service_import["serviceInfoUrl"]
     services = get_custom_config(CustomConfig).endpoints.services
@@ -398,7 +444,7 @@ def postServiceImport(service_import: dict[str, Any], **kwargs: Any) -> Any:
         logger.info(
             "Service info not imported by '%s': invalid address.", current_user()
         )
-        return problem(exc)
+        return reject(exc)
     try:
         with fetch_slot():
             check_fetch_limit(require_subject())
