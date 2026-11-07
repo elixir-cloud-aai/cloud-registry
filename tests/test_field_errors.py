@@ -182,6 +182,19 @@ def test_unusable_service_id(client: FlaskClient) -> None:
     assert client.get(f"{BASE}/services/a,b").status_code == 404
 
 
+def test_unusable_service_id_with_fields(client: FlaskClient) -> None:
+    """Unusable identifiers of `PUT` are reported with the body's fields."""
+    response = client.put(
+        f"{BASE}/services/a,b",
+        json=_service(url="http://tes.example.org"),
+        headers=make_headers(ADMIN),
+    )
+    assert invalid_fields(response) == [
+        ("#/url", "scheme-not-allowed"),
+        ("serviceId", "unusable-id"),
+    ]
+
+
 def test_codes_documented() -> None:
     """The specification and the docs document all codes of the app's checks.
 
@@ -190,9 +203,8 @@ def test_codes_documented() -> None:
     """
     codes = set(FIELD_ERROR_CODES)
     spec = yaml.safe_load(SPEC.read_text())
-    description = spec["components"]["schemas"]["FieldError"]["properties"]["code"][
-        "description"
-    ]
-    assert codes <= set(re.findall(r"`([a-z]+(?:-[a-z]+)*)`", description))
+    code = spec["components"]["schemas"]["FieldError"]["properties"]["code"]
+    assert codes <= set(re.findall(r"`([a-z]+(?:-[a-z]+)*)`", code["description"]))
+    assert set(code["x-extensible-enum"]) == codes
     table = re.findall(r"^\| `([a-z-]+)` \|", DOCS.read_text(), flags=re.MULTILINE)
     assert codes <= set(table)

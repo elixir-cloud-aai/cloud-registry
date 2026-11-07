@@ -8,10 +8,11 @@ from collections.abc import Iterator
 
 from flask import Flask
 from foca import get_config
+from foca.errors import FieldError
 import pytest
 from werkzeug.exceptions import HTTPException
 
-from cloud_registry.exceptions import BadRequest, problem
+from cloud_registry.exceptions import BadRequest, field_name, problem
 from tests.mock_data import ERROR_MEDIA_TYPE
 
 
@@ -51,3 +52,16 @@ def test_problem_incomplete_exception(exc: HTTPException) -> None:
     """Problem details need an exception with a code and a description."""
     with pytest.raises(ValueError, match="status code and a description"):
         problem(exc)
+
+
+@pytest.mark.parametrize(
+    "location, name",
+    [
+        ({"pointer": "#/organization/url"}, "organization.url"),
+        ({"pointer": "#/a~1b/c~0d/%C3%A4"}, "a/b.c~d.\u00e4"),
+        ({"parameter": "serviceId"}, "serviceId"),
+    ],
+)
+def test_field_name(location: dict[str, str], name: str) -> None:
+    """Fields are named by the unescaped keys of their pointers, or parameters."""
+    assert field_name(FieldError(detail="Invalid.", code="x", **location)) == name

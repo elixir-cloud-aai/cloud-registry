@@ -28,6 +28,7 @@ from cloud_registry.ga4gh.registry.permissions import (
     remove_permissions,
     service_types_pending,
 )
+from cloud_registry.ga4gh.registry.rename import unusable_id_errors
 from cloud_registry.ga4gh.registry.service import (
     CREATED_BY,
     PENDING_SERVICE,
@@ -272,17 +273,18 @@ def _register_service(
     Returns:
         Identifier of the service; if it is new, with status `201` and its URL
         as `Location`. Or an error response: `409` for a registered service
-        with the same URL and API type, naming it only if the user may read it (cf.
-        `may_read_service()` and `visible_services()`), for updates of
+        with the same URL and API type, naming it only if the user may read
+        it (cf. `may_read_service()` and `visible_services()`), for updates of
         pending services by users other than admins, for users who registered
         as many services as allowed, or for other URLs of services with sync.
 
     Raises:
         foca.errors.InvalidFieldsProblem: Fields of the service are invalid
-            (e.g., URLs, schemes, or types the user may not add), all of them
-            (cf. `RegisterService.check()`); or the owner role can't be
-            stored for the service identifier (`serviceId`). FOCA responds
-            with `400` and the invalid fields (cf. `reject()`).
+            (e.g., URLs, schemes, types the user may not add, or an
+            identifier `serviceId` that can't be stored in roles), all of
+            them (cf. `RegisterService.check()`), raised by `reject()`;
+            or, raised directly, the owner role can't be stored all the same.
+            FOCA responds with `400` and the invalid fields.
         cloud_registry.exceptions.NotFound: A new service was deleted
             meanwhile.
     """
@@ -300,12 +302,21 @@ def _register_service(
             return refused
     if service_id is None and not is_admin():
         service.created_by = get_current_subject()
+    # identifiers of `PUT` that can't be stored in roles, reported with the
+    # invalid fields of the body, before anything is stored
+    errors = (
+        unusable_id_errors(service_id, parameter="serviceId")
+        if service_id is not None
+        else []
+    )
     try:
         try:
             check_service_type(service.data.get("type"))
         except UnregisteredServiceType as exc:
+            errors = [*exc.field_errors, *errors]
+        if errors:
             # with the invalid fields of the service, if any
-            service.check(errors=exc.field_errors)
+            service.check(errors=errors)
         # pending types are only stored for valid services within the limit
         service.validate()
         reserve_service(service.created_by)
@@ -369,8 +380,8 @@ def _register_service(
             # service identifiers with commas)
             logger.info("Can't store owner role: %s", escape_log_value(exc))
             _unregister_service(service)
-            # only identifiers of `PUT` can be invalid (generated ones can't);
-            # FOCA responds with the invalid parameter (cf. `reject()`)
+            # not expected, as identifiers of `PUT` are checked first (cf.
+            # `unusable_id_errors()`) and generated ones can't be invalid
             raise InvalidFieldsProblem(
                 [
                     FieldError(

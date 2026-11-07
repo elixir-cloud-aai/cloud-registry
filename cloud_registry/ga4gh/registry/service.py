@@ -261,31 +261,64 @@ def check_strings(value: object, field: str = "") -> None:
 
     Args:
         value: Request body, or part of it.
-        field: Path of `value` in the body (e.g., `type.group`), for error
-            messages.
+        field: Path of `value` in the body, as dotted keys (e.g.,
+            `type.group`), for error messages.
+
+    Raises:
+        InvalidService: A string, or a key, has unpaired surrogates (with
+            the invalid field, code `invalid-value`, unless it's `value`
+            itself without a `field`).
+    """
+    _check_strings(value, tuple(field.split(".")) if field else ())
+
+
+def _check_strings(value: object, path: tuple[str | int, ...]) -> None:
+    """Check that the strings of a value can be encoded (cf. `check_strings()`).
+
+    Args:
+        value: Request body, or part of it.
+        path: Keys and indices of `value` in the body.
 
     Raises:
         InvalidService: A string, or a key, has unpaired surrogates.
     """
     if isinstance(value, dict):
         for key, item in value.items():
-            check_strings(key, field=field)
-            check_strings(item, field=f"{field}.{key}" if field else str(key))
+            # keys are checked before they're used in paths
+            _check_strings(key, path)
+            _check_strings(item, (*path, key))
     elif isinstance(value, list):
         for index, item in enumerate(value):
-            check_strings(item, field=f"{field}[{index}]")
+            _check_strings(item, (*path, index))
     elif isinstance(value, str):
         try:
             value.encode()
         except UnicodeEncodeError as exc:
-            where = f"'{field}'" if field else "The request body"
+            if not path:
+                raise InvalidService(
+                    "The request body must not contain unpaired surrogates."
+                ) from exc
+            field = "".join(
+                f"[{part}]" if isinstance(part, int) else f".{part}" for part in path
+            ).removeprefix(".")
             raise InvalidService(
-                f"{where} must not contain unpaired surrogates."
+                f"'{field}' must not contain unpaired surrogates.",
+                field_errors=[
+                    FieldError(
+                        detail="Must not contain unpaired surrogates.",
+                        code=INVALID_VALUE,
+                        pointer=json_pointer(*path),
+                    )
+                ],
             ) from exc
 
 
 def date_time_errors(data: dict[str, Any]) -> list[FieldError]:
     """Check that the timestamps of a service are RFC 3339 date-times.
+
+    FOCA's schema validation (`format: date-time`) rejects most invalid
+    timestamps of requests first; this check also covers those it lets
+    through, and values that aren't requests (e.g., fetched service info).
 
     Args:
         data: Service metadata.
@@ -513,6 +546,8 @@ class RegisterService:
             InvalidService: Cf. `register_metadata()`.
         """
         check_strings(self.data)
+        # raises for a missing or invalid key (`url`, `type`), which the
+        # other checks need
         _key_values(self.data)
         found = [
             *url_errors(self.data["url"], self.url_schemes, "url"),

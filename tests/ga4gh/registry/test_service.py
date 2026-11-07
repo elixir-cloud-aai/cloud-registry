@@ -612,6 +612,49 @@ def test_link_errors_all_invalid() -> None:
 
 
 @pytest.mark.parametrize(
+    "url, code, detail",
+    [
+        (
+            "https://www.example.org/ a",
+            "invalid-url",
+            "Must not contain whitespace, control or format characters.",
+        ),
+        (
+            "https://www.example.org/a%zz",
+            "invalid-url",
+            "Must not contain malformed percent-encodings.",
+        ),
+        (
+            "https://www.example.org/<x>",
+            "invalid-url",
+            "Must not contain characters that URLs do not allow unencoded "
+            "(e.g., '<', '|', '\\').",
+        ),
+        ("http://[::1/docs", "invalid-url", "Must be a valid URL."),
+        (
+            "ftp://ftp.example.org",
+            "scheme-not-allowed",
+            "Must use one of these schemes: 'https', 'mailto'.",
+        ),
+        ("www.example.org/docs", "invalid-url", "Needs a scheme and a host."),
+        ("https://user@www.example.org", "invalid-url", "Must not contain user info."),
+        ("https://www.example.org:0", "invalid-url", "Needs a valid port."),
+        ("https://0x7f.0.0.1/docs", "invalid-url", "Needs a valid host."),
+        ("mailto:nobody", "invalid-url", "Needs valid email addresses."),
+        (1, "invalid-url", "Must be a string."),
+    ],
+)
+def test_url_errors_details(url: object, code: str, detail: str) -> None:
+    """FOCA's reasons of invalid URLs map to codes and details.
+
+    The details derive from the wording of FOCA's messages (cf.
+    `_url_error()`), so that rewordings fail here.
+    """
+    [error] = url_errors(url, {"https", "mailto"}, "url")
+    assert (error.code, error.detail) == (code, detail)
+
+
+@pytest.mark.parametrize(
     "url",
     [
         "https://user:secret@tes.example.org",

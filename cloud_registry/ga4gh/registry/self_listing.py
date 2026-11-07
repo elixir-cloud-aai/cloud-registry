@@ -215,7 +215,15 @@ def _new_entry_id() -> str:
             "can't be used for services: it must not be empty, `.`, `..` or "
             "`types`, or have slashes."
         )
-    check_id(service_id)
+    try:
+        check_id(service_id)
+    except InvalidService as exc:
+        # names the setting, as listings have no request body to point to
+        raise InvalidService(
+            "The identifier of the service info (`service_info.service.id`) "
+            "can't be used for services: it must not contain commas or line "
+            "breaks, and must not be too long."
+        ) from exc
     return service_id
 
 

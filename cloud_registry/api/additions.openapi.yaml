@@ -1754,7 +1754,8 @@ components:
               deployment allows (`environment`, see `registrationRules` in
               `GET /service-info`).
             - `invalid-format`: a timestamp is not an RFC 3339 date-time
-              (`createdAt`, `updatedAt`).
+              (`createdAt`, `updatedAt`); FOCA's schema validation reports
+              most of these first, with the same code.
             - `unregistered-type`: the service type is not registered, and
               the user may not add types (`type`, see `GET /services/types`).
             - `unusable-id`: the identifier can't be used for services, as

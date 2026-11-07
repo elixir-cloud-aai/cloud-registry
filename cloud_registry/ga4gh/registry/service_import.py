@@ -42,6 +42,7 @@ from cloud_registry.exceptions import (
     TOO_LONG,
     BadGateway,
     TooManyRequests,
+    field_name,
     problem,
     reject,
 )
@@ -358,8 +359,7 @@ def service_values(service_info: object, url: str) -> dict[str, Any]:
     except InvalidService as exc:
         # the first invalid field, by its pointer into the values (e.g.,
         # `#/organization/url`), as `organization.url`
-        pointer = exc.field_errors[0].pointer if exc.field_errors else None
-        field = ".".join(str(pointer).split("/")[1:]) if pointer else ""
+        field = field_name(exc.field_errors[0]) if exc.field_errors else ""
         if field not in _CHECKED_FIELDS:
             field = "url"
         raise InvalidServiceInfo(f"'{field}' is missing or invalid.") from exc

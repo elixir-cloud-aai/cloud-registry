@@ -162,8 +162,9 @@ endpoints](access-control.md#roles-on-services).
 URLs in registrations must be HTTP(S) URLs with a host: the service `url`,
 `documentationUrl`, `organization.url` and `contactUrl`, which can also be an
 email address (`mailto:`); other URLs are rejected (`400 Bad Request`, saying
-why, without quoting the URL; see [Errors](#errors)). Service URLs must be `https` URLs by default, as clients send access
-tokens to the services; deployments can allow `http` (see [Service URL
+why, without quoting the URL; see [Errors](#errors)). Service URLs must be
+`https` URLs by default, as clients send access tokens to the services;
+deployments can allow `http` (see [Service URL
 schemes](configuration.md#service-url-schemes)). URLs are stored as written,
 so they must not contain whitespace (also not around them), control or format
 characters (except joiners in international host names), and no URLs may
@@ -424,7 +425,7 @@ the registry's own checks these:
 | `invalid-url` | the URL is invalid, e.g., has no host, user info, whitespace, or characters that URLs don't allow unencoded; `detail` says why (`url`, `contactUrl`, `documentationUrl`, `organization.url` of registrations, `url` of [verifications](#verified-services), `serviceInfoUrl` of [imports](#importing-service-info)) |
 | `scheme-not-allowed` | the URL uses a scheme that its field doesn't allow, e.g., `http` for service URLs (see [Service URL schemes](configuration.md#service-url-schemes)), or other schemes than `http` and `https` (and `mailto` for `contactUrl`) for links |
 | `invalid-value` | the environment isn't one of those the deployment allows (`environment`; see [Service environments](configuration.md#service-environments)) |
-| `invalid-format` | a timestamp isn't an RFC 3339 date-time (`createdAt`, `updatedAt`; see [Timestamps](#timestamps)) |
+| `invalid-format` | a timestamp isn't an RFC 3339 date-time (`createdAt`, `updatedAt`; see [Timestamps](#timestamps)); FOCA's schema validation reports most of these first, with the same code |
 | `unregistered-type` | the service type isn't registered, and the user may not add types (`type`; see [Service types](#service-types)) |
 | `unusable-id` | the identifier can't be stored in roles, e.g., with commas or line breaks (`serviceId` of `PUT /services/{serviceId}`, `id` of [renames](#renaming-services)) |
 | `not-service-info-url` | the address doesn't end in `/service-info`, or has a query or fragment (`serviceInfoUrl` of [imports](#importing-service-info)) |

@@ -211,8 +211,7 @@ def test_list_environment_not_allowed(
     response = client.put(LISTING, headers=admin)
     assert response.status_code == 400
     assert (
-        "'#/environment': Must be one of: 'production'."
-        in response.get_json()["detail"]
+        "'environment': Must be one of: 'production'." in response.get_json()["detail"]
     )
     assert db["services"].count_documents({}) == 0
     assert db["service_types"].count_documents({}) == 0
@@ -235,7 +234,9 @@ def test_list_invalid_id(
 ) -> None:
     """Identifiers of the service info that services can't have are refused."""
     _service_info(app)["id"] = service_id
-    assert client.put(LISTING, headers=admin).status_code == 400
+    response = client.put(LISTING, headers=admin)
+    assert response.status_code == 400
+    assert "`service_info.service.id`" in response.get_json()["detail"]
     assert client.get(LISTING, headers=admin).get_json() == {"listed": False}
 
 

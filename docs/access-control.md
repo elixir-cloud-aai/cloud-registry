@@ -356,9 +356,9 @@ curl -X POST "http://localhost:8080/ga4gh/registry/v1/invitations/accept" \
   (see **Removal**), and removed earlier if the invitation was accepted and the
   user's roles on the service are revoked; database backups keep it as long as
   the deployment keeps them. The registry doesn't log labels, nor return or log
-  rejected ones (only their field and why, see [Errors](api.md#errors)). Clients must show
-  labels as text, not as markup. Whether clients require a label is up to them;
-  the API doesn't.
+  rejected ones (only their field and why, see [Errors](api.md#errors)).
+  Clients must show labels as text, not as markup. Whether clients require a
+  label is up to them; the API doesn't.
 - **Creators:** invitations only grant their role while their creator is an
   owner of the service: as a user, or through the group that made them owner
   when they created it, as long as that group is owner (and, if they accept

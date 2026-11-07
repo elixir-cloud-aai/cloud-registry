@@ -2,6 +2,7 @@
 
 from collections.abc import Iterable
 from typing import Any, ClassVar
+from urllib.parse import unquote
 
 from connexion.exceptions import (
     BadRequestProblem,
@@ -59,6 +60,25 @@ FIELD_ERROR_CODES = (
 )
 
 
+def field_name(error: FieldError) -> str:
+    """Get the name of an invalid field, for descriptions and logs.
+
+    Args:
+        error: Invalid field.
+
+    Returns:
+        The keys of its JSON Pointer (cf. `foca.errors.json_pointer()`),
+        unescaped and joined by dots (e.g., `organization.url` for
+        `#/organization/url`), or the name of its parameter.
+    """
+    if error.pointer is None:
+        return str(error.parameter)
+    segments = unquote(error.pointer.removeprefix("#")).split("/")[1:]
+    return ".".join(
+        segment.replace("~1", "/").replace("~0", "~") for segment in segments
+    )
+
+
 class InvalidFields(BadRequest):
     """`400 Bad Request` for invalid fields that the app's own checks found.
 
@@ -68,8 +88,8 @@ class InvalidFields(BadRequest):
     info) use the description instead, which names the fields.
 
     Args:
-        description: Description; by default, the locations and details of
-            the invalid fields.
+        description: Description; by default, the names (cf.
+            `field_name()`) and details of the invalid fields.
         field_errors: Invalid fields, with JSON Pointers into the checked
             object (e.g., the request body) or the names of parameters; their
             details never quote the values.
@@ -88,8 +108,7 @@ class InvalidFields(BadRequest):
         self.field_errors = tuple(field_errors)
         if description is None and self.field_errors:
             description = "; ".join(
-                f"'{error.pointer or error.parameter}': {error.detail}"
-                for error in self.field_errors
+                f"'{field_name(error)}': {error.detail}" for error in self.field_errors
             )
         super().__init__(description)
 
