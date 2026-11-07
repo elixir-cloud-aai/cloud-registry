@@ -280,9 +280,10 @@ def _register_service(
 
     Raises:
         foca.errors.InvalidFieldsProblem: Fields of the service are invalid
-            (e.g., URLs, schemes, types the user may not add, or an
-            identifier `serviceId` that can't be stored in roles), all of
-            them (cf. `RegisterService.check()`), raised by `reject()`;
+            (e.g., URLs, schemes, types the user may not add, or the
+            identifier `serviceId` of a new service that can't be stored in
+            roles), all those of the field checks of
+            `RegisterService.check()`, raised by `reject()`;
             or, raised directly, the owner role can't be stored all the same.
             FOCA responds with `400` and the invalid fields.
         cloud_registry.exceptions.NotFound: A new service was deleted
@@ -302,11 +303,12 @@ def _register_service(
             return refused
     if service_id is None and not is_admin():
         service.created_by = get_current_subject()
-    # identifiers of `PUT` that can't be stored in roles, reported with the
-    # invalid fields of the body, before anything is stored
+    # identifiers of new services (`PUT`) that can't be stored in roles,
+    # reported with the invalid fields of the body, before anything is stored;
+    # stored services keep theirs (e.g., from before roles)
     errors = (
         unusable_id_errors(service_id, parameter="serviceId")
-        if service_id is not None
+        if service_id is not None and allow_create and not service_exists(service_id)
         else []
     )
     try:
@@ -425,7 +427,7 @@ def _check_pending_update(serviceId: str, value: object) -> Response | None:
     try:
         check_strings(new_type or {}, field="type")
     except InvalidService as exc:
-        return problem(exc)
+        return reject(exc)
     if is_approved(new_type):
         return None
     pending = PendingService()

@@ -22,6 +22,7 @@ import yaml
 
 from cloud_registry.exceptions import FIELD_ERROR_CODES
 from cloud_registry.service_models.custom_config import CustomConfig
+from cloud_registry.utils import get_collection
 from tests.conftest import ADMIN, APP_DIR, invalid_fields, make_headers
 
 BASE = "/ga4gh/registry/v1"
@@ -193,6 +194,26 @@ def test_unusable_service_id_with_fields(client: FlaskClient) -> None:
         ("#/url", "scheme-not-allowed"),
         ("serviceId", "unusable-id"),
     ]
+
+
+def test_stored_unusable_service_id_updated(app: App, client: FlaskClient) -> None:
+    """Stored services keep identifiers that can't be stored in roles.
+
+    E.g., of services stored before roles; admins can update them.
+    """
+    response = client.put(
+        f"{BASE}/services/abc", json=_service(), headers=make_headers(ADMIN)
+    )
+    assert response.status_code == 201
+    with app.app.app_context():
+        get_collection("services").update_one({"id": "abc"}, {"$set": {"id": "a,b"}})
+    response = client.put(
+        f"{BASE}/services/a,b",
+        json=_service(name="New name"),
+        headers=make_headers(ADMIN),
+    )
+    assert response.status_code == 200
+    assert client.get(f"{BASE}/services/a,b").get_json()["name"] == "New name"
 
 
 def test_codes_documented() -> None:
