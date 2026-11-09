@@ -375,7 +375,11 @@ that an operation doesn't declare, on all operations (e.g., `GET
 /services/{serviceId}?page=1` and `GET /services?x=1`); values that don't match
 the `date-time` or `uri` format of their field, for which `detail` quotes the
 value and names the field; and JSON bodies with unpaired surrogates (e.g.,
-`\ud800`), for which `detail` names neither.
+`\ud800`), for which `detail` names neither. Where the invalid fields are known,
+the response also has the `type` and `code` (`invalid-request`) of FOCA's
+problem type of invalid requests and lists them in `errors`, each with a JSON
+Pointer (`pointer`) or parameter name (`parameter`) and a `code`, e.g.,
+`{"pointer": "#/name", "code": "required", ...}`.
 
 Errors handled by the app are [problem
 details](https://www.rfc-editor.org/rfc/rfc7807) (`title`, `status` and
