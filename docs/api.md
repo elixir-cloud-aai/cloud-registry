@@ -122,7 +122,7 @@ forms, `GET /service-info` serves them in `registrationRules`:
   only admins can register services, and not set if there is no limit (see
   [Services per user](configuration.md#services-per-user));
 - `serviceInfoSync`: whether services can be [synced](#synced-services)
-  (`enabled`), and how often (`intervalHours`; see [Service info
+  (`enabled`), and how often (`intervalHours`, 1 to 8760; see [Service info
   sync](configuration.md#service-info-sync)).
 
 The registry builds the rules from its config on each request, so they are
