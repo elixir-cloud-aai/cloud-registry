@@ -8,6 +8,7 @@ updates:
   # including the build requirements (dependency group `build-system`)
   - package-ecosystem: uv
     directory: /
+    labels: ["type: dependencies"]
     schedule:
       interval: monthly
     target-branch: dev
@@ -38,6 +39,7 @@ updates:
   # `@<commit> # vX.Y.Z`)
   - package-ecosystem: github-actions
     directory: /
+    labels: ["type: dependencies"]
     schedule:
       interval: monthly
     target-branch: dev
@@ -47,6 +49,7 @@ updates:
   # Images in the `Dockerfile`, the base image and uv (tag and digest)
   - package-ecosystem: docker
     directory: /
+    labels: ["type: dependencies"]
     schedule:
       interval: monthly
     target-branch: dev
@@ -61,6 +64,7 @@ updates:
   # Hook revisions in `.pre-commit-config.yaml`
   - package-ecosystem: pre-commit
     directory: /
+    labels: ["type: dependencies"]
     schedule:
       interval: monthly
     target-branch: dev
