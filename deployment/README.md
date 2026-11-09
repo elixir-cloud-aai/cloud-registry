@@ -951,6 +951,11 @@ for all changes; for Helm releases:
   `config.security.access_control.policies`, or give the policies as a list,
   must move it to `.../permissions/users/*`. It no longer covers the roles of
   groups, for which `owners-change-group-permissions` is now the only rule.
+  Values files that give the policies as a list must also add the new rules
+  `import-service-info`, `owners-sync-services`, `maintainers-sync-services`,
+  `get-service-sync`, `list-syncs`, `list-notifications` and
+  `dismiss-notifications`, or imports, syncs and notifications return
+  `403 Forbidden`.
 - **Going back:** `helm rollback` needs the database of the earlier version, as
   it was.
 

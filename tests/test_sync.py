@@ -21,6 +21,8 @@ from cloud_registry.ga4gh.registry import service_import, sync
 from cloud_registry.ga4gh.registry.service import SELF_ENTRY, SYNC, VERIFIED
 from cloud_registry.safe_fetch import AddressNotAllowed, FetchError, Unreachable
 from cloud_registry.service_models.custom_config import (
+    MAX_SYNC_INTERVAL_HOURS,
+    MIN_SYNC_INTERVAL_HOURS,
     CustomConfig,
     ServiceInfoConfig,
 )
@@ -1507,13 +1509,21 @@ def test_rules(client: FlaskClient) -> None:
 
 
 def test_settings() -> None:
-    """On by default, every 24 hours; the interval must be positive."""
+    """On by default, every 24 hours; the interval must be within its bounds."""
     settings = ServiceInfoConfig()
     assert settings.sync is True
     assert settings.sync_interval_hours == 24
-    for hours in (0, -1):
+    for hours in (0, -1, 0.5, 8761, 1e9, float("inf"), float("nan")):
         with pytest.raises(ValueError):
             ServiceInfoConfig(sync_interval_hours=hours)
+    for hours in (MIN_SYNC_INTERVAL_HOURS, MAX_SYNC_INTERVAL_HOURS):
+        assert ServiceInfoConfig(sync_interval_hours=hours).sync_interval_hours == hours
+
+
+def test_interval_bounds() -> None:
+    """The bounds are an hour and a year (365 days)."""
+    assert MIN_SYNC_INTERVAL_HOURS == 1
+    assert MAX_SYNC_INTERVAL_HOURS == 8760
 
 
 def test_status_with_given_time(app: App) -> None:

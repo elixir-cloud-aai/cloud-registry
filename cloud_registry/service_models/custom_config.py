@@ -8,7 +8,6 @@ from foca.utils.misc import generate_id
 from pydantic import (
     Field,
     NonNegativeInt,
-    PositiveFloat,
     PositiveInt,
     field_validator,
 )
@@ -70,6 +69,13 @@ class IdConfig(FOCABaseConfig):
         return charset
 
 
+# Bounds of the time between syncs of a service, in hours: shorter intervals
+# fetch from the registered services more often than service info changes, and
+# longer ones overflow the times of next attempts
+MIN_SYNC_INTERVAL_HOURS = 1
+MAX_SYNC_INTERVAL_HOURS = 8760
+
+
 class ServiceInfoConfig(FOCABaseConfig):
     """Model for fetching the service info of services.
 
@@ -80,7 +86,9 @@ class ServiceInfoConfig(FOCABaseConfig):
         fetches_per_hour: How often each user may have service info fetched
             per hour (`429` above).
         sync: Whether services can be synced with their service info.
-        sync_interval_hours: Time between syncs of a service, in hours.
+        sync_interval_hours: Time between syncs of a service, in hours, from
+            `MIN_SYNC_INTERVAL_HOURS` (an hour) to `MAX_SYNC_INTERVAL_HOURS`
+            (365 days).
 
     Attributes:
         private_networks: Networks (CIDR notation) that the app may fetch
@@ -89,12 +97,15 @@ class ServiceInfoConfig(FOCABaseConfig):
         fetches_per_hour: How often each user may have service info fetched
             per hour (`429` above).
         sync: Whether services can be synced with their service info.
-        sync_interval_hours: Time between syncs of a service, in hours.
+        sync_interval_hours: Time between syncs of a service, in hours, from
+            `MIN_SYNC_INTERVAL_HOURS` (an hour) to `MAX_SYNC_INTERVAL_HOURS`
+            (365 days).
 
     Raises:
         pydantic.ValidationError: The class was instantianted with an illegal
             data type, a network is invalid (also with host bits set), or
-            `fetches_per_hour` or `sync_interval_hours` is not positive.
+            `fetches_per_hour` is not positive, or `sync_interval_hours` is out
+            of its bounds.
 
     Example:
         >>> ServiceInfoConfig(private_networks=['10.1.0.0/16'])
@@ -105,7 +116,10 @@ sync=True, sync_interval_hours=24.0)
     private_networks: list[str] = Field(default_factory=list)
     fetches_per_hour: PositiveInt = 30
     sync: bool = True
-    sync_interval_hours: PositiveFloat = 24.0
+    sync_interval_hours: Annotated[
+        float,
+        Field(ge=MIN_SYNC_INTERVAL_HOURS, le=MAX_SYNC_INTERVAL_HOURS, allow_inf_nan=False),
+    ] = 24.0
 
     @field_validator("private_networks")
     @classmethod
