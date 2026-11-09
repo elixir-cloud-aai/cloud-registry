@@ -68,6 +68,24 @@ request checks change some responses, so check clients that rely on them:
   in around the API, the app logs an error on startup naming the services: correct
   or delete them in the database.
 
+**FOCA 0.22:** the app now builds on FOCA 0.22 (see [FOCA's migration
+guide](https://foca.readthedocs.io/en/v0.22.0/migration-0.22/)). Requests that
+fail the validation of the API specification keep the validator's reason as
+`detail` (`exceptions.validation_reasons`), and their responses gain the members
+`type`, `code` (both `invalid-request`) and `errors`, which lists the invalid
+fields. The logs change, so check log checks and alerts that rely on them:
+
+- Requests (`Incoming request`) and denials of access control (`Access
+  denied`) name the route of the request (e.g.,
+  `/ga4gh/registry/v1/services/{serviceId}`) instead of its path; the path is
+  logged at `DEBUG`.
+- Rejected requests are logged by the locations and codes of their invalid
+  fields (e.g., `Request rejected: #/url (invalid-format)`) instead of the
+  validator's reason, which is logged at `DEBUG` only, so rejected values are no
+  longer logged at `INFO`.
+- FOCA warns once per worker of what it deprecates ahead of its release on
+  ASGI, e.g., of the werkzeug classes in the app's exception map.
+
 **Service URLs:** a `url` with leading or trailing spaces now returns
 `400 Bad Request` instead of being stored, so remove the spaces from what you
 register again.
