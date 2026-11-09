@@ -398,6 +398,11 @@ exceptions:
     # by default); FOCA's default since 0.18, set explicitly, as clients rely
     # on it
     validation_details: True
+    # ... and the validator's reason as up to FOCA 0.21, which quotes the
+    # rejected values (FOCA 0.22's default names the invalid fields by
+    # location and code instead); for now, until the registry names the
+    # invalid fields itself (#317)
+    validation_reasons: True
 
 custom:
     access_control:

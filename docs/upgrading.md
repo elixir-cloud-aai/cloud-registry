@@ -60,13 +60,35 @@ request checks change some responses, so check clients that rely on them:
   for all users, instead of being ignored for users other than admins.
 - Some `400 Bad Request` responses have another `detail`: URLs that aren't valid
   URIs (without scheme, or with whitespace) get FOCA's message, which quotes the
-  value and is logged too, so don't send secrets in those fields, and unpaired surrogates in JSON bodies get one that doesn't name the
-  field.
+  value (and is logged at `DEBUG` since FOCA 0.22, see below), so don't send
+  secrets in those fields, and unpaired surrogates in JSON bodies get one that
+  doesn't name the field.
 - FOCA checks the formats of responses too, so stored `date-time` and `uri` values
   must be valid, or reads of the service and `GET /services` return `500`. Requests
   can't store such values, and this version needs a fresh database, but if data got
   in around the API, the app logs an error on startup naming the services: correct
   or delete them in the database.
+
+**FOCA 0.22:** the app now builds on FOCA 0.22 (see [FOCA's migration
+guide](https://foca.readthedocs.io/en/v0.22.0/migration-0.22/)). Requests that
+fail the validation of the API specification keep the validator's reason as
+`detail` (`exceptions.validation_reasons`). Where the invalid fields are known,
+their responses gain the members `type` (FOCA's problem type, a URL ending in
+`/problems/invalid-request/`), `code` (`invalid-request`) and `errors`, which
+lists them; bodies that aren't JSON or have unpaired surrogates get none of
+these. The logs change, so check log checks and alerts that rely on them:
+
+- Requests (`Incoming request`) and denials of access control (`Access
+  denied`) name the route of the request (e.g.,
+  `/ga4gh/registry/v1/services/{serviceId}`) instead of its path; the path is
+  logged at `DEBUG`.
+- Rejected requests are logged by the locations and codes of their invalid
+  fields (e.g., `Request rejected: #/url (invalid-format)`) instead of the
+  validator's reason (otherwise by the mapped `detail`, e.g., `The request is
+  malformed.`); the reason is logged at `DEBUG` only, so rejected values are no
+  longer logged at `INFO`.
+- FOCA warns once per worker of what it deprecates ahead of its release on
+  ASGI, e.g., of the werkzeug classes in the app's exception map.
 
 **Service URLs:** a `url` with leading or trailing spaces now returns
 `400 Bad Request` instead of being stored, so remove the spaces from what you

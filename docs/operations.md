@@ -28,9 +28,9 @@ the user who accepted it: the app's log line of the acceptance names the
 invitation, whose creator the invitations of the service list (`createdBy`,
 with `?includeAccepted=true`) until it expires.
 Changes via the [permissions API](#permissions-api) are not logged by
-the app itself: FOCA logs the requests (method, path and client address) and
-the identifiers of the added, updated or deleted policy rules, but not who
-changed them, or how.
+the app itself: FOCA logs the requests (method, route and client address; the
+path at `DEBUG`) and the identifiers of the added, updated or deleted policy
+rules, but not who changed them, or how.
 
 ## Permissions API
 
