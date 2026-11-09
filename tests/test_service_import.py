@@ -317,8 +317,10 @@ def test_error_has_no_raw_values(
 
 def test_surrogates(client: FlaskClient, serve: Callable[[object], list[str]]) -> None:
     """Strings that can't be stored are invalid, naming the field."""
-    serve(b'{"id": "x", "name": "\\ud800"}')
-    assert post(client).status_code == 400
+    serve(json.dumps({**INFO, "name": "\ud800"}).encode())
+    response = post(client)
+    assert response.status_code == 400
+    assert response.get_json()["detail"] == "'name' is missing or invalid."
     serve(
         json.dumps(
             {**INFO, "organization": {**INFO["organization"], "name": "\ud800"}}
