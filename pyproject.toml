@@ -118,11 +118,7 @@ dependencies = [
     "connexion>=2.15.1,<3.0.0",
     # FOCA is bumped by hand, together with the base image in the
     # `Dockerfile` (`.github/dependabot.yml`).
-    # TODO: replace by FOCA 0.22.0 (`foca>=0.22.0,<0.23`) once released.
-    # TEMPORARY: a commit on FOCA's `dev` branch, to build on unreleased
-    # changes of FOCA 0.22 (#317); the release workflow refuses it
-    # (`scripts/check_release_pins.py`)
-    "foca @ git+https://github.com/elixir-cloud-aai/foca@98bdf2d1d43e03c6c6eedda800651ca8d64a666f",
+    "foca>=0.22.0,<0.23",
     "gunicorn>=26.2.0,<27",
     # A dependency of Connexion; checks imported service info
     "jsonschema>=4,<5",

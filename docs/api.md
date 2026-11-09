@@ -392,7 +392,7 @@ and `FieldError`):
   "type": "https://foca.readthedocs.io/en/latest/problems/invalid-request/",
   "title": "Bad request",
   "status": 400,
-  "detail": "Invalid fields: #/url (scheme-not-allowed); #/environment (invalid-value)",
+  "detail": "'#/url': Must use one of these schemes: 'https'.; '#/environment': Must be one of: 'prod', 'test', 'dev', 'staging'.",
   "code": "invalid-request",
   "errors": [
     {
@@ -411,10 +411,19 @@ and `FieldError`):
 
 Each entry has a readable message (`detail`), the field (`pointer`, a JSON
 Pointer into the request body, or `parameter`, the name of a path or query
-parameter) and a stable `code`, which clients branch on. Neither the
-messages nor `detail` quote the rejected values, which may hold secrets
-(e.g., credentials in URLs); `detail` names the invalid fields by location
-and code. FOCA's schema validation reports generic codes (e.g., `required`,
+parameter) and a stable `code`, which clients branch on. The messages never
+quote the rejected values, which may hold secrets (e.g., credentials in
+URLs). `detail` is the reason of the rejection, as up to FOCA 0.21 (FOCA's
+`exceptions.validation_reasons`, set in the app's `config.yaml`): for the
+registry's own checks, the locations and messages of the invalid fields (as
+above), which don't quote the values either; for the schema validation, the
+validator's message, which may quote the rejected value (e.g., `'x' is not a
+'uri'`). So show the messages of `errors` at their fields, not `detail`. With
+`exceptions.validation_reasons: false` (e.g., in a [config
+overlay](configuration.md)), `detail` names the invalid fields by location
+and code instead, without values (e.g., `Invalid fields: #/url
+(scheme-not-allowed); #/environment (invalid-value)`); FOCA logs them that
+way in both cases. FOCA's schema validation reports generic codes (e.g., `required`,
 `too-long`, `invalid-format`, `pattern-mismatch`, `unknown-property`,
 `unknown-parameter`; see [FOCA's
 codes](https://foca.readthedocs.io/en/latest/problems/invalid-request/#codes)),

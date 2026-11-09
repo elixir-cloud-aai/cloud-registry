@@ -58,21 +58,49 @@ request checks change some responses, so check clients that rely on them:
   /services/types`, which ignored them.
 - `createdAt` and `updatedAt` that aren't date-times now return `400 Bad Request`
   for all users, instead of being ignored for users other than admins.
-- `400 Bad Request` responses to requests with invalid fields list all of them
-  in `errors`, each with a JSON Pointer (`pointer`) or parameter name
-  (`parameter`), a stable `code` and a message (see [Errors](api.md#errors)),
-  with the problem type and `code` `invalid-request`. Their `detail` names the
-  invalid fields by location and code (e.g., `Invalid fields: #/url
-  (scheme-not-allowed)`) instead of describing the first one, and neither the
-  responses nor the logs quote the rejected values. Clients that show or parse
-  `detail` should show the messages of `errors` at their fields instead.
-  Bodies that aren't JSON or have unpaired surrogates get a fixed `detail`
-  (`The request is malformed.`), without `errors`.
+- Some `400 Bad Request` responses have another `detail`: URLs that aren't valid
+  URIs (without scheme, or with whitespace) get FOCA's message, which quotes the
+  value (and is logged at `DEBUG` since FOCA 0.22, see below), so don't send
+  secrets in those fields, and unpaired surrogates in JSON bodies get one that
+  doesn't name the field.
 - FOCA checks the formats of responses too, so stored `date-time` and `uri` values
   must be valid, or reads of the service and `GET /services` return `500`. Requests
   can't store such values, and this version needs a fresh database, but if data got
   in around the API, the app logs an error on startup naming the services: correct
   or delete them in the database.
+
+**FOCA 0.22:** the app now builds on FOCA 0.22 (see [FOCA's migration
+guide](https://foca.readthedocs.io/en/v0.22.0/migration-0.22/)). Requests that
+fail the validation of the API specification keep the validator's reason as
+`detail` (`exceptions.validation_reasons`). Where the invalid fields are known,
+their responses gain the members `type` (FOCA's problem type, a URL ending in
+`/problems/invalid-request/`), `code` (`invalid-request`) and `errors`, which
+lists them; bodies that aren't JSON or have unpaired surrogates get none of
+these. The logs change, so check log checks and alerts that rely on them:
+
+- Requests (`Incoming request`) and denials of access control (`Access
+  denied`) name the route of the request (e.g.,
+  `/ga4gh/registry/v1/services/{serviceId}`) instead of its path; the path is
+  logged at `DEBUG`.
+- Rejected requests are logged by the locations and codes of their invalid
+  fields (e.g., `Request rejected: #/url (invalid-format)`) instead of the
+  validator's reason (otherwise by the mapped `detail`, e.g., `The request is
+  malformed.`); the reason is logged at `DEBUG` only, so rejected values are no
+  longer logged at `INFO`.
+- FOCA warns once per worker of what it deprecates ahead of its release on
+  ASGI, e.g., of the werkzeug classes in the app's exception map.
+
+**Invalid fields:** requests that the registry's own checks reject (e.g., URLs
+with user info or schemes their field doesn't allow, environments, unregistered
+types, identifiers that can't be stored in roles) now get the same `400 Bad
+Request` as those that fail the schema validation: all invalid fields in
+`errors`, each with a JSON Pointer (`pointer`) or parameter name
+(`parameter`), a stable `code` and a message, with the problem type and `code`
+`invalid-request` (see [Errors](api.md#errors)). Their `detail` lists the
+locations and messages of all invalid fields (e.g., `'#/url': Must use one of
+these schemes: 'https'.`) instead of describing the first one. Clients that
+show or parse `detail` should show the messages of `errors` at their fields
+instead.
 
 **Service URLs:** a `url` with leading or trailing spaces now returns
 `400 Bad Request` instead of being stored, so remove the spaces from what you

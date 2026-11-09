@@ -394,12 +394,16 @@ exceptions:
     mapping: cloud_registry.exceptions.exceptions
     media_type: application/json
     # Requests rejected by Connexion's validation (e.g., of the schema) and by
-    # the app's own checks of fields get their invalid fields in `errors`,
-    # with `detail` naming them by location and code, without the rejected
-    # values (`validation_reasons` is off, FOCA's default since 0.22); FOCA's
-    # default since 0.18, set explicitly, as clients rely on it (see Errors
-    # in `docs/api.md`)
+    # the app's own checks of fields get their invalid fields in `errors`;
+    # FOCA's default since 0.18, set explicitly, as clients rely on it (see
+    # Errors in `docs/api.md`)
     validation_details: True
+    # ... and the reason as `detail`, as up to FOCA 0.21: the validator's,
+    # which may quote rejected values, for the schema validation; the names
+    # and messages of the invalid fields, which don't, for the app's own
+    # checks. FOCA 0.22's default (off) names the invalid fields by location
+    # and code instead (cf. `tests/test_validation_reasons.py`)
+    validation_reasons: True
 
 custom:
     access_control:

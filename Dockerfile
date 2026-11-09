@@ -4,18 +4,13 @@
 ## image doesn't contain it. Pinned by digest; Dependabot updates the tag and
 ## digest together. CI's `push` job exports the build requirements with this
 ## image too (`.github/workflows/ci.yml`), as the `build` stage below does
-FROM ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0 AS uv
+FROM ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490 AS uv
 
 ##### BASE IMAGE #####
 ## Pinned by digest, so that rebuilds (e.g., of a release) use the same base
 ## image; Dependabot updates the tag and digest together
 ## (`.github/dependabot.yml`)
-## TODO: replace by the release image `elixircloud/foca:0.22.0-py3.13` once
-## FOCA 0.22.0 is released. TEMPORARY: FOCA's development image built from
-## the commit that `pyproject.toml` pins; dated tags move with later commits
-## of the day, so only the digest identifies the image
-## FOCA commit: 98bdf2d1d43e03c6c6eedda800651ca8d64a666f
-FROM elixircloud/foca:20261107-py3.13@sha256:24fdc2af3d698a86221a6078a1b75b30af8044e4ea7bce6b0fafa7306eda4656 AS base
+FROM elixircloud/foca:0.22.0-py3.13@sha256:bf02db1195d60940dd3b29e53ce4757854155e258f35199e28d778cbf6128f9a AS base
 
 ##### BUILD #####
 ## Build the app's wheel, in a stage of its own, so that the image doesn't
