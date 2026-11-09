@@ -60,8 +60,9 @@ request checks change some responses, so check clients that rely on them:
   for all users, instead of being ignored for users other than admins.
 - Some `400 Bad Request` responses have another `detail`: URLs that aren't valid
   URIs (without scheme, or with whitespace) get FOCA's message, which quotes the
-  value and is logged too, so don't send secrets in those fields, and unpaired surrogates in JSON bodies get one that doesn't name the
-  field.
+  value (and is logged at `DEBUG` since FOCA 0.22, see below), so don't send
+  secrets in those fields, and unpaired surrogates in JSON bodies get one that
+  doesn't name the field.
 - FOCA checks the formats of responses too, so stored `date-time` and `uri` values
   must be valid, or reads of the service and `GET /services` return `500`. Requests
   can't store such values, and this version needs a fresh database, but if data got
