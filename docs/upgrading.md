@@ -72,9 +72,11 @@ request checks change some responses, so check clients that rely on them:
 **FOCA 0.22:** the app now builds on FOCA 0.22 (see [FOCA's migration
 guide](https://foca.readthedocs.io/en/v0.22.0/migration-0.22/)). Requests that
 fail the validation of the API specification keep the validator's reason as
-`detail` (`exceptions.validation_reasons`), and their responses gain the members
-`type`, `code` (both `invalid-request`) and `errors`, which lists the invalid
-fields. The logs change, so check log checks and alerts that rely on them:
+`detail` (`exceptions.validation_reasons`). Where the invalid fields are known,
+their responses gain the members `type` (FOCA's problem type, a URL ending in
+`/problems/invalid-request/`), `code` (`invalid-request`) and `errors`, which
+lists them; bodies that aren't JSON or have unpaired surrogates get none of
+these. The logs change, so check log checks and alerts that rely on them:
 
 - Requests (`Incoming request`) and denials of access control (`Access
   denied`) name the route of the request (e.g.,
@@ -82,7 +84,8 @@ fields. The logs change, so check log checks and alerts that rely on them:
   logged at `DEBUG`.
 - Rejected requests are logged by the locations and codes of their invalid
   fields (e.g., `Request rejected: #/url (invalid-format)`) instead of the
-  validator's reason, which is logged at `DEBUG` only, so rejected values are no
+  validator's reason (otherwise by the mapped `detail`, e.g., `The request is
+  malformed.`); the reason is logged at `DEBUG` only, so rejected values are no
   longer logged at `INFO`.
 - FOCA warns once per worker of what it deprecates ahead of its release on
   ASGI, e.g., of the werkzeug classes in the app's exception map.
