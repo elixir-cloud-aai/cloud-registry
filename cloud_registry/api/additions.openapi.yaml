@@ -1753,7 +1753,8 @@ components:
             - `scheme-not-allowed`: the URL uses a scheme that its field
               doesn't allow, e.g., `http` for service URLs (see
               `registrationRules` in `GET /service-info`), or other schemes
-              than `http`, `https` (and `mailto` for `contactUrl`) for links.
+              than `http`, `https` for links (and `mailto` for `contactUrl`)
+              and the `url` of verifications.
             - `invalid-value`: the environment is not one of those the
               deployment allows (`environment`, see `registrationRules` in
               `GET /service-info`).

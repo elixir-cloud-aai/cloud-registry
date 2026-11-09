@@ -377,11 +377,15 @@ field, without validation rules of their own. That holds both for fields that
 don't match the API specification (e.g., missing or unknown fields, values
 that are too long, or don't match the `date-time` or `uri` format of their
 field) and for those that the registry's own checks reject (e.g., URLs,
-schemes, environments). All invalid fields of a request are listed together,
-those of the body first, then the parameters (e.g., query parameters that an
+schemes, environments). The invalid fields that the checks find are listed
+together, those of the body first, then the parameters (e.g., query parameters that an
 operation doesn't declare, on all operations, such as `GET
 /services/{serviceId}?page=1` and `GET /services?x=1`); the registry's own
-checks run once a request matches the specification. The format is that of
+checks run once a request matches the specification. Conflicts found first
+(e.g., the [limit of unused types](#service-types), or a pending service) are
+reported instead, as `409 Conflict`, and the address of
+[imports](#importing-service-info) is reported at its first invalid part. The
+format is that of
 FOCA's [invalid
 requests](https://foca.readthedocs.io/en/latest/problems/invalid-request/)
 (RFC 9457), declared in the API specification (schemas `InvalidRequestError`
@@ -432,7 +436,7 @@ the registry's own checks these:
 | Code | Invalid field |
 |---|---|
 | `invalid-url` | the URL is invalid, e.g., has no host, user info, whitespace, or characters that URLs don't allow unencoded; `detail` says why (`url`, `contactUrl`, `documentationUrl`, `organization.url` of registrations, `url` of [verifications](#verified-services), `serviceInfoUrl` of [imports](#importing-service-info)) |
-| `scheme-not-allowed` | the URL uses a scheme that its field doesn't allow, e.g., `http` for service URLs (see [Service URL schemes](configuration.md#service-url-schemes)), or other schemes than `http` and `https` (and `mailto` for `contactUrl`) for links |
+| `scheme-not-allowed` | the URL uses a scheme that its field doesn't allow, e.g., `http` for service URLs (see [Service URL schemes](configuration.md#service-url-schemes)), or other schemes than `http` and `https` for links (and `mailto` for `contactUrl`) and the `url` of [verifications](#verified-services) |
 | `invalid-value` | the environment isn't one of those the deployment allows (`environment`; see [Service environments](configuration.md#service-environments)) |
 | `invalid-format` | a timestamp isn't an RFC 3339 date-time (`createdAt`, `updatedAt`; see [Timestamps](#timestamps)); FOCA's schema validation reports most of these first, with the same code |
 | `unregistered-type` | the service type isn't registered, and the user may not add types (`type`; see [Service types](#service-types)) |
