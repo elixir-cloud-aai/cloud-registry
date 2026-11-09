@@ -955,7 +955,8 @@ for all changes; for Helm releases:
   `import-service-info`, `owners-sync-services`, `maintainers-sync-services`,
   `get-service-sync`, `list-syncs`, `list-notifications` and
   `dismiss-notifications`, or imports, syncs and notifications return
-  `403 Forbidden`.
+  `403 Forbidden` (for the read rules `get-service-sync` and `list-syncs`, only
+  where login is required for reads).
 - **Going back:** `helm rollback` needs the database of the earlier version, as
   it was.
 

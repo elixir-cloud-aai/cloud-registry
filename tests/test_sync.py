@@ -1516,14 +1516,11 @@ def test_settings() -> None:
     for hours in (0, -1, 0.5, 8761, 1e9, float("inf"), float("nan")):
         with pytest.raises(ValueError):
             ServiceInfoConfig(sync_interval_hours=hours)
-    for hours in (MIN_SYNC_INTERVAL_HOURS, MAX_SYNC_INTERVAL_HOURS):
+    for hours in (MIN_SYNC_INTERVAL_HOURS, MAX_SYNC_INTERVAL_HOURS, 1, 8760):
         assert ServiceInfoConfig(sync_interval_hours=hours).sync_interval_hours == hours
-
-
-def test_interval_bounds() -> None:
-    """The bounds are an hour and a year (365 days)."""
-    assert MIN_SYNC_INTERVAL_HOURS == 1
-    assert MAX_SYNC_INTERVAL_HOURS == 8760
+    for hours in (0.9999, 8760.0001):
+        with pytest.raises(ValueError):
+            ServiceInfoConfig(sync_interval_hours=hours)
 
 
 def test_status_with_given_time(app: App) -> None:

@@ -464,7 +464,7 @@ custom:
             # default, only for networks whose services users may probe), how
             # often each user may have service info fetched per hour (`429`
             # above), whether services can be synced with their service info,
-            # and the time between syncs of a service, in hours
+            # and the time between syncs of a service, in hours (1 to 8760)
             service_info:
                 private_networks: []
                 fetches_per_hour: 30

@@ -118,7 +118,9 @@ sync=True, sync_interval_hours=24.0)
     sync: bool = True
     sync_interval_hours: Annotated[
         float,
-        Field(ge=MIN_SYNC_INTERVAL_HOURS, le=MAX_SYNC_INTERVAL_HOURS, allow_inf_nan=False),
+        Field(
+            ge=MIN_SYNC_INTERVAL_HOURS, le=MAX_SYNC_INTERVAL_HOURS, allow_inf_nan=False
+        ),
     ] = 24.0
 
     @field_validator("private_networks")

@@ -391,22 +391,28 @@ Types become unused when their services are deleted or change their type
 (except for versions that [syncs](api.md#synced-services) leave behind), so
 the limit bounds how many types each user can add without services (users
 can still leave more types unused by registering services with new types and
-deleting them, one registration per type). Versions that syncs leave behind
-don't count for anybody, so that services that release new versions keep
-syncing: in mode `open`, an owner who changes the version in the service info
-of their service before each sync can leave one type behind per sync, that is,
-per service and interval (`sync_interval_hours`) for the syncs of the app, and up
-to `fetches_per_hour` (default: 30) per hour and user for syncs that users start
-(`PUT /services/{serviceId}/sync`). In mode `moderated`, new versions from syncs
-are pending until an admin approves them, and pending ones still count; in mode
-`controlled`, or with the limit `0`, syncs don't add types. Set `0` to let only
-admins add
+deleting them, one registration per type). Set `0` to let only admins add
 types: users other than admins can then only register services with types
 that are registered already, as in mode `controlled`. Concurrent requests of
 a user can exceed the limit by their number. Clients read the mode and the
 limit from the service info, rather than configuring them (see
 [Registration rules](api.md#registration-rules)), which gives the limit as
 `0` in mode `controlled`, whatever its value.
+
+A version of a type that a [sync](api.md#synced-services) leaves behind stops
+counting for the user the service counts for, if that user added it and no other
+service has it, so that services that release new versions keep syncing
+(versions that other users added still count for them). An owner can therefore
+leave types behind by changing the version in the service info of their service
+before each sync:
+
+- in mode `open`, one per sync: per service and interval
+  (`sync_interval_hours`) for the syncs of the app, and up to `fetches_per_hour`
+  (default: 30) per hour and user for syncs that users start (`PUT
+  /services/{serviceId}/sync`);
+- in mode `moderated`, new versions from syncs are pending until an admin
+  approves them, and pending ones still count;
+- in mode `controlled`, or with the limit `0`, syncs don't add types.
 
 The limit is per user, so accounts that anyone can create (e.g., at an open
 identity provider) can still add types, and pending types in mode
