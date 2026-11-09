@@ -106,8 +106,13 @@ def test_registration_field(
     service: dict[str, Any],
     expected: tuple[str, str],
 ) -> None:
-    """Invalid fields of registrations are reported, without their values."""
-    assert invalid_fields(write(service), "secret") == [expected]
+    """Invalid fields of registrations are reported, without their values.
+
+    Neither in `errors` nor in `detail` (cf. `tests/test_validation_reasons.py`).
+    """
+    response = write(service)
+    assert invalid_fields(response, "secret") == [expected]
+    assert "secret" not in response.get_data(as_text=True)
     assert client.get(f"{BASE}/services").get_json() == []
 
 
@@ -126,9 +131,12 @@ def test_registration_all_fields(write: Write) -> None:
         ("#/documentationUrl", "scheme-not-allowed"),
         ("#/environment", "invalid-value"),
     ]
+    # the locations and messages of all fields (`exceptions.validation_reasons`)
     assert response.get_json()["detail"] == (
-        "Invalid fields: #/url (scheme-not-allowed); #/contactUrl (invalid-url); "
-        "#/documentationUrl (scheme-not-allowed); #/environment (invalid-value)"
+        "'#/url': Must use one of these schemes: 'https'.; "
+        "'#/contactUrl': Must not contain user info.; "
+        "'#/documentationUrl': Must use one of these schemes: 'http', 'https'.; "
+        "'#/environment': Must be one of: 'prod', 'test', 'dev', 'staging'."
     )
 
 

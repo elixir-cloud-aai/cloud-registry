@@ -272,8 +272,9 @@ def reject(exc: HTTPException) -> Response:
     `InvalidFieldsProblem`, so that FOCA responds with them like with those
     of its schema validation: `400`, with the problem type and code
     `invalid-request`, the fields in `errors`, and a `detail` that names
-    them by location and code (cf. FOCA's `exceptions.validation_reasons`),
-    and logs them.
+    them by location and message (FOCA's default description of the
+    problem, with `exceptions.validation_reasons` as in `config.yaml`) or
+    by location and code (without it), and logs them.
 
     Args:
         exc: werkzeug exception with a request-specific description.

@@ -977,13 +977,14 @@ def test_service_surrogate(
     """Services with unpaired surrogates in any string are rejected (`400`).
 
     Such strings can't be stored. FOCA rejects such bodies before the app,
-    without naming the field (nor invalid fields).
+    without naming the field (nor invalid fields); `detail` is its reason
+    (`exceptions.validation_reasons`).
     """
     response = getattr(client, method)(
         f"{BASE}/services{path}", json=service, headers=admin_headers
     )
     _assert_error(response, 400)
-    assert response.get_json()["detail"] == "The request is malformed."
+    assert "unpaired surrogates" in response.get_json()["detail"]
     assert "errors" not in response.get_json()
     assert client.get(f"{BASE}/services").get_json() == []
 
@@ -2380,7 +2381,7 @@ def test_validation_error_fields(
 ) -> None:
     """Requests rejected by the schema validation return `400`, with all fields.
 
-    By location and code, without the rejected values.
+    By location and code, without the rejected values in `errors`.
     """
     path = request_kwargs.pop("path")
     response = client.open(f"{BASE}{path}", headers=admin_headers, **request_kwargs)
@@ -2391,7 +2392,10 @@ def test_validation_error_fields(
 def test_validation_error_not_json(
     client: FlaskClient, admin_headers: dict[str, str]
 ) -> None:
-    """Bodies that aren't JSON return `400`, without invalid fields."""
+    """Bodies that aren't JSON return `400`, without invalid fields.
+
+    `detail` is the reason (`exceptions.validation_reasons`).
+    """
     response = client.post(
         f"{BASE}/services",
         headers=admin_headers,
@@ -2401,7 +2405,7 @@ def test_validation_error_not_json(
     _assert_error(response, 400)
     assert response.content_type == ERROR_MEDIA_TYPE
     assert response.get_json()["title"] == "Bad request"
-    assert response.get_json()["detail"] == "The request is malformed."
+    assert "Request body is not valid JSON" in response.get_json()["detail"]
     assert "errors" not in response.get_json()
 
 
@@ -2457,14 +2461,21 @@ def test_organization_extra_fields(
 def test_validation_error_large_body(
     client: FlaskClient, admin_headers: dict[str, str]
 ) -> None:
-    """Large rejected values are not returned, only their fields."""
+    """Reasons quoting large rejected values are shortened.
+
+    The field name is kept (`exceptions.validation_reasons`); the invalid
+    fields don't quote the value.
+    """
     response = client.post(
         f"{BASE}/services", headers=admin_headers, json=_service(name="a" * 900_000)
     )
     assert invalid_fields(response, "a" * 100) == [("#/name", "too-long")]
     with client.application.app_context():
         max_length = get_config().exceptions.max_detail_length
-    assert len(response.get_data()) < max_length
+    detail = response.get_json()["detail"]
+    assert len(detail) == max_length
+    assert "…" in detail
+    assert detail.endswith("is too long - 'name'")
 
 
 def test_validation_error_logs_bounded(

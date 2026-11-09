@@ -1681,8 +1681,12 @@ components:
         request is listed in `errors`, with a JSON Pointer to it or the name
         of the parameter, a stable code and a readable message, so that
         clients can show each message at its field. Messages never quote the
-        rejected values. `detail` names the invalid fields by location and
-        code (e.g., `Invalid fields: #/url (scheme-not-allowed)`). Other
+        rejected values. `detail` is the reason of the rejection: for the
+        registry's own checks, the locations and messages of the invalid
+        fields; for the schema validation, the validator's message, which may
+        quote the rejected value (or, if the deployment turns off FOCA's
+        `exceptions.validation_reasons`, the locations and codes of the
+        invalid fields, e.g., `Invalid fields: #/url (scheme-not-allowed)`). Other
         `400` responses (e.g., for bodies that aren't JSON) have neither
         `errors` nor `code`. See
         https://cloud-registry.readthedocs.io/en/latest/api/#errors.
