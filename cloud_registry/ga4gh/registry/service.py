@@ -1,28 +1,28 @@
 """Controller for registering services."""
 
-from collections.abc import Collection
+from collections.abc import Collection, Iterable
 from copy import deepcopy
 import json
 import logging
 from typing import Any
 
 from foca import get_custom_config
+from foca.errors import FieldError, json_pointer
 from foca.utils.logging import escape_log_value
 from foca.utils.misc import generate_id
 from foca.utils.service_info import is_uri
-from foca.utils.urls import (
-    HTTP_SCHEMES,
-    InvalidURL,
-    check_url,
-    check_url_fields,
-)
+from foca.utils.urls import HTTP_SCHEMES, InvalidURL, check_url
 from foca.utils.urls import normalize_url as normalize_http_url
 from pymongo.errors import DuplicateKeyError
 
 from cloud_registry.exceptions import (
-    BadRequest,
+    INVALID_FORMAT,
+    INVALID_URL,
+    INVALID_VALUE,
+    SCHEME_NOT_ALLOWED,
     CodedConflict,
     InternalServerError,
+    InvalidFields,
     NotFound,
 )
 from cloud_registry.service_models.custom_config import CustomConfig
@@ -69,7 +69,7 @@ PROJECTION = {
     SYNC: False,
 }
 # Fields with URLs of links, as paths of keys, with the schemes they allow
-# (cf. `foca.utils.urls.check_url_fields()`): contact URLs can be email
+# (cf. `link_errors()`): contact URLs can be email
 # addresses (RFC 6068), as in the GA4GH service info specification
 LINK_FIELDS: dict[str, frozenset[str]] = {
     "contactUrl": HTTP_SCHEMES | {"mailto"},
@@ -88,6 +88,13 @@ DATE_TIME_FIELDS = (CREATED, UPDATED)
 # (cf. the pattern of `serviceId` of `PUT`, and of `ServiceRename`, in
 # `additions.openapi.yaml`)
 RESERVED_IDS = frozenset({".", "..", "types"})
+# Detail of invalid fields with identifiers that can't be stored in the
+# policy rules of the roles on services (code `unusable-id`; cf.
+# `cloud_registry.ga4gh.registry.rename.check_id()`)
+UNUSABLE_ID_DETAIL = (
+    "Can't be used for services: must not contain commas or line breaks, and "
+    "must not be too long."
+)
 
 
 class HiddenDuplicateService(CodedConflict):
@@ -144,11 +151,81 @@ class SyncUrlLocked(CodedConflict):
         )
 
 
-class InvalidService(BadRequest):
-    """The URL or API type of a service, or a link, is missing or invalid."""
+class InvalidService(InvalidFields):
+    """The URL or API type of a service, or another field, is invalid.
+
+    Has the invalid fields (cf. `cloud_registry.exceptions.InvalidFields`),
+    with pointers into the service, unless it is missing its URL or type,
+    or has strings that can't be stored (cf. `check_strings()`), which the
+    schema of requests rejects before.
+    """
 
 
-def normalize_url(url: str) -> str:
+# Name of URLs in the messages of FOCA's URL checks, which start with it (e.g.,
+# `URLs must not contain user info.`) and quote values, if at all, after a
+# colon (e.g., `URLs need a valid host: '...'.`)
+_URL_NAME = "URLs"
+# Reasons of FOCA's URL checks whose details are worded for a single URL
+_URL_REASONS = {
+    "must be strings": "Must be a string.",
+    "must be valid URLs": "Must be a valid URL.",
+}
+# Start of the reason of FOCA's URL checks for schemes that aren't allowed
+_SCHEME_REASON = "must use one of these schemes"
+
+
+def _url_error(exc: InvalidURL, schemes: Collection[str], pointer: str) -> FieldError:
+    """Convert an error of FOCA's URL checks to an invalid field.
+
+    Args:
+        exc: Error of a check with the name `_URL_NAME`.
+        schemes: Allowed schemes.
+        pointer: Pointer to the field of the URL.
+
+    Returns:
+        The invalid field: `scheme-not-allowed`, naming the allowed schemes,
+        or `invalid-url`, with the reason of the check up to its first colon,
+        so without the values it may quote (e.g., `Needs a valid host.`).
+    """
+    reason = str(exc).removeprefix(f"{_URL_NAME} ").split(":", 1)[0].rstrip(".")
+    if reason.startswith(_SCHEME_REASON):
+        allowed = ", ".join(f"'{scheme}'" for scheme in sorted(schemes))
+        return FieldError(
+            detail=f"Must use one of these schemes: {allowed}.",
+            code=SCHEME_NOT_ALLOWED,
+            pointer=pointer,
+        )
+    detail = _URL_REASONS.get(reason)
+    if detail is None:
+        if reason.startswith("need "):
+            reason = f"needs {reason.removeprefix('need ')}"
+        detail = f"{reason[:1].upper()}{reason[1:]}."
+    return FieldError(detail=detail, code=INVALID_URL, pointer=pointer)
+
+
+def url_errors(url: object, schemes: Collection[str], *path: str) -> list[FieldError]:
+    """Check a URL as written (cf. `foca.utils.urls.check_url()`).
+
+    Args:
+        url: URL.
+        schemes: Allowed schemes, lowercase.
+        *path: Keys of the path to the URL in the checked object, for the
+            pointer of the error.
+
+    Returns:
+        Nothing for a valid URL with an allowed scheme; otherwise, its error:
+        `scheme-not-allowed` for a URL with a scheme that isn't allowed
+        (case-insensitive), `invalid-url` for other invalid URLs, saying
+        why. The details don't quote the URL.
+    """
+    try:
+        check_url(url, schemes=schemes, name=_URL_NAME)
+    except InvalidURL as exc:
+        return [_url_error(exc, schemes, json_pointer(*path))]
+    return []
+
+
+def normalize_url(url: str, field: str = "url") -> str:
     """Normalize a service URL for comparisons.
 
     See `foca.utils.urls.normalize_url()`: common spellings are normalized,
@@ -157,93 +234,114 @@ def normalize_url(url: str) -> str:
 
     Args:
         url: Service URL.
+        field: Field of the URL in the checked object, for the error.
 
     Returns:
         Normalized URL.
 
     Raises:
-        InvalidService: The URL is invalid, or not an HTTP(S) URL.
+        InvalidService: The URL is invalid, or not an HTTP(S) URL (cf.
+            `url_errors()`).
     """
     try:
-        return normalize_http_url(url, name="Service URLs")
+        return normalize_http_url(url, name=_URL_NAME)
     except InvalidURL as exc:
-        raise InvalidService(str(exc)) from exc
-
-
-def check_url_scheme(url: str, schemes: Collection[str]) -> None:
-    """Check that a service URL is valid and uses one of the allowed schemes.
-
-    See `foca.utils.urls.check_url()`, which checks the whole URL, like
-    `normalize_url()`; for URLs that `normalize_url()` accepts, only the
-    scheme can fail the check.
-
-    Args:
-        url: Service URL.
-        schemes: Allowed schemes, lowercase (cf.
-            `custom.endpoints.services.url_schemes`).
-
-    Raises:
-        InvalidService: The URL is invalid, or its scheme is not one of
-            `schemes` (case-insensitive).
-    """
-    try:
-        check_url(url, schemes=schemes, name="Service URLs")
-    except InvalidURL as exc:
-        raise InvalidService(str(exc)) from exc
+        raise InvalidService(
+            field_errors=[_url_error(exc, HTTP_SCHEMES, json_pointer(field))]
+        ) from exc
 
 
 def check_strings(value: object, field: str = "") -> None:
     r"""Check that the strings of a request body can be stored.
 
     Unpaired surrogates (e.g., from JSON escapes like `\ud800`) can't be
-    encoded (UTF-8), so they fail when stored or logged.
+    encoded (UTF-8), so they fail when stored or logged. FOCA rejects request
+    bodies with them; other values (e.g., fetched service info) are checked
+    here.
 
     Args:
         value: Request body, or part of it.
-        field: Path of `value` in the body (e.g., `type.group`), for error
-            messages.
+        field: Path of `value` in the body, as dotted keys (e.g.,
+            `type.group`), for error messages.
+
+    Raises:
+        InvalidService: A string, or a key, has unpaired surrogates (with
+            the invalid field, code `invalid-value`, unless it's `value`
+            itself without a `field`).
+    """
+    _check_strings(value, tuple(field.split(".")) if field else ())
+
+
+def _check_strings(value: object, path: tuple[str | int, ...]) -> None:
+    """Check that the strings of a value can be encoded (cf. `check_strings()`).
+
+    Args:
+        value: Request body, or part of it.
+        path: Keys and indices of `value` in the body.
 
     Raises:
         InvalidService: A string, or a key, has unpaired surrogates.
     """
     if isinstance(value, dict):
         for key, item in value.items():
-            check_strings(key, field=field)
-            check_strings(item, field=f"{field}.{key}" if field else str(key))
+            # keys are checked before they're used in paths
+            _check_strings(key, path)
+            _check_strings(item, (*path, key))
     elif isinstance(value, list):
         for index, item in enumerate(value):
-            check_strings(item, field=f"{field}[{index}]")
+            _check_strings(item, (*path, index))
     elif isinstance(value, str):
         try:
             value.encode()
         except UnicodeEncodeError as exc:
-            where = f"'{field}'" if field else "The request body"
+            if not path:
+                raise InvalidService(
+                    "The request body must not contain unpaired surrogates."
+                ) from exc
+            field = "".join(
+                f"[{part}]" if isinstance(part, int) else f".{part}" for part in path
+            ).removeprefix(".")
             raise InvalidService(
-                f"{where} must not contain unpaired surrogates."
+                f"'{field}' must not contain unpaired surrogates.",
+                field_errors=[
+                    FieldError(
+                        detail="Must not contain unpaired surrogates.",
+                        code=INVALID_VALUE,
+                        pointer=json_pointer(*path),
+                    )
+                ],
             ) from exc
 
 
-def check_date_times(data: dict[str, Any]) -> None:
+def date_time_errors(data: dict[str, Any]) -> list[FieldError]:
     """Check that the timestamps of a service are RFC 3339 date-times.
+
+    FOCA's schema validation (`format: date-time`) rejects most invalid
+    timestamps of requests first; this check also covers those it lets
+    through, and values that aren't requests (e.g., fetched service info).
 
     Args:
         data: Service metadata.
 
-    Raises:
-        InvalidService: A timestamp (cf. `DATE_TIME_FIELDS`) is not an RFC
-            3339 date-time.
+    Returns:
+        An error (`invalid-format`) per timestamp (cf. `DATE_TIME_FIELDS`)
+        that is not an RFC 3339 date-time.
     """
-    for field in DATE_TIME_FIELDS:
-        if field in data and not (
-            isinstance(data[field], str) and is_date_time(data[field])
-        ):
-            raise InvalidService(
-                f"'{field}' must be an RFC 3339 date-time (e.g., "
-                "'2019-06-04T12:58:19Z')."
-            )
+    return [
+        FieldError(
+            detail="Must be an RFC 3339 date-time (e.g., '2019-06-04T12:58:19Z').",
+            code=INVALID_FORMAT,
+            pointer=json_pointer(field),
+        )
+        for field in DATE_TIME_FIELDS
+        if field in data
+        and not (isinstance(data[field], str) and is_date_time(data[field]))
+    ]
 
 
-def check_environment(data: dict[str, Any], environments: list[str]) -> None:
+def environment_errors(
+    data: dict[str, Any], environments: list[str]
+) -> list[FieldError]:
     """Check that the environment of a service is allowed.
 
     Args:
@@ -251,34 +349,49 @@ def check_environment(data: dict[str, Any], environments: list[str]) -> None:
         environments: Allowed values (cf.
             `custom.endpoints.services.environments`); any if empty.
 
-    Raises:
-        InvalidService: The service has an environment (`environment`) that
-            is not one of `environments` (case-sensitive).
+    Returns:
+        An error (`invalid-value`) if the service has an environment
+        (`environment`) that is not one of `environments` (case-sensitive).
     """
     if not environments or "environment" not in data:
-        return
-    if data["environment"] not in environments:
-        allowed = ", ".join(f"'{value}'" for value in environments)
-        raise InvalidService(f"'environment' must be one of: {allowed}.")
+        return []
+    if data["environment"] in environments:
+        return []
+    allowed = ", ".join(f"'{value}'" for value in environments)
+    return [
+        FieldError(
+            detail=f"Must be one of: {allowed}.",
+            code=INVALID_VALUE,
+            pointer=json_pointer("environment"),
+        )
+    ]
 
 
-def check_links(data: dict[str, Any]) -> None:
+def link_errors(data: dict[str, Any]) -> list[FieldError]:
     """Check the URLs of the links of a service (cf. `LINK_FIELDS`).
 
     Links are not compared, so not normalized, but checked as written (cf.
-    `foca.utils.urls.check_url()`).
+    `url_errors()`). Missing links (also if a parent is missing or not an
+    object) are not checked; links set to `None` are rejected.
 
     Args:
         data: Service metadata.
 
-    Raises:
-        InvalidService: A URL is invalid, or uses a scheme the field doesn't
-            allow; the message names the field.
+    Returns:
+        An error per link that is invalid or uses a scheme its field doesn't
+        allow.
     """
-    try:
-        check_url_fields(data, LINK_FIELDS)
-    except InvalidURL as exc:
-        raise InvalidService(str(exc)) from exc
+    errors = []
+    for field, schemes in LINK_FIELDS.items():
+        path = field.split(".")
+        value: object = data
+        for key in path:
+            if not isinstance(value, dict) or key not in value:
+                break
+            value = value[key]
+        else:
+            errors.extend(url_errors(value, schemes, *path))
+    return errors
 
 
 def service_key(data: dict[str, Any]) -> str:
@@ -296,6 +409,26 @@ def service_key(data: dict[str, Any]) -> str:
     Raises:
         InvalidService: The URL or type is missing or invalid.
     """
+    url, group, artifact = _key_values(data)
+    return json.dumps(
+        [group.strip().casefold(), artifact.strip().casefold(), normalize_url(url)],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+def _key_values(data: dict[str, Any]) -> tuple[str, str, str]:
+    """Get the values that identify a service.
+
+    Args:
+        data: Service metadata.
+
+    Returns:
+        The URL, `type.group` and `type.artifact`.
+
+    Raises:
+        InvalidService: The URL or type is missing, or not strings.
+    """
     try:
         url, group, artifact = (
             data["url"],
@@ -306,11 +439,7 @@ def service_key(data: dict[str, Any]) -> str:
         raise InvalidService("Services need a URL and a type.") from exc
     if not all(isinstance(value, str) for value in (url, group, artifact)):
         raise InvalidService("Service URLs and types must be strings.")
-    return json.dumps(
-        [group.strip().casefold(), artifact.strip().casefold(), normalize_url(url)],
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
+    return url, group, artifact
 
 
 def service_exists(id: str) -> bool:
@@ -398,8 +527,17 @@ class RegisterService:
         self.sync = endpoint_conf.services.service_info.sync
         self.db_coll = get_collection("services")
 
-    def check(self) -> str:
+    def check(self, errors: Iterable[FieldError] = ()) -> str:
         """Check the values of the service, whatever else is registered.
+
+        All invalid fields are reported together: the URL (cf.
+        `url_errors()`), the links (cf. `link_errors()`), the timestamps (cf.
+        `date_time_errors()`) and the environment (cf.
+        `environment_errors()`).
+
+        Args:
+            errors: Invalid fields that other checks found (e.g., of the
+                service type), reported together with those of the service.
 
         Returns:
             Key of the service (cf. `service_key()`).
@@ -408,12 +546,19 @@ class RegisterService:
             InvalidService: Cf. `register_metadata()`.
         """
         check_strings(self.data)
-        key = service_key(self.data)
-        check_url_scheme(self.data["url"], schemes=self.url_schemes)
-        check_links(self.data)
-        check_date_times(self.data)
-        check_environment(self.data, environments=self.environments)
-        return key
+        # raises for a missing or invalid key (`url`, `type`), which the
+        # other checks need
+        _key_values(self.data)
+        found = [
+            *url_errors(self.data["url"], self.url_schemes, "url"),
+            *link_errors(self.data),
+            *date_time_errors(self.data),
+            *environment_errors(self.data, environments=self.environments),
+            *errors,
+        ]
+        if found:
+            raise InvalidService(field_errors=found)
+        return service_key(self.data)
 
     def validate(self) -> str:
         """Check the service, before it is registered.
@@ -478,10 +623,9 @@ class RegisterService:
 
         Raises:
             InvalidService: The URL or API type of the service, the URL of a
-                link, a timestamp (cf. `check_date_times()`) or a string (cf.
-                `check_strings()`) is invalid, or the scheme of the service
-                URL (cf. `check_url_scheme()`) or the environment (cf.
-                `check_environment()`) is not allowed.
+                link, a timestamp or a string (cf. `check_strings()`) is
+                invalid, or the scheme of the service URL or the environment
+                is not allowed (cf. `check()`).
             DuplicateService: Another service with the same URL and API type
                 is registered.
             InternalServerError: The service could not be registered within
@@ -702,9 +846,7 @@ def warn_environments() -> None:
         {"environment": {"$exists": True}},
         {"_id": False, "id": True, "environment": True},
     ):
-        try:
-            check_environment(service, environments=environments)
-        except InvalidService:
+        if environment_errors(service, environments=environments):
             ids.append(f"'{service['id']}'")
     if ids:
         logger.warning(
@@ -729,9 +871,7 @@ def warn_url_schemes() -> None:
     for service in get_collection("services").find(
         {}, {"_id": False, "id": True, "url": True}
     ):
-        try:
-            check_url_scheme(service["url"], schemes=schemes)
-        except InvalidService:
+        if url_errors(service["url"], schemes, "url"):
             ids.append(f"'{service['id']}'")
     if ids:
         logger.warning(

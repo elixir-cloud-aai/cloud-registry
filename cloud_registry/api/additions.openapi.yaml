@@ -183,9 +183,11 @@ paths:
       summary: Register service.
       description: |
         Create a service resource. Services are unique by URL and API type:
-        registering a service again returns `409`. Invalid URLs return `400`
-        (cf. `ExternalServiceRegister`), as do types that aren't registered
-        if the user may not add types (see `POST /services/types`). New
+        registering a service again returns `409`. Invalid fields return
+        `400`, all of them together (see `InvalidRequestError`), e.g.,
+        invalid URLs (cf. `ExternalServiceRegister`), environments that the
+        deployment doesn't allow, and types that aren't registered if the user
+        may not add types (see `POST /services/types`). New
         types count towards the user's limit of unused types (`409` if
         reached; see `POST /services/types`). Users other than admins may
         only have registered a limited number of the registered services
@@ -261,12 +263,14 @@ paths:
         '400':
           description: |
             The address doesn't end in `/service-info`, is invalid or has a
-            scheme that isn't allowed, or the service info doesn't pass the
-            checks of a registration (saying which field in `detail`).
+            scheme that isn't allowed (the invalid field `serviceInfoUrl` in
+            `errors`, see the schema `InvalidRequestError`), or the service
+            info doesn't pass the checks of a registration (saying which
+            field of the service info in `detail`, without `errors`).
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/InvalidRequestError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1528,11 +1532,15 @@ components:
     # `config.yaml`); the other error responses are those of the GA4GH
     # specification
     BadRequest:
-      description: 'Bad request ([RFC 7235](https://tools.ietf.org/html/rfc7235))'
+      description: |
+        The request is invalid. Requests with invalid fields get all of them
+        in `errors` (see the schema `InvalidRequestError`), both those that
+        don't match the schemas of the API specification and those that the
+        registry's own checks reject (e.g., URLs).
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Error'
+            $ref: '#/components/schemas/InvalidRequestError'
     Conflict:
       description: |
         The request conflicts with the current state of the resource; `code`
@@ -1666,6 +1674,121 @@ components:
                 - sync-unavailable
                 - sync-identity-mismatch
                 - conflict
+    InvalidRequestError:
+      description: |
+        Problem details of a `400 Bad Request` for a request with invalid
+        fields (RFC 9457), as FOCA sends them: every invalid field of the
+        request is listed in `errors`, with a JSON Pointer to it or the name
+        of the parameter, a stable code and a readable message, so that
+        clients can show each message at its field. Messages never quote the
+        rejected values. `detail` is the reason of the rejection: for the
+        registry's own checks, the locations and messages of the invalid
+        fields; for the schema validation, the validator's message, which may
+        quote the rejected value (or, if the deployment turns off FOCA's
+        `exceptions.validation_reasons`, the locations and codes of the
+        invalid fields, e.g., `Invalid fields: #/url (scheme-not-allowed)`). Other
+        `400` responses (e.g., for bodies that aren't JSON) have neither
+        `errors` nor `code`. See
+        https://cloud-registry.readthedocs.io/en/latest/api/#errors.
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          properties:
+            type:
+              type: string
+              description: |
+                Problem type of invalid requests:
+                `https://foca.readthedocs.io/en/latest/problems/invalid-request/`.
+            code:
+              type: string
+              description: Code of the problem type, `invalid-request`.
+              example: invalid-request
+            errors:
+              type: array
+              description: |
+                The invalid fields of the request, one entry per field (at
+                most 100): those of the body first, then the parameters.
+              items:
+                $ref: '#/components/schemas/FieldError'
+    FieldError:
+      description: |
+        Invalid field of a request, in the form of the example of RFC 9457,
+        section 3, with either `pointer` (a field of the body) or
+        `parameter`.
+      type: object
+      required:
+        - detail
+        - code
+      properties:
+        detail:
+          type: string
+          description: |
+            Readable message; never quotes the rejected value.
+          example: "Must use one of these schemes: 'https'."
+        pointer:
+          type: string
+          description: |
+            JSON Pointer (RFC 6901) to the field in the request body, as a
+            URI fragment, e.g., `#/organization/url`.
+          example: '#/url'
+        parameter:
+          type: string
+          description: |
+            Name of the invalid path or query parameter, e.g., `serviceId`.
+        code:
+          type: string
+          description: |
+            What is wrong with the field; unlike `detail`, codes are stable,
+            so clients branch on them. FOCA's schema validation reports
+            generic codes, e.g., `required`, `too-long`, `invalid-format`,
+            `pattern-mismatch` or `unknown-property` (see
+            https://foca.readthedocs.io/en/latest/problems/invalid-request/).
+            The registry's own checks report these:
+
+            - `invalid-url`: the URL is invalid, e.g., has no host, user
+              info, whitespace, or characters that URLs don't allow unencoded
+              (`url`, `contactUrl`, `documentationUrl`, `organization.url` of
+              registrations, `url` of verifications, `serviceInfoUrl` of
+              imports); `detail` says why.
+            - `scheme-not-allowed`: the URL uses a scheme that its field
+              doesn't allow, e.g., `http` for service URLs (see
+              `registrationRules` in `GET /service-info`), or other schemes
+              than `http`, `https` for links (and `mailto` for `contactUrl`)
+              and the `url` of verifications.
+            - `invalid-value`: the environment is not one of those the
+              deployment allows (`environment`, see `registrationRules` in
+              `GET /service-info`).
+            - `invalid-format`: a timestamp is not an RFC 3339 date-time
+              (`createdAt`, `updatedAt`); FOCA's schema validation reports
+              most of these first, with the same code.
+            - `unregistered-type`: the service type is not registered, and
+              the user may not add types (`type`, see `GET /services/types`).
+            - `unusable-id`: the identifier can't be used for services, as
+              it can't be stored in roles, e.g., with commas or line breaks
+              (`serviceId` of `PUT /services/{serviceId}`, `id` of `POST
+              /services/{serviceId}/rename`).
+            - `not-service-info-url`: the address doesn't end in
+              `/service-info`, or has a query or fragment (`serviceInfoUrl`
+              of `POST /services/import`).
+            - `path-not-normalized`: the path of the address isn't in its
+              normal form, e.g., has repeated slashes or dot segments
+              (`serviceInfoUrl` of `POST /services/import`).
+            - `too-long`: the address is too long (`serviceInfoUrl` of `POST
+              /services/import`).
+
+            Further codes may be added (so the codes are an extensible enum,
+            not a closed one); show `detail` for unknown ones.
+          example: scheme-not-allowed
+          x-extensible-enum:
+            - invalid-url
+            - scheme-not-allowed
+            - invalid-value
+            - invalid-format
+            - unregistered-type
+            - unusable-id
+            - not-service-info-url
+            - path-not-normalized
+            - too-long
     ServiceId:
       description: Service identifier.
       type: string

@@ -487,9 +487,11 @@ def test_release_after_expiry(
         expire(app)
         raise RuntimeError("failed")
 
-    monkeypatch.setattr(invitations_module, "put_role", expire_then_fail)
-    assert accept(client, token).status_code == 500
-    monkeypatch.undo()
+    # undone on leaving the context only, unlike `monkeypatch.undo()`, which
+    # also undid the mocks of the fixtures (e.g., of the identity provider)
+    with monkeypatch.context() as patch:
+        patch.setattr(invitations_module, "put_role", expire_then_fail)
+        assert accept(client, token).status_code == 500
     (listed,) = invitations(client, service_id)
     assert listed["status"] == "expired"
     assert "accepted" not in stored(app)[0]

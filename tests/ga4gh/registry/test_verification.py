@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from flask import Flask, Response
+from foca.errors import InvalidFieldsProblem
 from pymongo.collection import Collection
 import pytest
 
@@ -202,10 +203,14 @@ def test_putServiceVerification_invalid_url(
     """Invalid URLs of the service checked are rejected, saying why."""
     _insert(services)
     checked = {**CHECKED, "url": "beacon.example.org/api"}
-    with unit_app.test_request_context():
-        res = _problem(putServiceVerification(MOCK_ID, verification=checked))
-    assert res.status_code == 400
-    assert "need a scheme and a host" in res.get_json()["detail"]
+    with (
+        unit_app.test_request_context(),
+        pytest.raises(InvalidFieldsProblem) as exc_info,
+    ):
+        putServiceVerification(MOCK_ID, verification=checked)
+    [error] = exc_info.value.field_errors
+    assert (error.pointer, error.code) == ("#/url", "invalid-url")
+    assert error.detail == "Needs a scheme and a host."
     assert VERIFIED not in _stored(services)
 
 
@@ -215,10 +220,14 @@ def test_putServiceVerification_url_spaces(
     """URLs with surrounding spaces are invalid, not merely another URL."""
     _insert(services)
     checked = {**CHECKED, "url": f" {CHECKED['url']}"}
-    with unit_app.test_request_context():
-        res = _problem(putServiceVerification(MOCK_ID, verification=checked))
-    assert res.status_code == 400
-    assert "must not contain whitespace" in res.get_json()["detail"]
+    with (
+        unit_app.test_request_context(),
+        pytest.raises(InvalidFieldsProblem) as exc_info,
+    ):
+        putServiceVerification(MOCK_ID, verification=checked)
+    [error] = exc_info.value.field_errors
+    assert (error.pointer, error.code) == ("#/url", "invalid-url")
+    assert error.detail.startswith("Must not contain whitespace")
     assert VERIFIED not in _stored(services)
 
 

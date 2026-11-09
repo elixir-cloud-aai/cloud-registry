@@ -48,7 +48,13 @@ from foca.utils.logging import escape_log_value
 from foca.utils.urls import get_public_url
 from pymongo.errors import DuplicateKeyError
 
-from cloud_registry.exceptions import CodedConflict, NotFound, ServiceBusy, problem
+from cloud_registry.exceptions import (
+    UNUSABLE_ID,
+    CodedConflict,
+    NotFound,
+    ServiceBusy,
+    problem,
+)
 from cloud_registry.ga4gh.registry.locks import changing
 from cloud_registry.ga4gh.registry.permissions import (
     current_user,
@@ -215,7 +221,21 @@ def _new_entry_id() -> str:
             "can't be used for services: it must not be empty, `.`, `..` or "
             "`types`, or have slashes."
         )
-    check_id(service_id)
+    try:
+        check_id(service_id)
+    except InvalidService as exc:
+        # names the setting, as listings have no request body to point to,
+        # and why: unusable in roles, or unpaired surrogates (`check_strings()`)
+        if any(error.code == UNUSABLE_ID for error in exc.field_errors):
+            reason = (
+                "it must not contain commas or line breaks, and must not be too long"
+            )
+        else:
+            reason = "it must not contain unpaired surrogates"
+        raise InvalidService(
+            "The identifier of the service info (`service_info.service.id`) "
+            f"can't be used for services: {reason}."
+        ) from exc
     return service_id
 
 

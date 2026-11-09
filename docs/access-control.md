@@ -355,10 +355,14 @@ curl -X POST "http://localhost:8080/ga4gh/registry/v1/invitations/accept" \
   put more in them than needed. A label is stored as long as its invitation
   (see **Removal**), and removed earlier if the invitation was accepted and the
   user's roles on the service are revoked; database backups keep it as long as
-  the deployment keeps them. The registry doesn't log labels, but the log message
-  of a request rejected as invalid quotes the rejected value. Clients must show
-  labels as text, not as markup. Whether clients require a label is up to them;
-  the API doesn't.
+  the deployment keeps them. The registry doesn't log labels at `INFO`, nor
+  quote rejected ones in the invalid fields (`errors`) of the response. The
+  response's `detail`, however, is the validator's reason, which quotes a
+  rejected label (`exceptions.validation_reasons`, see [Errors](api.md#errors)),
+  and FOCA logs that reason at `DEBUG`, so clients shouldn't show or store
+  `detail`.
+  Clients must show labels as text, not as markup. Whether clients require a
+  label is up to them; the API doesn't.
 - **Creators:** invitations only grant their role while their creator is an
   owner of the service: as a user, or through the group that made them owner
   when they created it, as long as that group is owner (and, if they accept

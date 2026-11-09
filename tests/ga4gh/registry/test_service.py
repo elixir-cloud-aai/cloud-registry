@@ -8,13 +8,19 @@ from typing import Any, NoReturn
 
 from flask import Flask
 from foca import get_custom_config
+from foca.errors import FieldError
 from pymongo.collection import Collection
 from pymongo.errors import DuplicateKeyError
 from pymongo.results import UpdateResult
 import pytest
 import yaml
 
-from cloud_registry.exceptions import InternalServerError
+from cloud_registry.exceptions import (
+    INVALID_URL,
+    INVALID_VALUE,
+    SCHEME_NOT_ALLOWED,
+    InternalServerError,
+)
 import cloud_registry.ga4gh.registry.service
 from cloud_registry.ga4gh.registry.service import (
     CREATED,
@@ -26,11 +32,12 @@ from cloud_registry.ga4gh.registry.service import (
     DuplicateService,
     InvalidService,
     RegisterService,
-    check_environment,
-    check_links,
     check_strings,
+    environment_errors,
+    link_errors,
     normalize_url,
     service_key,
+    url_errors,
     warn_environments,
     warn_invalid_formats,
     warn_url_schemes,
@@ -76,13 +83,16 @@ def _without_db_id(doc: dict[str, Any] | None) -> dict[str, Any]:
     return doc
 
 
-def _check_link(url: object, field: str) -> None:
-    """Check a link, in metadata with only that link (cf. `check_links()`).
+def _check_link(url: object, field: str) -> list[FieldError]:
+    """Check a link, in metadata with only that link (cf. `link_errors()`).
 
     Args:
         url: URL of the link.
         field: Field of the link, as a path of keys separated by dots (e.g.,
             `organization.url`).
+
+    Returns:
+        The invalid fields.
     """
     data: dict[str, Any] = {}
     parent = data
@@ -90,7 +100,7 @@ def _check_link(url: object, field: str) -> None:
     for key in keys:
         parent = parent.setdefault(key, {})
     parent[last] = url
-    check_links(data)
+    return link_errors(data)
 
 
 def _find(services: Collection[dict[str, Any]], id: str) -> dict[str, Any]:
@@ -275,8 +285,12 @@ class TestRegisterService:
             obj = RegisterService(data={**MOCK_SERVICE, "url": url}, id=service_id)
             with pytest.raises(InvalidService) as exc_info:
                 obj.register_metadata()
-        assert exc_info.value.description == (
-            "Service URLs must use one of these schemes: 'https'."
+        assert exc_info.value.field_errors == (
+            FieldError(
+                detail="Must use one of these schemes: 'https'.",
+                code=SCHEME_NOT_ALLOWED,
+                pointer="#/url",
+            ),
         )
         assert services.count_documents({}) == 0
 
@@ -308,7 +322,7 @@ class TestRegisterService:
         """Service URLs with surrounding spaces are not stored (POST, PUT)."""
         with unit_app.app_context():
             obj = RegisterService(data={**MOCK_SERVICE, "url": url}, id=service_id)
-            with pytest.raises(InvalidService, match="must not contain whitespace"):
+            with pytest.raises(InvalidService, match="Must not contain whitespace"):
                 obj.register_metadata()
         assert services.count_documents({}) == 0
 
@@ -437,18 +451,18 @@ def test_normalize_url_invalid(url: str) -> None:
 )
 def test_check_link(url: str) -> None:
     """HTTP(S) URLs with valid hosts are valid links."""
-    _check_link(url, field="documentationUrl")
+    assert _check_link(url, field="documentationUrl") == []
 
 
 @pytest.mark.parametrize(
     "url, detail",
     [
-        (1, "must be strings"),
-        ("https://www.example.org/a b", "must not contain whitespace"),
-        (" https://www.example.org", "must not contain whitespace"),
-        ("\u00a0https://www.example.org", "must not contain whitespace"),
-        ("ht\ttps://www.example.org", "must not contain whitespace"),
-        ("https://www.exa\nmple.org", "must not contain whitespace"),
+        (1, "Must be a string."),
+        ("https://www.example.org/a b", "Must not contain whitespace"),
+        (" https://www.example.org", "Must not contain whitespace"),
+        ("\u00a0https://www.example.org", "Must not contain whitespace"),
+        ("ht\ttps://www.example.org", "Must not contain whitespace"),
+        ("https://www.exa\nmple.org", "Must not contain whitespace"),
         ("https://www.example.org/\x00", "control or format characters"),
         ("https://www.example.org/\u202ev1", "control or format characters"),
         ("https://www.ex\u00adample.org", "control or format characters"),
@@ -459,33 +473,36 @@ def test_check_link(url: str) -> None:
         ("https://www.example.org/a%zz", "malformed percent-encodings"),
         ("https://www.example.org/?q=%", "malformed percent-encodings"),
         ("https://www.example.org/#%4", "malformed percent-encodings"),
-        ("https://[fe80::1%25eth\u200c0]/docs", "need a valid host"),
-        ("https://www.example.org:port", "must be valid URLs"),
-        ("http://[::1/docs", "must be valid URLs"),
-        ("https://www.example.org:0", "need a valid port"),
-        ("javascript:alert(1)", "must use one of these schemes"),
-        ("file:///etc/passwd", "must use one of these schemes"),
-        ("ftp://ftp.example.org/pub", "must use one of these schemes"),
-        ("mailto:support@example.org", "must use one of these schemes"),
-        ("www.example.org/docs", "need a scheme and a host"),
-        ("not a URL", "must not contain whitespace"),
-        ("https:///docs", "need a scheme and a host"),
-        ("https://user@www.example.org", "must not contain user info"),
-        ("https://www<x>.example.org", "need a valid host"),
+        ("https://[fe80::1%25eth\u200c0]/docs", "Needs a valid host"),
+        ("https://www.example.org:port", "Must be a valid URL."),
+        ("http://[::1/docs", "Must be a valid URL."),
+        ("https://www.example.org:0", "Needs a valid port"),
+        ("javascript:alert(1)", "Must use one of these schemes"),
+        ("file:///etc/passwd", "Must use one of these schemes"),
+        ("ftp://ftp.example.org/pub", "Must use one of these schemes"),
+        ("mailto:support@example.org", "Must use one of these schemes"),
+        ("www.example.org/docs", "Needs a scheme and a host"),
+        ("not a URL", "Must not contain whitespace"),
+        ("https:///docs", "Needs a scheme and a host"),
+        ("https://user@www.example.org", "Must not contain user info"),
+        ("https://www<x>.example.org", "Needs a valid host"),
         ("https://www.example.org/<x>", "do not allow unencoded"),
-        ("https://0x7f.0.0.1/docs", "need a valid host"),
+        ("https://0x7f.0.0.1/docs", "Needs a valid host"),
     ],
 )
 def test_check_link_invalid(url: object, detail: str) -> None:
-    """Invalid links are rejected, saying why.
+    """Invalid links are rejected, saying why, without the URL.
 
     Links must be HTTP(S) URLs with a valid host and port, and without user
     info, whitespace, control or format characters.
     """
-    with pytest.raises(InvalidService) as exc_info:
-        _check_link(url, field="documentationUrl")
-    assert detail in exc_info.value.description
-    assert "'documentationUrl'" in exc_info.value.description
+    [error] = _check_link(url, field="documentationUrl")
+    assert detail in error.detail
+    assert error.pointer == "#/documentationUrl"
+    code = SCHEME_NOT_ALLOWED if "schemes" in detail else INVALID_URL
+    assert error.code == code
+    # without the URL, which may hold secrets
+    assert str(url) not in error.detail
 
 
 @pytest.mark.parametrize(
@@ -507,13 +524,13 @@ def test_check_link_schemes(url: str) -> None:
 @pytest.mark.parametrize(
     "url, detail",
     [
-        ("mailto:", "need valid email addresses"),
-        ("mailto:support", "need valid email addresses"),
-        ("mailto:@example.org", "need valid email addresses"),
-        ("mailto:support@", "need valid email addresses"),
-        ("mailto:a@example.org,", "need valid email addresses"),
+        ("mailto:", "Needs valid email addresses"),
+        ("mailto:support", "Needs valid email addresses"),
+        ("mailto:@example.org", "Needs valid email addresses"),
+        ("mailto:support@", "Needs valid email addresses"),
+        ("mailto:a@example.org,", "Needs valid email addresses"),
         ("mailto:support@exa<mple.org", "do not allow unencoded"),
-        ("mailto:a@b@example.org", "need valid email addresses"),
+        ("mailto:a@b@example.org", "Needs valid email addresses"),
         ("mailto:a@x'onclick=alert(1)", "with a domain name"),
         ("mailto:a@-x.org", "with a domain name"),
         ("mailto:a@x-.org", "with a domain name"),
@@ -530,12 +547,12 @@ def test_check_link_schemes(url: str) -> None:
         ("mailto:support@example.org?subject=%zz", "malformed percent-encodings"),
         ("mailto:support%@example.org", "malformed percent-encodings"),
         ("mailto:support@example.org\ud800", "control or format characters"),
-        ("mailto:#support", "need valid email addresses"),
-        ("mailto:?to=support@example.org", "need valid email addresses"),
+        ("mailto:#support", "Needs valid email addresses"),
+        ("mailto:?to=support@example.org", "Needs valid email addresses"),
         ("mailto:support\u00ad@example.org", "control or format characters"),
-        ("mailto://example.org/support", "need valid email addresses"),
-        ("mailto:support@example.org\n", "must not contain whitespace"),
-        ("mailto:a b@example.org", "must not contain whitespace"),
+        ("mailto://example.org/support", "Needs valid email addresses"),
+        ("mailto:support@example.org\n", "Must not contain whitespace"),
+        ("mailto:a b@example.org", "Must not contain whitespace"),
     ],
 )
 def test_check_link_schemes_invalid(url: str, detail: str) -> None:
@@ -543,10 +560,10 @@ def test_check_link_schemes_invalid(url: str, detail: str) -> None:
 
     They must not contain whitespace or control characters either.
     """
-    with pytest.raises(InvalidService) as exc_info:
-        _check_link(url, field="contactUrl")
-    assert exc_info.value.description.startswith("URLs in 'contactUrl' ")
-    assert detail in exc_info.value.description
+    [error] = _check_link(url, field="contactUrl")
+    assert (error.pointer, error.code) == ("#/contactUrl", INVALID_URL)
+    assert detail in error.detail
+    assert url not in error.detail
 
 
 @pytest.mark.parametrize(
@@ -562,24 +579,108 @@ def test_check_link_schemes_invalid(url: str, detail: str) -> None:
         },
     ],
 )
-def test_check_links(data: dict[str, Any]) -> None:
+def test_link_errors(data: dict[str, Any]) -> None:
     """Missing links are not checked, and valid links are accepted."""
-    check_links(data)
+    assert link_errors(data) == []
 
 
 @pytest.mark.parametrize(
     "data, field",
     [
-        ({"contactUrl": "javascript:alert(1)"}, "contactUrl"),
-        ({"documentationUrl": "mailto:support@example.org"}, "documentationUrl"),
-        ({"organization": {"url": "file:///etc/passwd"}}, "organization.url"),
+        ({"contactUrl": "javascript:alert(1)"}, "#/contactUrl"),
+        ({"documentationUrl": "mailto:support@example.org"}, "#/documentationUrl"),
+        ({"organization": {"url": "file:///etc/passwd"}}, "#/organization/url"),
     ],
 )
-def test_check_links_invalid(data: dict[str, Any], field: str) -> None:
-    """Invalid links are rejected, naming their field."""
-    with pytest.raises(InvalidService) as exc_info:
-        check_links(data)
-    assert f"'{field}'" in exc_info.value.description
+def test_link_errors_invalid(data: dict[str, Any], field: str) -> None:
+    """Invalid links are rejected, pointing to their field."""
+    assert [error.pointer for error in link_errors(data)] == [field]
+
+
+def test_link_errors_all_invalid() -> None:
+    """All invalid links are reported, in the order of `LINK_FIELDS`."""
+    data = {
+        "contactUrl": "javascript:alert(1)",
+        "documentationUrl": "https://user@docs.example.org",
+        "organization": {"url": None},
+    }
+    assert [(error.pointer, error.code) for error in link_errors(data)] == [
+        ("#/contactUrl", SCHEME_NOT_ALLOWED),
+        ("#/documentationUrl", INVALID_URL),
+        ("#/organization/url", INVALID_URL),
+    ]
+
+
+@pytest.mark.parametrize(
+    "url, code, detail",
+    [
+        (
+            "https://www.example.org/ a",
+            "invalid-url",
+            "Must not contain whitespace, control or format characters.",
+        ),
+        (
+            "https://www.example.org/a%zz",
+            "invalid-url",
+            "Must not contain malformed percent-encodings.",
+        ),
+        (
+            "https://www.example.org/<x>",
+            "invalid-url",
+            "Must not contain characters that URLs do not allow unencoded "
+            "(e.g., '<', '|', '\\').",
+        ),
+        ("http://[::1/docs", "invalid-url", "Must be a valid URL."),
+        (
+            "ftp://ftp.example.org",
+            "scheme-not-allowed",
+            "Must use one of these schemes: 'https', 'mailto'.",
+        ),
+        ("www.example.org/docs", "invalid-url", "Needs a scheme and a host."),
+        ("https://user@www.example.org", "invalid-url", "Must not contain user info."),
+        ("https://www.example.org:0", "invalid-url", "Needs a valid port."),
+        ("https://0x7f.0.0.1/docs", "invalid-url", "Needs a valid host."),
+        ("mailto:nobody", "invalid-url", "Needs valid email addresses."),
+        (1, "invalid-url", "Must be a string."),
+    ],
+)
+def test_url_errors_details(url: object, code: str, detail: str) -> None:
+    """FOCA's reasons of invalid URLs map to codes and details.
+
+    The details derive from the wording of FOCA's messages (cf.
+    `_url_error()`), so that rewordings fail here.
+    """
+    [error] = url_errors(url, {"https", "mailto"}, "url")
+    assert (error.code, error.detail) == (code, detail)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://user:secret@tes.example.org",
+        "https://secret.example.org:port",
+        "http://[::secret/v1",
+        "https://sec<ret.example.org",
+        "https://0xsecret.0.0.1",
+        f"https://{'secret' * 20}.example.org",
+        "https://xn--secret.example.org",
+        "https://[fe80::1%25secret\u200c]/v1",
+        "mailto:a@-secret.org",
+        "mailto:secret",
+        "secret://tes.example.org",
+        "secret.example.org/v1",
+    ],
+)
+def test_url_errors_without_values(url: str) -> None:
+    """Details of invalid URLs never quote them, nor parts of them.
+
+    FOCA's messages quote, e.g., hosts; the details keep their reasons only.
+    """
+    [error] = url_errors(url, {"https", "mailto"}, "url")
+    assert error.pointer == "#/url"
+    assert "secret" not in error.detail
+    assert error.detail[:1].isupper()
+    assert error.detail.endswith(".")
 
 
 @pytest.mark.parametrize(
@@ -846,17 +947,24 @@ class TestWarnUrlSchemes:
         ({"environment": "anything"}, []),
     ],
 )
-def test_check_environment(data: dict[str, Any], environments: list[str]) -> None:
+def test_environment_errors(data: dict[str, Any], environments: list[str]) -> None:
     """Allowed environments, services without one, and any if none are set."""
-    check_environment(data, environments=environments)
+    assert environment_errors(data, environments=environments) == []
 
 
 @pytest.mark.parametrize("environment", ["Prod", "production", ""])
 def test_check_environment_invalid(environment: str) -> None:
     """Other environments are rejected (case-sensitive), naming the allowed."""
-    with pytest.raises(InvalidService) as exc_info:
-        check_environment({"environment": environment}, environments=["prod", "dev"])
-    assert exc_info.value.description == "'environment' must be one of: 'prod', 'dev'."
+    errors = environment_errors(
+        {"environment": environment}, environments=["prod", "dev"]
+    )
+    assert errors == [
+        FieldError(
+            detail="Must be one of: 'prod', 'dev'.",
+            code=INVALID_VALUE,
+            pointer="#/environment",
+        )
+    ]
 
 
 class TestWarnEnvironments:

@@ -90,6 +90,18 @@ these. The logs change, so check log checks and alerts that rely on them:
 - FOCA warns once per worker of what it deprecates ahead of its release on
   ASGI, e.g., of the werkzeug classes in the app's exception map.
 
+**Invalid fields:** requests that the registry's own checks reject (e.g., URLs
+with user info or schemes their field doesn't allow, environments, unregistered
+types, identifiers that can't be stored in roles) now get the same `400 Bad
+Request` as those that fail the schema validation: all invalid fields in
+`errors`, each with a JSON Pointer (`pointer`) or parameter name
+(`parameter`), a stable `code` and a message, with the problem type and `code`
+`invalid-request` (see [Errors](api.md#errors)). Their `detail` lists the
+locations and messages of all invalid fields (e.g., `'#/url': Must use one of
+these schemes: 'https'.`) instead of describing the first one. Clients that
+show or parse `detail` should show the messages of `errors` at their fields
+instead.
+
 **Service URLs:** a `url` with leading or trailing spaces now returns
 `400 Bad Request` instead of being stored, so remove the spaces from what you
 register again.

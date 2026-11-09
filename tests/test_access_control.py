@@ -540,6 +540,30 @@ def test_invalid_identifier_rolled_back(client: FlaskClient) -> None:
     assert client.get(f"{BASE}/services/a,b").status_code == 404
 
 
+def test_rejected_owner_rolled_back(
+    client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Services whose owner FOCA rejects all the same are not registered.
+
+    Identifiers are checked before (`unusable_id_errors()`), so FOCA isn't
+    expected to reject them; if it does, the parameter is reported.
+    """
+
+    def reject(serviceId: str) -> None:
+        """Reject the owner."""
+        raise ValueError("can't be stored")
+
+    monkeypatch.setattr(server_module, "add_owner", reject)
+    response = client.put(
+        f"{BASE}/services/MYSERV", json=_service(), headers=headers(ADMIN)
+    )
+    assert response.status_code == 400
+    assert [error["parameter"] for error in response.get_json()["errors"]] == [
+        "serviceId"
+    ]
+    assert client.get(f"{BASE}/services/MYSERV").status_code == 404
+
+
 def test_stale_name_not_shown(app: App, client: FlaskClient) -> None:
     """A name stored before a role is granted is not shown with the role."""
     service_id = register(client)

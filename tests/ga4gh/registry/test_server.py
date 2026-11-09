@@ -33,10 +33,12 @@ def ownership(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
     """Record changes of service ownership; the caller is an admin.
 
     Changes of ownership require access control (cf.
-    `tests/test_access_control.py`).
+    `tests/test_access_control.py`), as do the checks of identifiers for
+    roles (cf. `tests/test_field_errors.py`).
     """
     calls: list[tuple[str, str]] = []
     monkeypatch.setattr(server, "is_admin", lambda: True)
+    monkeypatch.setattr(server, "unusable_id_errors", lambda *args, **kwargs: [])
     for name in ["add_owner", "remove_permissions"]:
         monkeypatch.setattr(
             server, name, lambda serviceId, name=name: calls.append((name, serviceId))

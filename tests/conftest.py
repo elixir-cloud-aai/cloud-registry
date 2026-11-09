@@ -14,6 +14,7 @@ refuse to start if the database exists already.
 """
 
 from collections.abc import Iterator
+import json
 import os
 from pathlib import Path
 import socket
@@ -27,6 +28,7 @@ from flask.testing import FlaskClient
 from foca import get_config
 from foca.config.access import set_app_config
 from foca.database import register_mongodb
+from foca.errors.fields import INVALID_REQUEST_CODE, INVALID_REQUEST_TYPE
 from foca.models.config import (
     CollectionConfig,
     Config,
@@ -41,6 +43,7 @@ from mongomock.store import CollectionStore
 from pymongo import MongoClient, uri_parser
 from pymongo.collection import Collection
 import pytest
+from werkzeug.test import TestResponse
 
 from cloud_registry.app import create_app
 from cloud_registry.ga4gh.registry.service import DATE_TIME_FIELDS
@@ -122,6 +125,42 @@ def _expire_documents(store: CollectionStore, index: dict[str, Any]) -> None:
 
 
 CollectionStore._expire_documents = _expire_documents  # type: ignore[method-assign]
+
+
+def invalid_fields(response: TestResponse, *values: str) -> list[tuple[str, str]]:
+    """Get the invalid fields of a response to an invalid request.
+
+    Asserts that the response is a `400` with FOCA's problem details of
+    invalid requests (problem type and code `invalid-request`) and a
+    `detail`, and that the invalid fields don't quote the rejected values.
+    `detail` is the reason of the rejection (`exceptions.validation_reasons`
+    in `config.yaml`), which may quote them for the schema validation, so it
+    isn't checked here (cf. `tests/test_validation_reasons.py`).
+
+    Args:
+        response: Response.
+        *values: Rejected values, which the invalid fields (`errors`) must
+            not contain.
+
+    Returns:
+        The invalid fields, by location (`pointer` or `parameter`) and code,
+        in the order of the response.
+    """
+    assert response.status_code == 400, response.get_json()
+    problem = response.get_json()
+    assert problem["status"] == 400
+    assert problem["title"] == "Bad request"
+    assert problem["type"] == INVALID_REQUEST_TYPE
+    assert problem["code"] == INVALID_REQUEST_CODE
+    assert problem["detail"]
+    errors = json.dumps(problem["errors"], ensure_ascii=False)
+    for value in values:
+        assert value not in errors
+    fields = []
+    for error in problem["errors"]:
+        assert error["detail"]
+        fields.append((error.get("pointer", error.get("parameter")), error["code"]))
+    return fields
 
 
 def without_timestamps(service: dict[str, Any]) -> dict[str, Any]:

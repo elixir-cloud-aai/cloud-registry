@@ -211,7 +211,7 @@ def test_list_environment_not_allowed(
     response = client.put(LISTING, headers=admin)
     assert response.status_code == 400
     assert (
-        "'environment' must be one of: 'production'." in response.get_json()["detail"]
+        "'environment': Must be one of: 'production'." in response.get_json()["detail"]
     )
     assert db["services"].count_documents({}) == 0
     assert db["service_types"].count_documents({}) == 0
@@ -228,13 +228,33 @@ def test_list_url_scheme_not_allowed(
     assert db["services"].count_documents({}) == 0
 
 
-@pytest.mark.parametrize("service_id", ["", ".", "types", "a/b", "a,b"])
+@pytest.mark.parametrize(
+    "service_id, reason",
+    [
+        ("", "must not be empty"),
+        (".", "must not be empty"),
+        ("types", "must not be empty"),
+        ("a/b", "must not be empty"),
+        ("a,b", "must not contain commas"),
+        ("a\ud800", "must not contain unpaired surrogates"),
+    ],
+)
 def test_list_invalid_id(
-    app: App, client: FlaskClient, admin: dict[str, str], service_id: str
+    app: App,
+    client: FlaskClient,
+    admin: dict[str, str],
+    service_id: str,
+    reason: str,
 ) -> None:
-    """Identifiers of the service info that services can't have are refused."""
+    """Identifiers of the service info that services can't have are refused.
+
+    The response names the setting and why.
+    """
     _service_info(app)["id"] = service_id
-    assert client.put(LISTING, headers=admin).status_code == 400
+    response = client.put(LISTING, headers=admin)
+    assert response.status_code == 400
+    assert "`service_info.service.id`" in response.get_json()["detail"]
+    assert reason in response.get_json()["detail"]
     assert client.get(LISTING, headers=admin).get_json() == {"listed": False}
 
 

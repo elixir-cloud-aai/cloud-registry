@@ -222,7 +222,8 @@ so service URLs (`url`) must use one of the schemes listed in
 `custom.endpoints.services.url_schemes`: `https` only by default; `http` must
 be allowed explicitly (e.g., `[http, https]`). Registrations (`POST
 /services`, `PUT /services/{serviceId}`) of services with other schemes are
-rejected with `400 Bad Request`, naming the allowed schemes. Only `http` and
+rejected with `400 Bad Request` (code `scheme-not-allowed`, see
+[Errors](api.md#errors)), naming the allowed schemes. Only `http` and
 `https` can be listed, and the list must not be empty. Links
 (`documentationUrl`, `organization.url`) can be HTTP(S) URLs either way, and
 `contactUrl` also a `mailto:` URL (see [Registrations](api.md#registrations)).
@@ -328,7 +329,8 @@ The GA4GH specification describes the environment of a service
 `production` besides `prod`), registrations may only use the values listed
 in `custom.endpoints.services.environments`: these four by default.
 Registrations (`POST /services`, `PUT /services/{serviceId}`) with other
-values are rejected with `400 Bad Request`, naming the allowed values
+values are rejected with `400 Bad Request` (code `invalid-value`, see
+[Errors](api.md#errors)), naming the allowed values
 (case-sensitive); services without `environment` are accepted. An empty
 list allows any value. For example, in a config overlay (with the Helm
 chart, in `config`), with an environment of the registry from the list, as

@@ -54,11 +54,13 @@ from typing import Any
 
 from flask import Response
 from foca import get_custom_config
+from foca.errors import FieldError, json_pointer
 from foca.security.access_control import get_current_subject, is_admin, resource_filter
 from foca.utils.logging import escape_log_value
 from pymongo.errors import DuplicateKeyError
 
 from cloud_registry.exceptions import (
+    UNREGISTERED_TYPE,
     CodedConflict,
     Forbidden,
     NotFound,
@@ -167,18 +169,25 @@ class ServiceTypeInUse(CodedConflict):
 
 
 class UnregisteredServiceType(InvalidService):
-    """A service of a user who may not add types has an unregistered type."""
+    """A service of a user who may not add types has an unregistered type.
 
-    def __init__(self, service_type: dict[str, str]) -> None:
-        """Create the exception for a type that is not registered.
+    The invalid field is the type (`type`, code `unregistered-type`); the
+    detail doesn't quote it.
+    """
 
-        Args:
-            service_type: The service type.
-        """
+    def __init__(self) -> None:
+        """Create the exception for a type that is not registered."""
         super().__init__(
-            f"The service type {describe_type(service_type)} is not registered: "
-            "use one of the registered types (`GET /services/types`), or ask "
-            "an admin to add it."
+            field_errors=[
+                FieldError(
+                    detail=(
+                        "Is not registered: use one of the registered types "
+                        "(`GET /services/types`), or ask an admin to add it."
+                    ),
+                    code=UNREGISTERED_TYPE,
+                    pointer=json_pointer("type"),
+                )
+            ]
         )
 
 
@@ -651,7 +660,7 @@ def check_service_type(value: object) -> None:
     if service_type_exists(service_type):
         return
     if not may_add_service_types():
-        raise UnregisteredServiceType(service_type)
+        raise UnregisteredServiceType
     check_unused_types()
 
 

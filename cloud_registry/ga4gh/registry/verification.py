@@ -29,7 +29,7 @@ from cloud_registry.exceptions import (
     BadRequest,
     CodedConflict,
     NotFound,
-    problem,
+    reject,
 )
 from cloud_registry.ga4gh.registry.permissions import (
     check_read_token,
@@ -137,13 +137,17 @@ def _not_verified(serviceId: str, exc: HTTPException) -> Response:
 
     Returns:
         Problem details response.
+
+    Raises:
+        foca.errors.InvalidFieldsProblem: The exception has invalid fields
+            (cf. `cloud_registry.exceptions.reject()`).
     """
     logger.info(
         "Service '%s' not verified: %s",
         escape_log_value(serviceId),
         escape_log_value(shorten_detail(str(exc.description))),
     )
-    return problem(exc)
+    return reject(exc)
 
 
 # GET /services/{serviceId}/verification

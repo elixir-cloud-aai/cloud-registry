@@ -162,8 +162,9 @@ endpoints](access-control.md#roles-on-services).
 URLs in registrations must be HTTP(S) URLs with a host: the service `url`,
 `documentationUrl`, `organization.url` and `contactUrl`, which can also be an
 email address (`mailto:`); other URLs are rejected (`400 Bad Request`, saying
-why). Service URLs must be `https` URLs by default, as clients send access
-tokens to the services; deployments can allow `http` (see [Service URL
+why, without quoting the URL; see [Errors](#errors)). Service URLs must be
+`https` URLs by default, as clients send access tokens to the services;
+deployments can allow `http` (see [Service URL
 schemes](configuration.md#service-url-schemes)). URLs are stored as written,
 so they must not contain whitespace (also not around them), control or format
 characters (except joiners in international host names), and no URLs may
@@ -227,7 +228,8 @@ after it; clients that stored the old identifier must use the new one.
 New identifiers that are registered (also the service's own) are rejected
 (`409 Conflict`, code `service-id-taken`); so are identifiers that can't be
 used in URLs (as for `PUT`, see [Registrations](#registrations); also
-slashes) or in roles (commas, line breaks), with `400 Bad Request`.
+slashes) or in roles (commas, line breaks), with `400 Bad Request` (see
+[Errors](#errors)).
 
 Granting and revoking roles via the registry's permission endpoints
 (`/services/{serviceId}/permissions/...`) waits for renames, but via FOCA's
@@ -301,7 +303,8 @@ types](configuration.md#service-types)):
 - `open` (the default): any authenticated user;
 - `controlled`: admins only. Other users get `403 Forbidden` for `POST
   /services/types`, and registering or updating a service with a type that
-  isn't registered returns `400 Bad Request`, naming the type. Admins'
+  isn't registered returns `400 Bad Request` (code `unregistered-type`, see
+  [Errors](#errors)), without quoting the type. Admins'
   services may have new types, which are registered.
 - `moderated`: any authenticated user, but the types of users other than
   admins are pending until an admin approves them (see [Pending
@@ -368,18 +371,88 @@ curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/types/approval" \
 
 ## Errors
 
-Requests that don't match the API specification (e.g., missing or unknown
-fields, values that are too long, or bodies that aren't JSON) are rejected
-with `400 Bad Request`, with the reason in `detail`. So are query parameters
-that an operation doesn't declare, on all operations (e.g., `GET
-/services/{serviceId}?page=1` and `GET /services?x=1`); values that don't match
-the `date-time` or `uri` format of their field, for which `detail` quotes the
-value and names the field; and JSON bodies with unpaired surrogates (e.g.,
-`\ud800`), for which `detail` names neither. Where the invalid fields are known,
-the response also has the `type` and `code` (`invalid-request`) of FOCA's
-problem type of invalid requests and lists them in `errors`, each with a JSON
-Pointer (`pointer`) or parameter name (`parameter`) and a `code`, e.g.,
-`{"pointer": "#/name", "code": "required", ...}`.
+Requests with invalid fields are rejected with `400 Bad Request`, listing
+every invalid field in `errors`, so that clients can show each message at its
+field, without validation rules of their own. That holds both for fields that
+don't match the API specification (e.g., missing or unknown fields, values
+that are too long, or don't match the `date-time` or `uri` format of their
+field) and for those that the registry's own checks reject (e.g., URLs,
+schemes, environments). The invalid fields that the checks find are listed
+together, those of the body first, then the parameters (e.g., query parameters that an
+operation doesn't declare, on all operations, such as `GET
+/services/{serviceId}?page=1` and `GET /services?x=1`); the registry's own
+checks run once a request matches the specification. Conflicts found first
+(e.g., the [limit of unused types](#service-types), or a pending service) are
+reported instead, as `409 Conflict`, and the address of
+[imports](#importing-service-info) is reported at its first invalid part. The
+format is that of
+FOCA's [invalid
+requests](https://foca.readthedocs.io/en/latest/problems/invalid-request/)
+(RFC 9457), declared in the API specification (schemas `InvalidRequestError`
+and `FieldError`):
+
+```json
+{
+  "type": "https://foca.readthedocs.io/en/latest/problems/invalid-request/",
+  "title": "Bad request",
+  "status": 400,
+  "detail": "'#/url': Must use one of these schemes: 'https'.; '#/environment': Must be one of: 'prod', 'test', 'dev', 'staging'.",
+  "code": "invalid-request",
+  "errors": [
+    {
+      "detail": "Must use one of these schemes: 'https'.",
+      "pointer": "#/url",
+      "code": "scheme-not-allowed"
+    },
+    {
+      "detail": "Must be one of: 'prod', 'test', 'dev', 'staging'.",
+      "pointer": "#/environment",
+      "code": "invalid-value"
+    }
+  ]
+}
+```
+
+Each entry has a readable message (`detail`), the field (`pointer`, a JSON
+Pointer into the request body, or `parameter`, the name of a path or query
+parameter) and a stable `code`, which clients branch on. The messages never
+quote the rejected values, which may hold secrets (e.g., credentials in
+URLs). `detail` is the reason of the rejection, as up to FOCA 0.21 (FOCA's
+`exceptions.validation_reasons`, set in the app's `config.yaml`): for the
+registry's own checks, the locations and messages of the invalid fields (as
+above), which don't quote the values either; for the schema validation, the
+validator's message, which may quote the rejected value (e.g., `'x' is not a
+'uri'`). So show the messages of `errors` at their fields, not `detail`. With
+`exceptions.validation_reasons: false` (e.g., in a [config
+overlay](configuration.md)), `detail` names the invalid fields by location
+and code instead, without values (e.g., `Invalid fields: #/url
+(scheme-not-allowed); #/environment (invalid-value)`); FOCA logs them that
+way in both cases. FOCA's schema validation reports generic codes (e.g., `required`,
+`too-long`, `invalid-format`, `pattern-mismatch`, `unknown-property`,
+`unknown-parameter`; see [FOCA's
+codes](https://foca.readthedocs.io/en/latest/problems/invalid-request/#codes)),
+the registry's own checks these:
+
+| Code | Invalid field |
+|---|---|
+| `invalid-url` | the URL is invalid, e.g., has no host, user info, whitespace, or characters that URLs don't allow unencoded; `detail` says why (`url`, `contactUrl`, `documentationUrl`, `organization.url` of registrations, `url` of [verifications](#verified-services), `serviceInfoUrl` of [imports](#importing-service-info)) |
+| `scheme-not-allowed` | the URL uses a scheme that its field doesn't allow, e.g., `http` for service URLs (see [Service URL schemes](configuration.md#service-url-schemes)), or other schemes than `http` and `https` for links (and `mailto` for `contactUrl`) and the `url` of [verifications](#verified-services) |
+| `invalid-value` | the environment isn't one of those the deployment allows (`environment`; see [Service environments](configuration.md#service-environments)) |
+| `invalid-format` | a timestamp isn't an RFC 3339 date-time (`createdAt`, `updatedAt`; see [Timestamps](#timestamps)); FOCA's schema validation reports most of these first, with the same code |
+| `unregistered-type` | the service type isn't registered, and the user may not add types (`type`; see [Service types](#service-types)) |
+| `unusable-id` | the identifier can't be stored in roles, e.g., with commas or line breaks (`serviceId` of `PUT /services/{serviceId}`, `id` of [renames](#renaming-services)) |
+| `not-service-info-url` | the address doesn't end in `/service-info`, or has a query or fragment (`serviceInfoUrl` of [imports](#importing-service-info)) |
+| `path-not-normalized` | the path of the address isn't in its normal form, e.g., has repeated slashes or dot segments (`serviceInfoUrl` of [imports](#importing-service-info)) |
+| `too-long` | the address is too long (`serviceInfoUrl` of [imports](#importing-service-info)) |
+
+Further codes may be added; show `detail` for unknown ones. Reserved
+identifiers (`.`, `..`, `types`) and those with slashes don't match the
+pattern of `serviceId` and of `id` of renames (`pattern-mismatch`). Other
+`400` responses have neither `errors` nor `code`: bodies that aren't JSON or
+have unpaired surrogates (e.g., `\ud800`), service info that doesn't pass the
+checks of a registration ([imports](#importing-service-info) and
+[syncs](#synced-services), whose `detail` names the field of the service
+info), and the permissions endpoints.
 
 Errors handled by the app are [problem
 details](https://www.rfc-editor.org/rfc/rfc7807) (`title`, `status` and
@@ -441,7 +514,9 @@ curl -X POST "http://localhost:8080/ga4gh/registry/v1/services/import" \
 
 - **Address:** `serviceInfoUrl` must end in `/service-info`, without a query or
   fragment, and use an [allowed scheme](configuration.md#service-url-schemes); `url`
-  is set to it without `/service-info`.
+  is set to it without `/service-info`. Other addresses are rejected (`400 Bad
+  Request`, with the invalid field `serviceInfoUrl`, see [Errors](#errors)),
+  without fetching them.
 - **Values:** the response has `name`, `type`, `description`, `organization`
   (`name`, `url`), `contactUrl`, `documentationUrl`, `environment`, `version` and
   `url`, as far as the service info has them; other fields are ignored.

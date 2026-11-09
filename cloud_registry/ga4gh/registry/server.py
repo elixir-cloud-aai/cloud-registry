@@ -4,15 +4,18 @@ import logging
 from typing import Any
 
 from flask import Response, request
+from foca.errors import FieldError, InvalidFieldsProblem
 from foca.errors.exceptions import shorten_detail
 from foca.security.access_control import get_current_subject, is_admin
 from foca.utils.logging import escape_log_value, log_traffic
 from foca.utils.urls import get_public_url
 
 from cloud_registry.exceptions import (
+    UNUSABLE_ID,
     BadRequest,
     NotFound,
     problem,
+    reject,
 )
 from cloud_registry.ga4gh.registry.locks import changing
 from cloud_registry.ga4gh.registry.permissions import (
@@ -25,10 +28,12 @@ from cloud_registry.ga4gh.registry.permissions import (
     remove_permissions,
     service_types_pending,
 )
+from cloud_registry.ga4gh.registry.rename import unusable_id_errors
 from cloud_registry.ga4gh.registry.service import (
     CREATED_BY,
     PENDING_SERVICE,
     PROJECTION,
+    UNUSABLE_ID_DETAIL,
     DuplicateService,
     InvalidService,
     RegisterService,
@@ -43,6 +48,7 @@ from cloud_registry.ga4gh.registry.service_limits import (
 )
 from cloud_registry.ga4gh.registry.service_types import (
     PendingService,
+    UnregisteredServiceType,
     UnusedTypesLimit,
     check_service_type,
     is_approved,
@@ -266,16 +272,20 @@ def _register_service(
 
     Returns:
         Identifier of the service; if it is new, with status `201` and its URL
-        as `Location`. Or an error response: `400` for invalid URLs or types
-        the user may not add, `409` for a registered service with the same
-        URL and API type, naming it only if the user may read it (cf.
-        `may_read_service()` and `visible_services()`), for updates of
+        as `Location`. Or an error response: `409` for a registered service
+        with the same URL and API type, naming it only if the user may read
+        it (cf. `may_read_service()` and `visible_services()`), for updates of
         pending services by users other than admins, for users who registered
         as many services as allowed, or for other URLs of services with sync.
 
     Raises:
-        cloud_registry.exceptions.BadRequest: The owner role can't be stored
-            for the service identifier.
+        foca.errors.InvalidFieldsProblem: Fields of the service are invalid
+            (e.g., URLs, schemes, types the user may not add, or the
+            identifier `serviceId` of a new service that can't be stored in
+            roles), all those of the field checks of
+            `RegisterService.check()`, raised by `reject()`;
+            or, raised directly, the owner role can't be stored all the same.
+            FOCA responds with `400` and the invalid fields.
         cloud_registry.exceptions.NotFound: A new service was deleted
             meanwhile.
     """
@@ -293,8 +303,22 @@ def _register_service(
             return refused
     if service_id is None and not is_admin():
         service.created_by = get_current_subject()
+    # identifiers of new services (`PUT`) that can't be stored in roles,
+    # reported with the invalid fields of the body, before anything is stored;
+    # stored services keep theirs (e.g., from before roles)
+    errors = (
+        unusable_id_errors(service_id, parameter="serviceId")
+        if service_id is not None and allow_create and not service_exists(service_id)
+        else []
+    )
     try:
-        check_service_type(service.data.get("type"))
+        try:
+            check_service_type(service.data.get("type"))
+        except UnregisteredServiceType as exc:
+            errors = [*exc.field_errors, *errors]
+        if errors:
+            # with the invalid fields of the service, if any
+            service.check(errors=errors)
         # pending types are only stored for valid services within the limit
         service.validate()
         reserve_service(service.created_by)
@@ -313,7 +337,7 @@ def _register_service(
             "Service not registered: %s",
             escape_log_value(shorten_detail(exc.description)),
         )
-        return problem(exc)
+        return reject(exc)
     except DuplicateService as exc:
         logger.info(
             "Service not registered: %s",
@@ -358,7 +382,17 @@ def _register_service(
             # service identifiers with commas)
             logger.info("Can't store owner role: %s", escape_log_value(exc))
             _unregister_service(service)
-            raise BadRequest from exc
+            # not expected, as identifiers of `PUT` are checked first (cf.
+            # `unusable_id_errors()`) and generated ones can't be invalid
+            raise InvalidFieldsProblem(
+                [
+                    FieldError(
+                        detail=UNUSABLE_ID_DETAIL,
+                        code=UNUSABLE_ID,
+                        parameter="serviceId",
+                    )
+                ]
+            ) from exc
         except Exception:
             _unregister_service(service)
             raise
@@ -393,7 +427,7 @@ def _check_pending_update(serviceId: str, value: object) -> Response | None:
     try:
         check_strings(new_type or {}, field="type")
     except InvalidService as exc:
-        return problem(exc)
+        return reject(exc)
     if is_approved(new_type):
         return None
     pending = PendingService()
