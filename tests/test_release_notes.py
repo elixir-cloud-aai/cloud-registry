@@ -483,10 +483,25 @@ def test_check_versioned_links(link: str) -> None:
         # Reference definitions
         ("Intro, [Upgrading][up].\n\n[up]: ../upgrading.md\n", 3),
         ("Intro, [Upgrading][up].\n\n   [up]:  <upgrading.md> 'Up'\n", 3),
+        ("Intro, [Upgrading][up].\n\n[up]:\n  ../upgrading.md\n", 4),
+        ("Intro.\n\n> [Upgrading][up].\n>\n> [up]: ../upgrading.md\n", 5),
+        # Lines of paragraphs that look like definitions count too
+        ("Intro text that ends\n[Upgrading]: a section name.\n", 2),
         # HTML
         ('Intro, <a href="../upgrading.md">Upgrading</a>.\n', 1),
         ("Intro, <img src='logo.png' alt='logo'>.\n", 1),
         ("Intro, <a HREF=upgrading.md>Upgrading</a>.\n", 1),
+        ('Intro, <a href=\n"../x.md">x</a>.\n', 2),
+        ('Intro, <img src=""> logo.\n', 1),
+        (
+            '<picture><source srcset="logo-dark.png 1x, https://x.org/l.png 2x">'
+            '<img src="https://x.org/l.png"></picture> Intro.\n',
+            1,
+        ),
+        # Destinations end at ASCII whitespace only
+        ("Intro, [x](\u00a0../x.md).\n", 1),
+        # Also in code, as the notes are published as written
+        ("Intro.\n\n```md\n[Upgrading](upgrading.md)\n```\n", 4),
     ],
 )
 def test_check_relative_links(markdown: str, line: int) -> None:
@@ -508,6 +523,11 @@ def test_check_relative_links(markdown: str, line: int) -> None:
         "Intro, [d]: not a definition, and [b] (c).\n",
         "Intro, with a footnote[^1].\n\n[^1]: The footnote.\n",
         'Intro, <a href="https://example.org/">docs</a>, <a href="#x">x</a>.\n',
+        # Other attributes
+        '<img data-src="logo.png" src="https://example.org/logo.png"> Intro.\n',
+        # Query parameters of autolinks and URLs
+        "Intro, <https://example.org/search?src=mail>.\n",
+        "Intro, if a<b, see [x](https://example.org/?href=c).\n",
     ],
 )
 def test_check_absolute_links(markdown: str) -> None:
@@ -515,11 +535,27 @@ def test_check_absolute_links(markdown: str) -> None:
     assert release_notes.check(markdown) == []
 
 
-def test_check_relative_link_message() -> None:
+def test_check_relative_and_moving_links() -> None:
+    """Relative links and links to versions that move are both reported."""
+    markdown = (
+        "Intro.\n\n## Fixes\n\n- Fix, see [docs](../x.md) (#1)\n"
+        "- Fix, see <https://cloud-registry.readthedocs.io/en/latest/> (#2)\n"
+    )
+    assert _messages(markdown) == [(5, "Relative link ('../x.md'):"), (6, "Link to a")]
+
+
+@pytest.mark.parametrize(
+    ("markdown", "target"),
+    [
+        ("Intro, [Upgrading](../upgrading.md#x).\n", "../upgrading.md#x"),
+        ("Intro, [x](\u00a0../x.md).\n", "../x.md"),
+        ('Intro, <img srcset=" a.png 1x, b.png 2x">.\n', "a.png"),
+    ],
+)
+def test_check_relative_link_message(markdown: str, target: str) -> None:
     """The finding names the link target."""
-    findings = release_notes.check("Intro, [Upgrading](../upgrading.md#x).\n")
-    assert [finding.message for finding in findings] == [
-        f"Relative link ('../upgrading.md#x'): {release_notes.RELATIVE_LINK}"
+    assert [finding.message for finding in release_notes.check(markdown)] == [
+        f"Relative link ('{target}'): {release_notes.RELATIVE_LINK}"
     ]
 
 

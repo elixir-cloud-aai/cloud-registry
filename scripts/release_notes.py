@@ -114,17 +114,19 @@ MOVING_LINK = (
     "Link to a version that moves (e.g., latest docs, branch dev): the release"
     " body never changes, so link the release's (/en/vX.Y.Z/, blob/vX.Y.Z/)"
 )
-# Link targets: of inline links and images (`[text](target)`, the target
-# also on the line after the text, or in angle brackets), of reference
-# definitions (`[label]: target`, not footnotes) and of the `href` and `src`
-# attributes of HTML tags. Matches outside links (e.g., in code) count too,
-# like `UNVERSIONED`
+# Link targets: of inline links and images (`[text](target)`), of reference
+# definitions (`[label]: target`, also in block quotes, not footnotes), both
+# also on the next line or in angle brackets, and of the `href`, `src` and
+# `srcset` attributes of HTML tags (the first URL of `srcset`). Matches
+# outside links (e.g., in code, or lines of paragraphs that look like
+# definitions) count too, like `UNVERSIONED`
 LINK_TARGET = re.compile(
     r"\]\([ \t]*\n?[ \t]*(?:<([^<>\n]*)>|([^\s)]*))"
-    r"|^[ \t]{0,3}\[(?!\^)[^\]\n]+\]:[ \t]*(?:<([^<>\n]*)>|(\S+))"
-    r"|<[A-Za-z][^<>]*?\b(?:href|src)[ \t]*=[ \t]*"
-    r"(?:\"([^\"]*)\"|'([^']*)'|([^\s\"'=<>`]+))",
-    re.MULTILINE | re.IGNORECASE,
+    r"|^[ \t]{0,3}(?:>[ \t]?)*\[(?!\^)[^\]\n]+\]:[ \t]*\n?[ \t]*"
+    r"(?:<([^<>\n]*)>|(\S+))"
+    r"|<[A-Za-z][^<>]*?\s(?:href|src|srcset)\s*=\s*"
+    r"(?:\"\s*([^\"\s]*)|'\s*([^'\s]*)|([^\s\"'=<>`]+))",
+    re.ASCII | re.MULTILINE | re.IGNORECASE,
 )
 # Targets that aren't relative: with a scheme (e.g., `https:`, `mailto:`), or
 # within the page (`#fixes`)
@@ -389,11 +391,9 @@ def _relative_links(text: str) -> list[Finding]:
     """
     findings = []
     for match in LINK_TARGET.finditer(text):
-        group = next(
-            index
-            for index, value in enumerate(match.groups(), start=1)
-            if value is not None
-        )
+        # The only group that matched: each alternative has one, and none
+        # is nested (never 0, the whole match)
+        group = match.lastindex or 0
         target = match[group].strip()
         if not ABSOLUTE.match(target):
             findings.append(
@@ -422,15 +422,14 @@ def check(markdown: str) -> list[Finding]:
         HTML comment on a line of its own counts as a blank line.
     """
     lines = markdown.removeprefix("\ufeff").splitlines()
-    findings = (
-        _Checker().run(lines)
-        + [
-            Finding(number, MOVING_LINK)
-            for number, line in enumerate(lines, start=1)
-            if UNVERSIONED.search(line)
-        ]
-        + _relative_links("\n".join(lines))
-    )
+    findings = _Checker().run(lines)
+    findings += [
+        Finding(number, MOVING_LINK)
+        for number, line in enumerate(lines, start=1)
+        if UNVERSIONED.search(line)
+    ]
+    # Joined with line feeds, so that line numbers match those of `lines`
+    findings += _relative_links("\n".join(lines))
     return sorted(findings, key=lambda finding: finding.line)
 
 

@@ -355,17 +355,21 @@ published as written, so the release workflow fails if they contain
 `TODO`, are not in this format or link to versions that move (the latest
 docs, `/en/latest/`, or files on branch `dev`, `blob/dev/`; link the
 release's, e.g., `/en/vX.Y.Z/`, `blob/vX.Y.Z/`, as the published notes
-don't change) or have relative links (link targets without a scheme such
-as `https:`, e.g., `../upgrading.md#from-100rc1`, which work in the docs
-built from `docs/releases/` but not in the release body; link the release's
-docs with their full URL, or within the page with `#...`; inline links,
-images, reference definitions and HTML `href` and `src` attributes are
-checked anywhere in the notes, code included)
+don't change) or have relative links (see below)
 (`scripts/release_notes.py check`, tested in
 `tests/test_release_notes.py`, which also checks the notes in
 `docs/releases/`), and so does the CI job "Release readiness" on pushes
 (see above); on re-runs, it replaces the notes of an existing release (also
-overwriting manual edits). Detailed
+overwriting manual edits).
+Relative links, e.g., `../upgrading.md#from-100rc1`, work in the docs built
+from `docs/releases/`, but not in the release body: link the release's docs
+with their full URL, e.g.,
+`https://cloud-registry.readthedocs.io/en/vX.Y.Z/upgrading/#from-100rc1`,
+or within the page with `#...`. The check reports every link target without
+a scheme (such as `https:` or `mailto:`) of inline links, images, reference
+definitions and the `href`, `src` and `srcset` attributes of HTML tags,
+anywhere in the notes, code blocks included (and lines of paragraphs that
+start like a definition, `[label]: ...`). Detailed
 upgrade steps belong on the [Upgrading](upgrading.md) page, linked from the
 intro.
 
