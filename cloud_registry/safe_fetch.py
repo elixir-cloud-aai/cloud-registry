@@ -10,8 +10,8 @@ internal services (e.g., cloud metadata endpoints). `safe_get()` therefore
   so that a name can't point elsewhere after the check (DNS rebinding), and
   verifies the certificate for the host name, not for the address;
 - tries the checked addresses in turn, IPv6 and IPv4 alternating, each with
-  its share of the time left for connecting, so that an address that doesn't
-  answer leaves time for the others;
+  its share of the time left for connecting (TCP and TLS handshake), so that an
+  address that doesn't answer leaves time for the others;
 - doesn't follow redirects, which could lead anywhere: only `200 OK` passes;
 - limits the size of the response and the total time, also for servers that
   send very slowly;
@@ -164,7 +164,10 @@ def _resolve(host: str, port: int, deadline: _Deadline) -> list[str]:
 
 
 def _interleave(addresses: Iterable[str]) -> list[str]:
-    """Order addresses so that IPv6 and IPv4 take turns (cf. RFC 8305).
+    """Order addresses so that IPv6 and IPv4 take turns.
+
+    As in the address sorting of Happy Eyeballs (RFC 8305), but the order of
+    the resolver decides which family starts, and connections are sequential.
 
     Args:
         addresses: IP addresses, in the order of the resolver.
@@ -212,8 +215,8 @@ class _PinnedConnection(http.client.HTTPConnection):
             address: IP address to connect to.
             timeout: Timeout of each socket operation, in seconds.
             context: TLS settings; plain HTTP if `None`.
-            connect_timeout: Timeout of the TCP connection, in seconds; that of
-                other socket operations if `None`.
+            connect_timeout: Timeout of the TCP connection and the TLS
+                handshake, in seconds; that of other socket operations if `None`.
         """
         super().__init__(host, port, timeout=timeout)
         # so that the `Host` header only has ports other than the scheme's
@@ -227,13 +230,15 @@ class _PinnedConnection(http.client.HTTPConnection):
 
     def connect(self) -> None:
         """Connect to the address; the certificate is checked for the host."""
+        # the connection timeout also bounds the TLS handshake, as an address
+        # may take connections but not complete it (e.g., large packets dropped
+        # on the path); the request gets the timeout of other operations
         sock = socket.create_connection(
             (self._address, self.port), self._connect_timeout
         )
-        # the TLS handshake and the request get the timeout of other operations
-        sock.settimeout(self.timeout)
         self.sock = self._socket = sock
         if self._tls is None:
+            sock.settimeout(self.timeout)
             return
         # no handshake yet, so that `abort()` reaches the socket during it
         tls_sock = self._tls.wrap_socket(
@@ -241,6 +246,7 @@ class _PinnedConnection(http.client.HTTPConnection):
         )
         self.sock = self._socket = tls_sock
         tls_sock.do_handshake()
+        tls_sock.settimeout(self.timeout)
 
     def abort(self) -> None:
         """Interrupt whatever the connection is waiting for, from any thread."""
@@ -349,8 +355,9 @@ def safe_get(
         "Connection": "close",
         **(headers or {}),
     }
-    # Each address gets an equal share of the time left for connecting, so that
-    # one that doesn't answer (e.g., IPv6 dropped on the path) can't use it all
+    # Each address gets an equal share of the time left for connecting,
+    # recalculated for each, so that one that doesn't answer (e.g., IPv6
+    # dropped on the path) can't use it all; failing fast leaves more for others
     ordered = _interleave(addresses)
     for index, address in enumerate(ordered):
         left = deadline.left()

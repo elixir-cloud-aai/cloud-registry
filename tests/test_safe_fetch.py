@@ -453,12 +453,12 @@ def test_next_address_after_timeout(
     resolving(monkeypatch, "127.0.0.2", "127.0.0.3", "127.0.0.1")
     tried = _dropping(monkeypatch, "127.0.0.2", "127.0.0.3")
     url = f"http://{HOST}:{http_port}/"
-    assert safe_get(url, schemes={"http"}, networks=LOOPBACK, timeout=1.5) == BODY
+    assert safe_get(url, schemes={"http"}, networks=LOOPBACK, timeout=0.9) == BODY
     assert [address for address, _ in tried] == ["127.0.0.2", "127.0.0.3", "127.0.0.1"]
-    first, second, last = (timeout or 0 for _, timeout in tried)
-    assert first == pytest.approx(0.5, abs=0.05)
-    assert second == pytest.approx(0.5, abs=0.05)
-    assert last == pytest.approx(0.5, abs=0.05)
+    # a third of the total each, less what earlier steps took
+    for _, timeout in tried:
+        assert timeout is not None
+        assert 0.15 < timeout <= 0.3
 
 
 def test_families_alternate(monkeypatch: pytest.MonkeyPatch, http_port: int) -> None:
@@ -467,7 +467,7 @@ def test_families_alternate(monkeypatch: pytest.MonkeyPatch, http_port: int) -> 
     tried = _dropping(monkeypatch, "::2", "::3", "127.0.0.2")
     networks = [*LOOPBACK, ipaddress.ip_network("::/126")]
     url = f"http://{HOST}:{http_port}/"
-    assert safe_get(url, schemes={"http"}, networks=networks, timeout=2) == BODY
+    assert safe_get(url, schemes={"http"}, networks=networks, timeout=0.8) == BODY
     assert [address for address, _ in tried] == ["::2", "127.0.0.2", "::3", "127.0.0.1"]
 
 
@@ -486,10 +486,68 @@ def test_full_time_after_connect(
     monkeypatch: pytest.MonkeyPatch, http_port: int
 ) -> None:
     """The response may take longer than the share of time for connecting."""
-    resolving(monkeypatch, "127.0.0.1", "127.0.0.2")
-    Handler.delay = 0.6
+    resolving(monkeypatch, "127.0.0.1", "127.0.0.2", "127.0.0.3", "127.0.0.4")
+    Handler.delay = 0.8
     url = f"http://{HOST}:{http_port}/"
-    assert safe_get(url, schemes={"http"}, networks=LOOPBACK, timeout=1.0) == BODY
+    assert safe_get(url, schemes={"http"}, networks=LOOPBACK, timeout=2.0) == BODY
+
+
+def test_timeout_restored_after_connect(http_port: int) -> None:
+    """After the TCP connection, sockets get the timeout of other operations."""
+    connection = safe_fetch._PinnedConnection(
+        HOST, http_port, "127.0.0.1", 2.0, None, 0.25
+    )
+    try:
+        connection.connect()
+        assert connection.sock is not None
+        assert connection.sock.gettimeout() == 2.0
+    finally:
+        connection.close()
+
+
+def test_next_address_after_silent_handshake(
+    monkeypatch: pytest.MonkeyPatch, tls_port: int, client_context: ssl.SSLContext
+) -> None:
+    """An address that accepts but never finishes the TLS handshake leaves time."""
+    resolving(monkeypatch, "127.0.0.2", "127.0.0.1")
+    with socket.create_server(("127.0.0.2", tls_port)):  # never answers
+        url = f"https://{HOST}:{tls_port}/"
+        start = time.monotonic()
+        assert safe_get(url, networks=LOOPBACK, timeout=1.0, context=client_context)
+        assert time.monotonic() - start < 1
+
+
+def test_tls_timeout_restored_after_handshake(
+    tls_port: int, client_context: ssl.SSLContext
+) -> None:
+    """After the TLS handshake, sockets get the timeout of other operations."""
+    connection = safe_fetch._PinnedConnection(
+        HOST, tls_port, "127.0.0.1", 2.0, client_context, 0.25
+    )
+    try:
+        connection.connect()
+        assert connection.sock is not None
+        assert connection.sock.gettimeout() == 2.0
+    finally:
+        connection.close()
+
+
+@pytest.mark.parametrize(
+    ("addresses", "ordered"),
+    [
+        ([], []),
+        (["10.0.0.1", "10.0.0.2"], ["10.0.0.1", "10.0.0.2"]),
+        (["::1", "::2", "::3", "10.0.0.1"], ["::1", "10.0.0.1", "::2", "::3"]),
+        (["10.0.0.1", "10.0.0.2", "::1"], ["10.0.0.1", "::1", "10.0.0.2"]),
+        (
+            ["10.0.0.1", "::1", "::2", "10.0.0.2"],
+            ["10.0.0.1", "::1", "10.0.0.2", "::2"],
+        ),
+    ],
+)
+def test_interleave(addresses: list[str], ordered: list[str]) -> None:
+    """Families take turns, starting with the first, each in the resolver's order."""
+    assert safe_fetch._interleave(addresses) == ordered
 
 
 def test_addresses_checked_before_any_connection(

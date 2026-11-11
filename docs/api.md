@@ -539,9 +539,10 @@ against server-side request forgery:
 - `https` only, unless the deployment [allows
   `http`](configuration.md#service-url-schemes), with the certificate checked for
   the host;
-- no redirects, at most 256 KiB, at most 10 seconds; if a host has several
-  addresses, they are tried in turn, IPv6 and IPv4 alternating, and each gets its
-  share of the time left, so that an address that doesn't answer (e.g., IPv6
+- no redirects, at most 256 KiB, at most 10 seconds;
+- if a host has several addresses, they are tried in turn, IPv6 and IPv4
+  alternating, and each gets an equal share of the time left to connect (including
+  the TLS handshake), so that an address that doesn't answer (e.g., IPv6
   connections that are dropped on the way) leaves time for the others;
 - users may have service info fetched 30 times per hour by default, and only few
   requests fetch at a time (`429 Too Many Requests`, with `Retry-After`, which browser
