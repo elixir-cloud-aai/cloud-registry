@@ -367,8 +367,8 @@ with their full URL, e.g.,
 `https://cloud-registry.readthedocs.io/en/vX.Y.Z/upgrading/#from-100rc1`,
 or within the page with `#...`. The check reports every link target without
 a scheme (such as `https:` or `mailto:`) of inline links, images, reference
-definitions and the `href`, `src` and `srcset` attributes of HTML tags,
-anywhere in the notes, code blocks included (and lines of paragraphs that
+definitions and the HTML attributes `href`, `src` and `srcset` (each of its
+URLs), anywhere in the notes, code blocks included (and lines of paragraphs that
 start like a definition, `[label]: ...`). Detailed
 upgrade steps belong on the [Upgrading](upgrading.md) page, linked from the
 intro.

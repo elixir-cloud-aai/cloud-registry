@@ -44,7 +44,8 @@ Only the stdlib is used, so the workflow runs it without installing the app.
 """
 
 import argparse
-from collections.abc import Iterable, Sequence
+import bisect
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
@@ -117,20 +118,31 @@ MOVING_LINK = (
 # Whitespace before a link target, also a line break (in block quotes, with
 # the quote markers of the next line)
 _NEXT_LINE = r"[ \t]*(?:\n[ \t]*(?:>[ \t]*)*)?"
-# Link targets: of inline links and images (`[text](target)`), of reference
+# Link targets of inline links and images (`[text](target)`) and of reference
 # definitions (`[label]: target`, also in block quotes, not footnotes), both
-# also on the next line or in angle brackets, and of the `href`, `src` and
-# `srcset` attributes of HTML tags, also namespaced (e.g., `xlink:href`; the
-# first URL of `srcset`). Matches outside links (e.g., in code, or lines of
-# paragraphs that look like definitions) count too, like `UNVERSIONED`
+# also on the next line or in angle brackets. Matches outside links (e.g., in
+# code, or lines of paragraphs that look like definitions) count too, like
+# `UNVERSIONED`
 LINK_TARGET = re.compile(
     rf"\]\({_NEXT_LINE}(?:<([^<>\n]*)>|([^\s)]*))"
-    rf"|^[ \t]{{0,3}}(?:>[ \t]*)*\[(?!\^)[^\]\n]+\]:{_NEXT_LINE}"
-    r"(?:<([^<>\n]*)>|(\S+))"
-    r"|<[A-Za-z][^<>]*?[\s/:](?:href|src|srcset)\s*=\s*"
-    r"(?:\"\s*([^\"\s]*)|'\s*([^'\s]*)|([^\s\"'=<>`]+))",
-    re.ASCII | re.MULTILINE | re.IGNORECASE,
+    rf"|^[ \t]{{0,3}}(?:>[ \t]*)*\[(?!\^)(?:\\.|[^\\\]\n])+\]:{_NEXT_LINE}"
+    r"(?:<([^<>\n]*)>|(\S+))",
+    re.ASCII | re.MULTILINE,
 )
+# Links of HTML: the attributes `href`, `src` and `srcset` (name, then the
+# value, quoted or not), also namespaced (e.g., `xlink:href`), each on its
+# own, wherever they are (also outside tags, in code), but not as parts of
+# other names (`data-src`) or of URLs (`?src=`)
+HTML_LINK = re.compile(
+    r"(?<=[\s/:\"'])(href|src|srcset)\s*=\s*"
+    r"(?:\"([^\"]*)\"|'([^']*)'|([^\s\"'=<>`]+))",
+    re.ASCII | re.IGNORECASE,
+)
+# URLs of a `srcset`: the first word of each candidate, separated by commas
+SRCSET_URL = re.compile(r"(?:^|,)\s*([^\s,]+)", re.ASCII)
+# Whitespace around link targets (ASCII only: GitHub keeps other spaces, e.g.,
+# no-break spaces, in the target)
+_SPACE = " \t\n\r\f"
 # Targets that aren't relative: with a scheme (e.g., `https:`, `mailto:`), or
 # within the page (`#fixes`)
 ABSOLUTE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:|#", re.ASCII)
@@ -382,8 +394,32 @@ class _Checker:
             self.findings.append(Finding(self.heading_line, "Empty section"))
 
 
+def _link_targets(text: str) -> Iterator[tuple[int, str]]:
+    """Yield the link targets of curated notes (`LINK_TARGET`, `HTML_LINK`).
+
+    Args:
+        text: Curated release notes, lines joined with line feeds.
+
+    Yields:
+        The position of each link target in the text, and the target.
+    """
+    for match in LINK_TARGET.finditer(text):
+        # The only group that matched: each alternative has one, and none
+        # is nested (never 0, the whole match)
+        group = match.lastindex or 0
+        yield match.start(group), match[group]
+    for match in HTML_LINK.finditer(text):
+        # The value, which closes after the name (group 1)
+        group = match.lastindex or 0
+        if match[1].lower() != "srcset":
+            yield match.start(group), match[group]
+            continue
+        for url in SRCSET_URL.finditer(match[group]):
+            yield match.start(group) + url.start(1), url[1]
+
+
 def _relative_links(text: str) -> list[Finding]:
-    """Return the relative links of curated notes (see `LINK_TARGET`).
+    """Return the relative links of curated notes (see `_link_targets`).
 
     Args:
         text: Curated release notes, lines joined with line feeds.
@@ -392,17 +428,17 @@ def _relative_links(text: str) -> list[Finding]:
         A finding for each link target without a scheme that doesn't point
         within the page (`ABSOLUTE`), also an empty one, on its line.
     """
+    # Positions of the line feeds, to find the line of each target
+    breaks = [index for index, character in enumerate(text) if character == "\n"]
     findings = []
-    for match in LINK_TARGET.finditer(text):
-        # The only group that matched: each alternative has one, and none
-        # is nested (never 0, the whole match)
-        group = match.lastindex or 0
-        target = match[group].strip()
-        if not ABSOLUTE.match(target):
+    for position, target in _link_targets(text):
+        stripped = target.lstrip(_SPACE)
+        if not ABSOLUTE.match(stripped):
+            start = position + len(target) - len(stripped)
             findings.append(
                 Finding(
-                    text.count("\n", 0, match.start(group)) + 1,
-                    f"Relative link ('{target}'): {RELATIVE_LINK}",
+                    bisect.bisect_right(breaks, start) + 1,
+                    f"Relative link ('{stripped.rstrip(_SPACE)}'): {RELATIVE_LINK}",
                 )
             )
     return findings
@@ -421,7 +457,7 @@ def check(markdown: str) -> list[Finding]:
         empty), holding bullets only, each ending with its issue and pull
         request numbers, and none of the parts that the release workflow adds
         (`## Commits`, the `**Full Changelog**` line), no links to versions
-        that move (`UNVERSIONED`) and no relative links (`LINK_TARGET`). An
+        that move (`UNVERSIONED`) and no relative links (`_link_targets`). An
         HTML comment on a line of its own counts as a blank line.
     """
     lines = markdown.removeprefix("\ufeff").splitlines()

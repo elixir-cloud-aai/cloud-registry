@@ -503,8 +503,17 @@ def test_check_versioned_links(link: str) -> None:
             '<img src="https://x.org/l.png"></picture> Intro.\n',
             1,
         ),
-        # Destinations end at ASCII whitespace only
+        # Each attribute and each URL of a srcset on its own, also after a
+        # quoted `>`
+        ('<img src="https://x.org/a.png" srcset="b.png"> Intro.\n', 1),
+        ('<img srcset="https://x.org/a.png 1x, b.png 2x"> Intro.\n', 1),
+        ('Intro, <a title="a > b" href="../x.md">x</a>.\n', 1),
+        # Escaped brackets in reference labels
+        ("Intro, [a][foo\\]].\n\n[foo\\]]: ../guide.md\n", 3),
+        # Destinations end at ASCII whitespace only, and other spaces are
+        # part of them
         ("Intro, [x](\u00a0../x.md).\n", 1),
+        ("Intro, [x](\u00a0https://example.org/).\n", 1),
         # Also in code, as the notes are published as written
         ("Intro.\n\n```md\n[Upgrading](upgrading.md)\n```\n", 4),
     ],
@@ -556,8 +565,9 @@ def test_check_relative_and_moving_links() -> None:
     ("markdown", "target"),
     [
         ("Intro, [Upgrading](../upgrading.md#x).\n", "../upgrading.md#x"),
-        ("Intro, [x](\u00a0../x.md).\n", "../x.md"),
-        ('Intro, <img srcset=" a.png 1x, b.png 2x">.\n', "a.png"),
+        ("Intro, [x](\u00a0../x.md).\n", "\u00a0../x.md"),
+        ('Intro, <img srcset=" a.png 1x, https://x.org/b.png 2x">.\n', "a.png"),
+        ('Intro, <a href=" ../x.md ">x</a>.\n', "../x.md"),
     ],
 )
 def test_check_relative_link_message(markdown: str, target: str) -> None:
