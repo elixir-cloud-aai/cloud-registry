@@ -567,8 +567,8 @@ they are accepted, as their creators seem to be no longer owners):
   counts what is stored, so its numbers can differ: configured rules are those
   that the running app stored. It doesn't check the config as startup does,
   either. The migration, also with `--dry-run`, refuses to run on a database of
-  a version before 1.0.0rc2, while the config trusts a single issuer, or keeps the subjects of an
-  issuer bare:
+  a version before 1.0.0rc2, while the config trusts a single issuer, or keeps
+  the subjects of an issuer bare:
 
   ```bash
   kubectl exec deploy/cloud-registry -- \
