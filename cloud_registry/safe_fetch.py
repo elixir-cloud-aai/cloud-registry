@@ -216,7 +216,8 @@ class _PinnedConnection(http.client.HTTPConnection):
             timeout: Timeout of each socket operation, in seconds.
             context: TLS settings; plain HTTP if `None`.
             connect_timeout: Timeout of the TCP connection and the TLS
-                handshake, in seconds; that of other socket operations if `None`.
+                handshake together, in seconds; that of other socket operations
+                if `None`.
         """
         super().__init__(host, port, timeout=timeout)
         # so that the `Host` header only has ports other than the scheme's
@@ -230,9 +231,11 @@ class _PinnedConnection(http.client.HTTPConnection):
 
     def connect(self) -> None:
         """Connect to the address; the certificate is checked for the host."""
-        # the connection timeout also bounds the TLS handshake, as an address
-        # may take connections but not complete it (e.g., large packets dropped
-        # on the path); the request gets the timeout of other operations
+        # the connection timeout bounds the TCP connection and the TLS handshake
+        # together, as an address may take connections but not complete it
+        # (e.g., large packets dropped on the path); the request gets the
+        # timeout of other operations
+        end = time.monotonic() + self._connect_timeout
         sock = socket.create_connection(
             (self._address, self.port), self._connect_timeout
         )
@@ -240,6 +243,10 @@ class _PinnedConnection(http.client.HTTPConnection):
         if self._tls is None:
             sock.settimeout(self.timeout)
             return
+        left = end - time.monotonic()
+        if left <= 0:
+            raise TimeoutError
+        sock.settimeout(left)
         # no handshake yet, so that `abort()` reaches the socket during it
         tls_sock = self._tls.wrap_socket(
             sock, server_hostname=self.host, do_handshake_on_connect=False

@@ -495,7 +495,7 @@ def test_full_time_after_connect(
 def test_timeout_restored_after_connect(http_port: int) -> None:
     """After the TCP connection, sockets get the timeout of other operations."""
     connection = safe_fetch._PinnedConnection(
-        HOST, http_port, "127.0.0.1", 2.0, None, 0.25
+        HOST, http_port, "127.0.0.1", timeout=2.0, context=None, connect_timeout=0.25
     )
     try:
         connection.connect()
@@ -513,8 +513,8 @@ def test_next_address_after_silent_handshake(
     with socket.create_server(("127.0.0.2", tls_port)):  # never answers
         url = f"https://{HOST}:{tls_port}/"
         start = time.monotonic()
-        assert safe_get(url, networks=LOOPBACK, timeout=1.0, context=client_context)
-        assert time.monotonic() - start < 1
+        assert safe_get(url, networks=LOOPBACK, timeout=2.0, context=client_context)
+        assert time.monotonic() - start < 1.5
 
 
 def test_tls_timeout_restored_after_handshake(
@@ -522,7 +522,12 @@ def test_tls_timeout_restored_after_handshake(
 ) -> None:
     """After the TLS handshake, sockets get the timeout of other operations."""
     connection = safe_fetch._PinnedConnection(
-        HOST, tls_port, "127.0.0.1", 2.0, client_context, 0.25
+        HOST,
+        tls_port,
+        "127.0.0.1",
+        timeout=2.0,
+        context=client_context,
+        connect_timeout=0.25,
     )
     try:
         connection.connect()
@@ -530,6 +535,71 @@ def test_tls_timeout_restored_after_handshake(
         assert connection.sock.gettimeout() == 2.0
     finally:
         connection.close()
+
+
+def _slow_connections(monkeypatch: pytest.MonkeyPatch, seconds: float) -> None:
+    """Make TCP connections take longer.
+
+    Args:
+        monkeypatch: Fixture for patching.
+        seconds: Time each connection takes in addition.
+    """
+    create_connection = socket.create_connection
+
+    def slow(*args: Any, **kwargs: Any) -> socket.socket:
+        """Connect, then wait.
+
+        Args:
+            *args: Arguments of `socket.create_connection()`.
+            **kwargs: Arguments of `socket.create_connection()`.
+
+        Returns:
+            Socket.
+        """
+        sock = create_connection(*args, **kwargs)
+        time.sleep(seconds)
+        return sock
+
+    monkeypatch.setattr(socket, "create_connection", slow)
+
+
+def test_handshake_shares_connect_time(
+    monkeypatch: pytest.MonkeyPatch, client_context: ssl.SSLContext
+) -> None:
+    """The TLS handshake gets what the TCP connection left of the share."""
+    _slow_connections(monkeypatch, 0.6)
+    with socket.create_server(("127.0.0.1", 0)) as server:  # never answers
+        connection = safe_fetch._PinnedConnection(
+            HOST,
+            server.getsockname()[1],
+            "127.0.0.1",
+            timeout=5.0,
+            context=client_context,
+            connect_timeout=1.0,
+        )
+        start = time.monotonic()
+        with pytest.raises(TimeoutError):
+            connection.connect()
+        connection.close()
+        assert time.monotonic() - start < 1.4
+
+
+def test_no_handshake_after_share(
+    monkeypatch: pytest.MonkeyPatch, tls_port: int, client_context: ssl.SSLContext
+) -> None:
+    """If the TCP connection used up the share, no handshake is started."""
+    _slow_connections(monkeypatch, 0.2)
+    connection = safe_fetch._PinnedConnection(
+        HOST,
+        tls_port,
+        "127.0.0.1",
+        timeout=5.0,
+        context=client_context,
+        connect_timeout=0.1,
+    )
+    with pytest.raises(TimeoutError):
+        connection.connect()
+    connection.close()
 
 
 @pytest.mark.parametrize(
