@@ -36,11 +36,13 @@ in the database). Until then, the issuer's stored users lose their roles. Prefer
 "Several token issuers" in `docs/upgrading.md`).
 
 Without `--dry-run`, it sets up the app as on startup (e.g., its indexes and
-configured rules), so run it with the image of the deployed version. A dry run
-does none of this, so it only counts what is stored: configured rules as the
-running app stored them, not those of the config. Nor does it check the config
-as startup does, so it can succeed where the migration then fails to start. Like
-startup, it refuses databases of versions before 1.0.0rc2.
+configured rules), so run it with the image of the deployed version; but it
+doesn't sync services with their service info, which the app does in the
+background. A dry run does none of this, so it only counts what is stored:
+configured rules as the running app stored them, not those of the config. Nor
+does it check the config as startup does, so it can succeed where the migration
+then fails to start. Like startup, it refuses databases of versions before
+1.0.0rc2.
 """
 
 import argparse
@@ -470,7 +472,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="only count the stored subjects, without changes or config checks",
     )
     args = parser.parse_args(argv)
-    app = _read_only_app() if args.dry_run else create_app().app
+    app = _read_only_app() if args.dry_run else create_app(start_background=False).app
     with app.app_context():
         try:
             counts = namespace_subjects(args.namespace, dry_run=args.dry_run)

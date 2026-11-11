@@ -1660,3 +1660,15 @@ def test_create_app_starts_scheduler(
 
     app = create_app()
     assert started == [app.app]
+
+
+def test_create_app_without_background(
+    app_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without background work (e.g., for commands), there is no scheduler."""
+    started: list[Any] = []
+    monkeypatch.setattr("cloud_registry.app.start_sync_scheduler", started.append)
+    from cloud_registry.app import create_app  # noqa: PLC0415
+
+    create_app(start_background=False)
+    assert started == []
