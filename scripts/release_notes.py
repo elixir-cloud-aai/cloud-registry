@@ -14,7 +14,10 @@ organization (see "Versioning and releases" in `docs/development.md`):
 
 The release body never changes, so curated notes must not link to versions
 that move (`UNVERSIONED`, e.g., the latest docs or branch `dev`), but to the
-release's (e.g., `/en/vX.Y.Z/`, `blob/vX.Y.Z/`).
+release's (e.g., `/en/vX.Y.Z/`, `blob/vX.Y.Z/`). Relative links (e.g.,
+`../upgrading.md`), which work in the docs built from `docs/releases/`, don't
+work in the release body, so curated notes link with full URLs (or within
+the page, `#...`).
 
 The curated notes (`docs/releases/<version>.md`) hold parts 1 and 2; the
 release workflow (`.github/workflows/release.yml`) adds parts 3 and 4 from
@@ -110,6 +113,25 @@ UNVERSIONED = re.compile(
 MOVING_LINK = (
     "Link to a version that moves (e.g., latest docs, branch dev): the release"
     " body never changes, so link the release's (/en/vX.Y.Z/, blob/vX.Y.Z/)"
+)
+# Link targets: of inline links and images (`[text](target)`, the target
+# also on the line after the text, or in angle brackets), of reference
+# definitions (`[label]: target`, not footnotes) and of the `href` and `src`
+# attributes of HTML tags. Matches outside links (e.g., in code) count too,
+# like `UNVERSIONED`
+LINK_TARGET = re.compile(
+    r"\]\([ \t]*\n?[ \t]*(?:<([^<>\n]*)>|([^\s)]*))"
+    r"|^[ \t]{0,3}\[(?!\^)[^\]\n]+\]:[ \t]*(?:<([^<>\n]*)>|(\S+))"
+    r"|<[A-Za-z][^<>]*?\b(?:href|src)[ \t]*=[ \t]*"
+    r"(?:\"([^\"]*)\"|'([^']*)'|([^\s\"'=<>`]+))",
+    re.MULTILINE | re.IGNORECASE,
+)
+# Targets that aren't relative: with a scheme (e.g., `https:`, `mailto:`), or
+# within the page (`#fixes`)
+ABSOLUTE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:|#", re.ASCII)
+RELATIVE_LINK = (
+    "relative links work in the docs, but not in the release body; link the"
+    " release's docs with their URL (https://.../en/vX.Y.Z/...)"
 )
 
 
@@ -355,6 +377,34 @@ class _Checker:
             self.findings.append(Finding(self.heading_line, "Empty section"))
 
 
+def _relative_links(text: str) -> list[Finding]:
+    """Return the relative links of curated notes (see `LINK_TARGET`).
+
+    Args:
+        text: Curated release notes, lines joined with line feeds.
+
+    Returns:
+        A finding for each link target without a scheme that doesn't point
+        within the page (`ABSOLUTE`), also an empty one, on its line.
+    """
+    findings = []
+    for match in LINK_TARGET.finditer(text):
+        group = next(
+            index
+            for index, value in enumerate(match.groups(), start=1)
+            if value is not None
+        )
+        target = match[group].strip()
+        if not ABSOLUTE.match(target):
+            findings.append(
+                Finding(
+                    text.count("\n", 0, match.start(group)) + 1,
+                    f"Relative link ('{target}'): {RELATIVE_LINK}",
+                )
+            )
+    return findings
+
+
 def check(markdown: str) -> list[Finding]:
     """Return the problems in the structure of curated release notes.
 
@@ -367,16 +417,20 @@ def check(markdown: str) -> list[Finding]:
         headings of `SECTIONS` (level 2, each once, in their order, none
         empty), holding bullets only, each ending with its issue and pull
         request numbers, and none of the parts that the release workflow adds
-        (`## Commits`, the `**Full Changelog**` line), and no links to
-        versions that move (`UNVERSIONED`). An HTML comment on a line of
-        its own counts as a blank line.
+        (`## Commits`, the `**Full Changelog**` line), no links to versions
+        that move (`UNVERSIONED`) and no relative links (`LINK_TARGET`). An
+        HTML comment on a line of its own counts as a blank line.
     """
     lines = markdown.removeprefix("\ufeff").splitlines()
-    findings = _Checker().run(lines) + [
-        Finding(number, MOVING_LINK)
-        for number, line in enumerate(lines, start=1)
-        if UNVERSIONED.search(line)
-    ]
+    findings = (
+        _Checker().run(lines)
+        + [
+            Finding(number, MOVING_LINK)
+            for number, line in enumerate(lines, start=1)
+            if UNVERSIONED.search(line)
+        ]
+        + _relative_links("\n".join(lines))
+    )
     return sorted(findings, key=lambda finding: finding.line)
 
 

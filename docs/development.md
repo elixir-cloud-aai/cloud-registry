@@ -355,7 +355,13 @@ published as written, so the release workflow fails if they contain
 `TODO`, are not in this format or link to versions that move (the latest
 docs, `/en/latest/`, or files on branch `dev`, `blob/dev/`; link the
 release's, e.g., `/en/vX.Y.Z/`, `blob/vX.Y.Z/`, as the published notes
-don't change) (`scripts/release_notes.py check`, tested in
+don't change) or have relative links (link targets without a scheme such
+as `https:`, e.g., `../upgrading.md#from-100rc1`, which work in the docs
+built from `docs/releases/` but not in the release body; link the release's
+docs with their full URL, or within the page with `#...`; inline links,
+images, reference definitions and HTML `href` and `src` attributes are
+checked anywhere in the notes, code included)
+(`scripts/release_notes.py check`, tested in
 `tests/test_release_notes.py`, which also checks the notes in
 `docs/releases/`), and so does the CI job "Release readiness" on pushes
 (see above); on re-runs, it replaces the notes of an existing release (also

@@ -464,6 +464,65 @@ def test_check_versioned_links(link: str) -> None:
     assert release_notes.check(f"Intro, [docs]({link}).\n") == []
 
 
+@pytest.mark.parametrize(
+    ("markdown", "line"),
+    [
+        # Inline links and images, also with angle brackets or a title
+        ("Intro, [Upgrading](../upgrading.md#from-100rc1).\n", 1),
+        ("Intro, [Upgrading](upgrading.md).\n", 1),
+        ("Intro, [docs](./index.md 'Docs').\n", 1),
+        ("Intro, [docs](/docs/index.md).\n", 1),
+        ("Intro, [docs](//example.org/docs/).\n", 1),
+        ("Intro, [docs](<../upgrading.md>).\n", 1),
+        ("Intro, ![logo](images/logo.png).\n", 1),
+        ("Intro, [nothing]().\n", 1),
+        # Targets on the line after the text
+        ("Intro, [Upgrading](\n  ../upgrading.md).\n", 2),
+        # In sections, and with link text over lines
+        ("Intro.\n\n## Fixes\n\n- Fix, see [the\n  docs](../x.md) (#1)\n", 6),
+        # Reference definitions
+        ("Intro, [Upgrading][up].\n\n[up]: ../upgrading.md\n", 3),
+        ("Intro, [Upgrading][up].\n\n   [up]:  <upgrading.md> 'Up'\n", 3),
+        # HTML
+        ('Intro, <a href="../upgrading.md">Upgrading</a>.\n', 1),
+        ("Intro, <img src='logo.png' alt='logo'>.\n", 1),
+        ("Intro, <a HREF=upgrading.md>Upgrading</a>.\n", 1),
+    ],
+)
+def test_check_relative_links(markdown: str, line: int) -> None:
+    """Relative links are rejected: they don't work in the release body."""
+    assert [
+        (finding.line, finding.message.endswith(release_notes.RELATIVE_LINK))
+        for finding in release_notes.check(markdown)
+    ] == [(line, True)]
+
+
+@pytest.mark.parametrize(
+    "markdown",
+    [
+        "Intro, [docs](https://cloud-registry.readthedocs.io/en/v1.0.0/).\n",
+        "Intro, [docs](HTTPS://example.org/) and [mail](mailto:a@example.org).\n",
+        "Intro, [docs](<https://example.org/a b>).\n",
+        "Intro, [below](#fixes), <https://example.org/>.\n",
+        "Intro, [docs][d].\n\n[d]: https://example.org/\n",
+        "Intro, [d]: not a definition, and [b] (c).\n",
+        "Intro, with a footnote[^1].\n\n[^1]: The footnote.\n",
+        'Intro, <a href="https://example.org/">docs</a>, <a href="#x">x</a>.\n',
+    ],
+)
+def test_check_absolute_links(markdown: str) -> None:
+    """Links with a scheme, and links within the page, are accepted."""
+    assert release_notes.check(markdown) == []
+
+
+def test_check_relative_link_message() -> None:
+    """The finding names the link target."""
+    findings = release_notes.check("Intro, [Upgrading](../upgrading.md#x).\n")
+    assert [finding.message for finding in findings] == [
+        f"Relative link ('../upgrading.md#x'): {release_notes.RELATIVE_LINK}"
+    ]
+
+
 def test_moving_links_as_chart_readme() -> None:
     """The links to versions that move are those of `chart_readme.py`."""
     spec = importlib.util.spec_from_file_location(
