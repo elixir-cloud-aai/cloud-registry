@@ -71,6 +71,33 @@ def test_gate_needs_all_jobs() -> None:
     assert sorted(gate["needs"]) == sorted(set(jobs) - {GATE})
 
 
+def test_ci_concurrency() -> None:
+    """Only a new head commit of a pull request cancels its CI runs.
+
+    A run cancelled by a newer run on the same commit (e.g. for an edit of
+    the description) leaves a failed gate as the newest result on the
+    commit, which blocks the merge. So only the first attempt of a run for
+    `synchronize` cancels runs in progress, and runs for pushes get a group
+    of their own (see "Cancelled runs" in `actions/gate/README.md` of
+    `elixir-cloud-aai/.github`).
+    """
+    concurrency = _load(WORKFLOWS / "ci.yml")["concurrency"]
+    cancel = " ".join(concurrency["cancel-in-progress"].split())
+    assert cancel == (
+        "${{ github.event_name == 'pull_request'"
+        " && github.event.action == 'synchronize'"
+        " && github.run_attempt == 1 }}"
+    )
+    # The whole expression, so that no other branch can give pushes a shared
+    # group (pushes first, by commit; edits that keep the title; the ref)
+    group = " ".join(concurrency["group"].split())
+    assert group == (
+        "${{ github.workflow }}-${{ github.event_name == 'push' && github.sha"
+        " || github.event.action == 'edited' && !github.event.changes.title"
+        " && format('{0}-edited', github.ref) || github.ref }}"
+    )
+
+
 def test_shared_actions_pinned() -> None:
     """The shared actions of `elixir-cloud-aai/.github` are pinned to a commit.
 
