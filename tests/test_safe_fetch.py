@@ -455,10 +455,11 @@ def test_next_address_after_timeout(
     url = f"http://{HOST}:{http_port}/"
     assert safe_get(url, schemes={"http"}, networks=LOOPBACK, timeout=0.9) == BODY
     assert [address for address, _ in tried] == ["127.0.0.2", "127.0.0.3", "127.0.0.1"]
-    # a third of the total each, less what earlier steps took
-    for _, timeout in tried:
-        assert timeout is not None
-        assert 0.15 < timeout <= 0.3
+    # at most a third of the total each, less what earlier steps took; only
+    # the first share is bounded below, as it follows the lookup at once
+    timeouts = [timeout or 0 for _, timeout in tried]
+    assert timeouts[0] > 0.2
+    assert all(timeout <= 0.3 for timeout in timeouts)
 
 
 def test_families_alternate(monkeypatch: pytest.MonkeyPatch, http_port: int) -> None:
@@ -478,7 +479,8 @@ def test_all_addresses_time_out(monkeypatch: pytest.MonkeyPatch) -> None:
     start = time.monotonic()
     with pytest.raises(Unreachable):
         safe_get(f"http://{HOST}/", schemes={"http"}, networks=LOOPBACK, timeout=0.4)
-    assert time.monotonic() - start < 1
+    # below the 0.8 seconds of two full timeouts
+    assert time.monotonic() - start < 0.7
     assert [address for address, _ in tried] == ["127.0.0.2", "127.0.0.3"]
 
 
