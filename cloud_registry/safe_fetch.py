@@ -9,6 +9,9 @@ internal services (e.g., cloud metadata endpoints). `safe_get()` therefore
 - connects to a checked address itself rather than resolving the host again,
   so that a name can't point elsewhere after the check (DNS rebinding), and
   verifies the certificate for the host name, not for the address;
+- tries the checked addresses in turn, IPv6 and IPv4 alternating, each with
+  its share of the time left for connecting, so that an address that doesn't
+  answer leaves time for the others;
 - doesn't follow redirects, which could lead anywhere: only `200 OK` passes;
 - limits the size of the response and the total time, also for servers that
   send very slowly;
@@ -24,6 +27,7 @@ from collections.abc import Collection, Iterable, Mapping
 import contextlib
 import http.client
 import ipaddress
+import itertools
 import socket
 import ssl
 import threading
@@ -159,6 +163,23 @@ def _resolve(host: str, port: int, deadline: _Deadline) -> list[str]:
     return addresses
 
 
+def _interleave(addresses: Iterable[str]) -> list[str]:
+    """Order addresses so that IPv6 and IPv4 take turns (cf. RFC 8305).
+
+    Args:
+        addresses: IP addresses, in the order of the resolver.
+
+    Returns:
+        The addresses, starting with the family of the first one, and otherwise
+        in the order of the resolver.
+    """
+    families: dict[int, list[str]] = {}
+    for address in addresses:
+        families.setdefault(ipaddress.ip_address(address).version, []).append(address)
+    rounds = itertools.zip_longest(*families.values())
+    return [address for turn in rounds for address in turn if address is not None]
+
+
 def _default_tls_context() -> ssl.SSLContext:
     """Get the TLS settings of fetches.
 
@@ -181,6 +202,7 @@ class _PinnedConnection(http.client.HTTPConnection):
         address: str,
         timeout: float,
         context: ssl.SSLContext | None,
+        connect_timeout: float | None = None,
     ) -> None:
         """Create the connection, without connecting.
 
@@ -190,19 +212,26 @@ class _PinnedConnection(http.client.HTTPConnection):
             address: IP address to connect to.
             timeout: Timeout of each socket operation, in seconds.
             context: TLS settings; plain HTTP if `None`.
+            connect_timeout: Timeout of the TCP connection, in seconds; that of
+                other socket operations if `None`.
         """
         super().__init__(host, port, timeout=timeout)
         # so that the `Host` header only has ports other than the scheme's
         self.default_port = _DEFAULT_PORTS["http" if context is None else "https"]
         self._address = address
         self._tls = context
+        self._connect_timeout = timeout if connect_timeout is None else connect_timeout
         # kept for `abort()`: `http.client` drops `sock` while the response of
         # a connection that closes is read
         self._socket: socket.socket | None = None
 
     def connect(self) -> None:
         """Connect to the address; the certificate is checked for the host."""
-        sock = socket.create_connection((self._address, self.port), self.timeout)
+        sock = socket.create_connection(
+            (self._address, self.port), self._connect_timeout
+        )
+        # the TLS handshake and the request get the timeout of other operations
+        sock.settimeout(self.timeout)
         self.sock = self._socket = sock
         if self._tls is None:
             return
@@ -320,9 +349,13 @@ def safe_get(
         "Connection": "close",
         **(headers or {}),
     }
-    for address in addresses:
+    # Each address gets an equal share of the time left for connecting, so that
+    # one that doesn't answer (e.g., IPv6 dropped on the path) can't use it all
+    ordered = _interleave(addresses)
+    for index, address in enumerate(ordered):
         left = deadline.left()
-        connection = _PinnedConnection(host, port, address, left, tls)
+        share = left / (len(ordered) - index)
+        connection = _PinnedConnection(host, port, address, left, tls, share)
         watchdog = threading.Timer(left, connection.abort)
         watchdog.daemon = True
         watchdog.start()

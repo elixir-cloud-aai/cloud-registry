@@ -41,11 +41,13 @@ class Handler(BaseHTTPRequestHandler):
     body: ClassVar[bytes] = BODY
     requests: ClassVar[list[dict[str, str]]] = []
     paths: ClassVar[list[str]] = []
+    delay: ClassVar[float] = 0.0
 
     def do_GET(self) -> None:
         """Answer with the configured response, recording the request."""
         Handler.requests.append(dict(self.headers.items()))
         Handler.paths.append(self.path)
+        time.sleep(Handler.delay)
         self.send_response(Handler.status)
         for name, value in Handler.extra_headers.items():
             self.send_header(name, value)
@@ -70,6 +72,7 @@ def _reset_handler() -> None:
     Handler.body = BODY
     Handler.requests = []
     Handler.paths = []
+    Handler.delay = 0.0
 
 
 def _serve(server: ThreadingHTTPServer) -> Iterator[int]:
@@ -406,6 +409,99 @@ def test_next_address(monkeypatch: pytest.MonkeyPatch, http_port: int) -> None:
     url = f"http://{HOST}:{http_port}/"
     assert safe_get(url, schemes={"http"}, networks=LOOPBACK) == BODY
     assert tried == ["127.0.0.2", "127.0.0.1"]
+
+
+def _dropping(
+    monkeypatch: pytest.MonkeyPatch, *dropped: str
+) -> list[tuple[str, float | None]]:
+    """Make connections to some addresses time out, as if packets were dropped.
+
+    Args:
+        monkeypatch: Fixture for patching.
+        *dropped: Addresses whose connections time out.
+
+    Returns:
+        List to which each connection adds its address and timeout.
+    """
+    connect = socket.socket.connect
+    tried: list[tuple[str, float | None]] = []
+
+    def dropping(sock: socket.socket, address: Any) -> None:
+        """Wait for the timeout of the socket on dropped addresses.
+
+        Args:
+            sock: Socket.
+            address: Address.
+
+        Raises:
+            TimeoutError: The address is dropped.
+        """
+        tried.append((address[0], sock.gettimeout()))
+        if address[0] in dropped:
+            time.sleep(sock.gettimeout() or 0)
+            raise TimeoutError
+        connect(sock, address)
+
+    monkeypatch.setattr(socket.socket, "connect", dropping)
+    return tried
+
+
+def test_next_address_after_timeout(
+    monkeypatch: pytest.MonkeyPatch, http_port: int
+) -> None:
+    """A connection that times out leaves time for the other addresses."""
+    resolving(monkeypatch, "127.0.0.2", "127.0.0.3", "127.0.0.1")
+    tried = _dropping(monkeypatch, "127.0.0.2", "127.0.0.3")
+    url = f"http://{HOST}:{http_port}/"
+    assert safe_get(url, schemes={"http"}, networks=LOOPBACK, timeout=1.5) == BODY
+    assert [address for address, _ in tried] == ["127.0.0.2", "127.0.0.3", "127.0.0.1"]
+    first, second, last = (timeout or 0 for _, timeout in tried)
+    assert first == pytest.approx(0.5, abs=0.05)
+    assert second == pytest.approx(0.5, abs=0.05)
+    assert last == pytest.approx(0.5, abs=0.05)
+
+
+def test_families_alternate(monkeypatch: pytest.MonkeyPatch, http_port: int) -> None:
+    """IPv6 and IPv4 addresses take turns, starting with the resolver's first."""
+    resolving(monkeypatch, "::2", "::3", "127.0.0.2", "127.0.0.1")
+    tried = _dropping(monkeypatch, "::2", "::3", "127.0.0.2")
+    networks = [*LOOPBACK, ipaddress.ip_network("::/126")]
+    url = f"http://{HOST}:{http_port}/"
+    assert safe_get(url, schemes={"http"}, networks=networks, timeout=2) == BODY
+    assert [address for address, _ in tried] == ["::2", "127.0.0.2", "::3", "127.0.0.1"]
+
+
+def test_all_addresses_time_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    """If no address can be connected to, the total time still holds."""
+    resolving(monkeypatch, "127.0.0.2", "127.0.0.3")
+    tried = _dropping(monkeypatch, "127.0.0.2", "127.0.0.3")
+    start = time.monotonic()
+    with pytest.raises(Unreachable):
+        safe_get(f"http://{HOST}/", schemes={"http"}, networks=LOOPBACK, timeout=0.4)
+    assert time.monotonic() - start < 1
+    assert [address for address, _ in tried] == ["127.0.0.2", "127.0.0.3"]
+
+
+def test_full_time_after_connect(
+    monkeypatch: pytest.MonkeyPatch, http_port: int
+) -> None:
+    """The response may take longer than the share of time for connecting."""
+    resolving(monkeypatch, "127.0.0.1", "127.0.0.2")
+    Handler.delay = 0.6
+    url = f"http://{HOST}:{http_port}/"
+    assert safe_get(url, schemes={"http"}, networks=LOOPBACK, timeout=1.0) == BODY
+
+
+def test_addresses_checked_before_any_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A host with an address that isn't allowed is refused before connecting."""
+    resolving(monkeypatch, "::2", "127.0.0.1", "10.0.0.1")
+    tried = _dropping(monkeypatch)
+    networks = [*LOOPBACK, ipaddress.ip_network("::/126")]
+    with pytest.raises(AddressNotAllowed):
+        safe_get(f"http://{HOST}/", schemes={"http"}, networks=networks)
+    assert not tried
 
 
 def test_unknown_name(monkeypatch: pytest.MonkeyPatch) -> None:
