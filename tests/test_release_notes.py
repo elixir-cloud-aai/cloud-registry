@@ -485,6 +485,9 @@ def test_check_versioned_links(link: str) -> None:
         ("Intro, [Upgrading][up].\n\n   [up]:  <upgrading.md> 'Up'\n", 3),
         ("Intro, [Upgrading][up].\n\n[up]:\n  ../upgrading.md\n", 4),
         ("Intro.\n\n> [Upgrading][up].\n>\n> [up]: ../upgrading.md\n", 5),
+        ("Intro.\n\n> [Upgrading][up].\n>\n>  [up]: ../upgrading.md\n", 5),
+        ("Intro.\n\n> [Upgrading][up].\n>\n> [up]:\n> ../upgrading.md\n", 6),
+        ("Intro.\n\n> See [Upgrading](\n> ../upgrading.md).\n", 4),
         # Lines of paragraphs that look like definitions count too
         ("Intro text that ends\n[Upgrading]: a section name.\n", 2),
         # HTML
@@ -493,6 +496,8 @@ def test_check_versioned_links(link: str) -> None:
         ("Intro, <a HREF=upgrading.md>Upgrading</a>.\n", 1),
         ('Intro, <a href=\n"../x.md">x</a>.\n', 2),
         ('Intro, <img src=""> logo.\n', 1),
+        ('Intro, <svg><use xlink:href="docs/x.svg"/></svg>.\n', 1),
+        ('Intro, <a/href="docs/x.md">x</a>.\n', 1),
         (
             '<picture><source srcset="logo-dark.png 1x, https://x.org/l.png 2x">'
             '<img src="https://x.org/l.png"></picture> Intro.\n',
@@ -528,6 +533,9 @@ def test_check_relative_links(markdown: str, line: int) -> None:
         # Query parameters of autolinks and URLs
         "Intro, <https://example.org/search?src=mail>.\n",
         "Intro, if a<b, see [x](https://example.org/?href=c).\n",
+        # Targets on the next line of block quotes
+        "> [!IMPORTANT]\n> See [the docs](\n> https://example.org/x).\n",
+        "Intro, [a][a].\n\n> [a]:\n> https://example.org/x\n",
     ],
 )
 def test_check_absolute_links(markdown: str) -> None:

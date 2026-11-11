@@ -114,17 +114,20 @@ MOVING_LINK = (
     "Link to a version that moves (e.g., latest docs, branch dev): the release"
     " body never changes, so link the release's (/en/vX.Y.Z/, blob/vX.Y.Z/)"
 )
+# Whitespace before a link target, also a line break (in block quotes, with
+# the quote markers of the next line)
+_NEXT_LINE = r"[ \t]*(?:\n[ \t]*(?:>[ \t]*)*)?"
 # Link targets: of inline links and images (`[text](target)`), of reference
 # definitions (`[label]: target`, also in block quotes, not footnotes), both
 # also on the next line or in angle brackets, and of the `href`, `src` and
-# `srcset` attributes of HTML tags (the first URL of `srcset`). Matches
-# outside links (e.g., in code, or lines of paragraphs that look like
-# definitions) count too, like `UNVERSIONED`
+# `srcset` attributes of HTML tags, also namespaced (e.g., `xlink:href`; the
+# first URL of `srcset`). Matches outside links (e.g., in code, or lines of
+# paragraphs that look like definitions) count too, like `UNVERSIONED`
 LINK_TARGET = re.compile(
-    r"\]\([ \t]*\n?[ \t]*(?:<([^<>\n]*)>|([^\s)]*))"
-    r"|^[ \t]{0,3}(?:>[ \t]?)*\[(?!\^)[^\]\n]+\]:[ \t]*\n?[ \t]*"
+    rf"\]\({_NEXT_LINE}(?:<([^<>\n]*)>|([^\s)]*))"
+    rf"|^[ \t]{{0,3}}(?:>[ \t]*)*\[(?!\^)[^\]\n]+\]:{_NEXT_LINE}"
     r"(?:<([^<>\n]*)>|(\S+))"
-    r"|<[A-Za-z][^<>]*?\s(?:href|src|srcset)\s*=\s*"
+    r"|<[A-Za-z][^<>]*?[\s/:](?:href|src|srcset)\s*=\s*"
     r"(?:\"\s*([^\"\s]*)|'\s*([^'\s]*)|([^\s\"'=<>`]+))",
     re.ASCII | re.MULTILINE | re.IGNORECASE,
 )
