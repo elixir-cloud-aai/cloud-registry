@@ -457,6 +457,23 @@ def test_main(client: FlaskClient, capsys: pytest.CaptureFixture[str]) -> None:
     assert "error: No trusted issuer" in capsys.readouterr().err
 
 
+def test_main_no_sync_scheduler(
+    monkeypatch: pytest.MonkeyPatch,
+    client: FlaskClient,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The migration sets up the app without the scheduler of syncs.
+
+    Otherwise long runs would sync services from where the command runs, and
+    leave claims of syncs cut off on exit locked.
+    """
+    started: list[Any] = []
+    monkeypatch.setattr("cloud_registry.app.start_sync_scheduler", started.append)
+    assert main([ISSUER]) == 0
+    assert "Namespaced rules: 2" in capsys.readouterr().out
+    assert started == []
+
+
 def _snapshot(mongo_client: MongoClient[dict[str, Any]]) -> dict[str, Any]:
     """Get the indexes and documents of all collections of the database.
 
