@@ -10,6 +10,7 @@ import socket
 import ssl
 import subprocess
 import sys
+import threading
 import time
 
 import pytest
@@ -100,6 +101,21 @@ def test_unverified(
     assert "untrusted certificate accepted" in capsys.readouterr().err
 
 
+def test_no_hostname_check(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Settings that check certificates, but not for the host, fail."""
+
+    def context() -> ssl.SSLContext:
+        unchecked = ssl.create_default_context()
+        unchecked.check_hostname = False
+        return unchecked
+
+    monkeypatch.setattr(smoke_tls, "_default_tls_context", context)
+    assert smoke_tls.main() == 1
+    assert "certificate of other host accepted" in capsys.readouterr().err
+
+
 def test_untrusted_other_reason(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -135,13 +151,23 @@ def test_wrong_body(
     assert "unexpected response" in capsys.readouterr().err
 
 
-def test_stalled_handshake() -> None:
+def test_stalled_handshake(monkeypatch: pytest.MonkeyPatch) -> None:
     """A client that doesn't make its TLS handshake doesn't block the server."""
+    accepted = threading.Event()
+    get_request = smoke_tls._Server.get_request
+
+    def accept(server: object) -> tuple[ssl.SSLSocket, object]:
+        request = get_request(server)
+        accepted.set()
+        return request
+
+    monkeypatch.setattr(smoke_tls._Server, "get_request", accept)
     _, chain = smoke_tls._certificates()
-    start = time.monotonic()
     with smoke_tls._server(chain) as port:
         client = socket.create_connection(("127.0.0.1", port))
-        time.sleep(0.2)  # accepted, waiting for the handshake
+        # accepted, and waiting for the handshake
+        assert accepted.wait(smoke_tls.TIMEOUT / 2)
+        start = time.monotonic()
     try:
         assert time.monotonic() - start < smoke_tls.TIMEOUT / 2
     finally:

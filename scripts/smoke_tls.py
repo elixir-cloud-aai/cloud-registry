@@ -12,8 +12,9 @@ checks, with the Python, OpenSSL and CA certificates of wherever it runs, that
 - a fetch with these settings, trusting a test CA too, gets the response of a
   local TLS server (on a free port of the loopback interface) whose
   certificate the test CA issued, over a verified connection;
-- a TLS handshake with that server with these settings alone fails on its
-  certificate, which they don't trust, so that certificates are checked.
+- TLS handshakes with that server fail on its certificate with these
+  settings alone, which don't trust it, and for another host name with the
+  test CA, so that certificates are checked, also for the host.
 
 CI's smoke test runs it in the app's container (`.github/workflows/ci.yml`,
 job `smoke`), from standard input, as the image doesn't contain `scripts/`:
@@ -51,6 +52,8 @@ from cloud_registry.safe_fetch import (
 )
 
 HOST = "localhost"
+# Host name that the certificate of the test server isn't for
+OTHER_HOST = "other.example.org"
 # Fetches may only reach the loopback interface, where the test server is
 NETWORKS = [ipaddress.ip_network("127.0.0.0/8"), ipaddress.ip_network("::1/128")]
 BODY = b'{"smoke": "tls"}'
@@ -61,6 +64,8 @@ _HASHED_NAME = re.compile(r"[0-9a-f]{8}\.[0-9]+")
 # OpenSSL's verification error of a certificate whose issuer isn't trusted
 # (`X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY`)
 _UNTRUSTED_ISSUER = 20
+# ... and of a certificate of another host (`X509_V_ERR_HOSTNAME_MISMATCH`)
+_HOSTNAME_MISMATCH = 62
 
 
 class SmokeTestError(Exception):
@@ -242,6 +247,38 @@ def _ca_certificates(context: ssl.SSLContext) -> int:
     return count
 
 
+def _refused(
+    port: int, context: ssl.SSLContext, host: str, code: int, what: str
+) -> None:
+    """Check that a TLS handshake with the test server fails on its certificate.
+
+    The handshake is made directly, as fetches don't tell why they fail;
+    errors other than the certificate's (e.g., of the connection) end the
+    script with their traceback.
+
+    Args:
+        port: Port of the test server.
+        context: TLS settings of the client.
+        host: Host name that the certificate is checked for.
+        code: OpenSSL's verification error that the handshake must fail with.
+        what: Description of the certificate, for messages.
+
+    Raises:
+        SmokeTestError: The handshake succeeded, or failed with another error.
+    """
+    with socket.create_connection(("127.0.0.1", port), TIMEOUT) as sock:
+        try:
+            context.wrap_socket(sock, server_hostname=host).close()
+        except ssl.SSLCertVerificationError as exc:
+            if exc.verify_code == code:
+                return
+            raise SmokeTestError(
+                f"TLS handshake with {what} failed for another reason: "
+                f"{exc.verify_message}"
+            ) from exc
+    raise SmokeTestError(f"{what} accepted")
+
+
 def check() -> None:
     """Run the checks (cf. the module docstring).
 
@@ -264,21 +301,16 @@ def check() -> None:
             raise SmokeTestError("verified TLS fetch failed") from exc
         if body != BODY:
             raise SmokeTestError(f"unexpected response of verified TLS fetch: {body!r}")
-        # The same server without the test CA: the handshake must fail on the
-        # certificate, not for another reason (e.g., the connection), so it is
-        # made directly, as fetches don't tell why they fail; other errors
-        # end the script with their traceback
-        with socket.create_connection(("127.0.0.1", port), TIMEOUT) as sock:
-            try:
-                _default_tls_context().wrap_socket(sock, server_hostname=HOST).close()
-            except ssl.SSLCertVerificationError as exc:
-                if exc.verify_code == _UNTRUSTED_ISSUER:
-                    return
-                raise SmokeTestError(
-                    f"untrusted TLS handshake failed for another reason: "
-                    f"{exc.verify_message}"
-                ) from exc
-        raise SmokeTestError("untrusted certificate accepted")
+        _refused(
+            port,
+            _default_tls_context(),
+            HOST,
+            _UNTRUSTED_ISSUER,
+            "untrusted certificate",
+        )
+        _refused(
+            port, trusting, OTHER_HOST, _HOSTNAME_MISMATCH, "certificate of other host"
+        )
 
 
 def main() -> int:
@@ -292,7 +324,10 @@ def main() -> int:
     except SmokeTestError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    print("CA certificates found; verified TLS fetch passed; untrusted one refused")
+    print(
+        "CA certificates found; verified TLS fetch passed; untrusted certificate "
+        "and certificate of other host refused"
+    )
     return 0
 
 
