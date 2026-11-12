@@ -58,6 +58,9 @@ TIMEOUT = 10.0
 # Names of CA certificates in OpenSSL's lookup directory: hash of the subject
 # and a sequence number (`openssl rehash`); CRLs have an `r` before the number
 _HASHED_NAME = re.compile(r"[0-9a-f]{8}\.[0-9]+")
+# OpenSSL's verification error of a certificate whose issuer isn't trusted
+# (`X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY`)
+_UNTRUSTED_ISSUER = 20
 
 
 class SmokeTestError(Exception):
@@ -77,6 +80,45 @@ class _Handler(BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args: object) -> None:
         """Log nothing (cf. `BaseHTTPRequestHandler.log_message()`)."""
+
+
+class _Server(ThreadingHTTPServer):
+    """TLS server on a free port of the loopback interface.
+
+    Each connection makes its TLS handshake in its own thread, with a
+    timeout, so that a client that doesn't complete it can't block the
+    server or its shutdown.
+    """
+
+    def __init__(self, context: ssl.SSLContext) -> None:
+        """Create the server, listening.
+
+        Args:
+            context: TLS settings of the server.
+        """
+        super().__init__(("127.0.0.1", 0), _Handler)
+        self.context = context
+
+    def get_request(self) -> tuple[ssl.SSLSocket, object]:
+        """Accept a connection, without its TLS handshake yet.
+
+        Returns:
+            The TLS socket of the connection and the client's address.
+        """
+        sock, address = self.socket.accept()
+        sock.settimeout(TIMEOUT)
+        tls = self.context.wrap_socket(
+            sock, server_side=True, do_handshake_on_connect=False
+        )
+        return tls, address
+
+    def handle_error(self, request: object, client_address: object) -> None:
+        """Ignore failed connections, e.g., handshakes that the client refused.
+
+        Args:
+            request: Socket of the connection.
+            client_address: Address of the client.
+        """
 
 
 def _certificates() -> tuple[bytes, bytes]:
@@ -166,8 +208,7 @@ def _server(chain: bytes) -> Iterator[int]:
         path = Path(directory) / "server.pem"
         path.write_bytes(chain)
         context.load_cert_chain(path)
-    server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
-    server.socket = context.wrap_socket(server.socket, server_side=True)
+    server = _Server(context)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -230,8 +271,13 @@ def check() -> None:
         with socket.create_connection(("127.0.0.1", port), TIMEOUT) as sock:
             try:
                 _default_tls_context().wrap_socket(sock, server_hostname=HOST).close()
-            except ssl.SSLCertVerificationError:
-                return
+            except ssl.SSLCertVerificationError as exc:
+                if exc.verify_code == _UNTRUSTED_ISSUER:
+                    return
+                raise SmokeTestError(
+                    f"untrusted TLS handshake failed for another reason: "
+                    f"{exc.verify_message}"
+                ) from exc
         raise SmokeTestError("untrusted certificate accepted")
 
 

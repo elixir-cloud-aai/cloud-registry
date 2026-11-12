@@ -6,9 +6,11 @@ TLS settings of the host, and with settings that it must reject.
 
 import importlib.util
 from pathlib import Path
+import socket
 import ssl
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -98,6 +100,15 @@ def test_unverified(
     assert "untrusted certificate accepted" in capsys.readouterr().err
 
 
+def test_untrusted_other_reason(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An untrusted handshake that fails on anything but the issuer fails."""
+    monkeypatch.setattr(smoke_tls, "_UNTRUSTED_ISSUER", -1)
+    assert smoke_tls.main() == 1
+    assert "for another reason" in capsys.readouterr().err
+
+
 def test_fetch_fails(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -122,3 +133,16 @@ def test_wrong_body(
     monkeypatch.setattr(smoke_tls, "safe_get", safe_get)
     assert smoke_tls.main() == 1
     assert "unexpected response" in capsys.readouterr().err
+
+
+def test_stalled_handshake() -> None:
+    """A client that doesn't make its TLS handshake doesn't block the server."""
+    _, chain = smoke_tls._certificates()
+    start = time.monotonic()
+    with smoke_tls._server(chain) as port:
+        client = socket.create_connection(("127.0.0.1", port))
+        time.sleep(0.2)  # accepted, waiting for the handshake
+    try:
+        assert time.monotonic() - start < smoke_tls.TIMEOUT / 2
+    finally:
+        client.close()
