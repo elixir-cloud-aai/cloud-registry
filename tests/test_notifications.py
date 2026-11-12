@@ -188,6 +188,34 @@ def services_config(client: FlaskClient) -> Any:
         return get_custom_config(CustomConfig).endpoints.services
 
 
+def dismissals(client: FlaskClient) -> list[dict[str, Any]]:
+    """Get the stored dismissals.
+
+    Args:
+        client: Test client of the app.
+
+    Returns:
+        Dismissals.
+    """
+    with client.application.app_context():
+        return list(get_collection(notifications_module.DISMISSALS).find())
+
+
+def age_dismissals(client: FlaskClient) -> None:
+    """Make the stored dismissals older than any listing that follows.
+
+    Listings keep dismissals from the millisecond they start on (cf.
+    `getNotifications()`), which a fast test may share with a dismissal.
+
+    Args:
+        client: Test client of the app.
+    """
+    with client.application.app_context():
+        get_collection(notifications_module.DISMISSALS).update_many(
+            {}, {"$set": {"dismissedAt": now() - timedelta(minutes=1)}}
+        )
+
+
 def test_requires_login(client: FlaskClient) -> None:
     """Notifications need a login."""
     assert client.get(URL).status_code == 401
@@ -489,8 +517,70 @@ def test_dismissals_of_owners_stay_when_admins_look(client: FlaskClient) -> None
     service_id = register(client)
     fail(client, service_id)
     assert dismiss(client, notifications(client)[0]["id"]) == 200
+    age_dismissals(client)
     assert len(notifications(client, ADMIN, admin=True)) == 1
     assert notifications(client) == []
+    assert len(dismissals(client)) == 1
+
+
+def test_dismissals_of_owners_forgotten_after_ending(client: FlaskClient) -> None:
+    """What owners dismissed is forgotten once it ended, when admins look.
+
+    Only that: what lasts stays dismissed.
+    """
+    service_id = register(client)
+    other_id = register(client, host="other")
+    fail(client, service_id)
+    fail(client, other_id)
+    for item in notifications(client):
+        assert dismiss(client, item["id"]) == 200
+    recover(client, service_id)
+    age_dismissals(client)
+    [lasting] = notifications(client, ADMIN, admin=True)
+    assert lasting["serviceId"] == other_id
+    assert [item["_id"] for item in dismissals(client)] == [
+        f"{notifications_module.OWNERS}:{lasting['id']}"
+    ]
+    assert notifications(client) == []
+
+
+def test_dismissals_of_deleted_services_forgotten(client: FlaskClient) -> None:
+    """What owners dismissed about a deleted service is forgotten, when admins look."""
+    service_id = register(client)
+    fail(client, service_id)
+    assert dismiss(client, notifications(client)[0]["id"]) == 200
+    response = client.delete(f"{BASE}/services/{service_id}", headers=make_headers())
+    assert response.status_code == 200
+    age_dismissals(client)
+    assert notifications(client, ADMIN, admin=True) == []
+    assert dismissals(client) == []
+
+
+def test_dismissals_while_admins_look_stay(
+    client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dismissals made while admins list notifications aren't forgotten.
+
+    They may be about what began after the listing found what is current.
+    """
+    original = notifications_module._current
+    dismissal_id = f"{notifications_module.OWNERS}:new"
+
+    def dismiss_meanwhile() -> tuple[str, list[dict[str, Any]]]:
+        """Find what is current, then let an owner dismiss what began since.
+
+        Returns:
+            What `_current()` returns.
+        """
+        current = original()
+        get_collection(notifications_module.DISMISSALS).insert_one(
+            {"_id": dismissal_id, "dismissedAt": now()}
+        )
+        return current
+
+    monkeypatch.setattr(notifications_module, "_current", dismiss_meanwhile)
+    assert notifications(client, ADMIN, admin=True) == []
+    assert [item["_id"] for item in dismissals(client)] == [dismissal_id]
 
 
 def test_invalid_url_is_no_scheme_problem(client: FlaskClient) -> None:

@@ -12,9 +12,10 @@ for each other. The identifier of a notification stands for one episode of a
 problem (cf. `_notification_id()`), so that a dismissed notification only comes back
 if the problem ended and came back, or its reason changed. For what only admins see,
 the identifier stands for the pending type or the value that isn't allowed, as changes
-of the configuration and the pending flag leave no trace; their dismissals are removed
-when admins list notifications while the problem is gone (cf. `getNotifications()`).
-Dismissals don't refer to users, and can only be made by human actions, so they stay.
+of the configuration and the pending flag leave no trace. Dismissals, of admins and of
+owners, are removed when admins list notifications while the problem is gone, also
+after the service was deleted (cf. `getNotifications()`), so that they don't pile up.
+Dismissals don't refer to users, and can only be made by human actions.
 """
 
 from collections.abc import Iterator
@@ -291,18 +292,24 @@ def getNotifications(**kwargs: Any) -> list[dict[str, Any]]:
         Notifications that the audience of the user hasn't dismissed, most recent
         first (those without a time last), with a stable order.
     """
+    started = now()
     audience, notifications = _current()
     if audience == ADMINS:
         # what ended is forgotten, so that it comes back if it does, under the same
-        # identifier; only those of admins, as these are all known here
+        # identifier, and dismissals of deleted services don't pile up; admins see
+        # all that owners see, so the dismissals of both are pruned here, except
+        # those made meanwhile, which may be about what began since (by the clock of
+        # each replica: with clocks that differ, a dismissal made meanwhile may be
+        # forgotten, and the notification shown once more)
+        current = [_dismissal_id(ADMINS, item["id"]) for item in notifications] + [
+            _dismissal_id(OWNERS, item["id"])
+            for item in notifications
+            if item["type"] == NotificationType.OUT_OF_SYNC
+        ]
         get_collection(DISMISSALS).delete_many(
             {
-                "_id": {
-                    "$regex": f"^{ADMINS}:",
-                    "$nin": [
-                        _dismissal_id(ADMINS, item["id"]) for item in notifications
-                    ],
-                }
+                "_id": {"$regex": f"^({ADMINS}|{OWNERS}):", "$nin": current},
+                "dismissedAt": {"$lt": started},
             }
         )
     dismissed = {

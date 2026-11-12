@@ -779,7 +779,10 @@ It returns the identifier, or `404 Not Found` if the user has no such notificati
 back, or its reason changed. Updates and renames keep it. For what only admins see, the
 registry notices that a problem ended when an admin lists notifications meanwhile: if
 none did, a service back on the same pending type, or a configuration that changed back
-and forth, stays dismissed. `GET /approvals` always lists what is pending.
+and forth, stays dismissed. `GET /approvals` always lists what is pending. When admins
+list notifications in admin mode, the registry also removes the stored dismissals, of
+owners and admins alike, of problems that ended and of services that were deleted;
+until then, they stay stored.
 
 ## Listing the registry itself
 
