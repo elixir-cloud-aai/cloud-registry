@@ -478,6 +478,11 @@ jobs:
             "from importlib.metadata import distribution; \
             text = distribution('cloud-registry').read_text('licenses/LICENSE'); \
             assert text and 'Apache License' in text, 'LICENSE missing'"
+      # The image has the CA certificates that fetches of service info need,
+      # and makes verified TLS fetches (`scripts/smoke_tls.py`; read from
+      # standard input, as the image doesn't contain `scripts/`)
+      - name: Check verified TLS fetch
+        run: docker compose exec -T cloud-registry python - < scripts/smoke_tls.py
       - name: Show app logs
         if: failure()
         run: docker compose logs

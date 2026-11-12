@@ -71,6 +71,16 @@ def test_gate_needs_all_jobs() -> None:
     assert sorted(gate["needs"]) == sorted(set(jobs) - {GATE})
 
 
+def test_smoke_tls_fetch() -> None:
+    """The smoke test runs the TLS fetch checks in the app's container."""
+    steps = _load(WORKFLOWS / "ci.yml")["jobs"]["smoke"]["steps"]
+    runs = [step.get("run", "").strip() for step in steps]
+    command = "docker compose exec -T cloud-registry python - < scripts/smoke_tls.py"
+    # after the app is up
+    start = runs.index("docker compose up -d --build --wait --wait-timeout 300")
+    assert command in runs[start + 1 :]
+
+
 def test_ci_concurrency() -> None:
     """Only a new head commit of a pull request cancels its CI runs.
 
