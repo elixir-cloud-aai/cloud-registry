@@ -30,6 +30,7 @@ import yaml
 import cloud_registry.app
 import cloud_registry.ga4gh.registry.server
 from cloud_registry.service_models.custom_config import CustomConfig
+import cloud_registry.utils
 from tests.conftest import (
     ADMIN_GROUP,
     APP_DIR,
@@ -2049,8 +2050,17 @@ def test_create_app_old_format(
     """
     db_client[DB][collection].insert_one(document)
     _set_overlay(monkeypatch, tmp_path, _service_info_overlay({}))
-    with pytest.raises(RuntimeError, match=f"`{collection}`.*fresh database"):
+    monkeypatch.setattr(
+        cloud_registry.utils, "version", {"cloud-registry": "1.2.3rc4"}.__getitem__
+    )
+    with pytest.raises(
+        RuntimeError, match=f"`{collection}`.*fresh database"
+    ) as exc_info:
         cloud_registry.app.create_app()
+    assert str(exc_info.value).endswith(
+        " (see https://cloud-registry.readthedocs.io/en/v1.2.3rc4/upgrading/"
+        "#from-100rc1)"
+    )
     assert "tokenHash_1" not in db_client[DB]["invitations"].index_information()
 
 

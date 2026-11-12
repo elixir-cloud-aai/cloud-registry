@@ -9,6 +9,9 @@ internal services (e.g., cloud metadata endpoints). `safe_get()` therefore
 - connects to a checked address itself rather than resolving the host again,
   so that a name can't point elsewhere after the check (DNS rebinding), and
   verifies the certificate for the host name, not for the address;
+- tries the checked addresses in turn, IPv6 and IPv4 alternating, each with
+  its share of the time left for connecting (TCP and TLS handshake), so that an
+  address that doesn't answer leaves time for the others;
 - doesn't follow redirects, which could lead anywhere: only `200 OK` passes;
 - limits the size of the response and the total time, also for servers that
   send very slowly;
@@ -24,6 +27,7 @@ from collections.abc import Collection, Iterable, Mapping
 import contextlib
 import http.client
 import ipaddress
+import itertools
 import socket
 import ssl
 import threading
@@ -159,6 +163,26 @@ def _resolve(host: str, port: int, deadline: _Deadline) -> list[str]:
     return addresses
 
 
+def _interleave(addresses: Iterable[str]) -> list[str]:
+    """Order addresses so that IPv6 and IPv4 take turns.
+
+    As in the address sorting of Happy Eyeballs (RFC 8305), but the order of
+    the resolver decides which family starts, and connections are sequential.
+
+    Args:
+        addresses: IP addresses, in the order of the resolver.
+
+    Returns:
+        The addresses, starting with the family of the first one, and otherwise
+        in the order of the resolver.
+    """
+    families: dict[int, list[str]] = {}
+    for address in addresses:
+        families.setdefault(ipaddress.ip_address(address).version, []).append(address)
+    rounds = itertools.zip_longest(*families.values())
+    return [address for turn in rounds for address in turn if address is not None]
+
+
 def _default_tls_context() -> ssl.SSLContext:
     """Get the TLS settings of fetches.
 
@@ -181,6 +205,7 @@ class _PinnedConnection(http.client.HTTPConnection):
         address: str,
         timeout: float,
         context: ssl.SSLContext | None,
+        connect_timeout: float | None = None,
     ) -> None:
         """Create the connection, without connecting.
 
@@ -190,28 +215,45 @@ class _PinnedConnection(http.client.HTTPConnection):
             address: IP address to connect to.
             timeout: Timeout of each socket operation, in seconds.
             context: TLS settings; plain HTTP if `None`.
+            connect_timeout: Timeout of the TCP connection and the TLS
+                handshake together, in seconds; that of other socket operations
+                if `None`.
         """
         super().__init__(host, port, timeout=timeout)
         # so that the `Host` header only has ports other than the scheme's
         self.default_port = _DEFAULT_PORTS["http" if context is None else "https"]
         self._address = address
         self._tls = context
+        self._connect_timeout = timeout if connect_timeout is None else connect_timeout
         # kept for `abort()`: `http.client` drops `sock` while the response of
         # a connection that closes is read
         self._socket: socket.socket | None = None
 
     def connect(self) -> None:
         """Connect to the address; the certificate is checked for the host."""
-        sock = socket.create_connection((self._address, self.port), self.timeout)
+        # the connection timeout bounds the TCP connection and the TLS handshake
+        # together, as an address may take connections but not complete it
+        # (e.g., large packets dropped on the path); the request gets the
+        # timeout of other operations
+        end = time.monotonic() + self._connect_timeout
+        sock = socket.create_connection(
+            (self._address, self.port), self._connect_timeout
+        )
         self.sock = self._socket = sock
         if self._tls is None:
+            sock.settimeout(self.timeout)
             return
+        left = end - time.monotonic()
+        if left <= 0:
+            raise TimeoutError
+        sock.settimeout(left)
         # no handshake yet, so that `abort()` reaches the socket during it
         tls_sock = self._tls.wrap_socket(
             sock, server_hostname=self.host, do_handshake_on_connect=False
         )
         self.sock = self._socket = tls_sock
         tls_sock.do_handshake()
+        tls_sock.settimeout(self.timeout)
 
     def abort(self) -> None:
         """Interrupt whatever the connection is waiting for, from any thread."""
@@ -320,9 +362,14 @@ def safe_get(
         "Connection": "close",
         **(headers or {}),
     }
-    for address in addresses:
+    # Each address gets an equal share of the time left for connecting,
+    # recalculated for each, so that one that doesn't answer (e.g., IPv6
+    # dropped on the path) can't use it all; failing fast leaves more for others
+    ordered = _interleave(addresses)
+    for index, address in enumerate(ordered):
         left = deadline.left()
-        connection = _PinnedConnection(host, port, address, left, tls)
+        share = left / (len(ordered) - index)
+        connection = _PinnedConnection(host, port, address, left, tls, share)
         watchdog = threading.Timer(left, connection.abort)
         watchdog.daemon = True
         watchdog.start()

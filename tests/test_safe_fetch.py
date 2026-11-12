@@ -41,11 +41,13 @@ class Handler(BaseHTTPRequestHandler):
     body: ClassVar[bytes] = BODY
     requests: ClassVar[list[dict[str, str]]] = []
     paths: ClassVar[list[str]] = []
+    delay: ClassVar[float] = 0.0
 
     def do_GET(self) -> None:
         """Answer with the configured response, recording the request."""
         Handler.requests.append(dict(self.headers.items()))
         Handler.paths.append(self.path)
+        time.sleep(Handler.delay)
         self.send_response(Handler.status)
         for name, value in Handler.extra_headers.items():
             self.send_header(name, value)
@@ -70,6 +72,7 @@ def _reset_handler() -> None:
     Handler.body = BODY
     Handler.requests = []
     Handler.paths = []
+    Handler.delay = 0.0
 
 
 def _serve(server: ThreadingHTTPServer) -> Iterator[int]:
@@ -406,6 +409,229 @@ def test_next_address(monkeypatch: pytest.MonkeyPatch, http_port: int) -> None:
     url = f"http://{HOST}:{http_port}/"
     assert safe_get(url, schemes={"http"}, networks=LOOPBACK) == BODY
     assert tried == ["127.0.0.2", "127.0.0.1"]
+
+
+def _dropping(
+    monkeypatch: pytest.MonkeyPatch, *dropped: str
+) -> list[tuple[str, float | None]]:
+    """Make connections to some addresses time out, as if packets were dropped.
+
+    Args:
+        monkeypatch: Fixture for patching.
+        *dropped: Addresses whose connections time out.
+
+    Returns:
+        List to which each connection adds its address and timeout.
+    """
+    connect = socket.socket.connect
+    tried: list[tuple[str, float | None]] = []
+
+    def dropping(sock: socket.socket, address: Any) -> None:
+        """Wait for the timeout of the socket on dropped addresses.
+
+        Args:
+            sock: Socket.
+            address: Address.
+
+        Raises:
+            TimeoutError: The address is dropped.
+        """
+        tried.append((address[0], sock.gettimeout()))
+        if address[0] in dropped:
+            time.sleep(sock.gettimeout() or 0)
+            raise TimeoutError
+        connect(sock, address)
+
+    monkeypatch.setattr(socket.socket, "connect", dropping)
+    return tried
+
+
+def test_next_address_after_timeout(
+    monkeypatch: pytest.MonkeyPatch, http_port: int
+) -> None:
+    """A connection that times out leaves time for the other addresses."""
+    resolving(monkeypatch, "127.0.0.2", "127.0.0.3", "127.0.0.1")
+    tried = _dropping(monkeypatch, "127.0.0.2", "127.0.0.3")
+    url = f"http://{HOST}:{http_port}/"
+    assert safe_get(url, schemes={"http"}, networks=LOOPBACK, timeout=0.9) == BODY
+    assert [address for address, _ in tried] == ["127.0.0.2", "127.0.0.3", "127.0.0.1"]
+    # at most a third of the total each, less what earlier steps took; only
+    # the first share is bounded below, as it follows the lookup at once
+    timeouts = [timeout or 0 for _, timeout in tried]
+    assert timeouts[0] > 0.2
+    assert all(timeout <= 0.3 for timeout in timeouts)
+
+
+def test_families_alternate(monkeypatch: pytest.MonkeyPatch, http_port: int) -> None:
+    """IPv6 and IPv4 addresses take turns, starting with the resolver's first."""
+    resolving(monkeypatch, "::2", "::3", "127.0.0.2", "127.0.0.1")
+    tried = _dropping(monkeypatch, "::2", "::3", "127.0.0.2")
+    networks = [*LOOPBACK, ipaddress.ip_network("::/126")]
+    url = f"http://{HOST}:{http_port}/"
+    assert safe_get(url, schemes={"http"}, networks=networks, timeout=0.8) == BODY
+    assert [address for address, _ in tried] == ["::2", "127.0.0.2", "::3", "127.0.0.1"]
+
+
+def test_all_addresses_time_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    """If no address can be connected to, the total time still holds."""
+    resolving(monkeypatch, "127.0.0.2", "127.0.0.3")
+    tried = _dropping(monkeypatch, "127.0.0.2", "127.0.0.3")
+    start = time.monotonic()
+    with pytest.raises(Unreachable):
+        safe_get(f"http://{HOST}/", schemes={"http"}, networks=LOOPBACK, timeout=0.4)
+    # below the 0.8 seconds of two full timeouts
+    assert time.monotonic() - start < 0.7
+    assert [address for address, _ in tried] == ["127.0.0.2", "127.0.0.3"]
+
+
+def test_full_time_after_connect(
+    monkeypatch: pytest.MonkeyPatch, http_port: int
+) -> None:
+    """The response may take longer than the share of time for connecting."""
+    resolving(monkeypatch, "127.0.0.1", "127.0.0.2", "127.0.0.3", "127.0.0.4")
+    Handler.delay = 0.8
+    url = f"http://{HOST}:{http_port}/"
+    assert safe_get(url, schemes={"http"}, networks=LOOPBACK, timeout=2.0) == BODY
+
+
+def test_timeout_restored_after_connect(http_port: int) -> None:
+    """After the TCP connection, sockets get the timeout of other operations."""
+    connection = safe_fetch._PinnedConnection(
+        HOST, http_port, "127.0.0.1", timeout=2.0, context=None, connect_timeout=0.25
+    )
+    try:
+        connection.connect()
+        assert connection.sock is not None
+        assert connection.sock.gettimeout() == 2.0
+    finally:
+        connection.close()
+
+
+def test_next_address_after_silent_handshake(
+    monkeypatch: pytest.MonkeyPatch, tls_port: int, client_context: ssl.SSLContext
+) -> None:
+    """An address that accepts but never finishes the TLS handshake leaves time."""
+    resolving(monkeypatch, "127.0.0.2", "127.0.0.1")
+    with socket.create_server(("127.0.0.2", tls_port)):  # never answers
+        url = f"https://{HOST}:{tls_port}/"
+        start = time.monotonic()
+        assert safe_get(url, networks=LOOPBACK, timeout=2.0, context=client_context)
+        assert time.monotonic() - start < 1.5
+
+
+def test_tls_timeout_restored_after_handshake(
+    tls_port: int, client_context: ssl.SSLContext
+) -> None:
+    """After the TLS handshake, sockets get the timeout of other operations."""
+    connection = safe_fetch._PinnedConnection(
+        HOST,
+        tls_port,
+        "127.0.0.1",
+        timeout=2.0,
+        context=client_context,
+        connect_timeout=0.25,
+    )
+    try:
+        connection.connect()
+        assert connection.sock is not None
+        assert connection.sock.gettimeout() == 2.0
+    finally:
+        connection.close()
+
+
+def _slow_connections(monkeypatch: pytest.MonkeyPatch, seconds: float) -> None:
+    """Make TCP connections take longer.
+
+    Args:
+        monkeypatch: Fixture for patching.
+        seconds: Time each connection takes in addition.
+    """
+    create_connection = socket.create_connection
+
+    def slow(*args: Any, **kwargs: Any) -> socket.socket:
+        """Connect, then wait.
+
+        Args:
+            *args: Arguments of `socket.create_connection()`.
+            **kwargs: Arguments of `socket.create_connection()`.
+
+        Returns:
+            Socket.
+        """
+        sock = create_connection(*args, **kwargs)
+        time.sleep(seconds)
+        return sock
+
+    monkeypatch.setattr(socket, "create_connection", slow)
+
+
+def test_handshake_shares_connect_time(
+    monkeypatch: pytest.MonkeyPatch, client_context: ssl.SSLContext
+) -> None:
+    """The TLS handshake gets what the TCP connection left of the share."""
+    _slow_connections(monkeypatch, 0.6)
+    with socket.create_server(("127.0.0.1", 0)) as server:  # never answers
+        connection = safe_fetch._PinnedConnection(
+            HOST,
+            server.getsockname()[1],
+            "127.0.0.1",
+            timeout=5.0,
+            context=client_context,
+            connect_timeout=1.0,
+        )
+        start = time.monotonic()
+        with pytest.raises(TimeoutError):
+            connection.connect()
+        connection.close()
+        assert time.monotonic() - start < 1.4
+
+
+def test_no_handshake_after_share(
+    monkeypatch: pytest.MonkeyPatch, tls_port: int, client_context: ssl.SSLContext
+) -> None:
+    """If the TCP connection used up the share, no handshake is started."""
+    _slow_connections(monkeypatch, 0.2)
+    connection = safe_fetch._PinnedConnection(
+        HOST,
+        tls_port,
+        "127.0.0.1",
+        timeout=5.0,
+        context=client_context,
+        connect_timeout=0.1,
+    )
+    with pytest.raises(TimeoutError):
+        connection.connect()
+    connection.close()
+
+
+@pytest.mark.parametrize(
+    ("addresses", "ordered"),
+    [
+        ([], []),
+        (["10.0.0.1", "10.0.0.2"], ["10.0.0.1", "10.0.0.2"]),
+        (["::1", "::2", "::3", "10.0.0.1"], ["::1", "10.0.0.1", "::2", "::3"]),
+        (["10.0.0.1", "10.0.0.2", "::1"], ["10.0.0.1", "::1", "10.0.0.2"]),
+        (
+            ["10.0.0.1", "::1", "::2", "10.0.0.2"],
+            ["10.0.0.1", "::1", "10.0.0.2", "::2"],
+        ),
+    ],
+)
+def test_interleave(addresses: list[str], ordered: list[str]) -> None:
+    """Families take turns, starting with the first, each in the resolver's order."""
+    assert safe_fetch._interleave(addresses) == ordered
+
+
+def test_addresses_checked_before_any_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A host with an address that isn't allowed is refused before connecting."""
+    resolving(monkeypatch, "::2", "127.0.0.1", "10.0.0.1")
+    tried = _dropping(monkeypatch)
+    networks = [*LOOPBACK, ipaddress.ip_network("::/126")]
+    with pytest.raises(AddressNotAllowed):
+        safe_get(f"http://{HOST}/", schemes={"http"}, networks=networks)
+    assert not tried
 
 
 def test_unknown_name(monkeypatch: pytest.MonkeyPatch) -> None:
