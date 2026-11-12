@@ -298,7 +298,9 @@ def getNotifications(**kwargs: Any) -> list[dict[str, Any]]:
         # what ended is forgotten, so that it comes back if it does, under the same
         # identifier, and dismissals of deleted services don't pile up; admins see
         # all that owners see, so the dismissals of both are pruned here, except
-        # those made meanwhile, which may be about what began since
+        # those made meanwhile, which may be about what began since (by the clock of
+        # each replica: with clocks that differ, a dismissal made meanwhile may be
+        # forgotten, and the notification shown once more)
         current = [_dismissal_id(ADMINS, item["id"]) for item in notifications] + [
             _dismissal_id(OWNERS, item["id"])
             for item in notifications

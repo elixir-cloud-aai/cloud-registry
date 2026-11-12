@@ -524,14 +524,24 @@ def test_dismissals_of_owners_stay_when_admins_look(client: FlaskClient) -> None
 
 
 def test_dismissals_of_owners_forgotten_after_ending(client: FlaskClient) -> None:
-    """What owners dismissed is forgotten once it ended, when admins look."""
+    """What owners dismissed is forgotten once it ended, when admins look.
+
+    Only that: what lasts stays dismissed.
+    """
     service_id = register(client)
+    other_id = register(client, host="other")
     fail(client, service_id)
-    assert dismiss(client, notifications(client)[0]["id"]) == 200
+    fail(client, other_id)
+    for item in notifications(client):
+        assert dismiss(client, item["id"]) == 200
     recover(client, service_id)
     age_dismissals(client)
-    assert notifications(client, ADMIN, admin=True) == []
-    assert dismissals(client) == []
+    [lasting] = notifications(client, ADMIN, admin=True)
+    assert lasting["serviceId"] == other_id
+    assert [item["_id"] for item in dismissals(client)] == [
+        f"{notifications_module.OWNERS}:{lasting['id']}"
+    ]
+    assert notifications(client) == []
 
 
 def test_dismissals_of_deleted_services_forgotten(client: FlaskClient) -> None:
