@@ -43,9 +43,9 @@ CI's smoke test runs the app with Docker Compose and checks it as deployed
 (job `smoke` of `.github/workflows/ci.yml`). Among others, it checks that
 fetches of service info work in the image: `scripts/smoke_tls.py` checks that
 their TLS settings have the system's CA certificates, and fetches from a TLS
-server of its own, with a test CA, over a verified connection. To run it
-against a running app (`docker compose up -d`; `pytest` runs it on the
-host):
+server of its own, with a test CA, over a verified connection. `pytest` runs
+it on the host, with the host's CA certificates. To run it in a running app
+(`docker compose up -d`):
 
 ```bash
 docker compose exec -T cloud-registry python - < scripts/smoke_tls.py

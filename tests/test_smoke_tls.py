@@ -45,7 +45,11 @@ def test_passes(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_passes_from_stdin() -> None:
-    """The checks pass when the script is read from standard input, as in CI."""
+    """The checks pass when the script is read from standard input, as in CI.
+
+    Unlike `test_passes`, this runs it as CI does: as `__main__`, without its
+    file, with the exit status of `main()`.
+    """
     result = subprocess.run(
         [sys.executable, "-"],
         input=SCRIPT.read_text(),
@@ -64,7 +68,8 @@ def test_no_ca_certificates(
     # neither OpenSSL's lookup names nor CRLs count
     (no_system_cas / "ca-certificates.crt").touch()
     (no_system_cas / "0123abcd.r0").touch()
-    # nor links to certificates that are missing
+    # nor files that aren't certificates, or links to missing ones
+    (no_system_cas / "89abcdef.0").touch()
     (no_system_cas / "4567cdef.0").symlink_to(no_system_cas / "missing.crt")
     assert smoke_tls.main() == 1
     assert "no CA certificates" in capsys.readouterr().err
@@ -72,7 +77,8 @@ def test_no_ca_certificates(
 
 def test_ca_directory(no_system_cas: Path) -> None:
     """CA certificates that OpenSSL looks up in a directory count."""
-    (no_system_cas / "0123abcd.0").touch()
+    ca, _ = smoke_tls._certificates()
+    (no_system_cas / "0123abcd.0").write_bytes(ca)
     assert smoke_tls.main() == 0
 
 

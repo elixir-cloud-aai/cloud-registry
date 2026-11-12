@@ -76,7 +76,9 @@ def test_smoke_tls_fetch() -> None:
     steps = _load(WORKFLOWS / "ci.yml")["jobs"]["smoke"]["steps"]
     runs = [step.get("run", "").strip() for step in steps]
     command = "docker compose exec -T cloud-registry python - < scripts/smoke_tls.py"
-    assert command in runs
+    # after the app is up
+    start = runs.index("docker compose up -d --build --wait --wait-timeout 300")
+    assert command in runs[start + 1 :]
 
 
 def test_ci_concurrency() -> None:

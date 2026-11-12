@@ -12,15 +12,17 @@ checks, with the Python, OpenSSL and CA certificates of wherever it runs, that
 - a fetch with these settings, trusting a test CA too, gets the response of a
   local TLS server (on a free port of the loopback interface) whose
   certificate the test CA issued, over a verified connection;
-- a fetch from that server with these settings alone fails, as its
-  certificate isn't trusted, so that certificates are checked.
+- a TLS handshake with that server with these settings alone fails on its
+  certificate, which they don't trust, so that certificates are checked.
 
 CI's smoke test runs it in the app's container (`.github/workflows/ci.yml`,
 job `smoke`), from standard input, as the image doesn't contain `scripts/`:
 
     docker compose exec -T cloud-registry python - < scripts/smoke_tls.py
 
-It needs nothing but the app and its dependencies (the test certificates are
+The test server and certificates are made here, not shared with the tests
+(cf. `tests/test_safe_fetch.py`), as the script must run on its own. It needs
+nothing but the app and its dependencies (the test certificates are
 made with `cryptography`, a dependency of FOCA), and no network. It exits with
 status 1 if a check fails.
 """
@@ -32,6 +34,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import ipaddress
 from pathlib import Path
 import re
+import socket
 import ssl
 import sys
 import tempfile
@@ -182,18 +185,19 @@ def _ca_certificates(context: ssl.SSLContext) -> int:
         context: TLS settings that loaded the default CA certificates.
 
     Returns:
-        Number of CA certificates loaded, plus that of certificates in the
-        directory where OpenSSL looks them up when it needs them.
+        Number of CA certificates loaded, plus that of CA certificates that
+        load from the directory where OpenSSL looks them up when it needs them.
     """
     count = context.cert_store_stats()["x509_ca"]
     capath = ssl.get_default_verify_paths().capath
     if capath:
-        # (`is_file()` follows links, as the names usually are)
-        count += sum(
-            1
-            for path in Path(capath).iterdir()
-            if _HASHED_NAME.fullmatch(path.name) and path.is_file()
-        )
+        found = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        for path in Path(capath).iterdir():
+            if _HASHED_NAME.fullmatch(path.name):
+                # not certificates (e.g., empty, or links to missing files)
+                with contextlib.suppress(OSError):
+                    found.load_verify_locations(cafile=path)
+        count += found.cert_store_stats()["x509_ca"]
     return count
 
 
@@ -219,11 +223,16 @@ def check() -> None:
             raise SmokeTestError("verified TLS fetch failed") from exc
         if body != BODY:
             raise SmokeTestError(f"unexpected response of verified TLS fetch: {body!r}")
-        with contextlib.suppress(Unreachable):
-            safe_get(
-                url, networks=NETWORKS, timeout=TIMEOUT, context=_default_tls_context()
-            )
-            raise SmokeTestError("untrusted certificate accepted")
+        # The same server without the test CA: the handshake must fail on the
+        # certificate, not for another reason (e.g., the connection), so it is
+        # made directly, as fetches don't tell why they fail; other errors
+        # end the script with their traceback
+        with socket.create_connection(("127.0.0.1", port), TIMEOUT) as sock:
+            try:
+                _default_tls_context().wrap_socket(sock, server_hostname=HOST).close()
+            except ssl.SSLCertVerificationError:
+                return
+        raise SmokeTestError("untrusted certificate accepted")
 
 
 def main() -> int:

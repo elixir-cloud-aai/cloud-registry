@@ -478,13 +478,9 @@ jobs:
             "from importlib.metadata import distribution; \
             text = distribution('cloud-registry').read_text('licenses/LICENSE'); \
             assert text and 'Apache License' in text, 'LICENSE missing'"
-      # Imports and syncs fetch service info over TLS, checked against the
-      # system's CA certificates: without them in the image, every fetch
-      # fails, with uniform `502` responses and `unreachable` reasons. The
-      # script checks that the TLS settings of fetches have them, and that a
-      # fetch from a TLS server of its own (on the container's loopback
-      # interface, with a test CA) is verified (`scripts/smoke_tls.py`; the
-      # image doesn't contain `scripts/`, so it's read from standard input)
+      # The image has the CA certificates that fetches of service info need,
+      # and makes verified TLS fetches (`scripts/smoke_tls.py`; read from
+      # standard input, as the image doesn't contain `scripts/`)
       - name: Check verified TLS fetch
         run: docker compose exec -T cloud-registry python - < scripts/smoke_tls.py
       - name: Show app logs
