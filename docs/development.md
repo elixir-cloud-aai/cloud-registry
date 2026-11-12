@@ -39,6 +39,18 @@ MONGODB_TEST_URI=mongodb://localhost:27017 pytest
 docker stop mongodb-test
 ```
 
+CI's smoke test runs the app with Docker Compose and checks it as deployed
+(job `smoke` of `.github/workflows/ci.yml`). Among others, it checks that
+fetches of service info work in the image: `scripts/smoke_tls.py` checks that
+their TLS settings have the system's CA certificates, and fetches from a TLS
+server of its own, with a test CA, over a verified connection. To run it
+against a running app (`docker compose up -d`; `pytest` runs it on the
+host):
+
+```bash
+docker compose exec -T cloud-registry python - < scripts/smoke_tls.py
+```
+
 To try changes in the running app, rebuild it with
 `docker compose up --build -d` (see [Getting started](getting-started.md)).
 `python -m cloud_registry.app` runs the app with Flask's development server

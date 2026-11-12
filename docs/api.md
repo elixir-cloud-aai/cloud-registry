@@ -538,7 +538,8 @@ against server-side request forgery:
   checked address, so that a name can't point elsewhere afterwards;
 - `https` only, unless the deployment [allows
   `http`](configuration.md#service-url-schemes), with the certificate checked for
-  the host;
+  the host, against the CA certificates of the system (in the image, those of
+  its Debian base);
 - no redirects, at most 256 KiB, at most 10 seconds;
 - if a host has several addresses, they are tried in turn, IPv6 and IPv4
   alternating, and each gets an equal share of the time left to connect (including
