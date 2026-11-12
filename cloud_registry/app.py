@@ -58,7 +58,7 @@ def create_foca() -> Foca:
     )
 
 
-def create_app() -> App:
+def create_app(start_background: bool = True) -> App:
     """Create the app from the config, with the registry's checks.
 
     Refuses service clients (FOCA's `require_no_service_clients()`), as the
@@ -74,11 +74,12 @@ def create_app() -> App:
     days for which expired invitations are kept (cf.
     `apply_keep_expired_days()`), and syncs services with their service info in
     the background, if they have it turned on (cf. `start_sync_scheduler()`, in
-    each worker). Warns of stored services with URL schemes or
-    environments that are not allowed, and of rules that let owners change
-    roles of groups although the rule for these is changed, or grant roles by
-    invitation although no rule lets them grant roles to users (cf.
-    `warn_owner_rules()`).
+    each worker; not if `start_background` is false, e.g., for commands that
+    set up the app, such as `cloud_registry.namespace_subjects`). Warns of
+    stored services with URL schemes or environments that are not allowed,
+    and of rules that let owners change roles of groups although the rule for
+    these is changed, or grant roles by invitation although no rule lets them
+    grant roles to users (cf. `warn_owner_rules()`).
 
     FOCA validates the config, e.g., that token issuers are trusted (needed
     for access control) with an audience, the group settings and the
@@ -91,6 +92,12 @@ def create_app() -> App:
     Gunicorn calls this in each worker, after forking (MongoDB clients must
     not be shared across forks), so the checks run in each worker; if they
     fail, the worker fails to boot and Gunicorn exits.
+
+    Args:
+        start_background: Start background work in this process, i.e., the
+            scheduler of syncs. Commands that set up the app turn it off, so
+            that they neither sync services from where they run nor leave
+            claims of syncs that they cut off on exit locked.
 
     Returns:
         Connexion app.
@@ -149,7 +156,8 @@ def create_app() -> App:
         warn_environments()
         warn_invalid_formats()
         cap_next_attempts()
-        start_sync_scheduler(app.app)
+        if start_background:
+            start_sync_scheduler(app.app)
     return app
 
 
