@@ -1,6 +1,7 @@
 """Typed access to the configuration and collections of the app."""
 
 from datetime import UTC, date, datetime
+from importlib.metadata import PackageNotFoundError, version
 import logging
 import re
 import time
@@ -14,6 +15,11 @@ from pymongo.errors import OperationFailure
 
 logger = logging.getLogger(__name__)
 DB = "serviceStore"
+DOCS = "https://cloud-registry.readthedocs.io/en/"
+# Versions of releases and pre-releases (normalized PEP 440, as tagged
+# `v<version>`), which have docs of their own on Read the Docs; development,
+# post-release and local versions have none (cf. `docs_url()`)
+RELEASE_VERSION = re.compile(r"\d+(\.\d+)*((a|b|rc)\d+)?", re.ASCII)
 # Codes of MongoDB's errors when others change a TTL index at the same time
 # (cf. `set_ttl_index()`): namespace or index not found, index options or key
 # specs conflict, and index build aborted
@@ -63,6 +69,28 @@ def get_collection(name: str) -> Collection[dict[str, Any]]:
     return get_foca_collection(db=DB, collection=name)
 
 
+def docs_url(path: str) -> str:
+    """Get the URL of a page of the docs of the running version.
+
+    Links to the docs of the release (`v<version>`), or to the latest docs for
+    versions without docs of their own (e.g., development versions), or if the
+    version is unknown.
+
+    Args:
+        path: Path of the page, relative to the docs' root (e.g.,
+            `upgrading/`).
+
+    Returns:
+        URL of the page.
+    """
+    try:
+        current = version("cloud-registry")
+    except PackageNotFoundError:
+        current = ""
+    slug = f"v{current}" if RELEASE_VERSION.fullmatch(current) else "latest"
+    return f"{DOCS}{slug}/{path}"
+
+
 def refuse_old_format(conf: MongoConfig) -> None:
     """Refuse to start on data stored by versions before 1.0.0rc2.
 
@@ -92,8 +120,7 @@ def refuse_old_format(conf: MongoConfig) -> None:
             f"The database '{DB}' has data or indexes of a version before 1.0.0rc2 "
             f"in {', '.join(found)}, which this version can't read. There is no "
             "migration: start with a fresh database (see "
-            "https://cloud-registry.readthedocs.io/en/latest/upgrading/"
-            "#from-100rc1)"
+            f"{docs_url('upgrading/#from-100rc1')})"
         )
 
 

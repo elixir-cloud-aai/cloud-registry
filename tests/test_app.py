@@ -30,6 +30,7 @@ import yaml
 import cloud_registry.app
 import cloud_registry.ga4gh.registry.server
 from cloud_registry.service_models.custom_config import CustomConfig
+from cloud_registry.utils import docs_url
 from tests.conftest import (
     ADMIN_GROUP,
     APP_DIR,
@@ -2049,8 +2050,11 @@ def test_create_app_old_format(
     """
     db_client[DB][collection].insert_one(document)
     _set_overlay(monkeypatch, tmp_path, _service_info_overlay({}))
-    with pytest.raises(RuntimeError, match=f"`{collection}`.*fresh database"):
+    with pytest.raises(
+        RuntimeError, match=f"`{collection}`.*fresh database"
+    ) as exc_info:
         cloud_registry.app.create_app()
+    assert docs_url("upgrading/#from-100rc1") in str(exc_info.value)
     assert "tokenHash_1" not in db_client[DB]["invitations"].index_information()
 
 

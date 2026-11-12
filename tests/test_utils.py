@@ -2,6 +2,7 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
+from importlib.metadata import PackageNotFoundError
 from threading import Barrier
 from typing import Any
 
@@ -12,6 +13,7 @@ import pytest
 
 from cloud_registry import utils
 from cloud_registry.utils import (
+    docs_url,
     format_time,
     get_collection,
     is_date_time,
@@ -339,3 +341,43 @@ def test_now() -> None:
 def test_format_time(time: datetime, formatted: str) -> None:
     """Times are formatted as RFC 3339 date-times in UTC."""
     assert format_time(time) == formatted
+
+
+@pytest.mark.parametrize(
+    ("version", "url"),
+    [
+        ("1.0.0", "https://cloud-registry.readthedocs.io/en/v1.0.0/upgrading/"),
+        ("1.0.0rc2", "https://cloud-registry.readthedocs.io/en/v1.0.0rc2/upgrading/"),
+        ("1.2.0a1", "https://cloud-registry.readthedocs.io/en/v1.2.0a1/upgrading/"),
+        # Development and local versions have no docs of their own
+        (
+            "1.0.0rc3.dev4+g0123abc",
+            "https://cloud-registry.readthedocs.io/en/latest/upgrading/",
+        ),
+        ("1.0.0+dirty", "https://cloud-registry.readthedocs.io/en/latest/upgrading/"),
+        ("0.0.0.dev0", "https://cloud-registry.readthedocs.io/en/latest/upgrading/"),
+        ("1.0.0.post1", "https://cloud-registry.readthedocs.io/en/latest/upgrading/"),
+    ],
+)
+def test_docs_url(monkeypatch: pytest.MonkeyPatch, version: str, url: str) -> None:
+    """Links to the docs of the running release, else to the latest docs."""
+    monkeypatch.setattr(utils, "version", {"cloud-registry": version}.__getitem__)
+    assert docs_url("upgrading/") == url
+
+
+def test_docs_url_not_installed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Links to the latest docs if the package's version is unknown."""
+
+    def not_installed(name: str) -> str:
+        """Fail as for a package that isn't installed.
+
+        Args:
+            name: Name of the package.
+
+        Raises:
+            PackageNotFoundError: Always.
+        """
+        raise PackageNotFoundError(name)
+
+    monkeypatch.setattr(utils, "version", not_installed)
+    assert docs_url("") == "https://cloud-registry.readthedocs.io/en/latest/"
