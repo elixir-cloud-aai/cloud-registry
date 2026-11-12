@@ -2057,9 +2057,9 @@ def test_create_app_old_format(
         RuntimeError, match=f"`{collection}`.*fresh database"
     ) as exc_info:
         cloud_registry.app.create_app()
-    assert (
-        "https://cloud-registry.readthedocs.io/en/v1.2.3rc4/upgrading/#from-100rc1"
-        in str(exc_info.value)
+    assert str(exc_info.value).endswith(
+        " (see https://cloud-registry.readthedocs.io/en/v1.2.3rc4/upgrading/"
+        "#from-100rc1)"
     )
     assert "tokenHash_1" not in db_client[DB]["invitations"].index_information()
 

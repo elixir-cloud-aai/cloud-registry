@@ -346,17 +346,17 @@ def test_format_time(time: datetime, formatted: str) -> None:
 @pytest.mark.parametrize(
     ("version", "url"),
     [
-        ("1.0.0", "https://cloud-registry.readthedocs.io/en/v1.0.0/upgrading/"),
+        ("1.2.3", "https://cloud-registry.readthedocs.io/en/v1.2.3/upgrading/"),
         ("1.2.3rc4", "https://cloud-registry.readthedocs.io/en/v1.2.3rc4/upgrading/"),
         ("1.2.0a1", "https://cloud-registry.readthedocs.io/en/v1.2.0a1/upgrading/"),
         # Development and local versions have no docs of their own
         (
-            "1.0.0rc3.dev4+g0123abc",
+            "1.2.4rc1.dev4+g0123abc",
             "https://cloud-registry.readthedocs.io/en/latest/upgrading/",
         ),
-        ("1.0.0+dirty", "https://cloud-registry.readthedocs.io/en/latest/upgrading/"),
+        ("1.2.3+dirty", "https://cloud-registry.readthedocs.io/en/latest/upgrading/"),
         ("0.0.0.dev0", "https://cloud-registry.readthedocs.io/en/latest/upgrading/"),
-        ("1.0.0.post1", "https://cloud-registry.readthedocs.io/en/latest/upgrading/"),
+        ("1.2.3.post1", "https://cloud-registry.readthedocs.io/en/latest/upgrading/"),
     ],
 )
 def test_docs_url(monkeypatch: pytest.MonkeyPatch, version: str, url: str) -> None:
