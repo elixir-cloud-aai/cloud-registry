@@ -347,7 +347,7 @@ def test_format_time(time: datetime, formatted: str) -> None:
     ("version", "url"),
     [
         ("1.0.0", "https://cloud-registry.readthedocs.io/en/v1.0.0/upgrading/"),
-        ("1.0.0rc2", "https://cloud-registry.readthedocs.io/en/v1.0.0rc2/upgrading/"),
+        ("1.2.3rc4", "https://cloud-registry.readthedocs.io/en/v1.2.3rc4/upgrading/"),
         ("1.2.0a1", "https://cloud-registry.readthedocs.io/en/v1.2.0a1/upgrading/"),
         # Development and local versions have no docs of their own
         (
