@@ -119,7 +119,7 @@ dependencies = [
     # FOCA is bumped by hand, together with the base image in the
     # `Dockerfile` (`.github/dependabot.yml`).
     "foca>=0.22.0,<0.23",
-    "gunicorn>=26.2.0,<27",
+    "gunicorn>=26.2.0,<28",
     # A dependency of Connexion; checks imported service info
     "jsonschema>=4,<5",
 ]
@@ -154,7 +154,7 @@ docs = [
     # 1.0.6 and earlier fail with pymdown-extensions 12
     "mkdocstrings>=1.0.8,<2",
     "mkdocstrings-python>=2.0.10,<3",
-    "pymdown-extensions>=12.3,<13",
+    "pymdown-extensions>=12.3,<14",
 ]
 
 [dependency-groups]
