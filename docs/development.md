@@ -67,8 +67,9 @@ The checks are configured in
 [`.pre-commit-config.yaml`](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/.pre-commit-config.yaml)
 and
 [`pyproject.toml`](https://github.com/elixir-cloud-aai/cloud-registry/blob/dev/pyproject.toml).
-Project-specific rules are in `.semgrep/` (security) and `.ast-grep/`
-(anti-patterns such as HTTP status codes as strings).
+Project-specific rules are in `.semgrep/` (security, shared with FOCA and
+the other FOCA apps) and `.ast-grep/` (anti-patterns such as HTTP status
+codes as strings or calls of the root logger), each with tests.
 [actionlint](https://github.com/rhysd/actionlint) checks the workflows in
 `.github/workflows/`, and their shell scripts with
 [ShellCheck](https://www.shellcheck.net/) if it is installed (as on
