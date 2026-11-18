@@ -91,6 +91,23 @@ def serve(monkeypatch: pytest.MonkeyPatch) -> Serve:
     return set_result
 
 
+# Minimum time between syncs of a service that users start, as in the app
+GAP = sync.SYNC_REQUEST_GAP
+
+
+@pytest.fixture(autouse=True)
+def no_gap(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Let users sync a service as often as they like, unless tests use `gap`."""
+    monkeypatch.setattr(sync, "SYNC_REQUEST_GAP", timedelta(0))
+
+
+@pytest.fixture
+def gap(monkeypatch: pytest.MonkeyPatch) -> timedelta:
+    """Minimum time between syncs of a service that users start, as in the app."""
+    monkeypatch.setattr(sync, "SYNC_REQUEST_GAP", GAP)
+    return GAP
+
+
 def info(**fields: Any) -> dict[str, Any]:
     """Get service info with changed fields.
 
@@ -469,6 +486,247 @@ def test_only_if_enabled_unavailable(client: FlaskClient, serve: Serve) -> None:
     )
     assert response.status_code == 409
     assert response.get_json()["code"] == "sync-unavailable"
+
+
+def sync_now(client: FlaskClient, service_id: str) -> TestResponse:
+    """Sync a service with sync on now (`onlyIfEnabled`), as its owner.
+
+    Args:
+        client: Test client of the app.
+        service_id: Service identifier.
+
+    Returns:
+        Response.
+    """
+    return client.put(
+        f"{BASE}/services/{service_id}/sync?onlyIfEnabled=true",
+        headers=make_headers(USER, roles=None),
+    )
+
+
+def move_requests_back(client: FlaskClient, by: timedelta) -> None:
+    """Move the last syncs that users started back in time.
+
+    Args:
+        client: Test client of the app.
+        by: Time to move them back by.
+    """
+    with client.application.app_context():
+        requests = get_collection(sync.SYNC_REQUESTS)
+        for request in requests.find():
+            requests.update_one(
+                {"_id": request["_id"]},
+                {"$set": {"requestedAt": request["requestedAt"] - by}},
+            )
+
+
+def test_sync_now_too_soon(
+    client: FlaskClient, serve: Serve, service_id: str, gap: timedelta
+) -> None:
+    """A service synced on request can't be synced again right away."""
+    before = stored_state(client, service_id)
+    urls = serve(info(description="Newer."))
+    response = sync_now(client, service_id)
+    assert response.status_code == 429
+    assert 0 < int(response.headers["Retry-After"]) <= gap.total_seconds()
+    assert response.json is not None
+    assert "this service" in response.json["detail"]
+    assert not urls
+    assert stored_state(client, service_id) == before
+    assert get_service(client, service_id)["description"] != "Newer."
+
+
+def test_sync_now_after_gap(
+    client: FlaskClient, serve: Serve, service_id: str, gap: timedelta
+) -> None:
+    """Once the minimum time has passed, a service can be synced again."""
+    move_requests_back(client, gap)
+    serve(info(description="Newer."))
+    assert sync_now(client, service_id).status_code == 200
+    assert get_service(client, service_id)["description"] == "Newer."
+    assert sync_now(client, service_id).status_code == 429
+
+
+@pytest.mark.parametrize(
+    "user", [ADMIN, "erin@example.org"], ids=["admin", "maintainer"]
+)
+def test_sync_now_gap_for_all_users(
+    client: FlaskClient, serve: Serve, service_id: str, gap: timedelta, user: str
+) -> None:
+    """The minimum time holds per service, whoever starts the sync."""
+    assert (
+        client.put(
+            f"{BASE}/services/{service_id}/permissions/users/erin@example.org",
+            json={"role": "maintainer"},
+            headers=make_headers(),
+        ).status_code
+        == 200
+    )
+    response = client.put(
+        f"{BASE}/services/{service_id}/sync?onlyIfEnabled=true",
+        headers=make_headers(user),
+    )
+    assert response.status_code == 429
+
+
+def test_sync_now_gap_per_service(
+    client: FlaskClient, serve: Serve, service_id: str, gap: timedelta
+) -> None:
+    """Another service can be synced while one waits, and then waits itself."""
+    other = register(client, {**SERVICE, "url": "https://other.example.org/tes"})
+    serve(info(id="org.example.other"))
+    assert sync_now(client, service_id).status_code == 429
+    assert turn_on(client, other).status_code == 200
+    assert sync_now(client, other).status_code == 429
+
+
+def test_sync_now_gap_after_failed_fetch(
+    client: FlaskClient, serve: Serve, service_id: str, gap: timedelta
+) -> None:
+    """Failed fetches count too, as they reach the service as well."""
+    move_requests_back(client, gap)
+    serve(Unreachable())
+    assert sync_now(client, service_id).status_code == 502
+    assert sync_now(client, service_id).status_code == 429
+
+
+def test_sync_now_gap_doesnt_count_for_limit(
+    client: FlaskClient, serve: Serve, service_id: str, gap: timedelta
+) -> None:
+    """Requests rejected for the minimum time don't count for the user's limit."""
+    with client.application.app_context():
+        fetches = get_collection(service_import.FETCHES)
+        before = fetches.find_one({"_id": USER})
+        assert sync_now(client, service_id).status_code == 429
+        assert fetches.find_one({"_id": USER}) == before
+
+
+@pytest.mark.parametrize("synced_before", [True, False], ids=["again", "first"])
+def test_sync_now_above_limit_holds_off_nobody(
+    client: FlaskClient,
+    serve: Serve,
+    service_id: str,
+    gap: timedelta,
+    synced_before: bool,
+) -> None:
+    """A user above their own limit doesn't keep others from syncing."""
+    move_requests_back(client, gap)
+    if not synced_before:
+        with client.application.app_context():
+            get_collection(sync.SYNC_REQUESTS).delete_many({})
+    service_info_settings(client).fetches_per_hour = 1
+    urls = serve(info(description="Newer."))
+    response = sync_now(client, service_id)
+    assert response.status_code == 429
+    assert "this service" not in response.get_json()["detail"]
+    assert not urls
+    response = client.put(
+        f"{BASE}/services/{service_id}/sync?onlyIfEnabled=true",
+        headers=make_headers(ADMIN),
+    )
+    assert response.status_code == 200
+    assert get_service(client, service_id)["description"] == "Newer."
+
+
+def test_sync_now_above_limit_keeps_newer_request(
+    client: FlaskClient,
+    serve: Serve,
+    service_id: str,
+    gap: timedelta,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Uncounting a request above the limit keeps one counted meanwhile."""
+    move_requests_back(client, gap)
+    newer = now() + timedelta(seconds=1)
+
+    def counted_meanwhile(user: str) -> None:
+        """Count another request for the service, then reject this one.
+
+        Args:
+            user: User identifier.
+
+        Raises:
+            FetchLimit: Always.
+        """
+        get_collection(sync.SYNC_REQUESTS).update_many(
+            {}, {"$set": {"requestedAt": newer}}
+        )
+        raise service_import.FetchLimit(1, retry_after=1)
+
+    monkeypatch.setattr(sync, "check_fetch_limit", counted_meanwhile)
+    assert sync_now(client, service_id).status_code == 429
+    with client.application.app_context():
+        stored = get_collection(sync.SYNC_REQUESTS).find_one()
+    assert stored is not None
+    assert stored["requestedAt"].replace(tzinfo=UTC) == newer
+
+
+def test_sync_now_gap_ended_meanwhile(
+    client: FlaskClient,
+    serve: Serve,
+    service_id: str,
+    gap: timedelta,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If the last request is gone when the wait is computed, it is a full gap."""
+    get_collection_ = sync.get_collection
+
+    class Expiring:
+        """Collection whose documents expire right after a failed write."""
+
+        def __init__(self, name: str) -> None:
+            """Wrap a collection.
+
+            Args:
+                name: Name of the collection.
+            """
+            self.collection = get_collection_(name)
+
+        def __getattr__(self, name: str) -> Any:
+            """Get an attribute of the collection, without `find_one`.
+
+            Args:
+                name: Name of the attribute.
+
+            Returns:
+                The attribute, or a `find_one` that finds nothing.
+            """
+            if name == "find_one":
+                return lambda *args, **kwargs: None
+            return getattr(self.collection, name)
+
+    monkeypatch.setattr(
+        sync,
+        "get_collection",
+        lambda name: (
+            Expiring(name) if name == sync.SYNC_REQUESTS else get_collection_(name)
+        ),
+    )
+    response = sync_now(client, service_id)
+    assert response.status_code == 429
+    assert int(response.headers["Retry-After"]) == int(gap.total_seconds())
+
+
+def test_sync_now_rejected_starts_no_gap(
+    client: FlaskClient, serve: Serve, gap: timedelta
+) -> None:
+    """Requests that fetch nothing don't hold off the next one."""
+    identifier = register(client)
+    serve(INFO)
+    assert sync_now(client, identifier).status_code == 404
+    assert turn_on(client, identifier).status_code == 200
+
+
+def test_sync_now_gap_spares_periodic_syncs(
+    client: FlaskClient, serve: Serve, service_id: str, gap: timedelta
+) -> None:
+    """The syncs of the app don't wait for the minimum time, nor start it."""
+    with client.application.app_context():
+        get_collection(sync.SYNC_REQUESTS).delete_many({})
+    serve(info(description="Newer."))
+    assert run_syncs(client) == 1
+    assert get_service(client, service_id)["description"] == "Newer."
+    assert sync_now(client, service_id).status_code == 200
 
 
 def test_turn_on_own_entry(client: FlaskClient, serve: Serve) -> None:

@@ -261,6 +261,16 @@ db:
                               windowStart: 1
                           options:
                             'expireAfterSeconds': 7200
+                # Time of the last fetch that a user started for each service,
+                # by its internal identifier (`_id`), for the minimum time
+                # between them (cf. `PUT /services/{serviceId}/sync`); MongoDB
+                # removes old ones (TTL index; the minimum is a minute)
+                sync_requests:
+                    indexes:
+                        - keys:
+                              requestedAt: 1
+                          options:
+                            'expireAfterSeconds': 3600
                 # Dismissed notifications, per audience
                 notification_dismissals: {}
                 # Display names of users with roles on services, per service

@@ -21,6 +21,12 @@ reasons of later syncs are served, though, so whoever controls a host name can
 still point it elsewhere and learn something about the target, slowly: one probe
 per service and interval (see "Service info sync" in `docs/configuration.md`).
 
+Users can also sync a service at once (`PUT /services/{serviceId}/sync`, e.g.,
+with `onlyIfEnabled` for "sync now"), counting for their limit of fetches, but
+each service at most once per `SYNC_REQUEST_GAP`, whoever asks, so that the
+users with a role on a service can't make the registry hammer it (cf.
+`sync_request()`); the syncs of the app don't count for it.
+
 The scheduler is a daemon thread in each worker (cf. `start_sync_scheduler()`),
 so it needs neither a task queue nor incoming requests. Workers and replicas
 coordinate through the database: a due service is claimed in a single write
@@ -32,9 +38,12 @@ database, so that restarts lose nothing: overdue services are synced at the firs
 tick, and those of a worker that died when their claim expires.
 """
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 import logging
+import math
 import random
 import threading
 from typing import Any, cast
@@ -43,6 +52,7 @@ from flask import Flask, Response
 from foca import get_custom_config
 from foca.utils.logging import escape_log_value
 from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 
 from cloud_registry.exceptions import (
     CodedConflict,
@@ -73,6 +83,7 @@ from cloud_registry.ga4gh.registry.service_import import (
     SERVICE_FIELDS,
     SERVICE_INFO_PATH,
     FetchFailed,
+    FetchLimit,
     check_fetch_limit,
     fetch_service_info,
     fetch_slot,
@@ -138,6 +149,12 @@ RETRY_WAIT = timedelta(minutes=5)
 TICK = 60.0
 # Label is `synced` only if the last success is at most so many intervals ago
 MAX_INTERVALS = 2
+# Collection with the time of the last fetch that a user started for each
+# service (`requestedAt`), by the internal identifier of the service (`_id`);
+# MongoDB removes old ones (TTL index, cf. `config.yaml`)
+SYNC_REQUESTS = "sync_requests"
+# Minimum time between fetches that users start for a service
+SYNC_REQUEST_GAP = timedelta(minutes=1)
 
 
 class SyncUnavailable(CodedConflict):
@@ -157,6 +174,74 @@ class SyncIdentityMismatch(CodedConflict):
             "The service info has another identifier or API type (group, artifact) "
             "than this service. To accept another identifier, turn sync off first."
         )
+
+
+class SyncTooSoon(TooManyRequests):
+    """A service was synced on request too recently to be synced again."""
+
+    def __init__(self, retry_after: int) -> None:
+        """Create the exception, with a description of what to do.
+
+        Args:
+            retry_after: Seconds until the service may be synced again.
+        """
+        super().__init__(
+            "The registry fetched the service info of this service less than "
+            f"{int(SYNC_REQUEST_GAP.total_seconds())} seconds ago; try again "
+            "later.",
+            retry_after=retry_after,
+        )
+
+
+@contextmanager
+def sync_request(service: dict[str, Any]) -> Iterator[None]:
+    """Count a fetch that a user starts for a service, unless it is too soon.
+
+    Each takes a single atomic write, also for concurrent requests. If the
+    user is above their own limit of fetches within the context (`FetchLimit`),
+    the request is uncounted again, so that it doesn't hold off other users.
+
+    Args:
+        service: Stored service.
+
+    Yields:
+        Nothing; the fetch is counted for the service.
+
+    Raises:
+        SyncTooSoon: A user started a fetch for the service less than
+            `SYNC_REQUEST_GAP` ago.
+    """
+    requests = get_collection(SYNC_REQUESTS)
+    current = now()
+    try:
+        # a new document, unless the last request is too recent (duplicate key)
+        previous = requests.find_one_and_update(
+            {
+                "_id": service["_id"],
+                "requestedAt": {"$lte": current - SYNC_REQUEST_GAP},
+            },
+            {"$set": {"requestedAt": current}},
+            upsert=True,
+        )
+    except DuplicateKeyError as exc:
+        stored = requests.find_one({"_id": service["_id"]}) or {}
+        wait = SYNC_REQUEST_GAP
+        if "requestedAt" in stored:
+            wait -= current - _aware(stored["requestedAt"])
+        # rounded up, so that a retry after it isn't too soon again
+        raise SyncTooSoon(retry_after=max(math.ceil(wait.total_seconds()), 1)) from exc
+    try:
+        yield
+    except FetchLimit:
+        # unless another request was counted meanwhile
+        query = {"_id": service["_id"], "requestedAt": current}
+        if previous is None:
+            requests.delete_one(query)
+        else:
+            requests.update_one(
+                query, {"$set": {"requestedAt": previous["requestedAt"]}}
+            )
+        raise
 
 
 def sync_enabled() -> bool:
@@ -638,8 +723,9 @@ def putServiceSync(
         `Reason`); or an error response, changing nothing: `400` if the service
         info is invalid, `409` if it describes another service, the deployment
         doesn't sync, the service is the registry's own entry or it changed during
-        the fetch, `429` above the limits for fetches, and `502` if the fetch
-        fails, for any reason.
+        the fetch, `429` above the limits for fetches (of the user, and per
+        service, cf. `sync_request()`), and `502` if the fetch fails, for any
+        reason.
 
     Raises:
         cloud_registry.exceptions.NotFound: The service doesn't exist (anymore),
@@ -661,7 +747,7 @@ def putServiceSync(
         if onlyIfEnabled and SYNC not in service:
             raise NotFound
         try:
-            with fetch_slot():
+            with fetch_slot(), sync_request(service):
                 check_fetch_limit(require_subject())
                 identifier, values = _fetch(service["url"])
         except FetchError as exc:

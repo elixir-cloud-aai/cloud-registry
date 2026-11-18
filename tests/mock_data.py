@@ -32,6 +32,8 @@ DB_CONFIG: dict[str, Any] = {
         "service_counts": {},
         # fetches per user (cf. `cloud_registry.ga4gh.registry.service_import`)
         "service_info_fetches": {},
+        # fetches per service (cf. `cloud_registry.ga4gh.registry.sync`)
+        "sync_requests": {},
         # dismissals (cf. `cloud_registry.ga4gh.registry.notifications`)
         "notification_dismissals": {},
     },
