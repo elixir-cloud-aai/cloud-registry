@@ -36,6 +36,8 @@ DB_CONFIG: dict[str, Any] = {
         "sync_requests": {},
         # dismissals (cf. `cloud_registry.ga4gh.registry.notifications`)
         "notification_dismissals": {},
+        # failed operations (cf. `cloud_registry.ga4gh.registry.failures`)
+        "failures": {},
     },
 }
 MONGO_CONFIG: dict[str, Any] = {

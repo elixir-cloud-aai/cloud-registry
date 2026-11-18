@@ -146,6 +146,10 @@ security:
             # (filtered by the app)
             list-notifications: [p, "*", /ga4gh/registry/v1/notifications, GET]
             dismiss-notifications: [p, "*", "/ga4gh/registry/v1/notifications/:id", DELETE]
+            # any authenticated user may list recent failed imports,
+            # registrations, updates and syncs (filtered by the app: their own,
+            # and those of their services; admins see all)
+            list-failures: [p, "*", /ga4gh/registry/v1/failures, GET]
             # owners and maintainers may turn sync of their services with their
             # service info on and off
             owners-sync-services: [p, owner, "/ga4gh/registry/v1/services/:id/sync", "(PUT)|(DELETE)"]
@@ -273,6 +277,22 @@ db:
                             'expireAfterSeconds': 3600
                 # Dismissed notifications, per audience
                 notification_dismissals: {}
+                # Failed imports, registrations, updates and syncs (`GET
+                # /failures`), by user, for the limit of failures recorded per
+                # user, and by service (internal identifier), for owners.
+                # MongoDB removes them
+                # `custom.endpoints.services.failures.keep_days` after they
+                # occurred: as the setting can change, the app sets that TTL
+                # index on startup (cf. `cloud_registry.utils.set_ttl_index()`)
+                failures:
+                    indexes:
+                        - keys:
+                              userId: 1
+                              occurredAt: 1
+                        - keys:
+                              serviceRef: 1
+                          options:
+                            'sparse': True
                 # Display names of users with roles on services, per service
                 user_names:
                     indexes:
@@ -480,3 +500,11 @@ custom:
                 fetches_per_hour: 30
                 sync: true
                 sync_interval_hours: 24
+            # Failed imports, registrations, updates and syncs, listed to
+            # admins, owners and the users who acted (`GET /failures`; see
+            # "Failed operations" in `docs/configuration.md`): days for which
+            # they are kept (1 to 365), and how many of each user are recorded
+            # per hour, at most
+            failures:
+                keep_days: 30
+                max_per_user_per_hour: 100

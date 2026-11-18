@@ -17,6 +17,12 @@ from cloud_registry.exceptions import (
     problem,
     reject,
 )
+from cloud_registry.ga4gh.registry.failures import (
+    FailureReason,
+    Operation,
+    invalid_fields,
+    record_failure,
+)
 from cloud_registry.ga4gh.registry.locks import changing
 from cloud_registry.ga4gh.registry.permissions import (
     add_owner,
@@ -70,6 +76,13 @@ CreatedResponse = tuple[str, int, dict[str, str]]
 # Response of a registration: the identifier of a replaced service, a
 # registered service, or an error
 RegisterResponse = str | CreatedResponse | Response
+# Reasons of failed registrations, by the error
+REGISTER_REASONS: dict[type[Exception], FailureReason] = {
+    UnusedTypesLimit: FailureReason.TYPES_LIMIT,
+    ServicesLimit: FailureReason.SERVICES_LIMIT,
+    SyncUrlLocked: FailureReason.SYNC_URL_LOCKED,
+    DuplicateService: FailureReason.DUPLICATE_SERVICE,
+}
 
 
 # GET /services
@@ -277,6 +290,8 @@ def _register_service(
         it (cf. `may_read_service()` and `visible_services()`), for updates of
         pending services by users other than admins, for users who registered
         as many services as allowed, or for other URLs of services with sync.
+        These failures and those of invalid fields are recorded (cf.
+        `_record_failure()`).
 
     Raises:
         foca.errors.InvalidFieldsProblem: Fields of the service are invalid
@@ -291,8 +306,9 @@ def _register_service(
     """
     # admins may set the timestamps (e.g., to keep those of imported
     # services); the registry sets them for everybody else
+    data = _get_request_object()
     service = RegisterService(
-        data=_get_request_object(),
+        data=data,
         id=service_id,
         allow_create=allow_create,
         keep_timestamps=is_admin(),
@@ -337,12 +353,27 @@ def _register_service(
             "Service not registered: %s",
             escape_log_value(shorten_detail(exc.description)),
         )
+        if isinstance(exc, InvalidService):
+            _record_failure(
+                service_id,
+                FailureReason.INVALID_FIELD,
+                url=data.get("url"),
+                fields=invalid_fields(exc),
+            )
+        else:
+            reason = next(
+                value
+                for kind, value in REGISTER_REASONS.items()
+                if isinstance(exc, kind)
+            )
+            _record_failure(service_id, reason, data.get("url"))
         return reject(exc)
     except DuplicateService as exc:
         logger.info(
             "Service not registered: %s",
             escape_log_value(shorten_detail(exc.description)),
         )
+        _record_failure(service_id, FailureReason.DUPLICATE_SERVICE, data.get("url"))
         # only users who may read the registered service learn which one it
         # is, by the same decision as for `GET /services/{serviceId}`
         if may_read_service(exc.existing_id) and _may_see(exc.existing_id):
@@ -427,6 +458,9 @@ def _check_pending_update(serviceId: str, value: object) -> Response | None:
     try:
         check_strings(new_type or {}, field="type")
     except InvalidService as exc:
+        _record_failure(
+            serviceId, FailureReason.INVALID_FIELD, fields=invalid_fields(exc)
+        )
         return reject(exc)
     if is_approved(new_type):
         return None
@@ -436,7 +470,39 @@ def _check_pending_update(serviceId: str, value: object) -> Response | None:
         escape_log_value(serviceId),
         escape_log_value(pending.description),
     )
+    _record_failure(serviceId, FailureReason.PENDING_SERVICE)
     return problem(pending)
+
+
+def _record_failure(
+    serviceId: str | None,
+    reason: FailureReason,
+    url: object = None,
+    fields: list[str] | None = None,
+) -> None:
+    """Record a failed registration or update.
+
+    Args:
+        serviceId: Identifier of the service in the request path; `None` for
+            `POST /services`.
+        reason: Reason.
+        url: URL in the request body, recorded only for registrations, and if
+            it is valid (cf. `record_failure()`).
+        fields: Names of the invalid fields.
+    """
+    stored = None
+    if serviceId is not None:
+        stored = get_collection("services").find_one(
+            {"id": serviceId}, {"_id": True, "id": True, "url": True}
+        )
+    record_failure(
+        Operation.REGISTER if stored is None else Operation.UPDATE,
+        reason,
+        user=get_current_subject(),
+        service=stored,
+        url=url,
+        fields=fields or (),
+    )
 
 
 def _is_pending(serviceId: str) -> bool:

@@ -511,6 +511,32 @@ invitations aren't paginated: a service can have about `max_per_service * (1 +
 keep_expired_days / expiry_days)` stored invitations, about 105 by default, so
 avoid combining a few `expiry_days` with many `keep_expired_days`.
 
+## Failed operations
+
+`custom.endpoints.services.failures` sets for how many days [failed
+operations](api.md#failed-operations) are kept (`keep_days`, default: 30, from 1 to
+365; the app refuses to start with other values), and how many failures of each user
+are recorded per hour (`max_per_user_per_hour`, default: 100; later ones aren't, and
+are logged at `DEBUG`). Syncs of the registry don't count for a user, and fail at most
+once per service and [sync interval](#service-info-sync). For example, in a config
+overlay (with the Helm chart, in `config`):
+
+```yaml
+custom:
+    endpoints:
+        services:
+            failures:
+                keep_days: 7
+                max_per_user_per_hour: 20
+```
+
+Failures are stored in the collection `failures`. Changes of `keep_days` take effect
+when the app starts, as for `keep_expired_days` of [invitations](#invitations): the app
+changes the TTL index that removes them (and logs a warning with the old and the new
+value), and the last instance to start sets it. Failures name the users who acted, so
+keep them only as long as needed; they hold no values of fields, response bodies,
+tokens or network errors.
+
 ## Request size limit
 
 Request bodies are limited to `server.max_content_length` bytes (default:

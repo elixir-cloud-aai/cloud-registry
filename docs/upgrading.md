@@ -27,6 +27,14 @@ it hold from the start, upgrade with the app scaled to 0 replicas. The minute,
 like the other limits and the claims of syncs, relies on the clocks of the
 replicas being in sync (e.g., NTP, as on Kubernetes nodes).
 
+**Failed operations:** failed imports, registrations, updates and syncs are recorded
+in the new collection `failures` and listed by [`GET
+/failures`](api.md#failed-operations), for admins, owners and the users who acted.
+The app creates the collection on startup, with a TTL index that removes failures
+after 30 days (`custom.endpoints.services.failures.keep_days`, see [Failed
+operations](configuration.md#failed-operations)), and the rule `list-failures` lets
+authenticated users list them. Nothing to do.
+
 ## From 1.0.0rc1
 
 **This version needs a fresh database: data is not kept, and there is no

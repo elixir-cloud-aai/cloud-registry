@@ -1378,11 +1378,12 @@ def test_turn_on_turned_off_while_applying(
     identifier = register(client)
     serve(INFO)
 
-    def turning_off(*args: Any) -> None:
+    def turning_off(*args: Any, **kwargs: Any) -> None:
         """Turn sync off instead of applying.
 
         Args:
             *args: Ignored.
+            **kwargs: Ignored.
         """
         services(client).update_one({"id": identifier}, {"$unset": {SYNC: ""}})
 

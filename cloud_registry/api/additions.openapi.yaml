@@ -1319,6 +1319,84 @@ paths:
           $ref: '#/components/responses/InternalServerError'
         default:
           $ref: '#/components/responses/Error'
+  /failures:
+    get:
+      summary: List recent failed operations.
+      description: |
+        List failed imports (`POST /services/import`), registrations (`POST
+        /services`, and `PUT /services/{serviceId}` of new services), updates
+        (`PUT /services/{serviceId}`) and syncs (`PUT /services/{serviceId}/sync`,
+        and the syncs of the registry), most recent first, so that admins and
+        owners learn why without access to the logs. Admins in admin mode see all;
+        other users see the failures of what they did themselves and of the
+        services they have a role on. Failures hold no values of fields, response
+        bodies, tokens or network errors: only a reason from a fixed set (see
+        `FailureReason`) and the names of invalid fields. They are kept for a
+        limited time (by default, 30 days), and only up to a number per user and
+        hour (by default, 100). Requests that the schemas of the API reject (e.g.,
+        unknown fields), conflicts of concurrent changes and limits of requests
+        (`429`) aren't recorded.
+      operationId: getFailures
+      x-openapi-router-controller: cloud_registry.ga4gh.registry.failures
+      tags:
+        - cloud-registry
+      parameters:
+        - name: operation
+          in: query
+          required: false
+          description: Only list failures of this operation.
+          schema:
+            $ref: '#/components/schemas/FailedOperation'
+        - name: reason
+          in: query
+          required: false
+          description: |
+            Only list failures with this reason, as served to the current user.
+          schema:
+            $ref: '#/components/schemas/FailureReason'
+        - name: serviceId
+          in: query
+          required: false
+          description: |
+            Only list failures of the service with this identifier, at the time of
+            the failure.
+          schema:
+            type: string
+            maxLength: 1024
+        - name: pageSize
+          in: query
+          required: false
+          description: Maximum number of failures in the response.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: pageToken
+          in: query
+          required: false
+          description: |
+            `nextPageToken` of the previous page, to list the failures after it.
+          schema:
+            type: string
+            pattern: '^[0-9a-f]{24}$'
+      responses:
+        '200':
+          description: Failures.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FailurePage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        default:
+          $ref: '#/components/responses/Error'
   /verifications:
     get:
       summary: List verified services.
@@ -2400,6 +2478,110 @@ components:
       properties:
         serviceId:
           $ref: '#/components/schemas/ServiceId'
+    FailedOperation:
+      description: |
+        Operation that failed: `import` (`POST /services/import`), `register`
+        (`POST /services`, or `PUT /services/{serviceId}` of a new service),
+        `update` (`PUT /services/{serviceId}`) or `sync` (`PUT
+        /services/{serviceId}/sync`, or a sync of the registry).
+      type: string
+      enum:
+        - import
+        - register
+        - update
+        - sync
+    FailureReason:
+      description: |
+        Why an operation failed; a fixed set. `unreachable`: the fetch failed
+        (e.g., timed out, refused, too large, not `200`). `address not allowed`:
+        the host resolves to an address that isn't public. `fetch failed`: either
+        of these, for fetches that the user started (imports, syncs on request),
+        as served to all but admins, who see which. `not JSON`: the response isn't
+        JSON. `invalid service info`: it doesn't pass the checks of a registration
+        (`fields` names the first invalid one, if known). `identity mismatch`,
+        `version awaiting approval`, `version not allowed` and `unused types limit
+        reached`: see `SyncReason`. `invalid field`: the request has invalid fields
+        (`fields`). `duplicate service`, `services limit reached`, `pending
+        service` and `url locked by sync`: see the conflicts of `POST /services`
+        and `PUT /services/{serviceId}` (`duplicate-service`, `services-limit`,
+        `pending-service`, `sync-url-locked`).
+      type: string
+      enum:
+        - unreachable
+        - address not allowed
+        - fetch failed
+        - not JSON
+        - invalid service info
+        - identity mismatch
+        - version awaiting approval
+        - version not allowed
+        - unused types limit reached
+        - invalid field
+        - duplicate service
+        - services limit reached
+        - pending service
+        - url locked by sync
+    Failure:
+      description: A failed operation.
+      type: object
+      required:
+        - id
+        - occurredAt
+        - operation
+        - reason
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          description: Identifier.
+          example: '6553f1a2b3c4d5e6f7a8b9c0'
+        occurredAt:
+          type: string
+          format: date-time
+          description: When it failed (RFC 3339 format, UTC).
+          example: '2026-10-20T12:34:56.789Z'
+        operation:
+          $ref: '#/components/schemas/FailedOperation'
+        reason:
+          $ref: '#/components/schemas/FailureReason'
+        serviceId:
+          type: string
+          description: |
+            Identifier of the service at the time of the failure, for operations on
+            a registered service.
+        url:
+          type: string
+          description: |
+            URL of the service, if known and valid (e.g., not for invalid addresses
+            of imports).
+        userId:
+          type: string
+          description: |
+            User who acted (`userId` of `GET /me`); only served to admins and to
+            the user themselves. Missing for syncs of the registry.
+        fields:
+          type: array
+          maxItems: 10
+          description: |
+            Names of the invalid fields (e.g., `organization.url`), never their
+            values.
+          items:
+            type: string
+    FailurePage:
+      description: A page of failed operations.
+      type: object
+      required:
+        - failures
+      additionalProperties: false
+      properties:
+        failures:
+          type: array
+          items:
+            $ref: '#/components/schemas/Failure'
+        nextPageToken:
+          type: string
+          description: |
+            Token for the next page (`pageToken`); missing on the last page.
     Notification:
       description: Something that needs the attention of the current user.
       type: object
