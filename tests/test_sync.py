@@ -628,6 +628,39 @@ def test_sync_now_above_limit_holds_off_nobody(
     assert get_service(client, service_id)["description"] == "Newer."
 
 
+def test_sync_now_above_limit_keeps_newer_request(
+    client: FlaskClient,
+    serve: Serve,
+    service_id: str,
+    gap: timedelta,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Uncounting a request above the limit keeps one counted meanwhile."""
+    move_requests_back(client, gap)
+    newer = now() + timedelta(seconds=1)
+
+    def counted_meanwhile(user: str) -> None:
+        """Count another request for the service, then reject this one.
+
+        Args:
+            user: User identifier.
+
+        Raises:
+            FetchLimit: Always.
+        """
+        get_collection(sync.SYNC_REQUESTS).update_many(
+            {}, {"$set": {"requestedAt": newer}}
+        )
+        raise service_import.FetchLimit(1, retry_after=1)
+
+    monkeypatch.setattr(sync, "check_fetch_limit", counted_meanwhile)
+    assert sync_now(client, service_id).status_code == 429
+    with client.application.app_context():
+        stored = get_collection(sync.SYNC_REQUESTS).find_one()
+    assert stored is not None
+    assert stored["requestedAt"].replace(tzinfo=UTC) == newer
+
+
 def test_sync_now_gap_ended_meanwhile(
     client: FlaskClient,
     serve: Serve,
