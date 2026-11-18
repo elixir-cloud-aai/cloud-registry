@@ -572,10 +572,10 @@ def test_sync_now_gap_for_all_users(
 def test_sync_now_gap_per_service(
     client: FlaskClient, serve: Serve, service_id: str, gap: timedelta
 ) -> None:
-    """Other services can be synced right away."""
-    other_info = info(id="org.example.other")
+    """Another service can be synced while one waits, and then waits itself."""
     other = register(client, {**SERVICE, "url": "https://other.example.org/tes"})
-    serve(other_info)
+    serve(info(id="org.example.other"))
+    assert sync_now(client, service_id).status_code == 429
     assert turn_on(client, other).status_code == 200
     assert sync_now(client, other).status_code == 429
 
@@ -599,6 +599,79 @@ def test_sync_now_gap_doesnt_count_for_limit(
         before = fetches.find_one({"_id": USER})
         assert sync_now(client, service_id).status_code == 429
         assert fetches.find_one({"_id": USER}) == before
+
+
+@pytest.mark.parametrize("synced_before", [True, False], ids=["again", "first"])
+def test_sync_now_above_limit_holds_off_nobody(
+    client: FlaskClient,
+    serve: Serve,
+    service_id: str,
+    gap: timedelta,
+    synced_before: bool,
+) -> None:
+    """A user above their own limit doesn't keep others from syncing."""
+    move_requests_back(client, gap)
+    if not synced_before:
+        with client.application.app_context():
+            get_collection(sync.SYNC_REQUESTS).delete_many({})
+    service_info_settings(client).fetches_per_hour = 1
+    urls = serve(info(description="Newer."))
+    response = sync_now(client, service_id)
+    assert response.status_code == 429
+    assert "this service" not in response.get_json()["detail"]
+    assert not urls
+    response = client.put(
+        f"{BASE}/services/{service_id}/sync?onlyIfEnabled=true",
+        headers=make_headers(ADMIN),
+    )
+    assert response.status_code == 200
+    assert get_service(client, service_id)["description"] == "Newer."
+
+
+def test_sync_now_gap_ended_meanwhile(
+    client: FlaskClient,
+    serve: Serve,
+    service_id: str,
+    gap: timedelta,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If the last request is gone when the wait is computed, it is a full gap."""
+    get_collection_ = sync.get_collection
+
+    class Expiring:
+        """Collection whose documents expire right after a failed write."""
+
+        def __init__(self, name: str) -> None:
+            """Wrap a collection.
+
+            Args:
+                name: Name of the collection.
+            """
+            self.collection = get_collection_(name)
+
+        def __getattr__(self, name: str) -> Any:
+            """Get an attribute of the collection, without `find_one`.
+
+            Args:
+                name: Name of the attribute.
+
+            Returns:
+                The attribute, or a `find_one` that finds nothing.
+            """
+            if name == "find_one":
+                return lambda *args, **kwargs: None
+            return getattr(self.collection, name)
+
+    monkeypatch.setattr(
+        sync,
+        "get_collection",
+        lambda name: (
+            Expiring(name) if name == sync.SYNC_REQUESTS else get_collection_(name)
+        ),
+    )
+    response = sync_now(client, service_id)
+    assert response.status_code == 429
+    assert int(response.headers["Retry-After"]) == int(gap.total_seconds())
 
 
 def test_sync_now_rejected_starts_no_gap(

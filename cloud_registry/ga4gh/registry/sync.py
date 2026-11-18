@@ -25,7 +25,7 @@ Users can also sync a service at once (`PUT /services/{serviceId}/sync`, e.g.,
 with `onlyIfEnabled` for "sync now"), counting for their limit of fetches, but
 each service at most once per `SYNC_REQUEST_GAP`, whoever asks, so that the
 users with a role on a service can't make the registry hammer it (cf.
-`check_sync_gap()`); the syncs of the app don't count for it.
+`sync_request()`); the syncs of the app don't count for it.
 
 The scheduler is a daemon thread in each worker (cf. `start_sync_scheduler()`),
 so it needs neither a task queue nor incoming requests. Workers and replicas
@@ -38,6 +38,8 @@ database, so that restarts lose nothing: overdue services are synced at the firs
 tick, and those of a worker that died when their claim expires.
 """
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 import logging
@@ -81,6 +83,7 @@ from cloud_registry.ga4gh.registry.service_import import (
     SERVICE_FIELDS,
     SERVICE_INFO_PATH,
     FetchFailed,
+    FetchLimit,
     check_fetch_limit,
     fetch_service_info,
     fetch_slot,
@@ -190,13 +193,19 @@ class SyncTooSoon(TooManyRequests):
         )
 
 
-def check_sync_gap(service: dict[str, Any]) -> None:
+@contextmanager
+def sync_request(service: dict[str, Any]) -> Iterator[None]:
     """Count a fetch that a user starts for a service, unless it is too soon.
 
-    Each takes a single atomic write, also for concurrent requests.
+    Each takes a single atomic write, also for concurrent requests. If the
+    user is above their own limit of fetches within the context (`FetchLimit`),
+    the request is uncounted again, so that it doesn't hold off other users.
 
     Args:
         service: Stored service.
+
+    Yields:
+        Nothing; the fetch is counted for the service.
 
     Raises:
         SyncTooSoon: A user started a fetch for the service less than
@@ -206,7 +215,7 @@ def check_sync_gap(service: dict[str, Any]) -> None:
     current = now()
     try:
         # a new document, unless the last request is too recent (duplicate key)
-        requests.update_one(
+        previous = requests.find_one_and_update(
             {
                 "_id": service["_id"],
                 "requestedAt": {"$lte": current - SYNC_REQUEST_GAP},
@@ -219,7 +228,20 @@ def check_sync_gap(service: dict[str, Any]) -> None:
         wait = SYNC_REQUEST_GAP
         if "requestedAt" in stored:
             wait -= current - _aware(stored["requestedAt"])
+        # rounded up, so that a retry after it isn't too soon again
         raise SyncTooSoon(retry_after=max(math.ceil(wait.total_seconds()), 1)) from exc
+    try:
+        yield
+    except FetchLimit:
+        # unless another request was counted meanwhile
+        query = {"_id": service["_id"], "requestedAt": current}
+        if previous is None:
+            requests.delete_one(query)
+        else:
+            requests.update_one(
+                query, {"$set": {"requestedAt": previous["requestedAt"]}}
+            )
+        raise
 
 
 def sync_enabled() -> bool:
@@ -702,7 +724,7 @@ def putServiceSync(
         info is invalid, `409` if it describes another service, the deployment
         doesn't sync, the service is the registry's own entry or it changed during
         the fetch, `429` above the limits for fetches (of the user, and per
-        service, cf. `check_sync_gap()`), and `502` if the fetch fails, for any
+        service, cf. `sync_request()`), and `502` if the fetch fails, for any
         reason.
 
     Raises:
@@ -725,8 +747,7 @@ def putServiceSync(
         if onlyIfEnabled and SYNC not in service:
             raise NotFound
         try:
-            with fetch_slot():
-                check_sync_gap(service)
+            with fetch_slot(), sync_request(service):
                 check_fetch_limit(require_subject())
                 identifier, values = _fetch(service["url"])
         except FetchError as exc:

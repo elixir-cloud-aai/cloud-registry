@@ -675,7 +675,10 @@ syncs it every 24 hours by default (see [Service info
 sync](configuration.md#service-info-sync)), whether or not requests come in. With
 `?onlyIfEnabled=true`, `PUT` only syncs a service that has sync on, and otherwise
 returns `404 Not Found` without a fetch: use it for "sync now", which can't then turn
-on what someone just turned off. `DELETE` turns it off.
+on what someone just turned off. `DELETE` turns it off. The service info must be
+publicly available: a service whose service info isn't world-readable can't be
+synced, so its entry can't be protected from drift. We strongly recommend that
+services make their service info public, also as it tells people how to get access.
 
 **Sync now:** after a change at the service (e.g., a new version or description),
 its owners, maintainers and admins don't need to wait for the next sync, nor edit
@@ -688,18 +691,17 @@ curl -X PUT "http://localhost:8080/ga4gh/registry/v1/services/<id>/sync?onlyIfEn
 
 It runs the same fetch and checks as the syncs of the registry, and returns the new
 state (see below), also when the service info can't be applied (with a `reason`).
-Unlike those, a failed fetch changes nothing and returns `502 Bad Gateway` (see
-**Turning it on** below), so that the reasons, which anyone can read, still change
-at most once per interval. Other users get `403 Forbidden`. Each fetch counts for
-the user's [limit](#importing-service-info) of fetches, and each service is fetched
-on request at most once a minute, whoever asks, so that the registry can't be used
-to flood a service: sooner, `PUT` returns `429 Too Many Requests`, with
-`Retry-After` in seconds, without a fetch. The syncs of the registry count for
-neither. The service info must be
-publicly available: a service whose
-service info isn't world-readable can't be synced, so its entry can't be protected
-from drift. We strongly recommend that services make their service info public,
-also as it tells people how to get access.
+Unlike those, a failed fetch changes neither the entry nor its sync state (though it
+counts for the limits below), and returns `502 Bad Gateway` (see **Turning it on**
+below), so that the reasons, which anyone can read, still change at most once per
+interval. Other users get `403 Forbidden`.
+
+Each fetch counts for the user's [limit](#importing-service-info) of fetches, and
+each service is fetched on request at most once a minute (fixed), whoever asks, so
+that the registry can't be used to flood a service. Sooner, or above the user's
+limit, `PUT` returns `429 Too Many Requests` without a fetch, with `Retry-After` in
+seconds; a request above the user's limit doesn't hold off the others. The syncs of
+the registry count for neither.
 
 **What sync changes:** `name`, `type`, `description`, `organization`, `contactUrl`,
 `documentationUrl`, `environment` and `version`, removing optional ones that the

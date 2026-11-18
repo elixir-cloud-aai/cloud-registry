@@ -1130,9 +1130,10 @@ paths:
         synced fields last until the next sync. Limited per user, like `POST
         /services/import` (`429` above), and each service is fetched on request at
         most once a minute, whoever asks (`429` sooner, without a fetch); every
-        failed fetch returns the same `502`, and changes nothing. With
-        `onlyIfEnabled`, a service without sync returns `404`, without a fetch, so
-        that "sync now" can't turn on what someone just turned off.
+        failed fetch returns the same `502`, and changes neither the entry nor its
+        sync state (but counts for both limits). With `onlyIfEnabled`, a service
+        without sync returns `404`, without a fetch, so that "sync now" can't turn
+        on what someone just turned off.
       operationId: putServiceSync
       x-openapi-router-controller: cloud_registry.ga4gh.registry.sync
       tags:
