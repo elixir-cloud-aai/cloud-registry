@@ -772,11 +772,12 @@ def test_turn_on_gone_after_claim(
     identifier = register(client)
     serve(INFO)
 
-    def deleting(*args: Any) -> None:
+    def deleting(*args: Any, **kwargs: Any) -> None:
         """Delete the service instead of applying.
 
         Args:
             *args: Ignored.
+            **kwargs: Ignored.
         """
         services(client).delete_one({"id": identifier})
 
