@@ -265,7 +265,9 @@ The registry connects directly: proxy settings of the environment (e.g.,
 `HTTPS_PROXY`) don't apply. Above `fetches_per_hour` (a positive number; each user
 on their own, admins too; failed fetches count, as they also limit probing), users
 get `429 Too Many Requests`. So do requests while two others of the same worker are
-fetching, so that slow addresses leave threads for other requests. These responses have
+fetching, so that slow addresses leave threads for other requests, and
+[syncs](api.md#synced-services) that users start for a service that a user synced
+less than a minute ago, so that the registry can't be used to flood a service. These responses have
 `Retry-After`, which the default `security.cors.expose_headers` lets browser apps on
 other origins read: keep it if you set your own list. As a second layer, the
 Helm chart can restrict the [app's

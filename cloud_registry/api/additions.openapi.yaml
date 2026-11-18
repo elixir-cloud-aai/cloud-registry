@@ -1128,9 +1128,11 @@ paths:
         (e.g., a type awaiting approval) turns sync on with a `reason`. While sync
         is on, updates with another `url` return `409`, and other changes of
         synced fields last until the next sync. Limited per user, like `POST
-        /services/import` (`429` above); every failed fetch returns the same `502`.
-        With `onlyIfEnabled`, a service without sync returns `404`, without a fetch,
-        so that "sync now" can't turn on what someone just turned off.
+        /services/import` (`429` above), and each service is fetched on request at
+        most once a minute, whoever asks (`429` sooner, without a fetch); every
+        failed fetch returns the same `502`, and changes nothing. With
+        `onlyIfEnabled`, a service without sync returns `404`, without a fetch, so
+        that "sync now" can't turn on what someone just turned off.
       operationId: putServiceSync
       x-openapi-router-controller: cloud_registry.ga4gh.registry.sync
       tags:
@@ -1166,7 +1168,9 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
         '429':
-          description: Too many fetches (see `POST /services/import`).
+          description: |
+            Too many fetches: of the user (see `POST /services/import`), or of
+            this service, which a user synced less than a minute ago.
           headers:
             Retry-After:
               description: Seconds after which to try again.
