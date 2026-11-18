@@ -21,7 +21,11 @@ subjects). Their steps for the config, the deployment and clients still apply.
 they return `429 Too Many Requests` with `Retry-After`, without a fetch. Clients
 that offer "sync now" should say when to try again. The time of the last one per
 service is stored in the new collection `sync_requests`, which the app creates on
-startup, with a TTL index that removes its documents after an hour.
+startup, with a TTL index that removes its documents after an hour. During a
+rolling upgrade, replicas of the old version don't apply the minute yet, so to have
+it hold from the start, upgrade with the app scaled to 0 replicas. The minute,
+like the other limits and the claims of syncs, relies on the clocks of the
+replicas being in sync (e.g., NTP, as on Kubernetes nodes).
 
 ## From 1.0.0rc1
 
