@@ -360,9 +360,13 @@ def _register_service(
                 fields=invalid_fields(exc),
             )
         else:
-            _record_register_failure(
-                service_id, REGISTER_REASONS[type(exc)], data.get("url")
+            # by the class or a base class, so that subclasses have a reason too
+            reason = next(
+                REGISTER_REASONS[kind]
+                for kind in type(exc).__mro__
+                if kind in REGISTER_REASONS
             )
+            _record_register_failure(service_id, reason, data.get("url"))
         return reject(exc)
     except DuplicateService as exc:
         logger.info(

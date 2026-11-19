@@ -817,7 +817,7 @@ for a client to show next to the notifications, so that "it didn't work" can be
 answered without the logs:
 
 ```json
-{"failures": [{"id": "6553f1a2b3c4d5e6f7a8b9c0", "occurredAt": "2026-11-05T12:34:56.789Z", "operation": "update", "reason": "invalid field", "serviceId": "ABC123", "url": "https://tes.example.org/ga4gh/tes/v1", "fields": ["organization.url"]}], "nextPageToken": "6553f1a2b3c4d5e6f7a8b9c0"}
+{"failures": [{"id": "6553f1a2b3c4d5e6f7a8b9c0", "occurredAt": "2026-11-05T12:34:56.789Z", "operation": "update", "reason": "invalid field", "serviceId": "ABC123", "url": "https://tes.example.org/ga4gh/tes/v1", "fields": ["organization.url"]}]}
 ```
 
 | `operation` | What failed |
