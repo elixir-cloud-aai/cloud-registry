@@ -565,7 +565,10 @@ def test_malformed_page_token(client: FlaskClient, token: str) -> None:
             "parameter": "pageToken",
         }
     ]
-    assert "0" * 24 not in response.get_data(as_text=True)
+    body = response.get_data(as_text=True)
+    assert token not in body
+    assert json.dumps(token)[1:-1] not in body
+    assert "0" * 24 not in body
 
 
 def test_page_token_pattern(client: FlaskClient) -> None:

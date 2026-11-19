@@ -374,7 +374,9 @@ def _after(token: str) -> dict[str, Any]:
     milliseconds, identifier = token.split(".")
     try:
         occurred = datetime.fromtimestamp(int(milliseconds) / 1000, UTC)
-    except (OverflowError, ValueError) as exc:
+    # `ValueError` for years after 9999; `OverflowError` or `OSError` on
+    # platforms whose time functions can't take the value
+    except (OSError, OverflowError, ValueError) as exc:
         raise _invalid_page_token() from exc
     return {
         "$or": [
