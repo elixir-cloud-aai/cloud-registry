@@ -86,7 +86,13 @@ from cloud_registry.ga4gh.registry.permissions import (
 )
 from cloud_registry.ga4gh.registry.service import check_strings, service_exists
 from cloud_registry.service_models.custom_config import CustomConfig
-from cloud_registry.utils import format_time, get_collection, now, set_ttl_index
+from cloud_registry.utils import (
+    SECONDS_PER_DAY,
+    format_time,
+    get_collection,
+    now,
+    set_ttl_index,
+)
 
 logger = logging.getLogger(__name__)
 # Fields of stored invitations: the hash of the token, and the acceptance
@@ -104,7 +110,6 @@ CREATED_AS = "createdAs"
 EXPIRES_AT = "expiresAt"
 # Bytes of randomness of tokens (cf. `secrets.token_urlsafe()`)
 TOKEN_BYTES = 32
-SECONDS_PER_DAY = 86400
 
 
 class InvitationAccepted(CodedConflict):

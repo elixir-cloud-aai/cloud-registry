@@ -838,10 +838,10 @@ Who sees what:
 
 A failure has the time, the operation, a `reason` from a fixed set, the names of the
 invalid fields, if any (`fields`), the service's identifier at the time of the failure
-(`serviceId`, for registered services) and its URL (`url`), if known and valid; never
-values of fields, response bodies, tokens or network errors. Invalid URLs (e.g., with
-user info, which could hold credentials) and invalid addresses of imports aren't
-recorded.
+(`serviceId`, for registered services) and its URL (`url`), if known and valid, without
+query and fragment; never values of fields, response bodies, tokens or network errors.
+Invalid URLs (e.g., with user info, which could hold credentials) and invalid addresses
+of imports aren't recorded.
 
 | `reason` | Why |
 | --- | --- |
@@ -849,7 +849,7 @@ recorded.
 | `address not allowed` | the host resolves to an address that [isn't public](configuration.md#service-info-import) |
 | `fetch failed` | either of these, for fetches that the user started (imports, syncs on request), as served to all but admins: as in the responses of these requests, all failed fetches look alike to users, so that they can't map networks; admins see which. Syncs of the registry say which to all who see them, as `GET /services/{serviceId}/sync` does |
 | `not JSON` | the response isn't JSON |
-| `invalid service info` | it doesn't pass the checks of a registration; `fields` names the first invalid field, if known |
+| `invalid service info` | it doesn't pass the checks of a registration; `fields` names the invalid field, if known |
 | `identity mismatch`, `version awaiting approval`, `version not allowed`, `unused types limit reached` | as for [syncs](#synced-services) |
 | `invalid field` | the request has invalid fields, those that the registry's own checks reject (e.g., URLs, schemes, environments, types); `fields` names them |
 | `duplicate service` | a service with the same URL and API type is registered (see [Duplicate services](#duplicate-services)) |
@@ -863,11 +863,12 @@ the fields), conflicts of concurrent changes (`service-busy`), limits of request
 (`429`) and errors of the registry (`500`, in the logs).
 
 The most recent come first. Filter them with `operation`, `reason` (as the user sees
-it) and `serviceId`; pages have at most `pageSize` failures (1 to 200, default: 50),
-and `nextPageToken` gets the next page (as `pageToken`), until the last page, which has
-none. Failures are kept for 30 days by default, and at most 100 of each user are
-recorded per hour, so that nobody can fill the database by failing on purpose (see
-[Failed operations](configuration.md#failed-operations)).
+it; for admins, `fetch failed` selects the failed fetches that users started, which
+they see with their reasons) and `serviceId`; pages have at most `pageSize` failures
+(1 to 200, default: 50), and `nextPageToken` gets the next page (as `pageToken`), until
+the last page, which has none. Failures are kept for 30 days by default, and about 100
+of each user at most are recorded per hour, so that nobody can fill the database by
+failing on purpose (see [Failed operations](configuration.md#failed-operations)).
 
 ## Listing the registry itself
 

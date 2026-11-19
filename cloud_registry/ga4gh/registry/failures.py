@@ -10,7 +10,8 @@ What is stored is fixed, so that failures hold no secrets: the time, the
 operation, a reason from a fixed set (cf. `FailureReason`), the names of
 invalid fields (never their values), the user who acted (none for the syncs of
 the app), and the service, if it is known: its identifier, and its URL, only if
-it is valid (URLs with user info, which could hold credentials, are invalid).
+it is valid (URLs with user info, which could hold credentials, are invalid),
+and without query and fragment, which could hold tokens.
 Never response bodies, tokens or network errors.
 
 Fetches that users start (imports, syncs on request) fail alike for them,
@@ -23,8 +24,9 @@ they see them here too.
 MongoDB removes failures after
 `custom.endpoints.services.failures.keep_days` (TTL index, cf.
 `apply_keep_days()`), and each user's failures are only recorded up to
-`custom.endpoints.services.failures.max_per_user_per_hour`, so that nobody can
-fill the database by failing on purpose. Recording never fails an operation:
+`custom.endpoints.services.failures.max_per_user_per_hour` (about: concurrent
+requests can each record one more), so that nobody can fill the database by
+failing on purpose. Recording never fails an operation:
 errors are logged instead.
 """
 
@@ -34,6 +36,7 @@ from enum import StrEnum
 import logging
 import re
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from bson import ObjectId
 from foca import get_custom_config
@@ -43,15 +46,20 @@ from cloud_registry.exceptions import field_name
 from cloud_registry.ga4gh.registry.permissions import services_path
 from cloud_registry.ga4gh.registry.service import InvalidService, url_errors
 from cloud_registry.safe_fetch import AddressNotAllowed, FetchError
-from cloud_registry.service_models.custom_config import CustomConfig
-from cloud_registry.utils import format_time, get_collection, now, set_ttl_index
+from cloud_registry.service_models.custom_config import CustomConfig, FailuresConfig
+from cloud_registry.utils import (
+    SECONDS_PER_DAY,
+    format_time,
+    get_collection,
+    now,
+    set_ttl_index,
+)
 
 logger = logging.getLogger(__name__)
 
 # Collection of the failures, and the field of their time, with the TTL index
 FAILURES = "failures"
 OCCURRED_AT = "occurredAt"
-SECONDS_PER_DAY = 86400
 # Window of the limit of failures recorded per user
 WINDOW = timedelta(hours=1)
 # Names of invalid fields stored per failure, at most; names are those of the
@@ -129,7 +137,7 @@ def invalid_fields(exc: InvalidService) -> list[str]:
     return list(dict.fromkeys(valid))[:FIELDS_PER_FAILURE]
 
 
-def _settings() -> Any:
+def _settings() -> FailuresConfig:
     """Get the settings of failures.
 
     Returns:
@@ -155,13 +163,15 @@ def _valid_url(url: object) -> str | None:
         url: URL, as sent or stored.
 
     Returns:
-        The URL, or `None` if it is invalid (e.g., with user info, or a
-        scheme that isn't allowed).
+        The URL without its query and fragment, which could hold tokens; `None`
+        if it is invalid (e.g., with user info, which could hold credentials, or
+        a scheme that isn't allowed).
     """
     services = get_custom_config(CustomConfig).endpoints.services
     if not isinstance(url, str) or url_errors(url, services.url_schemes):
         return None
-    return url
+    parts = urlsplit(url)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
 
 
 def _over_limit(user: str) -> bool:

@@ -517,7 +517,8 @@ avoid combining a few `expiry_days` with many `keep_expired_days`.
 operations](api.md#failed-operations) are kept (`keep_days`, default: 30, from 1 to
 365; the app refuses to start with other values), and how many failures of each user
 are recorded per hour (`max_per_user_per_hour`, default: 100; later ones aren't, and
-are logged at `DEBUG`). Syncs of the registry don't count for a user, and fail at most
+are logged at `DEBUG`; concurrent requests of a user at the limit can each record one
+more). Syncs of the registry don't count for a user, and fail at most
 once per service and [sync interval](#service-info-sync). For example, in a config
 overlay (with the Helm chart, in `config`):
 

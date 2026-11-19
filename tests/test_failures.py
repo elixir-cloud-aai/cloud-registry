@@ -14,7 +14,7 @@ from pydantic import ValidationError
 from pymongo.collection import Collection
 import pytest
 
-from cloud_registry.ga4gh.registry import failures, service_import, sync
+from cloud_registry.ga4gh.registry import failures, server, service_import, sync
 from cloud_registry.ga4gh.registry.failures import (
     FAILURES,
     OCCURRED_AT,
@@ -625,3 +625,48 @@ def test_unknown_service_url_not_recorded(client: FlaskClient) -> None:
         )
     [item] = list_failures(client, ADMIN, admin=True)["failures"]
     assert "url" not in item
+
+
+def test_sync_reasons_are_failure_reasons() -> None:
+    """Each reason of syncs is a reason of failures, which records it."""
+    assert {str(item) for item in sync.Reason} <= {str(item) for item in FailureReason}
+
+
+def test_url_without_query(client: FlaskClient) -> None:
+    """URLs are recorded without query and fragment, which could hold tokens."""
+    response = client.post(
+        f"{BASE}/services",
+        json={**SERVICE, "url": f"{URL}?token=secret#x", "environment": "nope"},
+        headers=make_headers(),
+    )
+    assert response.status_code == 400
+    [item] = list_failures(client)["failures"]
+    assert item["url"] == URL
+
+
+def test_service_lookup_errors_logged(
+    client: FlaskClient,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Errors while looking up the service of a failure are logged, not raised."""
+
+    def broken(name: str) -> None:
+        """Fail like a database that is unavailable.
+
+        Args:
+            name: Name of the collection, ignored.
+
+        Raises:
+            RuntimeError: Always.
+        """
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(server, "get_collection", broken)
+    with (
+        client.application.app_context(),
+        caplog.at_level(logging.ERROR, logger=server.__name__),
+    ):
+        server._record_register_failure("ABC123", FailureReason.PENDING_SERVICE)
+    assert "Failure of a registration or update not recorded." in caplog.text
+    assert list_failures(client, ADMIN, admin=True)["failures"] == []

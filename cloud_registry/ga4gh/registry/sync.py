@@ -732,7 +732,9 @@ def getSyncs(status: str | None = None, **kwargs: Any) -> list[dict[str, Any]]:
     return [view for view in views if status is None or view["status"] == status]
 
 
-def _fetch_on_request(service: dict[str, Any]) -> tuple[str, dict[str, Any]] | Response:
+def _fetch_on_request(
+    service: dict[str, Any],
+) -> tuple[str, dict[str, Any], str] | Response:
     """Fetch the service info of a service for a user, who syncs it.
 
     Must be called in a request context. Failures are recorded (cf.
@@ -742,10 +744,10 @@ def _fetch_on_request(service: dict[str, Any]) -> tuple[str, dict[str, Any]] | R
         service: Stored service.
 
     Returns:
-        Identifier of the service info and its values for the service, if they
-        describe the service (the identifier of its sync, if it has one, and
-        its URL and API type); otherwise, an error response (cf.
-        `putServiceSync()`).
+        Identifier of the service info, its values for the service and the
+        identifier that the sync of the service has (the fetched one if it has
+        none), if they describe the service (that identifier, and its URL and
+        API type); otherwise, an error response (cf. `putServiceSync()`).
     """
     try:
         with fetch_slot(), sync_request(service):
@@ -787,7 +789,7 @@ def _fetch_on_request(service: dict[str, Any]) -> tuple[str, dict[str, Any]] | R
             service=service,
         )
         return problem(SyncIdentityMismatch())
-    return identifier, values
+    return identifier, values, baseline
 
 
 # PUT /services/{serviceId}/sync
@@ -839,9 +841,8 @@ def putServiceSync(
         fetched = _fetch_on_request(service)
         if isinstance(fetched, Response):
             return fetched
-        identifier, values = fetched
+        identifier, values, baseline = fetched
         state = service.get(SYNC, {})
-        baseline = state.get("serviceInfoId", identifier)
         current = now()
         # not if the service changed during the fetch, e.g., its URL, which
         # wasn't fetched then

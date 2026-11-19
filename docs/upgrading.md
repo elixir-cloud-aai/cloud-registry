@@ -571,7 +571,8 @@ unless its subjects are kept bare. Stored identifiers of its users (their
 roles on services, roles granted via the permissions API, the service
 types they added, the services they registered (for the [limit of services
 per user](configuration.md#services-per-user)), their display names, and the
-[invitations](access-control.md#invitations) they created or accepted) then
+[invitations](access-control.md#invitations) they created or accepted, and their
+[failed operations](api.md#failed-operations)) then
 no longer match them (e.g., open invitations of owners are deleted when
 they are accepted, as their creators seem to be no longer owners):
 

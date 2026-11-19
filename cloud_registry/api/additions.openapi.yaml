@@ -2553,7 +2553,7 @@ components:
           type: string
           description: |
             URL of the service, if known and valid (e.g., not for invalid addresses
-            of imports).
+            of imports), without query and fragment.
         userId:
           type: string
           description: |

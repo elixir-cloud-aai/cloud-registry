@@ -20,7 +20,9 @@ form:
 - the users of the stored display names (`userId` of `user_names`);
 - the users who created invitations to services, as whom (`createdBy`,
   `createdAs.user`), and who accepted them (`accepted.userId` of
-  `invitations`), so that open invitations of owners stay valid.
+  `invitations`), so that open invitations of owners stay valid;
+- the users of failed operations (`userId` of `failures`), so that users keep
+  seeing theirs, and they count for the users' limit.
 
 Subjects that are already namespaced (with `|`) are kept, so the migration
 can be run again, e.g., after an interrupted run. It then marks the stored
@@ -69,6 +71,7 @@ from pymongo.collection import Collection
 from pymongo.errors import DuplicateKeyError
 
 from cloud_registry.app import create_app, create_foca
+from cloud_registry.ga4gh.registry.failures import FAILURES
 from cloud_registry.ga4gh.registry.invitations import ACCEPTED, CREATED_AS
 from cloud_registry.ga4gh.registry.permissions import INVITATIONS
 from cloud_registry.ga4gh.registry.service import CREATED_BY as SERVICE_CREATOR
@@ -358,6 +361,30 @@ def _namespace_invitations(namespace: str, dry_run: bool) -> int:
     return count
 
 
+def _namespace_failures(namespace: str, dry_run: bool) -> int:
+    """Namespace the users of failed operations.
+
+    Args:
+        namespace: Namespace of the issuer's subjects.
+        dry_run: Only count the failures.
+
+    Returns:
+        Number of failures of bare users (rewritten, unless `dry_run`).
+    """
+    collection = get_collection(FAILURES)
+    count = 0
+    for failure in collection.find({"userId": {"$type": "string"}}, {"userId": True}):
+        if not _is_bare(failure["userId"]):
+            continue
+        count += 1
+        if not dry_run:
+            collection.update_one(
+                {"_id": failure["_id"], "userId": failure["userId"]},
+                {"$set": {"userId": _namespaced(namespace, failure["userId"])}},
+            )
+    return count
+
+
 def namespace_subjects(namespace: str, dry_run: bool = False) -> dict[str, int]:
     """Namespace the stored subjects of an issuer.
 
@@ -373,8 +400,8 @@ def namespace_subjects(namespace: str, dry_run: bool = False) -> dict[str, int]:
     Returns:
         Numbers of stored policy rules (`rules`), service types
         (`service_types`), services (`services`; their counters are moved,
-        but not counted), display names (`user_names`) and invitations
-        (`invitations`) of bare users
+        but not counted), display names (`user_names`), invitations
+        (`invitations`) and failed operations (`failures`) of bare users
         (rewritten, unless `dry_run`), and of configured rules with bare
         users (`configured_rules`; kept, cf. the module docs).
 
@@ -396,6 +423,7 @@ def namespace_subjects(namespace: str, dry_run: bool = False) -> dict[str, int]:
         "services": _namespace_services(namespace, dry_run),
         "user_names": _namespace_user_names(namespace, dry_run),
         "invitations": _namespace_invitations(namespace, dry_run),
+        "failures": _namespace_failures(namespace, dry_run),
     }
     if configured:
         logger.warning(

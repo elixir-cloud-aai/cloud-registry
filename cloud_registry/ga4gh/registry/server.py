@@ -81,7 +81,6 @@ REGISTER_REASONS: dict[type[Exception], FailureReason] = {
     UnusedTypesLimit: FailureReason.TYPES_LIMIT,
     ServicesLimit: FailureReason.SERVICES_LIMIT,
     SyncUrlLocked: FailureReason.SYNC_URL_LOCKED,
-    DuplicateService: FailureReason.DUPLICATE_SERVICE,
 }
 
 
@@ -291,7 +290,7 @@ def _register_service(
         pending services by users other than admins, for users who registered
         as many services as allowed, or for other URLs of services with sync.
         These failures and those of invalid fields are recorded (cf.
-        `_record_failure()`).
+        `_record_register_failure()`).
 
     Raises:
         foca.errors.InvalidFieldsProblem: Fields of the service are invalid
@@ -354,26 +353,25 @@ def _register_service(
             escape_log_value(shorten_detail(exc.description)),
         )
         if isinstance(exc, InvalidService):
-            _record_failure(
+            _record_register_failure(
                 service_id,
                 FailureReason.INVALID_FIELD,
                 url=data.get("url"),
                 fields=invalid_fields(exc),
             )
         else:
-            reason = next(
-                value
-                for kind, value in REGISTER_REASONS.items()
-                if isinstance(exc, kind)
+            _record_register_failure(
+                service_id, REGISTER_REASONS[type(exc)], data.get("url")
             )
-            _record_failure(service_id, reason, data.get("url"))
         return reject(exc)
     except DuplicateService as exc:
         logger.info(
             "Service not registered: %s",
             escape_log_value(shorten_detail(exc.description)),
         )
-        _record_failure(service_id, FailureReason.DUPLICATE_SERVICE, data.get("url"))
+        _record_register_failure(
+            service_id, FailureReason.DUPLICATE_SERVICE, data.get("url")
+        )
         # only users who may read the registered service learn which one it
         # is, by the same decision as for `GET /services/{serviceId}`
         if may_read_service(exc.existing_id) and _may_see(exc.existing_id):
@@ -458,7 +456,7 @@ def _check_pending_update(serviceId: str, value: object) -> Response | None:
     try:
         check_strings(new_type or {}, field="type")
     except InvalidService as exc:
-        _record_failure(
+        _record_register_failure(
             serviceId, FailureReason.INVALID_FIELD, fields=invalid_fields(exc)
         )
         return reject(exc)
@@ -470,11 +468,11 @@ def _check_pending_update(serviceId: str, value: object) -> Response | None:
         escape_log_value(serviceId),
         escape_log_value(pending.description),
     )
-    _record_failure(serviceId, FailureReason.PENDING_SERVICE)
+    _record_register_failure(serviceId, FailureReason.PENDING_SERVICE)
     return problem(pending)
 
 
-def _record_failure(
+def _record_register_failure(
     serviceId: str | None,
     reason: FailureReason,
     url: object = None,
@@ -490,11 +488,16 @@ def _record_failure(
             it is valid (cf. `record_failure()`).
         fields: Names of the invalid fields.
     """
-    stored = None
-    if serviceId is not None:
-        stored = get_collection("services").find_one(
-            {"id": serviceId}, {"_id": True, "id": True, "url": True}
-        )
+    try:
+        stored = None
+        if serviceId is not None:
+            stored = get_collection("services").find_one(
+                {"id": serviceId}, {"_id": True, "id": True, "url": True}
+            )
+    except Exception:
+        # as in `record_failure()`, so that the response stays the same
+        logger.exception("Failure of a registration or update not recorded.")
+        return
     record_failure(
         Operation.REGISTER if stored is None else Operation.UPDATE,
         reason,
