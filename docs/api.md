@@ -866,7 +866,8 @@ The most recent come first. Filter them with `operation`, `reason` (as the user 
 it; for admins, `fetch failed` selects the failed fetches that users started, which
 they see with their reasons) and `serviceId`; pages have at most `pageSize` failures
 (1 to 200, default: 50), and `nextPageToken` gets the next page (as `pageToken`), until
-the last page, which has none. Failures are kept for 30 days by default, and about 100
+the last page, which has none. Tokens are opaque: pass them on as they are; others get
+`400 Bad Request`, with `pageToken` in `errors` (`pattern-mismatch`). Failures are kept for 30 days by default, and about 100
 of each user at most are recorded per hour, so that nobody can fill the database by
 failing on purpose (see [Failed operations](configuration.md#failed-operations)).
 
