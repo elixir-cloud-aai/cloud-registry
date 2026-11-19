@@ -40,6 +40,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from bson import ObjectId
 from foca import get_custom_config
+from foca.errors import FieldError, InvalidFieldsProblem
 from foca.security.access_control import get_current_subject, resource_filter
 
 from cloud_registry.exceptions import field_name
@@ -69,6 +70,10 @@ _FIELD_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_.]{0,63}")
 # Default and maximum size of a page of failures
 PAGE_SIZE = 50
 MAX_PAGE_SIZE = 200
+# Tokens of pages (cf. `_page_token()`), as the pattern of `pageToken` in the
+# specification, which is checked with `re.search()`, where `$` also matches
+# before a final line break, so tokens are checked again with this
+PAGE_TOKEN = re.compile(r"[0-9]{1,15}\.[0-9a-f]{24}")
 
 
 class Operation(StrEnum):
@@ -326,19 +331,53 @@ def _page_token(failure: dict[str, Any]) -> str:
     return f"{round(occurred.timestamp() * 1000)}.{failure['_id']}"
 
 
+def _invalid_page_token() -> InvalidFieldsProblem:
+    """Get the problem of a malformed page token.
+
+    Tokens are opaque, and the registry issues none that fail the checks of
+    `_after()`, so all get FOCA's code of pattern mismatches.
+
+    Returns:
+        `400 Bad Request` naming the parameter `pageToken`, without quoting
+        its value.
+    """
+    return InvalidFieldsProblem(
+        [
+            FieldError(
+                detail="Must be the 'nextPageToken' of a page.",
+                code="pattern-mismatch",
+                parameter="pageToken",
+            )
+        ]
+    )
+
+
 def _after(token: str) -> dict[str, Any]:
     """Get the filter for the failures after a page.
 
     Args:
-        token: Token for the page (cf. `_page_token()`), as the schema allows
-            (`<milliseconds>.<identifier>`).
+        token: Token for the page (cf. `_page_token()`):
+            `<milliseconds>.<identifier>`.
 
     Returns:
         Filter for older failures, and those of the same time with lower
         identifiers, in the order of the pages.
+
+    Raises:
+        foca.errors.InvalidFieldsProblem: The token is malformed (e.g., ends
+            in a line break, which the schema's pattern lets through), or its
+            time is out of range (after the year 9999); the problem details
+            don't quote it.
     """
+    if not PAGE_TOKEN.fullmatch(token):
+        raise _invalid_page_token()
     milliseconds, identifier = token.split(".")
-    occurred = datetime.fromtimestamp(int(milliseconds) / 1000, UTC)
+    try:
+        occurred = datetime.fromtimestamp(int(milliseconds) / 1000, UTC)
+    # `ValueError` for years after 9999; `OverflowError` or `OSError` on
+    # platforms whose time functions can't take the value
+    except (OSError, OverflowError, ValueError) as exc:
+        raise _invalid_page_token() from exc
     return {
         "$or": [
             {OCCURRED_AT: {"$lt": occurred}},

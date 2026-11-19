@@ -18,6 +18,7 @@ from cloud_registry.ga4gh.registry import failures, server, service_import, sync
 from cloud_registry.ga4gh.registry.failures import (
     FAILURES,
     OCCURRED_AT,
+    PAGE_TOKEN,
     SECONDS_PER_DAY,
     FailureReason,
     fetch_reason,
@@ -536,6 +537,50 @@ def test_invalid_page(client: FlaskClient, query: dict[str, Any]) -> None:
     """Invalid page parameters are rejected."""
     response = client.get(ENDPOINT, query_string=query, headers=make_headers())
     assert response.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        # `$` of the schema's pattern also matches before a final line break
+        f"1.{'0' * 24}\n",
+        # matches the pattern, but its time is after the year 9999
+        f"{'9' * 15}.{'0' * 24}",
+    ],
+)
+def test_malformed_page_token(client: FlaskClient, token: str) -> None:
+    """Tokens that pass the schema but are malformed are rejected.
+
+    The problem details don't quote them.
+    """
+    response = client.get(
+        ENDPOINT, query_string={"pageToken": token}, headers=make_headers()
+    )
+    assert response.status_code == 400
+    assert isinstance(response.json, dict)
+    assert response.json["errors"] == [
+        {
+            "detail": "Must be the 'nextPageToken' of a page.",
+            "code": "pattern-mismatch",
+            "parameter": "pageToken",
+        }
+    ]
+    body = response.get_data(as_text=True)
+    assert token not in body
+    assert json.dumps(token)[1:-1] not in body
+    assert "0" * 24 not in body
+
+
+def test_page_token_pattern(client: FlaskClient) -> None:
+    """The controller checks tokens by the pattern of the specification."""
+    response = client.get(f"{BASE}/openapi.json")
+    assert isinstance(response.json, dict)
+    (token,) = [
+        param
+        for param in response.json["paths"]["/failures"]["get"]["parameters"]
+        if param["name"] == "pageToken"
+    ]
+    assert token["schema"]["pattern"] == f"^{PAGE_TOKEN.pattern}$"
 
 
 def test_limit_per_user(client: FlaskClient) -> None:

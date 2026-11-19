@@ -1377,6 +1377,9 @@ paths:
           required: false
           description: |
             `nextPageToken` of the previous page, to list the failures after it.
+            Tokens are opaque: pass them on as they are. Malformed ones get
+            `400` (`pattern-mismatch`), also some that match the pattern
+            (e.g., with a final line break, or a time after the year 9999).
           schema:
             type: string
             pattern: '^[0-9]{1,15}\.[0-9a-f]{24}$'
