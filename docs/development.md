@@ -290,19 +290,8 @@ links, which don't work in GitHub releases. No packages are published to
 PyPI. Tags of alpha, beta and release candidate versions (e.g., `vX.Y.Zrc1`,
 also `aN` and `bN`) get chart version `X.Y.Z-rc1` (or `-aN`, `-bN`) and never
 update the `latest` image. These and, until 1.0.0, all other releases are
-GitHub pre-releases (never marked as the latest release). Re-running all
-jobs of the release workflow builds, scans, signs and tags a new image
-digest (the image build is not reproducible) and packages the chart again;
-re-running only the failed jobs reuses the digest already pushed (and scans
-it again if the scan failed). Once the GitHub release is published,
-re-running all jobs fails in `publish` (step "Check release state") before
-it attests, signs or tags the new digest, so that `X.Y.Z` and `latest` keep
-pointing to the published image; re-running the failed jobs of a published
-release still passes, as it reuses the digest and the chart. Re-runs use the
-workflow of the tagged commit, so releases tagged before this step was
-added don't have it (check the step's name in the run): never re-run all
-jobs of their runs. Images of commits on `dev` are published by the CI
-workflow (environment `dev-images`).
+GitHub pre-releases (never marked as the latest release). Images of commits
+on `dev` are published by the CI workflow (environment `dev-images`).
 
 The release workflow derives the version, the chart version, the kind of
 release (stable, GitHub pre-release), whether the image is tagged `latest`
@@ -465,7 +454,13 @@ digest (the image build is not reproducible); an earlier digest that was
 published stays signed. Re-running only the failed jobs reuses the digest
 already pushed. Re-running all jobs also packages the chart again and
 replaces the chart artifact; the release checks the new chart against its new
-SHA-256.
+SHA-256. Once the GitHub release is published, re-running all jobs fails in
+`publish` (step "Check release state") before it attests, signs or tags the
+new digest, so that `X.Y.Z` and `latest` keep pointing to the published
+image; re-running the failed jobs of a published release still passes, as
+it reuses the digest and the chart. Re-runs use the workflow of the tagged
+commit, so releases tagged before this step was added don't have it (check
+the step's name in the run): never re-run all jobs of their runs.
 
 The CI workflow (which tests the chart) and the release workflow (which
 packages it) install the same Helm version (`version:` of `azure/setup-helm`
