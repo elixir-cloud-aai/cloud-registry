@@ -523,7 +523,14 @@ def test_pages(client: FlaskClient) -> None:
     assert "nextPageToken" not in third
 
 
-@pytest.mark.parametrize("query", [{"pageToken": "x"}, {"pageSize": 0}])
+@pytest.mark.parametrize(
+    "query",
+    [
+        {"pageToken": "x"},
+        {"pageToken": "6553f1a2b3c4d5e6f7a8b9c0"},
+        {"pageSize": 0},
+    ],
+)
 def test_invalid_page(client: FlaskClient, query: dict[str, Any]) -> None:
     """Invalid page parameters are rejected."""
     response = client.get(ENDPOINT, query_string=query, headers=make_headers())
@@ -670,3 +677,24 @@ def test_service_lookup_errors_logged(
         server._record_register_failure("ABC123", FailureReason.PENDING_SERVICE)
     assert "Failure of a registration or update not recorded." in caplog.text
     assert list_failures(client, ADMIN, admin=True)["failures"] == []
+
+
+def test_pages_by_time(client: FlaskClient) -> None:
+    """Failures are ordered by their time, then by identifier, across pages."""
+    for _ in range(3):
+        assert import_info(client, "https://tes.example.org/") == 400
+    first, second, third = sorted(item["_id"] for item in stored(client).find())
+    current = now()
+    # the newest identifier failed first, the two others at the same time
+    stored(client).update_one(
+        {"_id": third}, {"$set": {OCCURRED_AT: current - timedelta(seconds=1)}}
+    )
+    stored(client).update_many(
+        {"_id": {"$in": [first, second]}}, {"$set": {OCCURRED_AT: current}}
+    )
+    page = list_failures(client, pageSize=1)
+    ids = [page["failures"][0]["id"]]
+    while "nextPageToken" in page:
+        page = list_failures(client, pageSize=1, pageToken=page["nextPageToken"])
+        ids += [item["id"] for item in page["failures"]]
+    assert ids == [str(second), str(first), str(third)]

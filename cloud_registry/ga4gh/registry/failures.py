@@ -31,7 +31,7 @@ errors are logged instead.
 """
 
 from collections.abc import Iterable
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 import logging
 import re
@@ -309,6 +309,44 @@ def _view(failure: dict[str, Any], admin: bool, user: str | None) -> dict[str, A
     return view
 
 
+def _page_token(failure: dict[str, Any]) -> str:
+    """Get the token for the page after a failure.
+
+    Args:
+        failure: Stored failure, the last of a page.
+
+    Returns:
+        Its time, in milliseconds since the epoch, and its identifier, joined by
+        a dot (cf. `_after()`).
+    """
+    occurred = failure[OCCURRED_AT]
+    # naive, as read from the database
+    if occurred.tzinfo is None:
+        occurred = occurred.replace(tzinfo=UTC)
+    return f"{round(occurred.timestamp() * 1000)}.{failure['_id']}"
+
+
+def _after(token: str) -> dict[str, Any]:
+    """Get the filter for the failures after a page.
+
+    Args:
+        token: Token for the page (cf. `_page_token()`), as the schema allows
+            (`<milliseconds>.<identifier>`).
+
+    Returns:
+        Filter for older failures, and those of the same time with lower
+        identifiers, in the order of the pages.
+    """
+    milliseconds, identifier = token.split(".")
+    occurred = datetime.fromtimestamp(int(milliseconds) / 1000, UTC)
+    return {
+        "$or": [
+            {OCCURRED_AT: {"$lt": occurred}},
+            {OCCURRED_AT: occurred, "_id": {"$lt": ObjectId(identifier)}},
+        ]
+    }
+
+
 # GET /failures
 def getFailures(
     operation: str | None = None,
@@ -331,8 +369,8 @@ def getFailures(
             `token_info`); unused.
 
     Returns:
-        Failures, most recent first (cf. `_view()`), and `nextPageToken` if
-        there are more.
+        Failures, most recent first (cf. `_view()`; by identifier at the same
+        time), and `nextPageToken` if there are more.
     """
     admin, query = _visible()
     conditions = [query] if query else []
@@ -343,12 +381,11 @@ def getFailures(
     if serviceId is not None:
         conditions.append({"serviceId": serviceId})
     if pageToken is not None:
-        # the schema allows only object identifiers (24 hexadecimal digits)
-        conditions.append({"_id": {"$lt": ObjectId(pageToken)}})
+        conditions.append(_after(pageToken))
     found = list(
         get_collection(FAILURES)
         .find({"$and": conditions} if conditions else {})
-        .sort("_id", -1)
+        .sort([(OCCURRED_AT, -1), ("_id", -1)])
         .limit(pageSize + 1)
     )
     user = get_current_subject()
@@ -356,5 +393,5 @@ def getFailures(
         "failures": [_view(item, admin, user) for item in found[:pageSize]]
     }
     if len(found) > pageSize:
-        page["nextPageToken"] = str(found[pageSize - 1]["_id"])
+        page["nextPageToken"] = _page_token(found[pageSize - 1])
     return page

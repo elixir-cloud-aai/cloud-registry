@@ -1379,7 +1379,7 @@ paths:
             `nextPageToken` of the previous page, to list the failures after it.
           schema:
             type: string
-            pattern: '^[0-9a-f]{24}$'
+            pattern: '^[0-9]{1,15}\.[0-9a-f]{24}$'
       responses:
         '200':
           description: Failures.

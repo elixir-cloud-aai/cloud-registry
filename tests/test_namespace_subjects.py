@@ -391,6 +391,7 @@ def test_dry_run(client: FlaskClient) -> None:
         assert get_collection("services").count_documents({SERVICE_CREATOR: BARE}) == 2
         assert get_collection(SERVICE_COUNTS).count_documents({"_id": BARE}) == 1
         assert _invitations()["I1"] == (BARE, {"user": BARE}, None)
+        assert get_collection(FAILURES).count_documents({"userId": BARE}) == 1
 
 
 @pytest.mark.parametrize(
