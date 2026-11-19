@@ -37,6 +37,7 @@ under the API base path `/ga4gh/registry/v1`:
 | `/syncs` | `GET` | anyone |
 | `/notifications` | `GET` | any authenticated user |
 | `/notifications/{notificationId}` | `DELETE` | any authenticated user |
+| `/failures` | `GET` | any authenticated user (filtered: see [Failed operations](#failed-operations)) |
 | `/approvals` | `GET` | any authenticated user |
 | `/me` | `GET` | any authenticated user |
 
@@ -807,6 +808,67 @@ and forth, stays dismissed. `GET /approvals` always lists what is pending. When 
 list notifications in admin mode, the registry also removes the stored dismissals, of
 owners and admins alike, of problems that ended and of services that were deleted;
 until then, they stay stored.
+
+## Failed operations
+
+Admins and owners can't read the registry's logs, so it records failed imports,
+registrations, updates and syncs, and lists recent ones with `GET /failures`, e.g.,
+for a client to show next to the notifications, so that "it didn't work" can be
+answered without the logs:
+
+```json
+{"failures": [{"id": "6553f1a2b3c4d5e6f7a8b9c0", "occurredAt": "2026-11-05T12:34:56.789Z", "operation": "update", "reason": "invalid field", "serviceId": "ABC123", "url": "https://tes.example.org/ga4gh/tes/v1", "fields": ["organization.url"]}]}
+```
+
+| `operation` | What failed |
+| --- | --- |
+| `import` | `POST /services/import` |
+| `register` | `POST /services`, or `PUT /services/{serviceId}` of a new service |
+| `update` | `PUT /services/{serviceId}` of a registered service |
+| `sync` | `PUT /services/{serviceId}/sync`, or a sync of the registry |
+
+Who sees what:
+
+- Admins in [admin mode](access-control.md#admin-mode) see all failures, with the user
+  who acted (`userId`).
+- Other users (and admins without admin mode) see the failures of what they did
+  themselves (with their `userId`), and of the services they have a role on, also those
+  of others and of the registry's syncs, without who acted. Once a service is deleted,
+  only the users who acted see its failures.
+
+A failure has the time, the operation, a `reason` from a fixed set, the names of the
+invalid fields, if any (`fields`), the service's identifier at the time of the failure
+(`serviceId`, for registered services) and its URL (`url`), if known and valid, without
+query and fragment; never values of fields, response bodies, tokens or network errors.
+Invalid URLs (e.g., with user info, which could hold credentials) and invalid addresses
+of imports aren't recorded.
+
+| `reason` | Why |
+| --- | --- |
+| `unreachable` | the fetch failed: no response, or an unusable one (e.g., a timeout, a redirect, another status than `200`, too large) |
+| `address not allowed` | the host resolves to an address that [isn't public](configuration.md#service-info-import) |
+| `fetch failed` | either of these, for fetches that the user started (imports, syncs on request), as served to all but admins: as in the responses of these requests, all failed fetches look alike to users, so that they can't map networks; admins see which. Syncs of the registry say which to all who see them, as `GET /services/{serviceId}/sync` does |
+| `not JSON` | the response isn't JSON |
+| `invalid service info` | it doesn't pass the checks of a registration; `fields` names the invalid field, if known |
+| `identity mismatch`, `version awaiting approval`, `version not allowed`, `unused types limit reached` | as for [syncs](#synced-services) |
+| `invalid field` | the request has invalid fields, those that the registry's own checks reject (e.g., URLs, schemes, environments, types); `fields` names them |
+| `duplicate service` | a service with the same URL and API type is registered (see [Duplicate services](#duplicate-services)) |
+| `services limit reached` | the user has registered as many services as allowed |
+| `pending service` | users other than admins can't update a [pending](#pending-approvals) service, except to an approved type |
+| `url locked by sync` | a service with sync can't change its URL |
+
+Not recorded: requests that the schemas of the API reject before the registry's own
+checks (e.g., unknown fields, or values of the wrong type; their `400` response names
+the fields), conflicts of concurrent changes (`service-busy`), limits of requests
+(`429`) and errors of the registry (`500`, in the logs).
+
+The most recent come first. Filter them with `operation`, `reason` (as the user sees
+it; for admins, `fetch failed` selects the failed fetches that users started, which
+they see with their reasons) and `serviceId`; pages have at most `pageSize` failures
+(1 to 200, default: 50), and `nextPageToken` gets the next page (as `pageToken`), until
+the last page, which has none. Failures are kept for 30 days by default, and about 100
+of each user at most are recorded per hour, so that nobody can fill the database by
+failing on purpose (see [Failed operations](configuration.md#failed-operations)).
 
 ## Listing the registry itself
 

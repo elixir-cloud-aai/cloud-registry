@@ -13,6 +13,7 @@ from pymongo import MongoClient
 import pytest
 
 from cloud_registry import namespace_subjects as namespace_module
+from cloud_registry.ga4gh.registry.failures import FAILURES
 from cloud_registry.ga4gh.registry.invitations import (
     ACCEPTED,
     CREATED_AS,
@@ -131,6 +132,13 @@ def client(
                 {"serviceId": "S2", "userId": NAMESPACED_ALICE, "name": "Alice"},
             ]
         )
+        get_collection(FAILURES).insert_many(
+            [
+                {"_id": "F1", "userId": BARE},
+                {"_id": "F2", "userId": NAMESPACED_ALICE},
+                {"_id": "F3"},
+            ]
+        )
         # unique hashes of tokens (indexed)
         get_collection(INVITATIONS).insert_many(
             {**invitation, TOKEN_HASH: invitation["_id"]}
@@ -204,6 +212,7 @@ def test_namespace_subjects(
             "services": 2,
             "user_names": 2,
             "invitations": 3,
+            "failures": 1,
         }
         assert "configured policy rules" in caplog.text
         assert _rules() == [
@@ -248,6 +257,10 @@ def test_namespace_subjects(
             "I3": (NAMESPACED_ALICE, {"admin": True}, OTHER),
             "I4": (NAMESPACED_ALICE, {"group": "team"}, None),
         }
+        users = {
+            item["_id"]: item.get("userId") for item in get_collection(FAILURES).find()
+        }
+        assert users == {"F1": NAMESPACED_ALICE, "F2": NAMESPACED_ALICE, "F3": None}
         counts = namespace_subjects(ISSUER)
         assert counts == {
             "rules": 0,
@@ -256,6 +269,7 @@ def test_namespace_subjects(
             "services": 0,
             "user_names": 0,
             "invitations": 0,
+            "failures": 0,
         }
 
 
@@ -370,12 +384,14 @@ def test_dry_run(client: FlaskClient) -> None:
             "services": 2,
             "user_names": 2,
             "invitations": 3,
+            "failures": 1,
         }
         assert _rules() == before
         assert get_collection("user_names").count_documents({"userId": BARE}) == 2
         assert get_collection("services").count_documents({SERVICE_CREATOR: BARE}) == 2
         assert get_collection(SERVICE_COUNTS).count_documents({"_id": BARE}) == 1
         assert _invitations()["I1"] == (BARE, {"user": BARE}, None)
+        assert get_collection(FAILURES).count_documents({"userId": BARE}) == 1
 
 
 @pytest.mark.parametrize(

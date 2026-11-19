@@ -14,6 +14,7 @@ from foca import Foca, get_config
 from foca.models.config import MongoConfig
 from foca.security.auth import require_no_service_clients
 
+from cloud_registry.ga4gh.registry.failures import apply_keep_days
 from cloud_registry.ga4gh.registry.invitations import apply_keep_expired_days
 from cloud_registry.ga4gh.registry.permissions import (
     warn_owner_rules,
@@ -71,15 +72,16 @@ def create_app(start_background: bool = True) -> App:
     registry among its services up to date, if it is listed (cf.
     `refresh_self_listing()`), adds the types of registered services that
     aren't stored (e.g., after a failed change of that entry) and applies the
-    days for which expired invitations are kept (cf.
-    `apply_keep_expired_days()`), and syncs services with their service info in
-    the background, if they have it turned on (cf. `start_sync_scheduler()`, in
-    each worker; not if `start_background` is false, e.g., for commands that
-    set up the app, such as `cloud_registry.namespace_subjects`). Warns of
-    stored services with URL schemes or environments that are not allowed,
-    and of rules that let owners change roles of groups although the rule for
-    these is changed, or grant roles by invitation although no rule lets them
-    grant roles to users (cf. `warn_owner_rules()`).
+    days for which expired invitations and failed operations are kept (cf.
+    `apply_keep_expired_days()`, `apply_keep_days()`), and syncs services with
+    their service info in the background, if they have it turned on (cf.
+    `start_sync_scheduler()`, in each worker; not if `start_background` is
+    false, e.g., for commands that set up the app, such as
+    `cloud_registry.namespace_subjects`). Warns of stored services with URL
+    schemes or environments that are not allowed, and of rules that let owners
+    change roles of groups although the rule for these is changed, or grant
+    roles by invitation although no rule lets them grant roles to users (cf.
+    `warn_owner_rules()`).
 
     FOCA validates the config, e.g., that token issuers are trusted (needed
     for access control) with an audience, the group settings and the
@@ -147,6 +149,7 @@ def create_app(start_background: bool = True) -> App:
                 "`https://registry.example.org/`)"
             )
         apply_keep_expired_days()
+        apply_keep_days()
         resume_renames()
         reconcile_service_counts()
         refresh_self_listing()

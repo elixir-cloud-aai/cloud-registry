@@ -512,6 +512,13 @@ users see depends on their roles on services. Admins see those of all services, 
 pending approvals and values that the configuration no longer allows, only in [admin
 mode](#admin-mode).
 
+## Failed operations
+
+[Failed operations](api.md#failed-operations) need a login, by the rule
+`list-failures`, for any authenticated user; users see the failures of what they did
+themselves and of the services they have a role on. Admins see all, and who acted,
+only in [admin mode](#admin-mode), and why fetches that users started failed.
+
 ## Current user
 
 `GET /me` returns the current user's identifier (to give to owners), whether

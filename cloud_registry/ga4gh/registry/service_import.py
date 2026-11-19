@@ -46,6 +46,13 @@ from cloud_registry.exceptions import (
     problem,
     reject,
 )
+from cloud_registry.ga4gh.registry.failures import (
+    FailureReason,
+    Operation,
+    fetch_reason,
+    invalid_fields,
+    record_failure,
+)
 from cloud_registry.ga4gh.registry.permissions import current_user, require_subject
 from cloud_registry.ga4gh.registry.service import (
     InvalidService,
@@ -114,7 +121,28 @@ class FetchFailed(BadGateway):
 
 
 class InvalidServiceInfo(InvalidService):
-    """The service info at an address doesn't make a valid registration."""
+    """The service info at an address doesn't make a valid registration.
+
+    Args:
+        description: Description, naming the invalid field, if any.
+        field: Name of the invalid field (e.g., `organization.url`), if any.
+
+    Attributes:
+        field: Name of the invalid field, if any.
+    """
+
+    def __init__(self, description: str, *, field: str | None = None) -> None:
+        """Create the exception."""
+        self.field = field
+        super().__init__(description)
+
+
+class ServiceInfoNotJson(InvalidServiceInfo):
+    """The response at the address of service info isn't JSON."""
+
+    def __init__(self) -> None:
+        """Create the exception, with its description."""
+        super().__init__("The response is not JSON.")
 
 
 class FetchLimit(TooManyRequests):
@@ -261,7 +289,7 @@ def fetch_service_info(address: str) -> object:
     Raises:
         cloud_registry.safe_fetch.AddressNotAllowed: See `safe_get()`.
         cloud_registry.safe_fetch.Unreachable: See `safe_get()`.
-        InvalidServiceInfo: The response isn't JSON.
+        ServiceInfoNotJson: The response isn't JSON.
     """
     services = get_custom_config(CustomConfig).endpoints.services
     body = safe_get(
@@ -274,7 +302,7 @@ def fetch_service_info(address: str) -> object:
     try:
         return json.loads(body)
     except (ValueError, RecursionError) as exc:
-        raise InvalidServiceInfo("The response is not JSON.") from exc
+        raise ServiceInfoNotJson from exc
 
 
 @cache
@@ -313,7 +341,8 @@ def _check_schema(values: dict[str, Any]) -> None:
         if error.validator == "required":
             missing = set(error.validator_value) - set(error.instance)
             path.append(min(missing))
-        raise InvalidServiceInfo(f"'{'.'.join(path)}' is missing or invalid.")
+        name = ".".join(path)
+        raise InvalidServiceInfo(f"'{name}' is missing or invalid.", field=name)
 
 
 def service_values(service_info: object, url: str) -> dict[str, Any]:
@@ -337,7 +366,7 @@ def service_values(service_info: object, url: str) -> dict[str, Any]:
         raise InvalidServiceInfo("The response is not a JSON object.")
     identifier = service_info.get("id")
     if not isinstance(identifier, str) or not 0 < len(identifier) <= MAX_ID_LENGTH:
-        raise InvalidServiceInfo("'id' is missing or invalid.")
+        raise InvalidServiceInfo("'id' is missing or invalid.", field="id")
     check_strings(identifier, field="id")
     values: dict[str, Any] = {
         field: service_info[field]
@@ -362,8 +391,25 @@ def service_values(service_info: object, url: str) -> dict[str, Any]:
         field = field_name(exc.field_errors[0]) if exc.field_errors else ""
         if field not in _CHECKED_FIELDS:
             field = "url"
-        raise InvalidServiceInfo(f"'{field}' is missing or invalid.") from exc
+        raise InvalidServiceInfo(
+            f"'{field}' is missing or invalid.", field=field
+        ) from exc
     return values
+
+
+def service_info_failure(exc: InvalidService) -> tuple[FailureReason, list[str]]:
+    """Get the reason of a failure for service info that can't be used.
+
+    Args:
+        exc: Error of `fetch_service_info()` or `service_values()`.
+
+    Returns:
+        `not JSON` or `invalid service info`, and the names of the invalid
+        fields, if known (cf. `invalid_fields()`).
+    """
+    if isinstance(exc, ServiceInfoNotJson):
+        return FailureReason.NOT_JSON, []
+    return FailureReason.INVALID_SERVICE_INFO, invalid_fields(exc)
 
 
 def check_fetch_limit(user: str) -> None:
@@ -428,7 +474,8 @@ def postServiceImport(service_import: dict[str, Any], **kwargs: Any) -> Any:
         registration, `429` above the limit of the user (cf.
         `check_fetch_limit()`) or while other requests take the slots for
         fetches (cf. `fetch_slot()`), and `502` if the fetch fails, for any
-        reason.
+        reason. Failures are recorded (cf.
+        `cloud_registry.ga4gh.registry.failures`), except for limits.
 
     Raises:
         foca.errors.InvalidFieldsProblem: The address isn't one of service
@@ -444,6 +491,12 @@ def postServiceImport(service_import: dict[str, Any], **kwargs: Any) -> Any:
         logger.info(
             "Service info not imported by '%s': invalid address.", current_user()
         )
+        record_failure(
+            Operation.IMPORT,
+            FailureReason.INVALID_FIELD,
+            user=require_subject(),
+            fields=invalid_fields(exc),
+        )
         return reject(exc)
     try:
         with fetch_slot():
@@ -455,6 +508,13 @@ def postServiceImport(service_import: dict[str, Any], **kwargs: Any) -> Any:
             current_user(),
             escape_log_value(address),
             type(exc).__name__,
+        )
+        record_failure(
+            Operation.IMPORT,
+            fetch_reason(exc),
+            user=require_subject(),
+            url=url,
+            masked=True,
         )
         return problem(FetchFailed())
     except TooManyRequests as exc:
@@ -468,5 +528,9 @@ def postServiceImport(service_import: dict[str, Any], **kwargs: Any) -> Any:
             current_user(),
             escape_log_value(address),
             escape_log_value(exc.description),
+        )
+        reason, fields = service_info_failure(exc)
+        record_failure(
+            Operation.IMPORT, reason, user=require_subject(), url=url, fields=fields
         )
         return problem(exc)

@@ -142,6 +142,45 @@ sync=True, sync_interval_hours=24.0)
         return networks
 
 
+# Bounds of the days for which failed operations are kept (labels may name
+# people, so there is no value for keeping them forever)
+MIN_FAILURE_KEEP_DAYS = 1
+MAX_FAILURE_KEEP_DAYS = 365
+
+
+class FailuresConfig(FOCABaseConfig):
+    """Model for recording failed operations (`GET /failures`).
+
+    Args:
+        keep_days: Days for which failures are kept before they are deleted,
+            from `MIN_FAILURE_KEEP_DAYS` to `MAX_FAILURE_KEEP_DAYS`.
+        max_per_user_per_hour: How many failures of each user are recorded per
+            hour, at most; later ones aren't, so that users can't fill the
+            database by failing on purpose.
+
+    Attributes:
+        keep_days: Days for which failures are kept before they are deleted,
+            from `MIN_FAILURE_KEEP_DAYS` to `MAX_FAILURE_KEEP_DAYS`.
+        max_per_user_per_hour: How many failures of each user are recorded per
+            hour, at most; later ones aren't, so that users can't fill the
+            database by failing on purpose.
+
+    Raises:
+        pydantic.ValidationError: The class was instantianted with an illegal
+            data type, `keep_days` is out of its bounds, or
+            `max_per_user_per_hour` is not positive.
+
+    Example:
+        >>> FailuresConfig(keep_days=7)
+        FailuresConfig(keep_days=7, max_per_user_per_hour=100)
+    """
+
+    keep_days: Annotated[
+        int, Field(ge=MIN_FAILURE_KEEP_DAYS, le=MAX_FAILURE_KEEP_DAYS)
+    ] = 30
+    max_per_user_per_hour: PositiveInt = 100
+
+
 class ServicesConfig(FOCABaseConfig):
     """Model for defining the service database store for cloud registry.
 
@@ -160,6 +199,7 @@ class ServicesConfig(FOCABaseConfig):
             `dev`, `staging`). Empty to allow any value. At most 256
             characters each, as in the API.
         service_info: Fetching the service info of services.
+        failures: Recording failed operations.
 
     Attributes:
         id: Unique identifier for a service in cloud registry.
@@ -172,6 +212,7 @@ class ServicesConfig(FOCABaseConfig):
             `dev`, `staging`). Empty to allow any value. At most 256
             characters each, as in the API.
         service_info: Fetching the service info of services.
+        failures: Recording failed operations.
 
     Raises:
         pydantic.ValidationError: The class was instantianted with an illegal
@@ -188,7 +229,8 @@ class ServicesConfig(FOCABaseConfig):
         ServicesConfig(id=IdConfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ01234567\
 89', length=6), url_schemes=['https'], environments=['prod', 'test', 'dev', 's\
 taging'], service_info=ServiceInfoConfig(private_networks=[], fetches_per_hour\
-=30, sync=True, sync_interval_hours=24.0))
+=30, sync=True, sync_interval_hours=24.0), \
+failures=FailuresConfig(keep_days=30, max_per_user_per_hour=100))
     """
 
     id: IdConfig
@@ -199,6 +241,7 @@ taging'], service_info=ServiceInfoConfig(private_networks=[], fetches_per_hour\
         default=["prod", "test", "dev", "staging"]
     )
     service_info: ServiceInfoConfig = Field(default_factory=ServiceInfoConfig)
+    failures: FailuresConfig = Field(default_factory=FailuresConfig)
 
 
 class EndpointsConfig(FOCABaseConfig):
@@ -226,7 +269,8 @@ class EndpointsConfig(FOCABaseConfig):
         EndpointsConfig(services=ServicesConfig(id=IdConfig(charset='ABCDEFGHI\
 JKLMNOPQRSTUVWXYZ0123456789', length=6), url_schemes=['https'], environments=[\
 'prod', 'test', 'dev', 'staging'], service_info=ServiceInfoConfig(private_networks\
-=[], fetches_per_hour=30, sync=True, sync_interval_hours=24.0)))
+=[], fetches_per_hour=30, sync=True, sync_interval_hours=24.0), \
+failures=FailuresConfig(keep_days=30, max_per_user_per_hour=100)))
     """
 
     services: ServicesConfig
@@ -367,7 +411,8 @@ class CustomConfig(FOCABaseConfig):
 nfig(charset='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', length=6), url_schemes=['\
 https'], environments=['prod', 'test', 'dev', 'staging'], service_info=ServiceI\
 nfoConfig(private_networks=[], fetches_per_hour=30, sync=True, sync_interval_h\
-ours=24.0))), access_control=AccessControlConfig(service_types='open', max_unu\
+ours=24.0), failures=FailuresConfig(keep_days=30, max_per_user_per_hour=100))), \
+access_control=AccessControlConfig(service_types='open', max_unu\
 sed_service_types=10, max_services_per_user=50, invitations=InvitationsConfig(\
 expiry_days=7, keep_expired_d\
 ays=30, max_per_service=20)))

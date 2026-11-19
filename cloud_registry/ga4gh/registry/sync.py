@@ -61,6 +61,12 @@ from cloud_registry.exceptions import (
     TooManyRequests,
     problem,
 )
+from cloud_registry.ga4gh.registry.failures import (
+    FailureReason,
+    Operation,
+    fetch_reason,
+    record_failure,
+)
 from cloud_registry.ga4gh.registry.locks import changing
 from cloud_registry.ga4gh.registry.permissions import (
     check_read_token,
@@ -87,6 +93,7 @@ from cloud_registry.ga4gh.registry.service_import import (
     check_fetch_limit,
     fetch_service_info,
     fetch_slot,
+    service_info_failure,
     service_values,
 )
 from cloud_registry.ga4gh.registry.service_types import (
@@ -383,16 +390,29 @@ def _write(
     return result.modified_count > 0
 
 
-def _failed(service: dict[str, Any], reason: Reason, current: datetime) -> None:
+def _failed(
+    service: dict[str, Any],
+    reason: Reason,
+    current: datetime,
+    *,
+    user: str | None = None,
+    failure: tuple[FailureReason, list[str]] | None = None,
+) -> None:
     """Record a failed sync; the service keeps its values.
+
+    Also records the failure for `GET /failures` (cf.
+    `cloud_registry.ga4gh.registry.failures`), if the result was written.
 
     Args:
         service: Stored service, as claimed.
         reason: Reason.
         current: Current time.
+        user: User who synced the service; `None` for syncs of the app.
+        failure: Reason of the failure and names of invalid fields, if more
+            precise than `reason` (e.g., `not JSON`).
     """
     state = service[SYNC]
-    _write(
+    written = _write(
         service,
         {
             "lastAttemptAt": current,
@@ -412,6 +432,11 @@ def _failed(service: dict[str, Any], reason: Reason, current: datetime) -> None:
     logger.info(
         "Service '%s' out of sync: %s.", escape_log_value(service["id"]), reason
     )
+    if written:
+        failure_reason, fields = failure or (FailureReason(str(reason)), [])
+        record_failure(
+            Operation.SYNC, failure_reason, user=user, service=service, fields=fields
+        )
 
 
 def _unreachable(service: dict[str, Any], current: datetime) -> None:
@@ -478,7 +503,11 @@ def _reason(
 
 
 def _apply(
-    service: dict[str, Any], identifier: str, values: dict[str, Any], current: datetime
+    service: dict[str, Any],
+    identifier: str,
+    values: dict[str, Any],
+    current: datetime,
+    user: str | None = None,
 ) -> None:
     """Apply fetched service info to a service, or record why it can't be.
 
@@ -489,10 +518,11 @@ def _apply(
         identifier: Identifier of the service info.
         values: Values of the service info, valid for the service.
         current: Current time.
+        user: User who synced the service; `None` for syncs of the app.
     """
     reason = _reason(service, identifier, values)
     if reason is not None:
-        _failed(service, reason, current)
+        _failed(service, reason, current, user=user)
         return
     fields = {
         field: values[field]
@@ -537,8 +567,8 @@ def sync_service(service: dict[str, Any]) -> None:
         _failed(service, Reason.ADDRESS_NOT_ALLOWED, now())
     except Unreachable:
         _unreachable(service, now())
-    except InvalidService:
-        _failed(service, Reason.INVALID, now())
+    except InvalidService as exc:
+        _failed(service, Reason.INVALID, now(), failure=service_info_failure(exc))
     else:
         _apply(service, identifier, values, now())
 
@@ -702,6 +732,66 @@ def getSyncs(status: str | None = None, **kwargs: Any) -> list[dict[str, Any]]:
     return [view for view in views if status is None or view["status"] == status]
 
 
+def _fetch_on_request(
+    service: dict[str, Any],
+) -> tuple[str, dict[str, Any], str] | Response:
+    """Fetch the service info of a service for a user, who syncs it.
+
+    Must be called in a request context. Failures are recorded (cf.
+    `cloud_registry.ga4gh.registry.failures`), except for limits.
+
+    Args:
+        service: Stored service.
+
+    Returns:
+        Identifier of the service info, its values for the service and the
+        identifier that the sync of the service has (the fetched one if it has
+        none), if they describe the service (that identifier, and its URL and
+        API type); otherwise, an error response (cf. `putServiceSync()`).
+    """
+    try:
+        with fetch_slot(), sync_request(service):
+            check_fetch_limit(require_subject())
+            identifier, values = _fetch(service["url"])
+    except FetchError as exc:
+        logger.info(
+            "Sync of service '%s' not started by '%s': %s.",
+            escape_log_value(service["id"]),
+            current_user(),
+            type(exc).__name__,
+        )
+        record_failure(
+            Operation.SYNC,
+            fetch_reason(exc),
+            user=require_subject(),
+            service=service,
+            masked=True,
+        )
+        return problem(FetchFailed())
+    except TooManyRequests as exc:
+        return problem(exc)
+    except InvalidService as exc:
+        reason, fields = service_info_failure(exc)
+        record_failure(
+            Operation.SYNC,
+            reason,
+            user=require_subject(),
+            service=service,
+            fields=fields,
+        )
+        return problem(exc)
+    baseline = service.get(SYNC, {}).get("serviceInfoId", identifier)
+    if identifier != baseline or service_key(values) != service[KEY]:
+        record_failure(
+            Operation.SYNC,
+            FailureReason.IDENTITY_MISMATCH,
+            user=require_subject(),
+            service=service,
+        )
+        return problem(SyncIdentityMismatch())
+    return identifier, values, baseline
+
+
 # PUT /services/{serviceId}/sync
 def putServiceSync(
     serviceId: str, onlyIfEnabled: bool = False, **kwargs: Any
@@ -725,7 +815,9 @@ def putServiceSync(
         doesn't sync, the service is the registry's own entry or it changed during
         the fetch, `429` above the limits for fetches (of the user, and per
         service, cf. `sync_request()`), and `502` if the fetch fails, for any
-        reason.
+        reason. Failed fetches, invalid service info, identity mismatches and
+        service info that can't be applied are recorded (cf.
+        `cloud_registry.ga4gh.registry.failures`).
 
     Raises:
         cloud_registry.exceptions.NotFound: The service doesn't exist (anymore),
@@ -746,24 +838,11 @@ def putServiceSync(
             )
         if onlyIfEnabled and SYNC not in service:
             raise NotFound
-        try:
-            with fetch_slot(), sync_request(service):
-                check_fetch_limit(require_subject())
-                identifier, values = _fetch(service["url"])
-        except FetchError as exc:
-            logger.info(
-                "Sync of service '%s' not started by '%s': %s.",
-                escape_log_value(serviceId),
-                current_user(),
-                type(exc).__name__,
-            )
-            return problem(FetchFailed())
-        except (TooManyRequests, InvalidService) as exc:
-            return problem(exc)
+        fetched = _fetch_on_request(service)
+        if isinstance(fetched, Response):
+            return fetched
+        identifier, values, baseline = fetched
         state = service.get(SYNC, {})
-        baseline = state.get("serviceInfoId", identifier)
-        if identifier != baseline or service_key(values) != service[KEY]:
-            return problem(SyncIdentityMismatch())
         current = now()
         # not if the service changed during the fetch, e.g., its URL, which
         # wasn't fetched then
@@ -793,7 +872,7 @@ def putServiceSync(
             if collection.count_documents(query) == 0:
                 raise NotFound
             return problem(ServiceBusy())
-        _apply(claimed, identifier, values, current)
+        _apply(claimed, identifier, values, current, user=require_subject())
         stored = collection.find_one({"_id": service["_id"]})
     if stored is None or SYNC not in stored:
         raise NotFound

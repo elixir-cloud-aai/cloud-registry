@@ -57,6 +57,10 @@ DATE_TIME = re.compile(
 )
 
 
+# Seconds of a day, for settings in days (e.g., of TTL indexes)
+SECONDS_PER_DAY = 86400
+
+
 def get_collection(name: str) -> Collection[dict[str, Any]]:
     """Get a collection of the service store of the current app.
 
