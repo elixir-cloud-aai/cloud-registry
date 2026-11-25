@@ -26,8 +26,8 @@
 # alone; add curated notes to the `nav` of `mkdocs.yml` too
 # (the docs build fails otherwise).
 # Publishing runs in the `release` environment (required reviewer, Docker
-# Hub secrets). Release tags are immutable (tag ruleset). See "Versioning
-# and releases" in `docs/development.md`. Until 1.0.0, all releases are GitHub
+# Hub secrets, Pubgrade token). Release tags are immutable (tag ruleset).
+# See "Versioning and releases" in `docs/development.md`. Until 1.0.0, all releases are GitHub
 # pre-releases (but stable ones still update the `latest` image).
 
 name: Release
