@@ -331,7 +331,8 @@ issues them).
 If only this job fails or is rejected, the release is published all the
 same: don't release a new version for it. Re-running the job notifies the
 subscribed deployments again; before you re-run it, check how it failed
-(messages of the action as of v0.3.0):
+(messages of the action as of v0.3.0; check them again when its pin is
+bumped):
 
 - On an invalid or missing setting, nothing was sent: fix the setting and
   re-run the job.
