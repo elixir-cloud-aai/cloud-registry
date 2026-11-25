@@ -307,6 +307,59 @@ def test_release_chart_default_image() -> None:
     assert "${IMAGE_NAME#" not in script
 
 
+def test_release_notifies_pubgrade() -> None:
+    """The release registers the tagged image at Pubgrade, if configured.
+
+    `notify` runs after `publish`, the job that tags the image `X.Y.Z` (so
+    that the deployments find the tag), only if the repository variable
+    `PUBGRADE_URL` is set (a job-level condition, so that releases without
+    Pubgrade don't wait for an approval), in the `release` environment
+    (which holds the token), without permissions, with Pubgrade's action
+    pinned to the commit of v0.3.0. The image is the one that `publish`
+    tags, without the registry (`docker.io/`). Nothing waits for `notify`.
+    """
+    release = _load(WORKFLOWS / "release.yml")
+    jobs = release["jobs"]
+    job = jobs["notify"]
+    assert job["name"] == "Notify Pubgrade"
+    assert sorted(job["needs"]) == ["prepare", "publish"]
+    assert job["if"] == "vars.PUBGRADE_URL != ''"
+    assert job["runs-on"] == "ubuntu-latest"
+    assert job["timeout-minutes"] == 10
+    assert job["environment"] == "release"
+    assert job["permissions"] == {}
+    (step,) = job["steps"]
+    assert step["uses"] == (
+        "elixir-cloud-aai/Pubgrade/actions/notify"
+        "@344a58adc1c871135f86c404eb33ed91011886ad"
+    )
+    # The image and tag that `publish` tags: `${IMAGE_NAME}:${VERSION}`
+    steps = {step["name"]: step for step in jobs["publish"]["steps"]}
+    assert 'tags=("${IMAGE_NAME}:${VERSION}")' in steps["Tag image"]["run"]
+    version = "${{ needs.prepare.outputs.version }}"
+    assert jobs["publish"]["env"]["VERSION"] == version
+    image = release["env"]["IMAGE_NAME"].removeprefix("docker.io/")
+    assert step["with"] == {
+        "url": "${{ vars.PUBGRADE_URL }}",
+        "repository-id": "${{ vars.PUBGRADE_REPOSITORY_ID }}",
+        "token": "${{ secrets.PUBGRADE_TOKEN }}",
+        "image": f"{image}:{version}",
+        "git-tag": "${{ github.ref_name }}",
+    }
+    for job_id, other in jobs.items():
+        needs = other.get("needs", [])
+        assert "notify" not in ([needs] if isinstance(needs, str) else needs), job_id
+
+
+def test_release_notify_pin_comment() -> None:
+    """The pin of Pubgrade's action names its release (`# v0.3.0`)."""
+    text = (WORKFLOWS / "release.yml").read_text()
+    assert (
+        "uses: elixir-cloud-aai/Pubgrade/actions/notify"
+        "@344a58adc1c871135f86c404eb33ed91011886ad # v0.3.0\n"
+    ) in text
+
+
 @pytest.mark.parametrize(
     ("extra", "rename", "tamper", "file", "sha256", "passes"),
     [

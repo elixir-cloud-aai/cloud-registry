@@ -293,6 +293,43 @@ update the `latest` image. These and, until 1.0.0, all other releases are
 GitHub pre-releases (never marked as the latest release). Images of commits
 on `dev` are published by the CI workflow (environment `dev-images`).
 
+After tagging the image (in the same job as the GitHub release, so it runs
+once that job has passed), the workflow registers the image `X.Y.Z`, with
+the release tag, at [Pubgrade](https://github.com/elixir-cloud-aai/Pubgrade)
+(`POST /repositories/{id}/builds`, through Pubgrade's action
+[`actions/notify`](https://github.com/elixir-cloud-aai/Pubgrade/tree/344a58adc1c871135f86c404eb33ed91011886ad/actions/notify)),
+which notifies the deployments that subscribed to upgrades, also for
+pre-releases (e.g., `X.Y.Zrc1`), if they subscribed to those. The action
+masks the token and retries a request only if it never reached Pubgrade, so
+that one run registers the build at most once; re-running the job registers
+it again. This needs Pubgrade's publish mode
+([#33](https://github.com/elixir-cloud-aai/Pubgrade/issues/33)) and these
+settings:
+
+| Setting | Kind | Where | Meaning |
+| --- | --- | --- | --- |
+| `PUBGRADE_URL` | Variable | Repository | Base URL of the Pubgrade API, with `https://`. Switches the notification on. |
+| `PUBGRADE_REPOSITORY_ID` | Variable | Repository, or the `release` environment | The identifier from registering the repository in Pubgrade |
+| `PUBGRADE_TOKEN` | Secret | The `release` environment | The access token from registering the repository in Pubgrade |
+
+Without `PUBGRADE_URL`, the job `Notify Pubgrade` is skipped, so releases
+don't wait for its approval. Set `PUBGRADE_URL` for the repository, not in
+the `release` environment: a job's condition is evaluated before the job
+enters its environment, so a variable there doesn't switch the job on (and
+would override the repository's URL within the job). An organization
+variable would switch it on for every repository it is shared with, also
+those without a Pubgrade token. With `PUBGRADE_URL`, the job waits for an
+approval in the `release` environment, like pushing and publishing, and
+fails if one of the other settings is missing or invalid: the identifier and
+the token may only hold letters, digits, `.`, `~` and `-` (as Pubgrade
+issues them). If only this job fails or is rejected, the release is
+published all the same: fix the settings and re-run the job, or leave it;
+don't release a new version for it. Unless it failed on an invalid setting
+or with "Could not reach Pubgrade (curl exit status 6)" or "(… 7)" (no
+connection), Pubgrade may have registered the build all the same: check the
+repository's builds (`GET /repositories/{id}/builds`) before re-running it,
+as re-running notifies the subscribed deployments again.
+
 The release workflow derives the version, the chart version, the kind of
 release (stable, GitHub pre-release), whether the image is tagged `latest`
 and the previous release (for the generated notes) from the tag with
