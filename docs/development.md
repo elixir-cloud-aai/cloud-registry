@@ -293,6 +293,55 @@ update the `latest` image. These and, until 1.0.0, all other releases are
 GitHub pre-releases (never marked as the latest release). Images of commits
 on `dev` are published by the CI workflow (environment `dev-images`).
 
+After tagging the image (in the same job as the GitHub release, so it runs
+once that job has passed), the workflow registers the image `X.Y.Z`, with
+the release tag, at [Pubgrade](https://github.com/elixir-cloud-aai/Pubgrade)
+(`POST /repositories/{id}/builds`, through Pubgrade's action
+[`actions/notify`](https://github.com/elixir-cloud-aai/Pubgrade/tree/344a58adc1c871135f86c404eb33ed91011886ad/actions/notify)),
+which notifies the deployments that subscribed to upgrades. Pre-releases
+(e.g., `X.Y.Zrc1`) and patch releases of older versions are registered
+too, and a subscription to all tags (`*`) gets them: deployments filter
+them with the options of their
+[Pubgrade-Sidecar](https://github.com/elixir-cloud-aai/Pubgrade-Sidecar)
+(allowed tags, refusing downgrades). The action
+masks the token and retries a request only if it never reached Pubgrade, so
+that one run registers the build at most once; re-running the job registers
+it again. This needs Pubgrade's publish mode
+([#33](https://github.com/elixir-cloud-aai/Pubgrade/issues/33)) and these
+settings:
+
+| Setting | Kind | Where | Meaning |
+| --- | --- | --- | --- |
+| `PUBGRADE_URL` | Variable | Repository | Base URL of the Pubgrade API, with `https://`. Switches the notification on. |
+| `PUBGRADE_REPOSITORY_ID` | Variable | Repository, or the `release` environment | The identifier from registering the repository in Pubgrade |
+| `PUBGRADE_TOKEN` | Secret | The `release` environment | The access token from registering the repository in Pubgrade |
+
+Without `PUBGRADE_URL`, the job `Notify Pubgrade` is skipped, so releases
+don't wait for its approval. Set `PUBGRADE_URL` for the repository, not in
+the `release` environment: a job's condition is evaluated before the job
+enters its environment, so a variable there doesn't switch the job on (and
+would override the repository's URL within the job). An organization
+variable would switch it on for every repository it is shared with, also
+those without a Pubgrade token. With `PUBGRADE_URL`, the job waits for an
+approval in the `release` environment, like pushing and publishing, and
+fails if one of the other settings is missing or invalid: the identifier and
+the token may only hold letters, digits, `.`, `~` and `-` (as Pubgrade
+issues them).
+
+If only this job fails or is rejected, the release is published all the
+same: don't release a new version for it. Re-running the job notifies the
+subscribed deployments again; before you re-run it, check how it failed
+(messages of the action as of v0.3.0; check them again when its pin is
+bumped):
+
+- On an invalid or missing setting, nothing was sent: fix the setting and
+  re-run the job.
+- With "Could not reach Pubgrade (curl exit status 6)" or "(… 7)" (no
+  connection), nothing reached Pubgrade: re-run the job.
+- Otherwise, Pubgrade may have registered the build all the same: check the
+  repository's builds (`GET /repositories/{id}/builds`) first, and re-run
+  the job only if the build is missing.
+
 The release workflow derives the version, the chart version, the kind of
 release (stable, GitHub pre-release), whether the image is tagged `latest`
 and the previous release (for the generated notes) from the tag with
@@ -408,7 +457,8 @@ a ruleset for `dev` that requires the check `CI passed` (the gate job of
 `ci.yml`, which needs all of its other jobs) as the only check from GitHub
 Actions; `main` protected against non-fast-forward pushes; and the Docker Hub
 secrets (`DOCKERHUB_LOGIN`, `DOCKERHUB_TOKEN`) only in the two
-environments, not as repository secrets. The Docker Hub
+environments, not as repository secrets (and `PUBGRADE_TOKEN` only in
+`release`, see above). The Docker Hub
 organization is the repository variable `DOCKERHUB_ORG` (by default
 `elixircloud`; forks set it to the organization they publish to), so that
 the scan jobs, which have no secrets, know the image name too, and the

@@ -28,6 +28,11 @@ CHART = "cloud-registry-1.2.3.tgz"
 # The digest of a release run's image, and another one
 DIGEST = "sha256:" + "a" * 64
 OTHER_DIGEST = "sha256:" + "b" * 64
+# Pubgrade's action, pinned to a commit and named by its release in a
+# comment (any release, so that Dependabot can bump it)
+PUBGRADE_NOTIFY = re.compile(
+    r"uses: (elixir-cloud-aai/Pubgrade/actions/notify@[0-9a-f]{40}) # v\d+\.\d+\.\d+\n"
+)
 
 # `scripts/` is not a package, so the script is loaded from its file
 _spec = importlib.util.spec_from_file_location(
@@ -305,6 +310,57 @@ def test_release_chart_default_image() -> None:
     script = steps["Package chart"]["run"]
     assert 'image="${IMAGE_NAME}"' in script
     assert "${IMAGE_NAME#" not in script
+
+
+def test_release_notifies_pubgrade() -> None:
+    """The release registers the tagged image at Pubgrade, if configured.
+
+    `notify` runs after `publish` (which tags the image `X.Y.Z`), only if
+    `PUBGRADE_URL` is set (job-level, so that releases without Pubgrade wait
+    for no approval), in the `release` environment, without permissions,
+    and its failures show (no `continue-on-error`). It registers the image
+    that `publish` tags, without `docker.io/`. Nothing waits for it.
+    """
+    release = _load(WORKFLOWS / "release.yml")
+    jobs = release["jobs"]
+    job = jobs["notify"]
+    assert job["name"] == "Notify Pubgrade"
+    assert sorted(job["needs"]) == ["prepare", "publish"]
+    assert job["if"] == "vars.PUBGRADE_URL != ''"
+    assert job["runs-on"] == "ubuntu-latest"
+    assert job["timeout-minutes"] == 10
+    assert job["environment"] == "release"
+    assert job["permissions"] == {}
+    assert "continue-on-error" not in job
+    (step,) = job["steps"]
+    (pin,) = PUBGRADE_NOTIFY.findall((WORKFLOWS / "release.yml").read_text())
+    assert step["uses"] == pin
+    assert "if" not in step
+    assert "continue-on-error" not in step
+    # The image and tag that `publish` tags: `${IMAGE_NAME}:${VERSION}`
+    steps = {step["name"]: step for step in jobs["publish"]["steps"]}
+    assert 'tags=("${IMAGE_NAME}:${VERSION}")' in steps["Tag image"]["run"]
+    version = "${{ needs.prepare.outputs.version }}"
+    assert jobs["publish"]["env"]["VERSION"] == version
+    image = release["env"]["IMAGE_NAME"].removeprefix("docker.io/")
+    assert step["with"] == {
+        "url": "${{ vars.PUBGRADE_URL }}",
+        "repository-id": "${{ vars.PUBGRADE_REPOSITORY_ID }}",
+        "token": "${{ secrets.PUBGRADE_TOKEN }}",
+        "image": f"{image}:{version}",
+        "git-tag": "${{ github.ref_name }}",
+    }
+    for job_id, other in jobs.items():
+        needs = other.get("needs", [])
+        assert "notify" not in ([needs] if isinstance(needs, str) else needs), job_id
+
+
+def test_release_notify_pin_comment() -> None:
+    """The pin of Pubgrade's action names its release (`# vX.Y.Z`).
+
+    Dependabot bumps the pin only together with that comment.
+    """
+    assert PUBGRADE_NOTIFY.search((WORKFLOWS / "release.yml").read_text())
 
 
 @pytest.mark.parametrize(
